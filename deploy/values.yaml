@@ -1,0 +1,82 @@
+# Valores do chart `app` para o Prumo.
+#
+# ESTE ARQUIVO E A COPIA DE ORIGEM. Quem o cluster le e
+# `homelab-gitops/apps/prumo/values.yaml`. A ordem de publicacao esta em
+# `deploy/README.md`.
+name: prumo
+owner: alison
+image:
+  repository: ghcr.io/slipalison/prumo
+  # REESCRITA PELO CI a cada deploy na main (deploy.yml, com yq). Uma tag que
+  # nao existe no GHCR prende o Rollout em Degraded.
+  tag: __PRIMEIRA_IMAGEM__
+  # Repositorio publico gera pacote publico no GHCR: o kubelet puxa sem
+  # credencial, e nao ha `pullSecret`.
+host: prumo.alisonamorim.com
+port: 8080
+replicas: 2
+# `/healthz` diz que o processo esta de pe; `/readyz` faz `select 1` no
+# Postgres. As duas (e `/metrics`) so respondem no listener interno; na 8080,
+# que a internet alcanca, devolvem 404.
+probes:
+  port: 9090
+  readiness:
+    path: /readyz
+    initialDelaySeconds: 3
+    periodSeconds: 10
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 10
+    periodSeconds: 30
+# Binario pequeno (Axum + pool de 10 conexoes): ~20 MiB em repouso.
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 192Mi
+canary:
+  enabled: true
+  steps: [50]
+  pause: 30s
+  analysis:
+    # DESLIGADA de proposito: a analise consulta a taxa de sucesso no Mimir, e
+    # um app de uma pessoa nao tem trafego para gerar serie — sem serie a
+    # consulta erra e aborta um deploy saudavel.
+    enabled: false
+# O binario nao inicia SDK de OpenTelemetry (log em JSON vai para o Loki pelo
+# Alloy, e as metricas pela anotacao abaixo). Desligado para as variaveis
+# `OTEL_*` nao prometerem trace que nao existe.
+instrumentation:
+  enabled: false
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9090"
+  prometheus.io/path: /metrics
+# Banco `prumo` no cluster `postgres`; o chart cria a role e escreve
+# `DATABASE_URL` a partir do Secret `prumo-db`, que nasce do
+# `setup-k8s-platform.sh --only pgapp --pg-app prumo`. O binario aplica as
+# migrations no arranque (advisory lock do sqlx: duas replicas nao brigam).
+database:
+  enabled: true
+env:
+  # Quem autentica e o Cloudflare Access. O binario confere o JWT de novo
+  # (JWKS do team, `iss`, `aud`, `exp`) e recusa subir sem estes tres.
+  # Nenhum e segredo: o team e o AUD aparecem em todo token e no 302 do Access.
+  - name: AUTH_MODE
+    value: cloudflare-access
+  - name: CF_ACCESS_TEAM_DOMAIN
+    value: fragrant-sky-476b.cloudflareaccess.com
+  - name: CF_ACCESS_AUD
+    value: __AUD_DA_APLICACAO_PRUMO__
+# O chart fecha a NetworkPolicy por padrao. Saidas:
+egress:
+  # o JWKS do Access, para conferir o token
+  - host: fragrant-sky-476b.cloudflareaccess.com
+    port: 443
+  # cotacao (`chart`) e busca de simbolos (`search`) do Yahoo Finance
+  - host: query1.finance.yahoo.com
+    port: 443
+  - host: query2.finance.yahoo.com
+    port: 443
+versao: 0.1.0

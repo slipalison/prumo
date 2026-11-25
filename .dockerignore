@@ -1,0 +1,12 @@
+.git
+.github
+**/node_modules
+**/target
+backend/resultados
+frontend/dist
+frontend/coverage
+deploy
+docs
+*.md
+.env
+.env.*

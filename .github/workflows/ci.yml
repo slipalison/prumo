@@ -1,0 +1,80 @@
+# A esteira inteira num `uses:` só. A orquestração mora em
+# slipalison/github-workflows; aqui ficam só as escolhas deste repositório.
+# Partiu de `exemplos/ci-monorepo-back-front.yml` daquele repositório.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancela o run anterior da MESMA branch quando chega commit novo: sem isto, um
+# run obsoleto ainda poderia escrever no GitOps depois do novo.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  esteira:
+    # Workflow reutilizável nunca recebe mais permissão do que quem chama
+    # concede; sem `packages: write` o run morre em startup_failure.
+    permissions:
+      contents: write        # tag e release da versão (job `lancar`, só na main)
+      packages: write        # imagem e alias :<versao>
+      security-events: write # SARIF das varreduras (repositório público: aba Security)
+      actions: read
+    uses: slipalison/github-workflows/.github/workflows/pipeline.yml@main
+    with:
+      # Rust: fmt, clippy -D warnings, cargo-audit e llvm-cov (que já roda os
+      # testes, inclusive os de integração com Postgres 17 via testcontainers —
+      # o runner do GitHub tem Docker). Node: npm ci --ignore-scripts, build
+      # (com o lint soldado) e test com cobertura.
+      componentes: |
+        [
+          {"nome":"backend","linguagem":"rust","versao":"1.98","caminho":"backend","cobertura":80,"auditoria":true},
+          {"nome":"frontend","linguagem":"node","versao":"24","caminho":"frontend","cobertura":80}
+        ]
+
+      imagem: ghcr.io/slipalison/prumo
+      # Contexto na raiz: o Dockerfile copia de `backend/` e de `frontend/`.
+      contexto_build: "."
+      dockerfile: Dockerfile
+      severidade_bloqueante: CRITICAL
+
+      # Repositório público: CodeQL de graça, nas duas linguagens.
+      linguagens_codeql: '["rust","javascript-typescript"]'
+      caminho_iac: "."
+
+      # Público vai para o SonarQube Cloud. Um projeto, duas árvores, duas
+      # coberturas.
+      sonar_projeto: slipalison_prumo
+      sonar_organizacao: slipalison
+      sonar_modo: generico
+      sonar_linguagem: rust
+      sonar_comando_testes: >-
+        curl --proto '=https' --tlsv1.2 -fsSL
+        https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.9.1/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz
+        | tar xzf - -C "$HOME/.cargo/bin" &&
+        cargo llvm-cov --all-features --manifest-path backend/Cargo.toml
+        --lcov --output-path backend/resultados/lcov.info &&
+        npm ci --ignore-scripts --prefix frontend &&
+        npm test --prefix frontend
+      sonar_parametros: |
+        sonar.sources=backend/src,frontend/src
+        sonar.tests=backend/tests,frontend/src
+        sonar.test.inclusions=frontend/src/**/*.test.ts,frontend/src/**/*.test.tsx
+        sonar.exclusions=frontend/src/**/*.test.ts,frontend/src/**/*.test.tsx,frontend/dist/**,backend/target/**
+        sonar.rust.cargo.manifestPaths=backend/Cargo.toml
+        sonar.rust.lcov.reportPaths=backend/resultados/lcov.info
+        sonar.javascript.lcov.reportPaths=frontend/coverage/lcov.info
+
+      versionar: true
+      versao_inicial: "0.1.0"
+
+      # Nome do diretório em homelab-gitops/apps/. Vazio desliga o deploy:
+      # o values.yaml do GitOps só pode entrar DEPOIS da primeira imagem existir
+      # (tag inexistente prende o Rollout em Degraded).
+      app: ""
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      GITOPS_SSH_KEY: ${{ secrets.GITOPS_SSH_KEY }}
