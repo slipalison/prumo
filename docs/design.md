@@ -96,10 +96,11 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
   Hoje: Aportar, Carteira, Renda, Desempenho, Ajustes.
 - Ajustes agrupa **seções** (`SETTINGS_SECTIONS`,
   `frontend/src/features/settings/sections.ts`): Metas por classe, Critérios,
-  Objetivos e Saúde da carteira.
+  Objetivos, Saúde da carteira, Importar da B3 e Impostos.
   Seção nova também é uma linha. A lista de seções fica no topo de Ajustes
   (links com `aria-current="page"` na atual), cada seção tem endereço próprio
-  (`#/ajustes/metas`, `#/ajustes/criterios`, `#/ajustes/objetivos`, `#/ajustes/saude`) e uma seção por vez na tela.
+  (`#/ajustes/metas`, `#/ajustes/criterios`, `#/ajustes/objetivos`, `#/ajustes/saude`,
+  `#/ajustes/importar-b3`, `#/ajustes/impostos`) e uma seção por vez na tela.
 - Os links antigos `#/metas` e `#/criterios` seguem valendo: abrem a seção
   certa de Ajustes e trocam o endereço pelo novo, sem entrada nova no
   histórico (`LEGACY_ROUTES` em `lib/route.ts`).
@@ -417,7 +418,8 @@ planilha: uma meta no topo, o resto por baixo.
    vai usar ("Em branco vale o que o livro tinha na data com (09/11/2026)") e ele
    muda quando a data ex muda. Sem cotas naquela data, a folha avisa e só deixa
    lançar com a quantidade informada. A
-   prévia mostra bruto, IR retido e líquido (JCP perde 15%) e fala com
+   prévia mostra bruto, IR retido e líquido (JCP perde 15% até 2025 e 17,5%
+   desde 2026, pela data de pagamento) e fala com
    `aria-live`. Renda fixa por valor pede só o valor recebido.
 
 Na tela **Aportar**:
@@ -478,6 +480,59 @@ Na tela **Aportar**, abaixo do resultado do plano, um cartão "Seus objetivos"
 - Com o olho fechado, a meta e o aporte saem como `R$ ••••`, inclusive nos
   `aria-valuetext` e nos campos da folha; ficam o percentual, o mês estimado e
   os nomes.
+
+### 10. Ajustes › Impostos
+
+Seção de Ajustes (`#/ajustes/impostos`, uma linha em `SETTINGS_SECTIONS`).
+Responde "devo DARF este mês?" e "o que vai na declaração?" sem esconder que é
+estimativa. A regra e a ligação com o livro estão em `docs/ir.md`.
+
+1. **Aviso de responsabilidade**, sempre visível no topo (`role="note"`), em
+   faixa dourada: estimativa, não substitui o contador, confira antes de pagar
+   ou entregar.
+2. **Ano-calendário**: chips com os anos que têm regra (hoje 2025 e 2026). Abre
+   no ano de hoje; sem regra para ele, no último com regra. Ano sem regra no
+   servidor vira um cartão de erro com o motivo ("ainda não a de 2027"), nunca
+   a conta de outro ano.
+3. **Isentômetro** do mês de hoje (dezembro, num ano passado): o número grande
+   das vendas de ações, "de R$ 20.000,00 isentos", a barra (a mesma `LimitBar`
+   dos avisos, com o fio de prumo no limite e o percentual em texto) e a frase:
+   dentro do limite, quanto ainda cabe; passou, "o lucro das ações neste mês
+   paga 15%", em vermelho e escrito (a cor só reforça). Lembra que ETF, BDR e
+   FII não têm essa isenção e, se houve, mostra a cripto contra o limite dela.
+4. **Meses do ano**: tabela real (`<table>` em região com rolagem lateral),
+   uma linha por mês: vendas de ações, imposto do mês, DARF (código e valor),
+   vencimento e situação. "A pagar" (dourado) ou "Pago" (verde), com o botão
+   "Marcar como pago"/"Desmarcar" (o nome acessível diz o código e o mês). DARF
+   abaixo de dez reais aparece como "abaixo do mínimo, soma no mês seguinte".
+   Se o valor mudou depois de marcado, a linha avisa. Embaixo, o prejuízo a
+   compensar em 31/12 e, por mês com movimento, um `<details>` com a apuração
+   por grupo (resultado, prejuízo antes, compensado, base, alíquota, imposto,
+   prejuízo que fica) e a cripto.
+5. **Declaração do ano**: Bens e Direitos (ticker, grupo, código, rótulo com
+   acento, quantidade, situação em 31/12 pelo custo, preço médio) com
+   **Copiar** por linha; rendimentos isentos (09, 99, 20, 05) com o valor por
+   pagador; tributação exclusiva (JCP, líquido, bruto e retido); e a renda
+   variável do ano (DARF do ano e o prejuízo que passa para o ano seguinte).
+6. **O que o Prumo não calculou**: cada item do livro ou dos proventos que
+   ficou fora, com ticker, data, valor e o motivo em uma frase; depois a lista
+   fixa do que nunca entra (IR retido da nota, corretora, opções, exterior…).
+7. **Pontos a confirmar com contador**: as dúvidas de `docs/ir.md` § 5 entram
+   em caixa azul ao lado do número que elas mexem, nunca numa lista solta.
+8. **Saldo de antes do Prumo**: o que foi informado (ou "a conta começa do
+   zero em 1º de janeiro de 2025") e "Informar saldo"/"Editar saldo", que abre
+   o ano (chips) e os seis campos de dinheiro.
+
+Na **folha do ativo** (Carteira), abaixo do teto: "No imposto de renda", um
+`<select>` com os sete instrumentos, o padrão marcado "(padrão)" e a frase do
+que a escolha muda ("15% sobre o lucro, sem a isenção das ações…") e qual é o
+padrão. Renda fixa por valor não tem a escolha.
+
+Com o olho fechado, todo R$ e toda quantidade da seção (isentômetro, tabela,
+apuração, declaração, não calculado, saldo) sai mascarado, inclusive no nome
+acessível dos botões e da barra; percentuais, datas, códigos e tickers ficam. O
+"Copiar" leva o valor de verdade para a área de transferência: é o que a pessoa
+pediu, e a tela continua mascarada.
 
 ### Histórico
 

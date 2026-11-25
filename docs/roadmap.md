@@ -292,7 +292,8 @@ testes, docs, deploy e conferência em produção.
   - API:
     - `GET /api/v1/tax/months?year=`;
     - `GET /api/v1/tax/irpf/{year}`;
-    - `POST /api/v1/tax/darfs/{month}/paid`.
+    - `POST /api/v1/tax/darfs/{year}/{month}/paid`;
+    - `GET`/`PUT /api/v1/tax/carryforward` (saldo de antes do Prumo).
   - Tela **Impostos**.
 - **Riscos (os maiores do plano):**
   - Legislação muda (houve propostas recentes de unificar alíquotas): as

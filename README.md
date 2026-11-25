@@ -84,6 +84,15 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   negociação, com desdobramentos e o Tesouro Direto. Lançamento antigo editado
   ou apagado refaz a série dali em diante, em segundo plano. Detalhes em
   [`docs/desempenho.md`](docs/desempenho.md).
+- **Impostos** — em Ajustes: o isentômetro do mês (vendas de ações contra os
+  R$ 20 mil), o DARF de cada mês (6015 e 4600) com vencimento e a marca de
+  pago, e a declaração do ano para copiar (Bens e Direitos pelo custo em 31/12,
+  isentos e JCP), tudo saído do livro e dos proventos. Cada ativo tem o
+  instrumento fiscal (ação, ETF, BDR, FII, Fiagro, cripto ou fora), com padrão
+  pela classe e pelo nome e editável na folha. O que não foi calculado aparece
+  com o motivo, e as dúvidas jurídicas como "ponto a confirmar com contador".
+  É **estimativa**: não substitui o contador. Regras por ano (2025 e 2026),
+  com a fonte, em [`docs/ir.md`](docs/ir.md).
 
 No ar em <https://prumo.alisonamorim.com>, atrás do Cloudflare Access.
 

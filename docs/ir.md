@@ -274,8 +274,8 @@ mercado):
   10% das cotas): o Prumo supõe que valem.
 - IRPF mínimo (Lei 15.270/2025, art. 16-A) e a retenção de dividendos acima de
   R$ 50 mil: o Prumo guarda a regra, mas não apura o mínimo.
-- Multa e juros de DARF pago em atraso. Também não sabe se um DARF foi pago:
-  isso é da tela, na onda 2.
+- Multa e juros de DARF pago em atraso. A marca de "pago" é da pessoa, na
+  tela (§ 8), e não muda a conta.
 - Declaração em conjunto, espólio e não residente.
 - CNPJ da fonte pagadora: a declaração pede o CNPJ, e o Prumo só tem o ticker.
 
@@ -322,7 +322,7 @@ mercado):
 10. **P&R 706** remete à "pergunta 682" para o IR retido no day trade. Parece
     um erro de numeração: o tema está na 712.
 
-## 6. Como ler a saída (para a onda 2)
+## 6. Como ler a saída
 
 - `monthly::assess(&TaxInput, até_o_ano)` devolve um `MonthReport` por mês,
   com estas partes:
@@ -342,3 +342,126 @@ mercado):
   - os meses do ano;
   - o prejuízo e o DARF pendente em 31/12;
   - a sobra de IR retido.
+
+## 7. Ligação com o livro
+
+A ponte mora em `backend/src/domain/tax_book.rs` (pura, com teste) e é lida
+por `http/tax.rs`. Ela monta o `TaxInput` a partir do livro de lançamentos
+(`transactions`) e dos proventos (`income_events`), sempre em reais.
+
+### 7.1 Instrumento fiscal de cada ativo
+
+O IR não vê a carteira como a carteira se vê. Cada ativo tem
+`assets.tax_instrument` (migração 0015):
+
+| Instrumento | Quando é o padrão |
+|---|---|
+| `stock` | Ações Nacionais que não são ETF nem BDR |
+| `etf` | ETF de renda variável da B3: fundo de índice pelo nome ("fundo de índice", "ETF"), o ETF de bitcoin (Cripto negociado na B3), o de S&P 500 (Ações Internacionais na B3), o de IFIX |
+| `bdr` | código com 31 a 35 ou 39 no fim (`AAPL34`) ou DRN/DR1/DR2/DR3/DRE no nome |
+| `real_estate_fund` | FIIs |
+| `agribusiness_fund` | FIIs com "agro" no nome |
+| `crypto` | Cripto fora da B3 |
+| `unsupported` | Renda Fixa e Renda Fixa Internacional (inclusive Tesouro e ETF de IMA-B), ETF de renda fixa em outra classe, Ações Internacionais e REITs fora da B3 |
+
+- O padrão sai de `TaxInstrument::default_for` (classe, `listed_on_b3` e as
+  mesmas pistas de ETF e BDR que `quotes::classify_b3` usa). A migração 0015
+  faz a mesma conta em SQL para os ativos que já existiam, e o teste dela
+  confere as duas com uma carteira fictícia.
+- A pessoa troca na folha do ativo ("No imposto de renda"), com a explicação
+  de cada escolha. Sem escolha (`tax_instrument_custom = false`), o
+  instrumento acompanha o padrão quando a marca da B3 ou o nome mudam.
+- `unsupported` tira o ativo inteiro da conta e o lista em "não calculado".
+- Lançamento de ativo já removido usa o instrumento do mesmo ticker que
+  ainda está na carteira, ou o padrão da foto que o lançamento guardou.
+
+### 7.2 Do lançamento à operação do IR
+
+O preço médio da Receita é por ticker: os lançamentos se juntam pelo
+símbolo. Cada ticker é convertido na ordem do livro.
+
+| Lançamento | No IR |
+|---|---|
+| `opening` no começo do livro | posição de partida (`OpeningPosition`), com o custo do saldo inicial |
+| `opening` no meio do livro, com posição | bonificação com o custo informado (entram cotas com custo, sem negócio) |
+| `opening` depois de a posição zerar | compra |
+| `opening` sem preço | o ticker sai: sem custo não há preço médio |
+| `buy` / `sell` | compra e venda, com preço e taxas × câmbio do lançamento |
+| `split` / `reverse_split` | fator = (posição ± cotas) ÷ posição |
+| `bonus` | bonificação com o custo atribuído (zero sem preço) |
+| `adjustment` | muda a quantidade com o custo total igual, como no livro, e vira aviso |
+| `adjustment` que zera a posição | o ticker sai (se foi venda, falta o preço) |
+| `amortization` | o lançamento sai e vira aviso: o custo fica maior que o real |
+| `redemption` | o ticker sai (é regra de renda fixa) |
+
+- **Desdobramento e grupamento.** A B3 informa as cotas recebidas ou
+  perdidas, e o livro guarda assim; o domínio do IR quer o fator. A conversão
+  usa a posição do próprio IR naquele dia: o IR aplica os eventos do dia antes
+  dos negócios (`positions::replay`), então o fator sai sobre a posição antes
+  das compras e vendas do dia, e a quantidade no fim do dia fecha com a do
+  livro. Um grupamento de 3 para 1 tem fator 1/3, que não cabe em decimal: o
+  domínio arredonda a quantidade a 10 casas depois do fator (a precisão do
+  livro), e 99 cotas viram 33, não 32,999….
+- **Dólar.** Preço e taxa de cada lançamento vão a reais pelo `fx_rate`
+  gravado nele (o câmbio do dia do negócio).
+- **Corretora e IR retido.** O livro não guarda a corretora nem o IR retido da
+  nota: o day trade é casado como se fosse uma corretora só, e o DARF sai sem
+  abater o "dedo-duro" (fica um pouco maior que o real). A tela diz isso.
+- Um evento que não fecha com a posição do dia (desdobramento sem posição,
+  venda maior que a posição pela ordem do IR) tira o ticker da conta, com o
+  motivo.
+
+### 7.3 Proventos
+
+Entram os recebidos até hoje; estimativa (`source = estimate`) e
+provisionado (pagamento no futuro) não entram.
+
+| Provento | Ativo | No IRPF |
+|---|---|---|
+| dividendo | ação (ou ativo removido) | isento, `09` |
+| JCP | ação (ou ativo removido) | tributação exclusiva, `10` |
+| rendimento ou dividendo | FII ou Fiagro | isento, `99` |
+| rendimento | ativo removido | isento, `99` |
+| qualquer | BDR | fora: rendimento do exterior |
+| qualquer | ETF, cripto, fora do IR | fora |
+| amortização, outro | qualquer | fora |
+
+O JCP retido na fonte é **15% até 2025 e 17,5% desde 2026**, pela data do
+pagamento (`domain::income::jcp_withholding_rate`, a mesma alíquota da tabela
+do IR, conferida em teste).
+
+### 7.4 Saldo de antes do Prumo e DARF pago
+
+- `tax_carryforward` (0015): o prejuízo a compensar por grupo e o imposto
+  abaixo do mínimo ainda não pago, como estavam em 1º de janeiro do primeiro
+  ano apurado (`year`). Sem linha, a conta começa do zero no primeiro ano com
+  regra (2025). Com o saldo em 1/1/2026, pedir 2025 é erro
+  (`tax_year_before_balance`).
+- `tax_darf_payments` (0015): a marca de "paguei" por ano, mês e código, com o
+  valor de quando a pessoa marcou. Se o livro muda depois, a tela avisa que o
+  DARF de agora é outro valor. A marca não muda a conta.
+
+## 8. A tela Impostos
+
+Ajustes › Impostos (`#/ajustes/impostos`). Desenho em `docs/design.md` § 10.
+
+- O **aviso de responsabilidade** do topo desta página, sempre à vista.
+- O **isentômetro** do mês de hoje: vendas de ações contra o limite, com a
+  barra, e quanto ainda cabe.
+- Os **meses do ano**: vendas de ações, imposto, DARF (código e valor),
+  vencimento e a marca de pago; abaixo do mínimo, "soma no mês seguinte". Cada
+  mês com movimento abre a apuração por grupo (resultado, prejuízo antes,
+  compensado, base, alíquota, imposto, prejuízo que fica) e a cripto.
+- A **declaração do ano**: Bens e Direitos com o custo em 31/12, rendimentos
+  isentos e de tributação exclusiva, com grupo e código, cada linha com
+  "Copiar".
+- **O que não foi calculado**: o que saiu do livro e dos proventos, com o
+  motivo, e o que o Prumo nunca calcula (§ 3).
+- As **dúvidas do § 5** aparecem como "Ponto a confirmar com contador" ao lado
+  do número que elas mexem: o day trade no isentômetro (5.1), o prejuízo de
+  Fiagro (5.2), os códigos da declaração (5.3), a cripto por venda (5.4), o
+  DARF de novembro perto de 31/12 (5.5), a sobra de IR retido (5.6), o
+  dividendo com retenção (5.7) e o JCP líquido (5.8).
+- O **saldo de antes do Prumo**, para informar e editar.
+- O olho fechado mascara todo R$ e toda quantidade (percentuais e datas
+  ficam). O "Copiar" copia o valor de verdade: é o que a pessoa pediu.

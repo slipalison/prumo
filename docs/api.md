@@ -132,6 +132,10 @@ Ativo com nota 0 não recebe aporte.
 | `preview_stale` | 409 | `POST /imports/b3/commit` com um `digest` que não é o do plano refeito agora (a carteira ou as planilhas mudaram desde a prévia) |
 | `import_blocked` | 422 | `POST /imports/b3/commit` com conflito ou classe por confirmar (o detalhe só conta quantos) |
 | `quote_provider_unavailable` | 502 | busca de símbolo sem resposta do provedor |
+| `tax_year_not_covered` | 422 | IR de um ano sem regra cadastrada (hoje só 2025 e 2026); nunca a regra de outro ano |
+| `tax_year_before_balance` | 422 | IR de um ano antes do saldo de prejuízo informado |
+| `tax_book_invalid` | 422 | o livro não fecha para o IR (o detalhe diz o ticker) |
+| `darf_not_due` | 422 | marcar como pago um DARF que o Prumo não apurou a pagar |
 | `internal` | 500 | o resto (detalhe genérico; o log tem o porquê) |
 
 ## Rotas
@@ -195,7 +199,9 @@ A tela inteira numa chamada.
       "cost_basis": 1300.0,
       "unrealized_gain": 120.0,
       "realized_gain": 0.0,
-      "return_percent": 9.23
+      "return_percent": 9.23,
+      "tax_instrument": "real_estate_fund",
+      "tax_instrument_default": "real_estate_fund"
     }
   ],
   "profit": {
@@ -405,7 +411,8 @@ Qualquer subconjunto de:
   "score_override": null,
   "max_price": 30,
   "answers": { "4c1e…": true, "9a77…": null },
-  "listed_on_b3": true
+  "listed_on_b3": true,
+  "tax_instrument": "etf"
 }
 ```
 
@@ -418,6 +425,10 @@ hoje, com a diferença (o custo não muda). Compra e venda vão por `POST
 `false` grava e `null` apaga a resposta. Trocar `listed_on_b3` cota o ativo no
 mercado novo na hora; se a unidade passa a ser inteira, a quantidade que fica
 (a enviada ou a atual) tem de ser inteira. Responde `200` com o ativo.
+
+`tax_instrument` escolhe o instrumento fiscal (ver [Impostos](#impostos));
+`null` volta ao padrão. Sem escolha da pessoa, o instrumento segue o padrão
+quando `listed_on_b3` ou o nome mudam; com escolha, fica.
 
 ### `DELETE /api/v1/assets/{id}`
 
@@ -1325,7 +1336,8 @@ hoje já é recebido). Tudo é filtrado pela pessoa dona; id de outra pessoa é
 
 - `kind`: `dividend`, `jcp`, `reit_income`, `amortization` ou `other`.
 - `gross = amount_per_unit × quantity` (centavos). `withholding` é o IR retido
-  na fonte: **15% do bruto no JCP**, zero nos demais (dividendo e rendimento de
+  na fonte: **no JCP, 15% do bruto até 2025 e 17,5% desde 2026** (pela
+  `pay_date`; LC 224/2025), zero nos demais (dividendo e rendimento de
   FII são isentos para pessoa física); `net = gross − withholding`.
 - `status`: `received` ou `upcoming`, pela `pay_date`.
 - `source`: `manual` (lançado pela pessoa), `b3_import` (extrato da B3) ou
@@ -1774,6 +1786,169 @@ patrimônio; só os da classe no objetivo de classe). `projection` conta a parti
 de `after`, com as mesmas premissas de `GET /objectives`. Objetivo concluído (ou
 que já está na meta) não entra. `items` aceita até 200 itens e valor ≥ 0; sem
 itens, `after = current`. Não grava nada.
+
+## Impostos
+
+Estimativa do IR sobre bolsa e cripto a partir do livro e dos proventos. A
+regra (por ano-calendário, com a fonte de cada número), a ligação com o livro e
+o que fica fora estão em [`docs/ir.md`](ir.md). Tudo pelo dono.
+
+**Instrumento fiscal** (`tax_instrument` do ativo): `stock`, `etf`, `bdr`,
+`real_estate_fund`, `agribusiness_fund`, `crypto` ou `unsupported` (renda fixa,
+Tesouro, ETF de renda fixa, exterior fora de BDR: fora da conta). O padrão
+(`tax_instrument_default`) sai da classe, de `listed_on_b3` e do nome: o ETF de
+bitcoin da B3 é `etf`; o de IMA-B, `unsupported`.
+
+Ano sem regra cadastrada responde `422 tax_year_not_covered`.
+
+### `GET /api/v1/tax/months?year=2026`
+
+Os 12 meses do ano (sem `year`, o de hoje). Apura desde o primeiro ano com
+regra (ou desde o ano do saldo informado), então dezembro passa o prejuízo para
+janeiro do ano seguinte.
+
+```json
+{
+  "year": 2026,
+  "since_year": 2025,
+  "covered_years": [2025, 2026],
+  "today": "2026-11-25",
+  "months": [
+    {
+      "year": 2026,
+      "month": 5,
+      "sales": [
+        { "instrument": "stock", "common_sales": 24000.0, "day_trade_sales": 0.0, "common_result": 3000.0, "day_trade_result": 0.0 }
+      ],
+      "exemptions": [
+        { "id": "stock_sales", "sales": 24000.0, "limit": 20000.0, "remaining": 0.0, "exempt": false, "exempt_gain": 0.0 },
+        { "id": "crypto_sales", "sales": 0.0, "limit": 35000.0, "remaining": 35000.0, "exempt": true, "exempt_gain": 0.0 }
+      ],
+      "pools": [
+        { "pool": "common", "result": 3000.0, "loss_before": 0.0, "loss_used": 0.0, "base": 3000.0, "rate": 0.15, "tax": 450.0, "loss_after": 0.0 }
+      ],
+      "capital_gain": { "gains": 0.0, "losses": 0.0, "exempt": true, "base": 0.0, "tax": 0.0 },
+      "withholding": { "withheld": 0.0, "carried_in": 0.0, "used": 0.0, "carried_out": 0.0 },
+      "darfs": [
+        {
+          "code": "6015", "regime": "exchange_net_gain", "tax": 450.0, "pending_before": 0.0,
+          "total": 450.0, "payable": true, "amount": 450.0, "due_date": "2026-06-30",
+          "pending_after": 0.0,
+          "paid": { "amount": 450.0, "paid_at": "2026-06-20T12:00:00Z", "same_amount": true }
+        },
+        { "code": "4600", "regime": "capital_gain", "tax": 0.0, "pending_before": 0.0, "total": 0.0, "payable": false, "amount": 0.0, "due_date": "2026-06-30", "pending_after": 0.0, "paid": null }
+      ],
+      "notices": [],
+      "doubts": []
+    }
+  ],
+  "closing": {
+    "losses": { "common": 0.0, "day_trade": 0.0, "real_estate_fund": 100.0, "agribusiness_fund": 0.0 },
+    "pending_darf": { "exchange_net_gain": 0.0, "capital_gain": 0.0 }
+  },
+  "skipped": [
+    { "subject": "KNRI11", "date": "2026-03-10", "reason": "amortization", "amount": 10.0 }
+  ]
+}
+```
+
+- `sales` traz todo instrumento (com zero); `pools`, os quatro grupos de
+  compensação (`common`, `day_trade`, `real_estate_fund`, `agribusiness_fund`).
+- `darfs`: um por código (`6015` bolsa, `4600` cripto). `payable` diz se há
+  DARF a pagar no mês (R$ 10 ou mais, já com o acumulado de meses abaixo do
+  mínimo); `pending_after` é o que passa para o mês seguinte. `paid` é a marca
+  da pessoa, com o valor de quando marcou; `same_amount: false` diz que o livro
+  mudou depois.
+- `doubts`: os pontos de `docs/ir.md` § 5 que mexem num número do mês
+  (`day_trade_in_stock_exemption`, `agribusiness_separate_from_real_estate`,
+  `crypto_per_sale`, `year_end`).
+- `skipped`: o que ficou fora da conta. `reason`: `unsupported_instrument`,
+  `unknown_opening_cost`, `redemption`, `amortization`, `adjustment` (entrou
+  como no livro, com aviso), `adjustment_closes_position`,
+  `event_without_position`, `conflicting_instruments`. `date` nulo = o ativo
+  inteiro.
+
+### `GET /api/v1/tax/irpf/{year}`
+
+A declaração do ano-calendário.
+
+```json
+{
+  "year": 2025,
+  "since_year": 2025,
+  "covered_years": [2025, 2026],
+  "assets": [
+    {
+      "symbol": "WEGE3", "instrument": "stock", "quantity": 100.0, "total_cost": 2563.13,
+      "average_price": 25.63125, "group": "03", "code": "01",
+      "label": "Acoes (inclusive as listadas em bolsa)", "code_source": "…"
+    }
+  ],
+  "exempt_income": [
+    { "group": "isentos", "code": "09", "label": "Lucros e dividendos recebidos", "code_source": "…",
+      "gross": 50.0, "withheld": 0.0, "net": 50.0, "by_payer": [{ "symbol": "WEGE3", "gross": 50.0, "withheld": 0.0 }] }
+  ],
+  "exclusive_income": [
+    { "group": "exclusiva", "code": "10", "label": "Juros sobre capital proprio", "code_source": "…",
+      "gross": 100.0, "withheld": 15.0, "net": 85.0, "by_payer": [] }
+  ],
+  "year_end": { "losses": { "real_estate_fund": 100.0 }, "pending_darf": {} },
+  "withholding_left": 0.0,
+  "darf_total": 3816.59,
+  "doubts": ["irpf_codes", "interest_on_equity_net"],
+  "skipped": [{ "subject": "KNRI11", "date": "2025-03-10", "reason": "income_amortization", "amount": 10.0 }]
+}
+```
+
+- `assets`: Bens e Direitos, posição em 31/12 pelo **custo de aquisição** (não
+  o valor de mercado).
+- `exempt_income`: dividendos (`09`), FII e Fiagro (`99`), lucro isento de
+  ações (`20`) e de cripto (`05`). `exclusive_income`: JCP (`10`).
+- Proventos: os recebidos até hoje; estimativa (`source = estimate`) não
+  entra. `skipped` soma os do ano que ficam fora: `income_amortization`,
+  `income_other`, `income_from_abroad` (dividendo de BDR),
+  `income_out_of_scope`.
+- `doubts`: `irpf_codes`, `withholding_leftover`, `dividend_withholding`,
+  `interest_on_equity_net`.
+
+### `POST /api/v1/tax/darfs/{year}/{month}/paid`
+
+```json
+{ "code": "6015" }
+```
+
+Marca o DARF do mês como pago, com o valor de agora (marcar de novo atualiza o
+valor). Só um DARF que o Prumo apurou a pagar (`payable`); senão `422
+darf_not_due`. `code` fora de `6015`/`4600`: `422`; mês fora de 1–12: `404`.
+Responde `200` com o DARF (o objeto de `darfs`, com `paid`).
+
+`DELETE /api/v1/tax/darfs/{year}/{month}/paid?code=6015` tira a marca: `204`,
+ou `404` se não havia.
+
+### Saldo de antes do Prumo: `/api/v1/tax/carryforward`
+
+O prejuízo a compensar e o imposto abaixo do mínimo ainda não pago, como
+estavam em 1º de janeiro de `year` — o primeiro ano que o Prumo apura.
+
+`GET` (sem saldo informado: `informed: false`, zeros e o primeiro ano com
+regra):
+
+```json
+{
+  "year": 2025,
+  "informed": true,
+  "covered_years": [2025, 2026],
+  "common_loss": 1000.0,
+  "day_trade_loss": 0.0,
+  "real_estate_fund_loss": 0.0,
+  "agribusiness_fund_loss": 0.0,
+  "pending_exchange_darf": 0.0,
+  "pending_capital_gain_darf": 0.0
+}
+```
+
+`PUT` troca o saldo inteiro: `year` (com regra) e os seis valores (ausente =
+zero), em centavos e não negativos. Responde `200` com o `GET`.
 
 ## Operacional (porta interna 9090)
 
