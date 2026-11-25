@@ -33,6 +33,10 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   cinco maiores ou num setor, e classe rasa ou vazia. As cinco regras são suas:
   liga, desliga e escolhe o limite. O setor vem da B3 (ações) e da CVM (FIIs).
   Detalhes em [`docs/saude.md`](docs/saude.md).
+- **Desempenho** — patrimônio no tempo (aplicado × ganho) e rentabilidade pelo
+  método de cotas, contra CDI, IPCA e Ibovespa, com a tabela mês a mês. A
+  série nasce com uma foto diária da carteira depois do fechamento. Detalhes
+  em [`docs/desempenho.md`](docs/desempenho.md).
 
 No ar em <https://prumo.alisonamorim.com>, atrás do Cloudflare Access.
 
@@ -54,6 +58,7 @@ Documentos:
 - [`docs/saude.md`](docs/saude.md) — regras de saúde, fontes de setor e limitações
 - [`docs/design.md`](docs/design.md) — interface, identidade e movimento
 - [`docs/ir.md`](docs/ir.md) — regras de IR por ano, com fonte, e o que não é calculado
+- [`docs/desempenho.md`](docs/desempenho.md) — rentabilidade por cotas, índices e fontes
 - [`deploy/README.md`](deploy/README.md) — como o app chega ao cluster
 
 ## Rodar na máquina
@@ -92,6 +97,7 @@ npm run dev
 | `QUOTES_STREAM` | `true` | `false` desliga o preço ao vivo (fica o `chart` a cada `QUOTES_REFRESH_SECS`) |
 | `QUOTES_REFRESH_SECS` | `900` | intervalo da atualização automática (mín. 60) |
 | `SECTORS_ENABLED` | `true` | `false` desliga a busca de setor (B3 e CVM, a cada 30 dias) |
+| `SNAPSHOT_AT` | `19:00` | horário de Brasília da foto diária do desempenho (`HH:MM`), ou `off` |
 
 O binário recusa subir com configuração pela metade.
 

@@ -574,6 +574,88 @@ Tudo ou nada: uma regra inválida não grava nenhuma.
 - `empty_class` não tem limite: mandar `threshold` é `422`.
 - Regra desconhecida, campo desconhecido ou corpo que não é objeto: `422`.
 
+## Desempenho
+
+Patrimônio no tempo e rentabilidade contra os índices. Método, fontes e
+limites em [desempenho.md](desempenho.md). Tudo pelo dono, como o resto.
+
+### `GET /api/v1/history/net-worth?period=12m`
+
+O patrimônio no tempo, separado em aplicado e ganho. Uma foto por dia (horário
+de Brasília), tirada depois do fechamento; antes dela, o ponto de hoje é
+calculado na hora e vem com `partial: true`. Método em
+[`desempenho.md`](desempenho.md).
+
+`period`: `month` (desde o fim do mês passado), `ytd` (desde 31/12), `12m`
+(padrão) ou `all`. Outro valor é `422`. Os pontos começam no fechamento de
+base do período (o último em ou antes do começo dele).
+
+```json
+{
+  "period": "12m",
+  "starts_on": "2026-11-23",
+  "points": [
+    { "date": "2026-11-23", "market_value": 1000.0, "invested": 1000.0, "gain": 0.0, "partial": false },
+    { "date": "2026-11-25", "market_value": 1490.0, "invested": 1500.0, "gain": -10.0, "partial": true }
+  ]
+}
+```
+
+- `starts_on`: a primeira foto da pessoa (`null` sem série: carteira sem
+  ativo).
+- `invested`: a soma dos fluxos desde `starts_on`; a primeira foto entra
+  inteira. `gain = market_value - invested`.
+
+### `GET /api/v1/performance?period=12m&benchmarks=cdi,ipca,ibov`
+
+Rentabilidade pelo método de cotas (TWR) contra os índices, os cartões de 12
+meses e desde o início, e a tabela mês × ano. Percentuais de 0 a 100, com 4
+casas.
+
+`period` como acima. `benchmarks`: lista de `cdi`, `selic`, `ipca`, `ibov`
+(padrão `cdi,ipca,ibov`; índice desconhecido é `422`).
+
+```json
+{
+  "period": "12m",
+  "starts_on": "2026-11-23",
+  "window": { "from": "2026-11-23", "to": "2026-11-25" },
+  "return_percent": 1.2345,
+  "benchmarks": [
+    { "code": "cdi", "label": "CDI", "return_percent": 0.1016, "as_of": "2026-11-25" },
+    { "code": "ipca", "label": "IPCA", "return_percent": null, "as_of": null }
+  ],
+  "points": [
+    { "date": "2026-11-23", "portfolio": 0.0, "benchmarks": { "cdi": 0.0, "ipca": 0.0 } },
+    { "date": "2026-11-25", "portfolio": 1.2345, "benchmarks": { "cdi": 0.1016, "ipca": null } }
+  ],
+  "summary": {
+    "twelve_months": {
+      "from": "2026-11-23", "to": "2026-11-25", "return_percent": 1.2345,
+      "cdi_percent": 0.1016, "cdi_as_of": "2026-11-25",
+      "excess_over_cdi": 1.1317, "percent_of_cdi": 1215.0, "full_window": false
+    },
+    "since_start": { "...": "o mesmo formato" }
+  },
+  "years": [
+    { "year": 2026, "months": [null, null, null, null, null, null, null, null, null, null, 1.2345, null],
+      "return_percent": 1.2345, "cdi_percent": 0.1016 }
+  ]
+}
+```
+
+- `window`: as datas que a conta usou de fato (`from` é o fechamento de base;
+  se a série é mais nova que o período, é a primeira foto). `null`, com
+  `return_percent: null`, sem série.
+- `benchmarks[].return_percent` e os valores de `points[].benchmarks` são
+  `null` quando o índice ainda não tem dado na janela (o IPCA do mês sai no
+  mês seguinte); `as_of` é o último dia coberto por dado publicado.
+- `points[]`: tudo acumulado desde `window.from`, um ponto por foto.
+- `excess_over_cdi`: quanto a carteira rendeu acima (+) ou abaixo (−) do CDI,
+  de forma composta, `(1 + r) / (1 + cdi) - 1`. `percent_of_cdi`: `r / cdi`
+  em % (só com CDI positivo). `full_window`: a série cobre o período inteiro.
+- `years[].months`: janeiro a dezembro; `null` onde não há série.
+
 ## Operacional (porta interna 9090)
 
 `GET /healthz` (processo de pé), `GET /readyz` (`select 1` no Postgres),

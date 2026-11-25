@@ -82,4 +82,8 @@ egress:
   # preco ao vivo: o WebSocket do streamer do Yahoo
   - host: streamer.finance.yahoo.com
     port: 443
+  # desempenho: CDI, Selic e IPCA do SGS do Banco Central (o fechamento
+  # diario e o Ibovespa vem do `chart` do Yahoo, ja liberado acima)
+  - host: api.bcb.gov.br
+    port: 443
 versao: 0.1.0

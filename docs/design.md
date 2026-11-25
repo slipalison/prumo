@@ -215,6 +215,44 @@ A paleta dos setores (`--sector-1` a `--sector-7`, `--sector-other`,
 `--sector-none`) tem tom próprio nos dois temas e fica em `styles/health.css`;
 todos passam de 3:1 sobre o fundo (elementos gráficos), e o texto de cada fatia
 está na lista.
+### 6. Desempenho
+
+Na barra principal, depois de Carteira.
+
+Responde "estou ganhando do CDI?". Método e limites em
+[`desempenho.md`](desempenho.md).
+
+- Chips de período no topo: Mês · No ano · 12 meses · Desde o início.
+- Dois cartões lado a lado (empilhados no celular): **Últimos 12 meses** e
+  **Desde o início**, com a rentabilidade grande e assinada (`+1,23%`), a frase
+  "**1,13% acima do CDI** (118% do CDI). O CDI rendeu +0,10%." e as datas. Se a
+  série ainda não tem 12 meses, o cartão diz.
+- **Patrimônio no tempo:** patrimônio, aplicado e ganho; área dourada do
+  patrimônio e a linha tracejada neutra do aplicado. O ponto de hoje antes do
+  fechamento tem o selo "Hoje é parcial".
+- **Rentabilidade contra os índices:** a linha da carteira e uma por índice.
+  A legenda mostra o número de cada um no período e liga/desliga os índices
+  (`aria-pressed`). Ao passar o ponteiro (ou tocar), uma régua vertical marca o
+  dia e uma caixa lista o valor de cada linha. Índice sem dado no período
+  aparece como "sem dado", nunca como zero; uma nota diz até quando cada
+  índice foi publicado.
+- **Mês a mês:** tabela com os anos (o mais novo em cima), os doze meses, o ano
+  e o CDI do ano. É também a alternativa ao gráfico para leitor de tela (o
+  gráfico é `role="img"` com um resumo em texto).
+- **Gráficos:** SVG próprio, linha de 2px que se desenha ao entrar
+  (`pathLength` com mola), grade discreta, zero marcado na rentabilidade. Cores
+  das linhas, validadas para daltonismo e contraste ≥ 3:1 nos dois temas:
+  carteira âmbar (o dourado do dinheiro), CDI azul, IPCA laranja, Ibovespa
+  violeta — e cada índice com o próprio tracejado, para a cor não ser a única
+  pista. Texto nunca usa a cor da série. Alta e baixa levam sinal (+/−) além
+  do verde/vermelho.
+- **Olho fechado:** todo valor em R$ (patrimônio, aplicado, ganho, o eixo e a
+  régua do gráfico de patrimônio e o resumo para o leitor de tela) sai por
+  `useMoney()` como `R$ ••••`, e o ganho perde o sinal e a cor. As
+  rentabilidades são percentuais e ficam à vista, como na Carteira.
+- **Estado vazio honesto:** sem patrimônio, "Ainda não há série" com o caminho
+  para a Carteira; com uma foto só, "A série começa em DD/MM/AAAA" e nenhum
+  número inventado.
 
 ### Histórico
 
