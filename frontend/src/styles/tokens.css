@@ -1,0 +1,162 @@
+/*
+ * Tokens. Escuro é o padrão; o claro vale com data-theme="light" ou, sem
+ * atributo nenhum ("do sistema"), quando o sistema pede claro.
+ * Todo texto respeita 4,5:1 sobre --surface-strong nos dois temas.
+ */
+:root {
+  color-scheme: dark;
+
+  --font-sans: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Space Grotesk Variable", "Inter Variable", system-ui, sans-serif;
+
+  --r-xl: 28px;
+  --r-lg: 22px;
+  --r-md: 16px;
+  --r-sm: 12px;
+  --r-pill: 999px;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --bg: #070a14;
+  --bg-2: #0c1124;
+  --surface: rgba(17, 22, 42, 0.56);
+  --surface-strong: rgba(20, 26, 48, 0.88);
+  --surface-sunken: rgba(255, 255, 255, 0.045);
+  --surface-hover: rgba(255, 255, 255, 0.07);
+  --border: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.18);
+
+  --text: #eef1f8;
+  --text-muted: #b1b9cf;
+  --text-subtle: #939cb6;
+
+  --gold-1: #ffe6ad;
+  --gold: #f5c25b;
+  --gold-2: #e39a2d;
+  --gold-ink: #231400;
+  --gold-text: #f7c96a;
+  --gold-glow: rgba(245, 194, 91, 0.45);
+
+  --success: #3ddc97;
+  --danger: #ff7d8a;
+  --danger-surface: rgba(255, 125, 138, 0.12);
+  --info: #8ab4ff;
+
+  --shadow-lg: 0 30px 70px -30px rgba(0, 0, 0, 0.8), 0 10px 30px -18px rgba(0, 0, 0, 0.6);
+  --shadow-md: 0 14px 40px -20px rgba(0, 0, 0, 0.75);
+  --inner-light: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+
+  --aurora-1: #4f46e5;
+  --aurora-2: #0d9488;
+  --aurora-3: #7c3aed;
+  --aurora-4: #d97706;
+  --aurora-opacity: 0.5;
+  --grain-opacity: 0.06;
+
+  --c-br_stocks: #34d399;
+  --c-br_reits: #fbbf24;
+  --c-intl_stocks: #38bdf8;
+  --c-us_reits: #f472b6;
+  --c-crypto: #a78bfa;
+  --c-fixed_income: #fb923c;
+  --c-intl_fixed_income: #c4b5fd;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #eef1f8;
+  --bg-2: #e2e7f3;
+  --surface: rgba(255, 255, 255, 0.6);
+  --surface-strong: rgba(255, 255, 255, 0.92);
+  --surface-sunken: rgba(15, 23, 42, 0.05);
+  --surface-hover: rgba(15, 23, 42, 0.06);
+  --border: rgba(15, 23, 42, 0.09);
+  --border-strong: rgba(15, 23, 42, 0.18);
+
+  --text: #0e1326;
+  --text-muted: #3d4662;
+  --text-subtle: #515b78;
+
+  --gold-1: #ffe2a0;
+  --gold: #f2b73d;
+  --gold-2: #d68c19;
+  --gold-ink: #231400;
+  --gold-text: #8a5200;
+  --gold-glow: rgba(242, 183, 61, 0.4);
+
+  --success: #0d8656;
+  --danger: #c22a3e;
+  --danger-surface: rgba(194, 42, 62, 0.09);
+  --info: #2457c5;
+
+  --shadow-lg: 0 30px 60px -30px rgba(30, 41, 80, 0.35), 0 10px 30px -20px rgba(30, 41, 80, 0.25);
+  --shadow-md: 0 14px 34px -20px rgba(30, 41, 80, 0.35);
+  --inner-light: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+
+  --aurora-1: #818cf8;
+  --aurora-2: #2dd4bf;
+  --aurora-3: #c084fc;
+  --aurora-4: #fbbf24;
+  --aurora-opacity: 0.38;
+  --grain-opacity: 0.04;
+
+  --c-br_stocks: #047857;
+  --c-br_reits: #b45309;
+  --c-intl_stocks: #0369a1;
+  --c-us_reits: #be185d;
+  --c-crypto: #6d28d9;
+  --c-fixed_income: #c2410c;
+  --c-intl_fixed_income: #5b4bc4;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+
+    --bg: #eef1f8;
+    --bg-2: #e2e7f3;
+    --surface: rgba(255, 255, 255, 0.6);
+    --surface-strong: rgba(255, 255, 255, 0.92);
+    --surface-sunken: rgba(15, 23, 42, 0.05);
+    --surface-hover: rgba(15, 23, 42, 0.06);
+    --border: rgba(15, 23, 42, 0.09);
+    --border-strong: rgba(15, 23, 42, 0.18);
+
+    --text: #0e1326;
+    --text-muted: #3d4662;
+    --text-subtle: #515b78;
+
+    --gold-1: #ffe2a0;
+    --gold: #f2b73d;
+    --gold-2: #d68c19;
+    --gold-ink: #231400;
+    --gold-text: #8a5200;
+    --gold-glow: rgba(242, 183, 61, 0.4);
+
+    --success: #0d8656;
+    --danger: #c22a3e;
+    --danger-surface: rgba(194, 42, 62, 0.09);
+    --info: #2457c5;
+
+    --shadow-lg: 0 30px 60px -30px rgba(30, 41, 80, 0.35), 0 10px 30px -20px rgba(30, 41, 80, 0.25);
+    --shadow-md: 0 14px 34px -20px rgba(30, 41, 80, 0.35);
+    --inner-light: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+
+    --aurora-1: #818cf8;
+    --aurora-2: #2dd4bf;
+    --aurora-3: #c084fc;
+    --aurora-4: #fbbf24;
+    --aurora-opacity: 0.38;
+    --grain-opacity: 0.04;
+
+    --c-br_stocks: #047857;
+    --c-br_reits: #b45309;
+    --c-intl_stocks: #0369a1;
+    --c-us_reits: #be185d;
+    --c-crypto: #6d28d9;
+    --c-fixed_income: #c2410c;
+    --c-intl_fixed_income: #5b4bc4;
+  }
+}

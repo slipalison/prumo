@@ -1,0 +1,271 @@
+import { useId, useState } from "react";
+import { errorMessage } from "../../api/client";
+import { useDeleteAsset, useUpdateAsset } from "../../api/queries";
+import type { Asset, Portfolio, UpdateAssetRequest } from "../../api/types";
+import { AnswerToggle } from "../../components/AnswerToggle";
+import { IconSparkle, IconTrash } from "../../components/icons";
+import { MagneticButton } from "../../components/MagneticButton";
+import { MoneyInput } from "../../components/MoneyInput";
+import { QuantityInput } from "../../components/QuantityInput";
+import { ScoreBadge } from "../../components/ScoreBadge";
+import { ScoreSlider } from "../../components/ScoreSlider";
+import { Sheet } from "../../components/Sheet";
+import { useToast } from "../../components/toastContext";
+import { CLASS_META } from "../../lib/assetClasses";
+import { formatBRL, formatRelative } from "../../lib/format";
+import { assetName } from "../../lib/rating";
+import { answeredCount, answersDiff, checklistScore, type Answer } from "../../lib/score";
+
+type EditAssetSheetProps = {
+  asset: Asset | null;
+  portfolio: Portfolio;
+  onClose: () => void;
+  /**
+   * Dica curta no topo. Com ela, a folha abre para DAR NOTA: o checklist vem
+   * primeiro, antes de quantidade e preço.
+   */
+  intro?: string | undefined;
+  /** Chamado depois de salvar de verdade (não quando fecha sem mudança). */
+  onSaved?: ((asset: Asset) => void) | undefined;
+};
+
+export function EditAssetSheet({ asset, portfolio, onClose, intro, onSaved }: EditAssetSheetProps) {
+  return (
+    <Sheet
+      open={asset !== null}
+      onClose={onClose}
+      title={asset ? assetName(asset) : ""}
+      description={asset ? `${asset.display_name} · ${CLASS_META[asset.asset_class].label}` : undefined}
+    >
+      {asset && (
+        <EditAssetForm key={asset.id} asset={asset} portfolio={portfolio} intro={intro} onDone={onClose} onSaved={onSaved} />
+      )}
+    </Sheet>
+  );
+}
+
+function priceCaption(asset: Asset): string {
+  if (asset.price_source === "manual") return "preço manual";
+  if (asset.price_source === "missing") return "sem cotação";
+  return `cotação ${formatRelative(asset.quote_updated_at)}`;
+}
+
+type EditAssetFormProps = {
+  asset: Asset;
+  portfolio: Portfolio;
+  intro: string | undefined;
+  onDone: () => void;
+  onSaved: ((asset: Asset) => void) | undefined;
+};
+
+function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFormProps) {
+  const ids = { quantity: useId(), amount: useId(), price: useId(), score: useId(), manualToggle: useId(), priceToggle: useId() };
+  const meta = CLASS_META[asset.asset_class];
+  const valueBased = meta.unit === "value";
+  const questions = meta.checklist ? portfolio.checklists[meta.checklist] : [];
+
+  const [quantity, setQuantity] = useState(asset.quantity);
+  const [useManualPrice, setUseManualPrice] = useState(asset.manual_price !== null);
+  const [manualPrice, setManualPrice] = useState(asset.manual_price ?? asset.unit_price ?? 0);
+  const [useManualScore, setUseManualScore] = useState(asset.score_override !== null);
+  const [scoreOverride, setScoreOverride] = useState(asset.score_override ?? 5);
+  const [answers, setAnswers] = useState<Record<string, Answer>>({ ...asset.answers });
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const update = useUpdateAsset();
+  const remove = useDeleteAsset();
+  const toast = useToast();
+  const name = assetName(asset);
+
+  const manualScoreActive = useManualScore || meta.checklist === null;
+  const liveScore = manualScoreActive ? scoreOverride : checklistScore(answers, questions);
+
+  const buildBody = (): UpdateAssetRequest => {
+    const body: UpdateAssetRequest = {};
+    if (quantity !== asset.quantity) {
+      if (valueBased) body.amount = quantity;
+      else body.quantity = quantity;
+    }
+    if (!valueBased) {
+      if (useManualPrice && manualPrice !== asset.manual_price) {
+        body.manual_price = manualPrice;
+      } else if (!useManualPrice && asset.manual_price !== null) {
+        body.manual_price = null;
+      }
+    }
+    if (manualScoreActive) {
+      if (scoreOverride !== asset.score_override) body.score_override = scoreOverride;
+    } else if (asset.score_override !== null) {
+      body.score_override = null;
+    }
+    if (meta.checklist) {
+      const diff = answersDiff(asset.answers, answers);
+      if (diff) body.answers = diff;
+    }
+    return body;
+  };
+
+  const save = () => {
+    const body = buildBody();
+    if (Object.keys(body).length === 0) {
+      onDone();
+      return;
+    }
+    update.mutate(
+      { id: asset.id, body },
+      {
+        onSuccess: (saved) => {
+          toast({ tone: "success", message: `${name} atualizado.` });
+          onSaved?.(saved);
+          onDone();
+        },
+      },
+    );
+  };
+
+  const confirmRemove = () => {
+    remove.mutate(asset.id, {
+      onSuccess: () => {
+        toast({ tone: "info", message: `${name} saiu da carteira.` });
+        onDone();
+      },
+    });
+  };
+
+  const amountBlock = valueBased ? (
+    <MoneyInput id={ids.amount} label="Valor atual" value={quantity} onChange={setQuantity} />
+  ) : (
+    <QuantityInput id={ids.quantity} label="Quantidade" value={quantity} onChange={setQuantity} fractional={meta.unit === "fraction"} />
+  );
+
+  const priceBlock = !valueBased && (
+    <>
+      <div className="switch-row">
+        <label htmlFor={ids.priceToggle} className="switch-row__label">
+          Usar preço manual
+          <span className="field__hint">Vence a cotação automática.</span>
+        </label>
+        <input
+          id={ids.priceToggle}
+          type="checkbox"
+          role="switch"
+          className="switch"
+          checked={useManualPrice}
+          onChange={(event) => setUseManualPrice(event.target.checked)}
+        />
+      </div>
+      {useManualPrice && <MoneyInput id={ids.price} label="Preço por unidade" value={manualPrice} onChange={setManualPrice} />}
+    </>
+  );
+
+  const scoreBlock = (
+    <>
+      {meta.checklist && (
+        <section className="edit-asset__checklist" aria-label="Checklist">
+          <div className="edit-asset__checklist-head">
+            <h3 className="section-title">Checklist</h3>
+            <span className="field__hint">
+              {answeredCount(answers, questions)} de {questions.length} respondidas
+            </span>
+          </div>
+          {!useManualScore && (
+            <div className="answers">
+              {questions.map((q) => (
+                <AnswerToggle
+                  key={q.id}
+                  questionId={q.id}
+                  prompt={q.prompt}
+                  value={answers[q.id] ?? null}
+                  onChange={(value) => setAnswers((current) => ({ ...current, [q.id]: value }))}
+                />
+              ))}
+              {questions.length === 0 && <p className="field__hint">Nenhuma pergunta. Crie as suas em Critérios.</p>}
+            </div>
+          )}
+          <div className="switch-row">
+            <label htmlFor={ids.manualToggle} className="switch-row__label">
+              Definir a nota na mão
+              <span className="field__hint">Ignora o checklist para este ativo.</span>
+            </label>
+            <input
+              id={ids.manualToggle}
+              type="checkbox"
+              role="switch"
+              className="switch"
+              checked={useManualScore}
+              onChange={(event) => setUseManualScore(event.target.checked)}
+            />
+          </div>
+        </section>
+      )}
+      {manualScoreActive && <ScoreSlider id={ids.score} value={scoreOverride} onChange={setScoreOverride} />}
+      {liveScore === 0 && <p className="inline-notice">Com nota 0, este ativo não recebe aporte.</p>}
+    </>
+  );
+
+  return (
+    <div className="edit-asset">
+      {intro && (
+        <p className="edit-asset__intro">
+          <IconSparkle /> {intro}
+        </p>
+      )}
+
+      <div className="edit-asset__summary">
+        <div>
+          <span className="eyebrow">Hoje</span>
+          <strong className="edit-asset__value">{formatBRL(asset.current_value)}</strong>
+          {!valueBased && (
+            <span className="edit-asset__caption">
+              {asset.unit_price !== null && asset.price_source !== "missing" ? formatBRL(asset.unit_price) : "—"} ·{" "}
+              {priceCaption(asset)}
+            </span>
+          )}
+        </div>
+        <ScoreBadge score={liveScore} size="lg" />
+      </div>
+
+      {intro ? (
+        <>
+          {scoreBlock}
+          {amountBlock}
+          {priceBlock}
+        </>
+      ) : (
+        <>
+          {amountBlock}
+          {priceBlock}
+          {scoreBlock}
+        </>
+      )}
+
+      {(update.isError || remove.isError) && (
+        <p className="form-error" role="alert">
+          {errorMessage(update.error ?? remove.error)}
+        </p>
+      )}
+
+      <MagneticButton onClick={save} loading={update.isPending} className="edit-asset__save">
+        Salvar
+      </MagneticButton>
+
+      <div className="danger-zone">
+        {confirmDelete ? (
+          <div className="danger-zone__confirm" role="group" aria-label="Confirmar remoção">
+            <span>Remover {name} da carteira?</span>
+            <MagneticButton variant="danger" magnetic={false} loading={remove.isPending} onClick={confirmRemove}>
+              Remover
+            </MagneticButton>
+            <MagneticButton variant="ghost" magnetic={false} onClick={() => setConfirmDelete(false)}>
+              Cancelar
+            </MagneticButton>
+          </div>
+        ) : (
+          <button type="button" className="link-btn link-btn--danger" onClick={() => setConfirmDelete(true)}>
+            <IconTrash /> Remover da carteira
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}

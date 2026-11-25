@@ -1,0 +1,21 @@
+import type { Asset } from "../api/types";
+import { CLASS_META } from "./assetClasses";
+
+/** Ativo de classe com checklist que ainda não tem nota — e por isso não recebe aporte. */
+export function needsRating(asset: Pick<Asset, "asset_class" | "score">): boolean {
+  return CLASS_META[asset.asset_class].checklist !== null && asset.score <= 0;
+}
+
+export function assetName(asset: Pick<Asset, "symbol" | "display_name">): string {
+  return asset.symbol ?? asset.display_name;
+}
+
+/** A dica do topo da folha quando ela abre para dar nota. */
+export function ratingIntro(asset: Pick<Asset, "symbol" | "display_name">): string {
+  return `Responda o checklist para o ${assetName(asset)} ganhar nota — cada sim soma 1.`;
+}
+
+/** Acha o ativo de um aviso pelo que o servidor manda em `symbols`. */
+export function findAssetByLabel(assets: Asset[], label: string): Asset | undefined {
+  return assets.find((a) => a.symbol === label) ?? assets.find((a) => a.display_name === label);
+}

@@ -1,0 +1,14 @@
+{
+  "name": "Prumo",
+  "short_name": "Prumo",
+  "description": "Diga quanto vai aportar e veja o que comprar para a carteira voltar ao eixo.",
+  "lang": "pt-BR",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#070a14",
+  "theme_color": "#070a14",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
