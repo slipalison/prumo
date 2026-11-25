@@ -168,15 +168,15 @@ describe("Alertas: exemplo do resumo", () => {
   it("mostra só os tipos ligados e acompanha a escolha de 'sem valores'", async () => {
     const { user } = open(linkedAlerts());
     const digest = await screen.findByRole("group", { name: "Exemplo do resumo" });
-    expect(within(digest).getByText("Proventos amanha")).toBeInTheDocument();
-    expect(digest).toHaveTextContent(/KNRI11 paga amanha: R\$\s90,00 liquidos\./);
+    expect(within(digest).getByText("Proventos amanhã")).toBeInTheDocument();
+    expect(digest).toHaveTextContent(/KNRI11 paga amanhã: R\$\s90,00 líquidos\./);
 
     await user.click(screen.getByRole("switch", { name: "Sem valores no resumo" }));
-    expect(digest).toHaveTextContent("- KNRI11 paga amanha.");
+    expect(digest).toHaveTextContent("- KNRI11 paga amanhã.");
     expect(digest.textContent).not.toMatch(/R\$/);
 
     await user.click(screen.getByRole("switch", { name: "Provento que cai amanhã" }));
-    expect(within(digest).queryByText("Proventos amanha")).not.toBeInTheDocument();
+    expect(within(digest).queryByText("Proventos amanhã")).not.toBeInTheDocument();
   });
 
   it("sem nenhum tipo ligado, diz que nada será enviado", async () => {

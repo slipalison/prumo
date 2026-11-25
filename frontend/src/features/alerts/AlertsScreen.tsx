@@ -412,12 +412,12 @@ function PreferencesCard({ alerts }: { alerts: Alerts }) {
         <h2 id={`${baseId}-preview`} className="section-title">
           Como o resumo fica
         </h2>
-        <p className="field__hint">Exemplo com dados fictícios, só para mostrar o formato. O texto vai sem acento, como chega.</p>
+        <p className="field__hint">Exemplo com dados fictícios, só para mostrar o formato.</p>
         {preview.length === 0 ? (
           <p>Nenhum tipo ligado: nada será enviado.</p>
         ) : (
           <div className="alerts__digest" role="group" aria-label="Exemplo do resumo">
-            <p className="alerts__digest-title">Prumo - resumo de 25/11</p>
+            <p className="alerts__digest-title">Prumo – resumo de 25/11</p>
             {preview.map((section) => (
               <div key={section.title}>
                 <p className="alerts__digest-section">{section.title}</p>

@@ -51,9 +51,8 @@ export type DigestSection = { title: string; lines: string[] };
 
 /**
  * Como o resumo fica no Telegram, com dados FICTÍCIOS. Espelha o texto que o
- * servidor monta (sem acento, de propósito: é o que chega), só dos tipos
- * ligados. `hideValues` é a escolha "sem valores" do resumo; `money` é o olho
- * da tela, que mascara o exemplo também.
+ * servidor monta, só dos tipos ligados. `hideValues` é a escolha "sem valores" do resumo;
+ * `money` é o olho da tela, que mascara o exemplo também.
  */
 export function sampleDigest(types: AlertType[], hideValues: boolean, money: Money): DigestSection[] {
   const on = new Set(types.filter((t) => t.enabled && t.available).map((t) => t.kind));
@@ -63,16 +62,16 @@ export function sampleDigest(types: AlertType[], hideValues: boolean, money: Mon
   };
   add(
     "income_tomorrow",
-    "Proventos amanha",
-    hideValues ? "- KNRI11 paga amanha." : `- KNRI11 paga amanha: ${money.brl(90)} liquidos.`,
+    "Proventos amanhã",
+    hideValues ? "- KNRI11 paga amanhã." : `- KNRI11 paga amanhã: ${money.brl(90)} líquidos.`,
   );
-  add("class_drift", "Classes fora da meta", "- Fundos Imobiliarios esta com 28,4% da carteira (meta 20%), 8,4 p.p. acima.");
+  add("class_drift", "Classes fora da meta", "- Fundos Imobiliários está com 28,4% da carteira (meta 20%), 8,4 p.p. acima.");
   add(
     "price_below_ceiling",
-    "No seu teto de preco",
+    "No seu teto de preço",
     hideValues
-      ? "- ITSA4 voltou a ficar no seu teto de preco ou abaixo."
-      : `- ITSA4 voltou a ficar no seu teto de preco: ${money.brl(9.5)} (teto ${money.brl(10)}).`,
+      ? "- ITSA4 voltou a ficar no seu teto de preço ou abaixo."
+      : `- ITSA4 voltou a ficar no seu teto de preço: ${money.brl(9.5)} (teto ${money.brl(10)}).`,
   );
   add(
     "objective_achieved",
@@ -81,10 +80,10 @@ export function sampleDigest(types: AlertType[], hideValues: boolean, money: Mon
   );
   add(
     "health_warning",
-    "Saude da carteira",
+    "Saúde da carteira",
     hideValues
-      ? "- KNRI11 esta com 23,5% da carteira (limite 15%)."
-      : `- KNRI11 esta com 23,5% da carteira (limite 15%). Um aporte de cerca de ${money.brl(1234.5)} em outros ativos volta ao limite.`,
+      ? "- KNRI11 está com 23,5% da carteira (limite 15%)."
+      : `- KNRI11 está com 23,5% da carteira (limite 15%). Um aporte de cerca de ${money.brl(1234.5)} em outros ativos volta ao limite.`,
   );
   return sections;
 }

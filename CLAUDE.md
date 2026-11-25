@@ -4,8 +4,9 @@
 
 - **Código em inglês**: arquivos, tipos, funções, variáveis, banco e campos
   JSON. Português só em comentário, `docs/`, `.md`, mensagens de commit/PR e no
-  texto que a pessoa lê. Texto gerado no servidor vai sem acento (atravessa log);
-  no navegador, com acento.
+  texto que a pessoa lê. Sem acento só o que atravessa log: log e erro HTTP do
+  servidor. Texto que a pessoa lê, na tela ou no Telegram (UTF-8), vai em
+  português correto, com acento.
 - **Commits em Conventional Commits**, em português: `tipo(escopo)!: assunto`
   (`feat fix perf refactor docs test build ci chore style revert`). O hook
   `commit-msg` vem de `core.hooksPath = D:/REPO/github-workflows/hooks` — não

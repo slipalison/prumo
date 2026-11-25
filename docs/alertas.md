@@ -66,7 +66,7 @@ despejaria tudo de uma vez.
 | `price_below_ceiling` | um ativo com teto de preço voltou a custar o teto ou menos (voltou a ser comprável no aporte) | — |
 | `objective_achieved` | um objetivo seu passou a constar como atingido (`objectives.achieved_at`) | — |
 | `tax_exemption` | isentômetro de ações acima de X% do limite mensal | **ainda não disponível**, ver abaixo |
-| `health_warning` | uma regra de [Saúde da carteira](saude.md) passou a avisar (regra + ativo, setor ou classe) | os da própria Saúde |
+| `health_warning` | uma regra de [Saúde da carteira](saude.md) passou a avisar (regra + ativo, setor ou classe) | os da própria Saúde; entram também as de renda (provento em todo mês e pagador acima do limite). Sem valores, o pagador sai só com o percentual |
 
 Todos vêm ligados, menos o isentômetro. O resumo sai **uma vez por dia**, no
 horário que você escolher (padrão **08:00, horário de Brasília**), e só se
@@ -114,8 +114,11 @@ O olho de ocultar valores da barra é outra coisa: esconde a **tela** neste
 navegador; a escolha "sem valores" vale para o que **sai do servidor**. A tela
 mostra um exemplo do resumo (com dados fictícios) que segue as duas.
 
-O texto sai **sem acento** (convenção do servidor para o que atravessa log).
-O token nunca aparece em log, em erro nem em resposta da API: o erro de rede é
+O texto do resumo, do teste e das respostas do bot (`/start`, `/stop`, código
+inválido ou vencido) é o que você lê no Telegram, que é UTF-8: vai em português
+correto, **com acento**, como a tela. A regra de texto sem acento existe por
+causa do **log**: log e erro HTTP do servidor (`title` e `detail`, mensagens de
+log) seguem sem acento. O token nunca aparece em log, em erro nem em resposta da API: o erro de rede é
 limpo da URL (o token mora nela, na Bot API) e a `Config` o imprime como
 `Secret(***)`.
 

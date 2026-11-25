@@ -457,8 +457,9 @@ impl AlertService {
                 .collect(),
             AlertKind::HealthWarning => {
                 let health_config = self.store.health_config(user).await?;
+                let income = self.store.income_history(user, today).await?;
                 let evaluation =
-                    health::evaluate(&health_config, &health_assets(view), view.targets);
+                    health::evaluate(&health_config, &health_assets(view), view.targets, &income);
                 evaluation
                     .warnings
                     .into_iter()

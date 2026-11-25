@@ -188,8 +188,8 @@ async fn linking_by_code_and_reading_updates() {
     assert!(settings.linked_at.is_some());
     let replies = fake.texts_to(777);
     assert_eq!(replies.len(), 1);
-    assert!(replies[0].starts_with("Pronto: este chat esta vinculado"));
-    assert!(replies[0].is_ascii());
+    assert!(replies[0].starts_with("Pronto: este chat está vinculado"));
+    assert!(replies[0].contains("resumo diário"));
     // O offset foi guardado: a próxima leitura continua de 11.
     assert_eq!(db.store.telegram_offset().await.unwrap(), 11);
 
@@ -201,7 +201,7 @@ async fn linking_by_code_and_reading_updates() {
     )]);
     alerts.poll_cycle().await.unwrap();
     assert_eq!(*fake.offsets.lock().unwrap(), [0, 11]);
-    assert!(fake.texts_to(888)[0].starts_with("Codigo invalido ou vencido"));
+    assert!(fake.texts_to(888)[0].starts_with("Código inválido ou vencido"));
     assert_eq!(
         db.store.alert_settings(ana).await.unwrap().chat_id,
         Some(777),
@@ -236,8 +236,8 @@ async fn linking_by_code_and_reading_updates() {
         message(14, 902, "private", &format!("/start {}", first.code)),
     ]);
     alerts.poll_cycle().await.unwrap();
-    assert!(fake.texts_to(901)[0].starts_with("Codigo invalido"));
-    assert!(fake.texts_to(902)[0].starts_with("Codigo invalido"));
+    assert!(fake.texts_to(901)[0].starts_with("Código inválido"));
+    assert!(fake.texts_to(902)[0].starts_with("Código inválido"));
     assert_eq!(db.store.alert_settings(beto).await.unwrap().chat_id, None);
 
     // Grupo é ignorado (nem resposta, nem gasto do código); mensagem solta também.
@@ -257,7 +257,7 @@ async fn linking_by_code_and_reading_updates() {
     // /start sem código explica; o `@NomeDoBot` do grupo vale como /start.
     fake.deliver(vec![message(18, 904, "private", "/start")]);
     alerts.poll_cycle().await.unwrap();
-    assert!(fake.texts_to(904)[0].contains("gere um codigo"));
+    assert!(fake.texts_to(904)[0].contains("gere um código"));
     fake.deliver(vec![message(
         19,
         905,
@@ -294,7 +294,7 @@ async fn linking_by_code_and_reading_updates() {
     assert_eq!(db.store.alert_settings(ana).await.unwrap().chat_id, None);
     let texts = fake.texts_to(905);
     assert!(texts[texts.len() - 2].starts_with("Desvinculado"));
-    assert!(texts[texts.len() - 1].starts_with("Este chat nao estava vinculado"));
+    assert!(texts[texts.len() - 1].starts_with("Este chat não estava vinculado"));
 
     // Desvincular pela tela.
     db.store.link_alert_chat(ana, 1234, now()).await.unwrap();
@@ -487,15 +487,15 @@ async fn the_daily_digest_only_says_what_is_new() {
     );
     let texts = fake.texts_to(ana.chat);
     assert_eq!(texts.len(), 1);
-    assert!(texts[0].starts_with("Prumo - resumo de "), "{}", texts[0]);
+    assert!(texts[0].starts_with("Prumo – resumo de "), "{}", texts[0]);
     assert!(
-        texts[0].contains("KNRI11 paga amanha: R$ 11,00 liquidos."),
+        texts[0].contains("KNRI11 paga amanhã: R$ 11,00 líquidos."),
         "{}",
         texts[0]
     );
     assert!(!texts[0].contains("WEGE3"), "{}", texts[0]);
     assert!(!texts[0].contains("Classes fora da meta"), "{}", texts[0]);
-    assert!(texts[0].is_ascii());
+    assert!(texts[0].contains("líquidos"));
     assert_eq!(
         db.store.alert_settings(ana.user).await.unwrap().last_run_on,
         Some(local_date(day0))
@@ -515,7 +515,7 @@ async fn the_daily_digest_only_says_what_is_new() {
     assert_eq!(report.sent, 1);
     let texts = fake.texts_to(ana.chat);
     assert!(
-        texts[1].contains("WEGE3 paga amanha: R$ 10,00 liquidos."),
+        texts[1].contains("WEGE3 paga amanhã: R$ 10,00 líquidos."),
         "{}",
         texts[1]
     );
@@ -560,7 +560,7 @@ async fn the_daily_digest_only_says_what_is_new() {
     let texts = fake.texts_to(ana.chat);
     let digest = &texts[2];
     assert!(
-        digest.contains("WEGE3 voltou a ficar no seu teto de preco: R$ 50,00 (teto R$ 60,00)."),
+        digest.contains("WEGE3 voltou a ficar no seu teto de preço: R$ 50,00 (teto R$ 60,00)."),
         "{digest}"
     );
     assert!(
@@ -568,11 +568,11 @@ async fn the_daily_digest_only_says_what_is_new() {
         "{digest}"
     );
     assert!(
-        digest.contains("KNRI11 esta com 58,68% da carteira (limite 50%)."),
+        digest.contains("KNRI11 está com 58,68% da carteira (limite 50%)."),
         "{digest}"
     );
     assert!(!digest.contains("Classes fora da meta"), "{digest}");
-    assert!(!digest.contains("paga amanha"), "{digest}");
+    assert!(!digest.contains("paga amanhã"), "{digest}");
 
     // Dia 4: a mesma situação não se repete.
     let report = alerts.run_digest(noon(4)).await.unwrap();
@@ -602,17 +602,17 @@ async fn the_daily_digest_only_says_what_is_new() {
     assert!(digest.contains("Classes fora da meta"), "{digest}");
     assert!(
         digest.contains(
-            "Fundos Imobiliarios esta com 58,68% da carteira (meta 50%), 8,68 p.p. acima."
+            "Fundos Imobiliários está com 58,68% da carteira (meta 50%), 8,68 p.p. acima."
         ),
         "{digest}"
     );
     assert!(
         digest
-            .contains("Acoes Nacionais esta com 41,32% da carteira (meta 50%), 8,68 p.p. abaixo."),
+            .contains("Ações Nacionais está com 41,32% da carteira (meta 50%), 8,68 p.p. abaixo."),
         "{digest}"
     );
     // O preço e o objetivo não voltam: seguem valendo, já avisados.
-    assert!(!digest.contains("teto de preco"), "{digest}");
+    assert!(!digest.contains("teto de preço"), "{digest}");
     assert!(!digest.contains("Objetivo"), "{digest}");
 }
 
@@ -658,7 +658,7 @@ async fn types_hours_and_hidden_values_are_respected() {
     assert!(fake.texts_to(bia.chat).is_empty());
     let sent = fake.texts_to(caio.chat);
     assert_eq!(sent.len(), 1);
-    assert!(sent[0].contains("KNRI11 paga amanha."), "{}", sent[0]);
+    assert!(sent[0].contains("KNRI11 paga amanhã."), "{}", sent[0]);
     assert!(!sent[0].contains("R$"), "{}", sent[0]);
 
     // 13:00 chegou: agora é a vez da Bia, com valores. O resumo de cada um é
@@ -671,7 +671,7 @@ async fn types_hours_and_hidden_values_are_respected() {
     let sent = fake.texts_to(bia.chat);
     assert_eq!(sent.len(), 1);
     assert!(
-        sent[0].contains("KNRI11 paga amanha: R$ 20,00 liquidos."),
+        sent[0].contains("KNRI11 paga amanhã: R$ 20,00 líquidos."),
         "{}",
         sent[0]
     );
@@ -963,7 +963,11 @@ async fn the_api_shows_state_validates_changes_and_drives_linking() {
     assert_eq!(sent.status, StatusCode::OK, "{}", sent.text);
     let texts = fake.texts_to(fabio.chat);
     assert_eq!(texts.len(), 1);
-    assert!(texts[0].contains("07:30"), "{}", texts[0]);
+    assert!(
+        texts[0].contains("às 07:30 (horário de Brasília)"),
+        "{}",
+        texts[0]
+    );
     assert!(!texts[0].contains("R$"));
     let soon = post(&fabio.app.router, "/api/v1/alerts/test", json!({})).await;
     assert_eq!(soon.status, StatusCode::TOO_MANY_REQUESTS, "{}", soon.text);

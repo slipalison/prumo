@@ -30,7 +30,7 @@ describe("Alertas com o olho fechado", () => {
     renderApp("ajustes/alertas");
     const digest = await screen.findByRole("group", { name: "Exemplo do resumo" });
     for (const text of everythingHeard(document.body)) expect(text).not.toMatch(MONEY);
-    expect(digest).toHaveTextContent("KNRI11 paga amanha: R$ •••• liquidos.");
+    expect(digest).toHaveTextContent("KNRI11 paga amanhã: R$ •••• líquidos.");
     expect(digest).toHaveTextContent("28,4% da carteira (meta 20%)");
     expect(digest).toHaveTextContent("teto R$ ••••");
   });

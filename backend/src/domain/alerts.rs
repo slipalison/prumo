@@ -22,7 +22,7 @@ use uuid::Uuid;
 
 use super::asset_class::AssetClass;
 use super::health::{RuleId, Subject, Warning};
-use super::income::ObjectiveKind;
+use super::income::{ObjectiveKind, YearMonth};
 
 /// Limite do Telegram por mensagem é 4096; fica folga para o rodapé.
 const MESSAGE_BUDGET: usize = 3800;
@@ -229,6 +229,12 @@ impl Item {
                         format!("sector:{}:{sector}", class.as_str())
                     }
                     Subject::Class(class) => format!("class:{}", class.as_str()),
+                    // Os meses vazios mudam de um mês para o outro; o aviso é um só.
+                    Subject::IncomeGaps { .. } => "gaps".to_owned(),
+                    Subject::Payer { id, label, .. } => match id {
+                        Some(id) => format!("payer:{id}"),
+                        None => format!("payer:{label}"),
+                    },
                 }
             ),
         }
@@ -393,6 +399,20 @@ fn describe(item: &Item, hide_values: bool) -> String {
     }
 }
 
+/// `02/2026, 03/2026 e mais 4`: os primeiros meses vazios, sem encher a mensagem.
+fn months_text(months: &[YearMonth]) -> String {
+    const SHOWN: usize = 4;
+    let mut names: Vec<String> = months
+        .iter()
+        .take(SHOWN)
+        .map(|m| format!("{:02}/{}", m.month, m.year))
+        .collect();
+    if months.len() > SHOWN {
+        names.push(format!("mais {}", months.len() - SHOWN));
+    }
+    names.join(", ")
+}
+
 fn describe_health(warning: &Warning, hide_values: bool) -> String {
     let current = number(warning.current);
     let limit = number(warning.limit);
@@ -414,6 +434,29 @@ fn describe_health(warning: &Warning, hide_values: bool) -> String {
         ),
         (RuleId::EmptyClass, Subject::Class(class)) => {
             format!("{} tem meta e nenhum ativo.", class_name(*class))
+        }
+        (RuleId::IncomeEveryMonth, Subject::IncomeGaps { empty_months, .. }) => {
+            format!(
+                "Você recebeu provento em {current} dos últimos 12 meses (mínimo {limit}). Sem provento em {}.",
+                months_text(empty_months)
+            )
+        }
+        (
+            RuleId::MaxPayer,
+            Subject::Payer {
+                label,
+                received,
+                total,
+                ..
+            },
+        ) => {
+            let mut text = format!(
+                "{label} pagou {current}% da sua renda dos últimos 12 meses (limite {limit}%)."
+            );
+            if !hide_values {
+                text.push_str(&format!(" Foram {} de {}.", brl(*received), brl(*total)));
+            }
+            text
         }
         // Combinação que a regra não produz: o texto genérico não perde o aviso.
         (rule, _) => format!(
@@ -840,6 +883,60 @@ mod tests {
             let text = describe_health(&warning, true);
             assert_eq!(text, expected);
         }
+        let gaps = Warning {
+            needed_contribution: None,
+            ..warning(
+                RuleId::IncomeEveryMonth,
+                Subject::IncomeGaps {
+                    empty_months: (1..=6)
+                        .map(|month| YearMonth { year: 2026, month })
+                        .collect(),
+                    payers: Vec::new(),
+                },
+                dec!(6),
+                dec!(12),
+            )
+        };
+        let payer = Warning {
+            needed_contribution: None,
+            ..warning(
+                RuleId::MaxPayer,
+                Subject::Payer {
+                    id: None,
+                    label: "KNRI11".into(),
+                    received: dec!(900),
+                    total: dec!(2000.5),
+                },
+                dec!(45),
+                dec!(25),
+            )
+        };
+        assert_eq!(
+            describe_health(&gaps, true),
+            "Você recebeu provento em 6 dos últimos 12 meses (mínimo 12). Sem provento em 01/2026, 02/2026, 03/2026, 04/2026, mais 2."
+        );
+        assert_eq!(
+            describe_health(&payer, true),
+            "KNRI11 pagou 45% da sua renda dos últimos 12 meses (limite 25%)."
+        );
+        assert_eq!(
+            describe_health(&payer, false),
+            "KNRI11 pagou 45% da sua renda dos últimos 12 meses (limite 25%). Foram R$ 900,00 de R$ 2.000,50."
+        );
+        assert_ne!(
+            Item::Health(payer.clone()).key(),
+            Item::Health(Warning {
+                subject: Subject::Payer {
+                    id: Some(id(9)),
+                    label: "KNRI11".into(),
+                    received: dec!(1),
+                    total: dec!(2)
+                },
+                ..payer
+            })
+            .key()
+        );
+        assert_eq!(Item::Health(gaps.clone()).key(), "income_every_month:gaps");
         // Combinação que a regra não produz: cai no texto genérico.
         let odd = warning(
             RuleId::MaxAsset,
