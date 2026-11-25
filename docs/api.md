@@ -1015,10 +1015,13 @@ o livro **daquele ativo**, que a escrita refaz inteiro.
 
 A migração é a `0010`, depois da `0008` (título do Tesouro), de propósito: a
 conta separa renda fixa por valor de título do Tesouro pela coluna
-`assets.treasury`, que só existe a partir da 0008. O sqlx aplicaria uma versão
-menor que a última aplicada (há teste disso), mas com número menor a 0004
-rodaria antes da 0008 num banco novo e depois dela em produção, com esquemas
-diferentes; com 0010 a ordem é a mesma nos dois.
+`assets.treasury`, que só existe a partir da 0008. O sqlx aplica uma versão
+pendente menor que a última aplicada (há teste disso: é o caso da 0006, 0007 e
+0009, que entram em produção depois da 0008), mas com número 0004 a migração
+do livro rodaria antes da 0008 num banco novo e depois dela em produção, com
+esquemas diferentes; com 0010 ela vê o mesmo esquema nos dois. O teste da
+migração monta o banco como está no ar (0001–0003 e 0008), põe dados
+fictícios e roda o resto como o próximo deploy roda.
 
 Antes do livro, a quantidade vinha do que a pessoa digitou e do "Já comprei"
 (`contribution_items`). A migração separa os dois, na mesma transação:

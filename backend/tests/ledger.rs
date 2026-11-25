@@ -78,14 +78,22 @@ async fn assert_book_matches(store: &Store, pool: &PgPool) {
 
 // ---------------------------------------------------------------- migração --
 
-/// Produção tem ativos e aportes de antes do livro. Monta uma carteira
-/// fictícia no esquema de antes do livro (até a 0008, a do Tesouro, que já
-/// está no ar), aplica a 0010 e confere o que ela fez.
+/// Produção tem ativos e aportes de antes do livro. Monta o banco como ele
+/// está no ar — 0001 a 0003 e 0008 aplicadas —, põe uma carteira fictícia e
+/// roda as migrações como o próximo deploy roda: 0006, 0007 e 0009 (de número
+/// menor que a 0008 já aplicada) e a 0010, do livro. Depois confere o livro.
 #[tokio::test]
 async fn migration_turns_existing_data_into_a_ledger() {
     let (_container, pool) = bare_postgres().await;
-    let migrator = sqlx::migrate!("./migrations");
-    migrator.run_to(9, &pool).await.unwrap();
+    let mut in_production = sqlx::migrate!("./migrations");
+    in_production.migrations = in_production
+        .migrations
+        .iter()
+        .filter(|m| [1, 2, 3, 8].contains(&m.version))
+        .cloned()
+        .collect::<Vec<_>>()
+        .into();
+    in_production.run(&pool).await.unwrap();
 
     let user = Uuid::new_v4();
     let other = Uuid::new_v4();
