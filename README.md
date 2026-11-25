@@ -48,6 +48,7 @@ Documentos:
 - [`docs/alocacao.md`](docs/alocacao.md) — o algoritmo do aporte
 - [`docs/tesouro.md`](docs/tesouro.md) — o Tesouro Direto: fonte, modelo e limites
 - [`docs/design.md`](docs/design.md) — interface, identidade e movimento
+- [`docs/ir.md`](docs/ir.md) — regras de IR por ano, com fonte, e o que não é calculado
 - [`deploy/README.md`](deploy/README.md) — como o app chega ao cluster
 
 ## Rodar na máquina
