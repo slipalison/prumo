@@ -27,6 +27,20 @@
 - `deploy/values.yaml` — cópia de origem; quem vale é
   `homelab-gitops/apps/prumo/values.yaml` (o CI reescreve `image.tag` lá).
 
+## Onde pôr código novo
+
+O roteiro (`docs/roadmap.md`) é tocado por várias frentes ao mesmo tempo. Para
+os ramos se juntarem sem briga:
+
+- Backend: área nova em módulo próprio — `domain/<area>.rs` (regra pura),
+  `store/<area>.rs` (`impl Store`), `http/<area>.rs` (handlers e DTOs da
+  área). Nos arquivos comuns (`http/mod.rs`, `lib.rs`, `store/mod.rs`) só a
+  linha que registra o módulo ou a rota.
+- Migração nova: `NNNN_<area>.sql` com o próximo número livre na `main` no
+  momento do merge (quem integra renumera se precisar).
+- Frontend: chamadas em `api/<area>.ts` (usando `request` de `api/client.ts`),
+  tipos em `api/<area>Types.ts`, telas em `features/<area>/`.
+
 ## Antes de abrir PR
 
 ```bash

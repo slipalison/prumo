@@ -80,7 +80,7 @@ async function toApiError(response: Response): Promise<ApiError> {
   return new ApiError(response.status, code, message, problem.detail);
 }
 
-async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+export async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
   const init: RequestInit = { method, headers, credentials: "same-origin" };
   if (body !== undefined) {

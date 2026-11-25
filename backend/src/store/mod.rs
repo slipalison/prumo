@@ -1,5 +1,8 @@
 //! Acesso ao Postgres. Toda consulta filtra pelo dono: um id de outra pessoa
 //! se comporta como id inexistente.
+//!
+//! Cada área nova mora num submódulo (`store/<area>.rs`, com o próprio
+//! `impl Store`): o submódulo enxerga o `pool` e este arquivo não cresce.
 
 use std::collections::{BTreeSet, HashMap};
 
