@@ -16,6 +16,7 @@ import { formatRelative, parseDecimal, plural } from "../../lib/format";
 import {
   formatRuleValue,
   limitText,
+  COUNT_MAX,
   RULE_TEXT,
   ruleName,
   STATUS_TEXT,
@@ -35,8 +36,9 @@ export function HealthScreen() {
         <p className="eyebrow">Saúde</p>
         <h1 className="screen__title">Saúde da carteira</h1>
         <p className="screen__lead">
-          Avisos sobre o que a meta por classe não enxerga: concentração num ativo ou num setor e classe rasa ou vazia.
-          Não há nota: cada regra é sua, você liga, desliga e escolhe o limite.
+          Avisos sobre o que a meta por classe não enxerga: concentração num ativo ou num setor, classe rasa ou vazia e a
+          renda que depende de poucos pagadores ou não cai todo mês. Não há nota: cada regra é sua, você liga, desliga e
+          escolhe o limite.
         </p>
       </header>
 
@@ -138,7 +140,9 @@ function WarningCard({ warning, index }: { warning: HealthWarning; index: number
             <dd>{formatRuleValue(warning.unit, warning.current)}</dd>
           </div>
           <div>
-            <dt>{warning.rule === "min_assets" || warning.rule === "empty_class" ? "Mínimo" : "Limite"}</dt>
+            <dt>{warning.rule === "min_assets" || warning.rule === "empty_class" || warning.rule === "income_every_month"
+                ? "Mínimo"
+                : "Limite"}</dt>
             <dd>{formatRuleValue(warning.unit, warning.limit)}</dd>
           </div>
         </dl>
@@ -187,7 +191,7 @@ function RulesCard({ rules }: { rules: HealthRuleResult[] }) {
     const found: Partial<Record<RuleId, string>> = {};
     for (const rule of rules) {
       if (rule.unit === null || !draft[rule.rule].enabled) continue;
-      const message = thresholdError(rule.unit, parseDecimal(draft[rule.rule].threshold));
+      const message = thresholdError(rule.unit, parseDecimal(draft[rule.rule].threshold), COUNT_MAX[rule.rule]);
       if (message) found[rule.rule] = message;
     }
     return found;

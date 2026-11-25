@@ -1,7 +1,8 @@
 # Saúde da carteira e setor
 
 Um painel de **avisos** sobre o que a meta por classe não enxerga: concentração
-dentro da classe, num setor, e classe rasa ou vazia. O código das regras é
+dentro da classe, num setor, classe rasa ou vazia, e a renda (todo mês, e sem
+depender de um pagador só). O código das regras é
 `backend/src/domain/health.rs` (puro, sem banco nem rede); as rotas estão em
 [api.md](api.md); a tela, em [design.md](design.md).
 
@@ -30,6 +31,8 @@ percentuais já arredondados em duas casas, os mesmos que a tela mostra.
 | `max_sector` | Algum setor passa de Z% da classe, em Ações Nacionais e em FIIs? | 40% |
 | `min_assets` | Alguma classe com meta tem menos de N ativos? | 3 |
 | `empty_class` | Alguma classe com meta não tem nenhum ativo? | sem limite |
+| `income_every_month` | Em quantos dos últimos 12 meses fechados caiu provento? | 12 meses |
+| `max_payer` | Algum pagador passa de W% da renda recebida em 12 meses? | 25% |
 
 Cada uma liga e desliga sozinha e, quando tem limite, ele é editável
 (`PUT /health/rules`). Os de fábrica são conservadores de propósito: melhor a
@@ -164,13 +167,55 @@ configurado em variável de ambiente; não foi feito.
 - Os percentuais seguem o preço ao vivo: um aviso pode aparecer e sumir ao
   longo do dia perto do limite.
 
-## Onda 2: regras de renda
+## Regras de renda
 
-Duas regras do roteiro (3.9) dependem dos **proventos** (frente do roteiro 3.5)
-e não existem ainda: **renda em todo mês** e **nenhum pagador acima de W% da
-renda**. Entram em `domain/health.rs` como mais duas `RuleId` quando os
-proventos existirem; o painel, a configuração e a API já são genéricos para
-isso.
+As duas últimas regras leem os **proventos recebidos** (`income_events`, os
+mesmos da tela Renda: `pay_date` de hoje para trás, valor líquido, qualquer
+origem). Não olham o que ainda vai cair nem a estimativa.
+
+**Sem histórico, sem aviso.** O histórico é medido do mês do primeiro provento
+recebido até o mês de hoje, inclusive. Com **menos de 3 meses**, as duas regras
+ficam "Sem o que medir" (`not_applicable`), nunca "tudo certo" e nunca aviso:
+quem acabou de cadastrar o primeiro provento não está com a renda falha.
+
+### `income_every_month`
+
+Conta, entre os **12 meses fechados** que antecedem o mês de hoje, em quantos
+houve provento recebido (valor líquido maior que zero). Avisa quando a conta é
+**menor** que o limite (padrão 12; a pessoa escolhe de 1 a 12).
+
+- O mês de hoje fica de fora de propósito: ele ainda está pagando, e a regra
+  avisaria todo dia 1º. A janela é por isso diferente da "renda de 12 meses"
+  da tela Renda, que termina no mês de hoje.
+- Mês anterior ao primeiro provento da pessoa conta como vazio: quem começou a
+  receber há cinco meses tem, de fato, renda em cinco dos 12.
+- **O que fazer.** O aviso lista os meses vazios e, **pelo histórico**, quais
+  ativos da carteira já pagaram naquele mês do calendário em outro ano (ou no
+  mês de hoje), com a classe e os meses. Só entra ativo que **ainda está na
+  carteira com valor**; o Prumo não sugere ativo de fora. Se nenhum pagou, o
+  aviso diz isso e leva à tela Renda. Não há aporte calculado: o histórico diz
+  quem paga quando, não quanto aportar.
+
+### `max_payer`
+
+Soma o líquido recebido nos 12 meses que terminam no mês de hoje (a mesma
+janela e o mesmo agrupamento por pagador da tela Renda) e avisa cada pagador
+**estritamente acima** do limite (padrão 25%, sobre percentuais arredondados em
+duas casas, como as outras regras).
+
+- Com **um só pagador** a regra fica "Sem o que medir": ele seria sempre 100% e
+  dizer isso não ajuda (mesmo critério do setor com um ativo só).
+- O pagador é o ativo; se o ativo foi apagado da carteira, vale o símbolo do
+  provento e o aviso vem sem `asset_id`.
+- O aviso traz quanto o pagador pagou e o total (em reais; o olho fechado os
+  mascara), mas não um aporte: espalhar a renda é aportar em outros ativos que
+  paguem, e qual é escolha da pessoa.
+
+### Quem já usava o painel
+
+`health_rules` guarda só o que a pessoa mexeu. A migração 0016 apenas amplia o
+que a tabela aceita; as linhas existentes ficam como estão. Quem nunca mexeu
+nas duas regras novas passa a vê-las ligadas, com 12 meses e 25%.
 
 ## Operação
 

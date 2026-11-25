@@ -3,6 +3,7 @@ import type { HealthWarning } from "../api/healthTypes";
 import type { Asset } from "../api/types";
 import { defaultAssets, defaultChecklists, toAsset } from "../test/fixtures";
 import {
+  COUNT_MAX,
   formatRuleValue,
   limitText,
   ruleName,
@@ -101,6 +102,46 @@ describe("texto dos avisos", () => {
     expect(thresholdError("count", 2.5)).not.toBeNull();
     expect(thresholdError("count", 0)).not.toBeNull();
     expect(thresholdError("count", 51)).not.toBeNull();
+    expect(thresholdError("count", 12, COUNT_MAX.income_every_month)).toBeNull();
+    expect(thresholdError("count", 13, COUNT_MAX.income_every_month)).toBe("Use um número inteiro de 1 a 12.");
+  });
+
+  it("diz as regras de renda: título, limite, meses vazios e o que fazer", () => {
+    const gaps = warning({
+      rule: "income_every_month",
+      unit: "count",
+      current: 1,
+      limit: 12,
+      needed_contribution: null,
+      subject: {
+        kind: "income_months",
+        empty_months: ["2025-12", "2026-01"],
+        payers: [{ asset_id: "a", label: "KNRI11", asset_class: "br_reits", months: [12] }],
+      },
+    });
+    expect(warningTitle(gaps)).toBe("Você recebeu provento em 1 dos últimos 12 meses");
+    expect(limitText(gaps)).toBe("Seu mínimo: 12 meses");
+    expect(limitText({ ...gaps, limit: 1 })).toBe("Seu mínimo: 1 mês");
+    expect(warningMembers(gaps)).toBe("Meses sem provento: dez/2025, jan/2026");
+    expect(act(gaps).text).toBe(
+      "Pelo histórico, já pagaram nesses meses: KNRI11 (Fundos Imobiliários; já pagou em dez). Aportar neles ajuda a cobrir os meses vazios.",
+    );
+    expect(act(gaps).link).toEqual({ href: "#/renda", label: "Abrir a Renda" });
+
+    const payer = warning({
+      rule: "max_payer",
+      current: 80,
+      limit: 25,
+      needed_contribution: null,
+      subject: { kind: "payer", asset_id: null, label: "OLD3", received: 800, total: 1000 },
+    });
+    expect(warningTitle(payer)).toBe("OLD3 pagou 80% da renda de 12 meses");
+    expect(limitText(payer)).toBe("Seu limite: 25%");
+    expect(warningMembers(payer)).toBeNull();
+    expect(act(payer).text).toMatch(/OLD3 pagou R\$\s800,00 dos R\$\s1\smil que você recebeu em 12 meses/);
+    expect(act(payer, true).text).toBe(
+      "OLD3 pagou R$ •••• dos R$ •••• que você recebeu em 12 meses. Para espalhar, aporte em outros ativos da carteira que paguem renda.",
+    );
   });
 });
 

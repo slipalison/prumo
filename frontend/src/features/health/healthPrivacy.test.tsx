@@ -38,6 +38,13 @@ describe("Saúde com o olho fechado", () => {
     expect(within(ipca).getByText("Agora").nextSibling).toHaveTextContent("70,76%");
     expect(within(ipca).getByText("Limite").nextSibling).toHaveTextContent("15%");
     expect(within(ipca).getByRole("meter")).toHaveAttribute("aria-valuenow", "70.76");
+
+    // Renda: o valor que o pagador pagou some; o percentual e os meses ficam.
+    const payer = within(list).getByRole("article", { name: "KNRI11 pagou 80,01% da renda de 12 meses" });
+    expect(within(payer).getByText(/KNRI11 pagou R\$ •••• dos R\$ •••• que você recebeu em 12 meses/)).toBeInTheDocument();
+    expect(within(payer).getByText("Agora").nextSibling).toHaveTextContent("80,01%");
+    const gaps = within(list).getByRole("article", { name: "Você recebeu provento em 10 dos últimos 12 meses" });
+    expect(within(gaps).getByText("Meses sem provento: fev/2026, abr/2026")).toBeInTheDocument();
   });
 
   it("mascara o valor também no resumo e na rosca por setor da Carteira", async () => {

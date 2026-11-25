@@ -1,4 +1,4 @@
-import type { HealthWarning, RuleId, RuleStatus, RuleUnit } from "../api/healthTypes";
+import type { GapPayer, HealthWarning, RuleId, RuleStatus, RuleUnit } from "../api/healthTypes";
 import { CLASS_META } from "./assetClasses";
 import { formatPercent, plural } from "./format";
 import type { Money } from "./money";
@@ -42,7 +42,20 @@ export const RULE_TEXT: Record<RuleId, RuleText> = {
     tail: "",
     why: "Avisa quando você definiu uma meta e ainda não comprou nada nela.",
   },
+  income_every_month: {
+    lead: "Provento recebido em pelo menos",
+    tail: "dos últimos 12 meses fechados",
+    why: "Conta os meses com provento recebido, sem o mês de hoje. Precisa de 3 meses de histórico na tela Renda.",
+  },
+  max_payer: {
+    lead: "Nenhum pagador acima de",
+    tail: "da renda de 12 meses",
+    why: "Pega a renda que depende de um ativo só. Usa os proventos recebidos e precisa de 3 meses de histórico e de 2 pagadores.",
+  },
 };
+
+/** Maior valor de cada limite em contagem; o padrão é 50 ativos. */
+export const COUNT_MAX: Partial<Record<RuleId, number>> = { income_every_month: 12 };
 
 export const STATUS_TEXT: Record<RuleStatus, string> = {
   off: "Desligada",
@@ -55,6 +68,24 @@ export const STATUS_TEXT: Record<RuleStatus, string> = {
 export function formatRuleValue(unit: RuleUnit, value: number): string {
   if (unit === "count") return String(Math.round(value));
   return formatPercent(value, Number.isInteger(value) ? 0 : 2);
+}
+
+const MONTH_NAMES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+
+/** `2026-02` vira `fev/2026`. */
+function monthLabel(yearMonth: string): string {
+  const [year, month] = yearMonth.split("-");
+  return `${MONTH_NAMES[Number(month) - 1] ?? month}/${year}`;
+}
+
+function monthNames(months: number[]): string {
+  return months.map((m) => MONTH_NAMES[m - 1] ?? String(m)).join(", ");
+}
+
+function payerSentence(payers: GapPayer[]): string {
+  return payers
+    .map((p) => `${p.label} (${CLASS_META[p.asset_class].label}; já pagou em ${monthNames(p.months)})`)
+    .join(", ");
 }
 
 export function warningTitle(warning: HealthWarning): string {
@@ -73,6 +104,12 @@ export function warningTitle(warning: HealthWarning): string {
       const count = Math.round(warning.current);
       return `${label} tem ${count} ${plural(count, ["ativo", "ativos"])}`;
     }
+    case "income_months": {
+      const months = Math.round(warning.current);
+      return `Você recebeu provento em ${months} dos últimos 12 meses`;
+    }
+    case "payer":
+      return `${subject.label} pagou ${pct} da renda de 12 meses`;
   }
 }
 
@@ -80,12 +117,18 @@ export function warningTitle(warning: HealthWarning): string {
 export function limitText(warning: HealthWarning): string {
   if (warning.rule === "empty_class") return "Mínimo: 1 ativo";
   if (warning.rule === "min_assets") return `Seu mínimo: ${formatRuleValue("count", warning.limit)} ativos`;
+  if (warning.rule === "income_every_month") {
+    return `Seu mínimo: ${formatRuleValue("count", warning.limit)} ${plural(warning.limit, ["mês", "meses"])}`;
+  }
   return `Seu limite: ${formatRuleValue("percent", warning.limit)}`;
 }
 
 /** Só os ativos dos cinco maiores, para a linha de apoio. */
 export function warningMembers(warning: HealthWarning): string | null {
-  return warning.subject.kind === "top_assets" ? warning.subject.labels.join(", ") : null;
+  const { subject } = warning;
+  if (subject.kind === "top_assets") return subject.labels.join(", ");
+  if (subject.kind === "income_months") return `Meses sem provento: ${subject.empty_months.map(monthLabel).join(", ")}`;
+  return null;
 }
 
 export type WarningAction = { text: string; link?: { href: string; label: string } };
@@ -129,6 +172,19 @@ export function warningAction(warning: HealthWarning, money: Money): WarningActi
         link: { href: "#/carteira", label: "Abrir a Carteira" },
       };
     }
+    case "income_months":
+      return {
+        text:
+          subject.payers.length > 0
+            ? `Pelo histórico, já pagaram nesses meses: ${payerSentence(subject.payers)}. Aportar neles ajuda a cobrir os meses vazios.`
+            : "Nenhum ativo da carteira pagou nesses meses até agora. Veja na tela Renda o calendário do que você já recebeu.",
+        link: { href: "#/renda", label: "Abrir a Renda" },
+      };
+    case "payer":
+      return {
+        text: `${subject.label} pagou ${money.compact(subject.received)} dos ${money.compact(subject.total)} que você recebeu em 12 meses. Para espalhar, aporte em outros ativos da carteira que paguem renda.`,
+        link: { href: "#/aportar", label: "Calcular o próximo aporte" },
+      };
   }
 }
 
@@ -142,10 +198,12 @@ export function ruleName(rule: RuleId): string {
  * Valida o que a pessoa digitou no limite de uma regra. `null` quando está
  * bom; senão a mensagem. Espelha `RuleId::validate_threshold` do servidor.
  */
-export function thresholdError(unit: RuleUnit, value: number | null): string | null {
+export function thresholdError(unit: RuleUnit, value: number | null, maxCount = 50): string | null {
   if (value === null) return "Digite um número.";
   if (unit === "count") {
-    return Number.isInteger(value) && value >= 1 && value <= 50 ? null : "Use um número inteiro de 1 a 50.";
+    return Number.isInteger(value) && value >= 1 && value <= maxCount
+      ? null
+      : `Use um número inteiro de 1 a ${maxCount}.`;
   }
   const decimals = Math.round(value * 100) / 100 === value;
   return value > 0 && value <= 100 && decimals ? null : "Use um percentual maior que 0 e até 100, com até duas casas.";

@@ -2,17 +2,36 @@
 
 import type { AssetClass } from "./types";
 
-export const RULE_IDS = ["max_asset", "top_five", "max_sector", "min_assets", "empty_class"] as const;
+export const RULE_IDS = [
+  "max_asset",
+  "top_five",
+  "max_sector",
+  "min_assets",
+  "empty_class",
+  "income_every_month",
+  "max_payer",
+] as const;
 export type RuleId = (typeof RULE_IDS)[number];
 
-/** Em que o limite é medido: fatia da carteira (0–100) ou quantidade de ativos. */
+/** Em que o limite é medido: fatia (0–100) ou quantidade (de ativos ou de meses). */
 export type RuleUnit = "percent" | "count";
 
 export type WarningSubject =
   | { kind: "asset"; asset_id: string; label: string }
   | { kind: "top_assets"; labels: string[] }
   | { kind: "sector"; asset_class: AssetClass; sector: string }
-  | { kind: "class"; asset_class: AssetClass };
+  | { kind: "class"; asset_class: AssetClass }
+  | { kind: "income_months"; empty_months: string[]; payers: GapPayer[] }
+  | { kind: "payer"; asset_id: string | null; label: string; received: number; total: number };
+
+/** Ativo da carteira que, pelo histórico, já pagou num dos meses hoje vazios. */
+export type GapPayer = {
+  asset_id: string;
+  label: string;
+  asset_class: AssetClass;
+  /** Meses do calendário (1 a 12) entre os vazios em que ele já pagou. */
+  months: number[];
+};
 
 export type HealthWarning = {
   rule: RuleId;

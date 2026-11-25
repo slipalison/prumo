@@ -244,6 +244,11 @@ regras são da pessoa.
   Desligada) e o interruptor. "Voltar para 60%" aparece quando o limite não é o
   de fábrica. **Salvar regras** só habilita com mudança válida; o erro de um
   limite aparece na própria linha (`role="alert"`, `aria-invalid`).
+- **Avisos de renda** (`income_every_month`, `max_payer`) usam o mesmo cartão.
+  O de meses traz "Meses sem provento: fev/2026, abr/2026" e, em "O que fazer.",
+  quem da carteira já pagou naquele mês (sem barra: o limite é uma contagem de
+  meses, "Mínimo"); o de pagador traz a barra e, no texto, os reais que ele pagou
+  e o total, que o olho fechado mascara. Os percentuais e os meses ficam à vista.
 - **De onde vem o setor**: a fonte de cada classe, de quando é, se a última
   busca falhou, quantos ativos ficaram sem setor e por que os EUA não têm.
 

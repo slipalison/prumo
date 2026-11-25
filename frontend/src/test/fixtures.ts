@@ -338,7 +338,7 @@ export function samplePlan(amount = 6000): Plan {
   };
 }
 
-/** As cinco regras como o servidor as devolve de fábrica. */
+/** As regras como o servidor as devolve de fábrica. */
 export function defaultHealthRules(): HealthRule[] {
   return [
     { rule: "max_asset", enabled: true, unit: "percent", threshold: 15, default_threshold: 15 },
@@ -346,6 +346,8 @@ export function defaultHealthRules(): HealthRule[] {
     { rule: "max_sector", enabled: true, unit: "percent", threshold: 40, default_threshold: 40 },
     { rule: "min_assets", enabled: true, unit: "count", threshold: 3, default_threshold: 3 },
     { rule: "empty_class", enabled: true, unit: null, threshold: null, default_threshold: null },
+    { rule: "income_every_month", enabled: true, unit: "count", threshold: 12, default_threshold: 12 },
+    { rule: "max_payer", enabled: true, unit: "percent", threshold: 25, default_threshold: 25 },
   ];
 }
 
@@ -402,6 +404,26 @@ export function defaultWarnings(): HealthWarning[] {
       unit: "count",
       current: 0,
       limit: 1,
+      needed_contribution: null,
+    },
+    {
+      rule: "income_every_month",
+      subject: {
+        kind: "income_months",
+        empty_months: ["2026-02", "2026-04"],
+        payers: [{ asset_id: "a-hglg", label: "HGLG11", asset_class: "br_reits", months: [2, 4] }],
+      },
+      unit: "count",
+      current: 10,
+      limit: 12,
+      needed_contribution: null,
+    },
+    {
+      rule: "max_payer",
+      subject: { kind: "payer", asset_id: "a-knri", label: "KNRI11", received: 4_800.5, total: 6_000 },
+      unit: "percent",
+      current: 80.01,
+      limit: 25,
       needed_contribution: null,
     },
   ];

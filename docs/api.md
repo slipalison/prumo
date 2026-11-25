@@ -613,6 +613,28 @@ Avisos sobre o que a meta por classe não enxerga, com regras da própria pessoa
       "current": 0.0,
       "limit": 1.0,
       "needed_contribution": null
+    },
+    {
+      "rule": "income_every_month",
+      "subject": {
+        "kind": "income_months",
+        "empty_months": ["2026-02", "2026-04"],
+        "payers": [
+          { "asset_id": "3b1d…", "label": "HGLG11", "asset_class": "br_reits", "months": [2, 4] }
+        ]
+      },
+      "unit": "count",
+      "current": 10.0,
+      "limit": 12.0,
+      "needed_contribution": null
+    },
+    {
+      "rule": "max_payer",
+      "subject": { "kind": "payer", "asset_id": "8f0c…", "label": "KNRI11", "received": 4800.5, "total": 6000.0 },
+      "unit": "percent",
+      "current": 80.01,
+      "limit": 25.0,
+      "needed_contribution": null
     }
   ],
   "rules": [
@@ -640,17 +662,31 @@ Avisos sobre o que a meta por classe não enxerga, com regras da própria pessoa
 - `warnings`: só as regras ligadas que passaram do limite, na ordem das regras
   (e, dentro de uma, do maior para o menor). O servidor manda fatos; o texto
   que a pessoa lê é montado na tela.
-- `rule`: `max_asset`, `top_five`, `max_sector`, `min_assets` ou `empty_class`.
+- `rule`: `max_asset`, `top_five`, `max_sector`, `min_assets`, `empty_class`,
+  `income_every_month` ou `max_payer`.
 - `subject.kind`: `asset` (`asset_id`, `label`), `top_assets` (`labels`, do maior
-  para o menor), `sector` (`asset_class`, `sector`) ou `class` (`asset_class`).
-- `unit`: `percent` (0 a 100) ou `count` (quantidade de ativos). `current` e
-  `limit` estão nessa unidade.
+  para o menor), `sector` (`asset_class`, `sector`), `class` (`asset_class`),
+  `income_months` ou `payer`.
+  - `income_months` (`income_every_month`): `empty_months` são os meses
+    `AAAA-MM` sem provento recebido entre os 12 meses fechados antes do de
+    hoje, do mais velho ao mais novo; `payers` são os ativos que **ainda estão
+    na carteira** e já pagaram, pelo histórico, em algum desses meses do
+    calendário (`months`: 1 a 12), do que cobre mais meses para o que cobre
+    menos. Nunca traz ativo de fora da carteira; pode vir vazio. `current` é
+    quantos dos 12 meses tiveram provento.
+  - `payer` (`max_payer`): `asset_id` (`null` se o ativo saiu da carteira),
+    `label`, `received` (R$ líquido que ele pagou nos 12 meses que terminam no
+    mês de hoje) e `total` (R$ líquido de todos). `current` é `received / total`
+    em percentual.
+- `unit`: `percent` (0 a 100) ou `count` (quantidade de ativos, ou de meses em
+  `income_every_month`). `current` e `limit` estão nessa unidade.
 - `needed_contribution`: quantos reais de **dinheiro novo**, em outros ativos
   (em `max_sector`, em outros setores da mesma classe), levam o percentual de
-  volta ao limite sem vender nada. `null` nas regras de contagem.
-- `rules`: sempre as cinco, na ordem acima. `status`: `warning` (passou do
+  volta ao limite sem vender nada. `null` nas regras de contagem e nas de renda.
+- `rules`: sempre as sete, na ordem acima. `status`: `warning` (passou do
   limite), `ok`, `off` (desligada) ou `not_applicable` (ligada, mas a
-  carteira ainda não dá o que medir: poucos ativos, sem setor, sem metas).
+  carteira ainda não dá o que medir: poucos ativos, sem setor, sem metas; nas
+  regras de renda, menos de 3 meses de proventos recebidos).
   `threshold` e `unit` são nulos em `empty_class`, que não tem limite.
 - `unclassified_count`: ativos **com valor** em `br_stocks` e `br_reits` que a
   fonte de setor não classificou.
@@ -669,8 +705,9 @@ Avisos sobre o que a meta por classe não enxerga, com regras da própria pessoa
 }
 ```
 
-As cinco regras como a pessoa as deixou (o que ela nunca mexeu vale o padrão
-de `default_threshold`).
+As sete regras como a pessoa as deixou (o que ela nunca mexeu vale o padrão
+de `default_threshold`; quem já tinha regras salvas ganha as duas de renda
+ligadas, com 12 meses e 25%, sem mudar as outras).
 
 ### `PUT /api/v1/health/rules`
 
@@ -683,7 +720,8 @@ leva `enabled`, `threshold` ou os dois (vazio é `422`). Responde como o `GET`.
 Tudo ou nada: uma regra inválida não grava nenhuma.
 
 - `threshold` em `max_asset`, `top_five` e `max_sector`: percentual maior que
-  0 e até 100, com até duas casas. Em `min_assets`: inteiro de 1 a 50.
+  0 e até 100, com até duas casas (`max_payer` também). Em `min_assets`:
+  inteiro de 1 a 50. Em `income_every_month`: inteiro de 1 a 12 (meses).
 - `empty_class` não tem limite: mandar `threshold` é `422`.
 - Regra desconhecida, campo desconhecido ou corpo que não é objeto: `422`.
 

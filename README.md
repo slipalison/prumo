@@ -49,8 +49,9 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   streamer do Yahoo: EUA, câmbio e cripto em segundos; B3 com os 15 minutos
   de atraso do dado gratuito. Tudo convertido para reais.
 - **Saúde da carteira** — avisos (sem nota) sobre concentração num ativo, nos
-  cinco maiores ou num setor, e classe rasa ou vazia. As cinco regras são suas:
-  liga, desliga e escolhe o limite. O setor vem da B3 (ações) e da CVM (FIIs).
+  cinco maiores ou num setor, classe rasa ou vazia, renda que não cai todo mês e
+  pagador que carrega renda demais. As sete regras são suas: liga, desliga e
+  escolhe o limite. O setor vem da B3 (ações) e da CVM (FIIs).
   Detalhes em [`docs/saude.md`](docs/saude.md).
 - **Desempenho** — patrimônio no tempo (aplicado × ganho) e rentabilidade pelo
   método de cotas, contra CDI, IPCA e Ibovespa, com a tabela mês a mês. A

@@ -194,7 +194,9 @@ async fn an_empty_portfolio_has_nothing_to_warn_about(db: &Database, dir: &tempf
             "top_five",
             "max_sector",
             "min_assets",
-            "empty_class"
+            "empty_class",
+            "income_every_month",
+            "max_payer"
         ]
     );
     assert!(rules.iter().all(|r| r["status"] == "not_applicable"));

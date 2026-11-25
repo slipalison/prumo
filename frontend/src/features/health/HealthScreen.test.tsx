@@ -31,8 +31,8 @@ describe("Saúde da carteira", () => {
   it("mostra cada aviso com o que é, o número, o limite e o que fazer", async () => {
     await openHealth();
     const verdict = screen.getByRole("region", { name: "Resumo" });
-    expect(within(verdict).getByText("6 avisos")).toBeInTheDocument();
-    expect(within(verdict).getByText(/Das 5 regras que tinham o que medir, 5 passaram do limite/)).toBeInTheDocument();
+    expect(within(verdict).getByText("8 avisos")).toBeInTheDocument();
+    expect(within(verdict).getByText(/Das 7 regras que tinham o que medir, 7 passaram do limite/)).toBeInTheDocument();
 
     const warnings = within(screen.getByRole("list", { name: "Avisos" }));
     const ipca = warnings.getByRole("article", { name: "Tesouro IPCA+ 2035 é 70,76% da carteira" });
@@ -57,12 +57,61 @@ describe("Saúde da carteira", () => {
     expect(within(empty).getByText(/Cadastre um ativo em Ações Internacionais/)).toBeInTheDocument();
   });
 
+  it("mostra os avisos de renda: os meses vazios, quem paga neles e o pagador grande", async () => {
+    await openHealth();
+    const warnings = within(screen.getByRole("list", { name: "Avisos" }));
+
+    const gaps = warnings.getByRole("article", { name: "Você recebeu provento em 10 dos últimos 12 meses" });
+    expect(within(gaps).getByText("Meses sem provento: fev/2026, abr/2026")).toBeInTheDocument();
+    expect(within(gaps).getByText("Agora").nextSibling).toHaveTextContent("10");
+    expect(within(gaps).getByText("Mínimo").nextSibling).toHaveTextContent("12");
+    expect(within(gaps).queryByRole("meter")).not.toBeInTheDocument();
+    expect(within(gaps).getByText(/HGLG11 \(Fundos Imobiliários; já pagou em fev, abr\)/)).toBeInTheDocument();
+    expect(within(gaps).getByRole("link", { name: "Abrir a Renda" })).toHaveAttribute("href", "#/renda");
+
+    const payer = warnings.getByRole("article", { name: "KNRI11 pagou 80,01% da renda de 12 meses" });
+    expect(within(payer).getByText("Limite").nextSibling).toHaveTextContent("25%");
+    expect(within(payer).getByRole("meter")).toHaveAttribute("aria-valuenow", "80.01");
+    expect(within(payer).getByText(/KNRI11 pagou R\$\s4,8\smil dos R\$\s6\smil que você recebeu em 12 meses/)).toBeInTheDocument();
+  });
+
+  it("sem pagador no histórico, manda olhar a Renda em vez de inventar ativo", async () => {
+    getDb().warnings = [
+      {
+        rule: "income_every_month",
+        subject: { kind: "income_months", empty_months: ["2026-03"], payers: [] },
+        unit: "count",
+        current: 11,
+        limit: 12,
+        needed_contribution: null,
+      },
+    ];
+    await openHealth();
+    const card = screen.getByRole("article", { name: "Você recebeu provento em 11 dos últimos 12 meses" });
+    expect(within(card).getByText(/Nenhum ativo da carteira pagou nesses meses até agora/)).toBeInTheDocument();
+  });
+
+  it("o limite de meses vai de 1 a 12", async () => {
+    const { user } = await openHealth();
+    const rules = within(screen.getByRole("region", { name: "Suas regras" }));
+    const months = rules.getByRole("textbox", { name: /Limite: Provento recebido em pelo menos/ });
+    expect(months).toHaveValue("12");
+    await user.clear(months);
+    await user.type(months, "13");
+    expect(await rules.findByText("Use um número inteiro de 1 a 12.")).toBeInTheDocument();
+    expect(rules.getByRole("button", { name: "Salvar regras" })).toBeDisabled();
+    await user.clear(months);
+    await user.type(months, "10");
+    expect(rules.getByRole("button", { name: "Salvar regras" })).toBeEnabled();
+    expect(rules.getByRole("textbox", { name: /Limite: Nenhum pagador acima de/ })).toHaveValue("25");
+  });
+
   it("lista as regras com estado em texto, e quem está desligada fica sem aviso", async () => {
     const { user } = await openHealth();
     const rules = within(screen.getByRole("region", { name: "Suas regras" }));
     const maxAsset = rules.getByRole("switch", { name: "Nenhum ativo acima de … da carteira" });
     expect(maxAsset).toBeChecked();
-    expect(rules.getAllByText("Passou do limite")).toHaveLength(5);
+    expect(rules.getAllByText("Passou do limite")).toHaveLength(7);
     expect(rules.getByRole("textbox", { name: /Limite: Nenhum ativo acima de/ })).toHaveValue("15");
 
     await user.click(maxAsset);
@@ -161,9 +210,9 @@ describe("Saúde da carteira", () => {
     await openHealth();
     const verdict = screen.getByRole("region", { name: "Resumo" });
     expect(within(verdict).getByText("Nenhum aviso")).toBeInTheDocument();
-    expect(within(verdict).getByText(/dentro dos seus limites em 5 regras/)).toBeInTheDocument();
+    expect(within(verdict).getByText(/dentro dos seus limites em 7 regras/)).toBeInTheDocument();
     expect(screen.queryByRole("list", { name: "Avisos" })).not.toBeInTheDocument();
-    expect(screen.getAllByText("Dentro do limite")).toHaveLength(5);
+    expect(screen.getAllByText("Dentro do limite")).toHaveLength(7);
   });
 
   it("sem o que medir, diz isso em vez de fingir que está tudo bem", async () => {
@@ -181,7 +230,7 @@ describe("Saúde da carteira", () => {
     await openHealth();
     const verdict = screen.getByRole("region", { name: "Resumo" });
     expect(within(verdict).getByText("Ainda sem o que medir")).toBeInTheDocument();
-    expect(screen.getAllByText("Sem o que medir")).toHaveLength(5);
+    expect(screen.getAllByText("Sem o que medir")).toHaveLength(7);
   });
 
   it("diz de onde vem o setor, quando foi buscado e o que ficou de fora", async () => {
