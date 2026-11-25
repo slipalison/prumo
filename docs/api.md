@@ -4,7 +4,8 @@ Tudo em JSON, sob `/api/v1`. Identificadores e campos em inglês (`snake_case`);
 texto que a pessoa lê (`title`, `detail` dos erros) em português.
 
 Dinheiro e quantidade trafegam como **número JSON**. Percentuais vão de 0 a 100
-(não de 0 a 1). Datas em RFC 3339, UTC.
+(não de 0 a 1). Datas com hora em RFC 3339, UTC; a data de um negócio
+(`trade_date`) é `AAAA-MM-DD`, sem hora.
 
 ## Autenticação
 
@@ -120,6 +121,7 @@ Ativo com nota 0 não recebe aporte.
 | `validation_failed` | 422 | corpo com campo fora do domínio (detalhe diz qual) |
 | `targets_must_sum_100` | 422 | metas que não somam 100 |
 | `asset_already_exists` | 409 | mesmo símbolo duas vezes na mesma classe |
+| `exceeds_position` | 422 | lançamento que deixaria a posição negativa em alguma data (ver [Lançamentos](#lançamentos)) |
 | `not_found` | 404 | id que não existe ou não é da pessoa |
 | `unreadable_file` | 422 | planilha que quebrou o leitor no servidor (só `POST /imports/b3/preview`; o detalhe cita só o nome do arquivo) |
 | `payload_too_large` | 413 | envio de planilhas acima de 10 MiB (só `POST /imports/b3/preview`) |
@@ -182,7 +184,12 @@ A tela inteira numa chamada.
       "answers": { "4c1e…": true, "9a77…": false },
       "sector": "Tijolo",
       "subsector": null,
-      "segment": "Multicategoria"
+      "segment": "Multicategoria",
+      "average_price": 130.0,
+      "cost_basis": 1300.0,
+      "unrealized_gain": 120.0,
+      "realized_gain": 0.0,
+      "return_percent": 9.23
     }
   ],
   "checklists": {
@@ -232,6 +239,17 @@ A tela inteira numa chamada.
   `segment` o que o administrador declara à CVM. Nulos nas outras classes e
   enquanto a fonte não respondeu ou não conhece o papel: a carteira nunca
   falha por isso.
+- `quantity` é a soma do livro do ativo ([Lançamentos](#lançamentos)).
+- Do livro, em reais (`null` = desconhecido, diferente de zero):
+  - `average_price`: custo ÷ quantidade. `null` sem posição, com custo
+    desconhecido e sempre em renda fixa por valor (lá não há "unidade").
+  - `cost_basis`: custo total da posição (em renda fixa por valor, o aplicado).
+  - `unrealized_gain`: `current_value − cost_basis`. `null` sem preço ou sem
+    custo.
+  - `realized_gain`: lucro realizado acumulado nas vendas, resgates e
+    amortizações.
+  - `return_percent`: `unrealized_gain ÷ cost_basis × 100`, duas casas. `null`
+    com custo desconhecido ou zero.
 
 ### `GET /api/v1/portfolio/stream`
 
@@ -249,9 +267,11 @@ retry: 3000
   quando algum número mudou.
 - `classes` tem a forma de `GET /portfolio`; cada item de `assets` traz só
   `id`, `unit_price`, `currency`, `price_source`, `quote_updated_at`,
-  `current_value`, `class_percent` e `ideal_class_percent` — o que muda com o
-  preço (o ideal muda quando um ativo ganha ou perde preço e entra ou sai da
-  divisão). O resto a tela já tem do `GET /portfolio`.
+  `current_value`, `class_percent`, `ideal_class_percent`, `unrealized_gain` e
+  `return_percent` — o que muda com o preço (o ideal muda quando um ativo
+  ganha ou perde preço e entra ou sai da divisão; ganho e rentabilidade andam
+  com o valor de hoje). O resto (preço médio, custo, lucro realizado, notas) a
+  tela já tem do `GET /portfolio`.
 - Comentário de keep-alive (`: keep-alive`… ) a cada 15 s, para proxy nenhum
   derrubar a conexão parada.
 - O servidor **fecha** a conexão quando a credencial do Access vence e
@@ -306,7 +326,28 @@ Opcionais em todos: `display_name`, `manual_price` e `max_price` (só por
 unidade; em renda fixa por valor são `422`), `score_override`, `listed_on_b3`,
 `treasury`. `max_price` é o teto de preço da pessoa, em reais por unidade,
 maior que zero; vale também para título do Tesouro. `quantity`/`amount` ausente vale
-0. Na B3 e nas ações americanas a quantidade é inteira. O símbolo é normalizado para
+0. Na B3 e nas ações americanas a quantidade é inteira; no Tesouro, em
+centésimos (até duas casas).
+
+Com o custo de entrada (opcional):
+
+```json
+{ "asset_class": "br_reits", "symbol": "KNRI11", "quantity": 10, "average_price": 130 }
+{ "asset_class": "fixed_income", "display_name": "CDB ficticio", "amount": 52000, "invested": 50000 }
+```
+
+Com quantidade, o ativo nasce com um saldo inicial (`opening`) no livro,
+datado hoje:
+- por unidade (inclusive título do Tesouro), `average_price` (em reais, > 0)
+  é o preço do saldo inicial; sem ele, o custo fica **desconhecido** até a
+  pessoa informar;
+- por valor, `invested` (> 0) é quanto foi aplicado: o saldo inicial é o
+  aplicado (preço 1) e a diferença até `amount` entra como `adjustment` — o
+  rendimento, que não é custo. Sem ele, custo desconhecido.
+- `average_price` em renda fixa por valor, `invested` em ativo com cotação ou
+  qualquer um dos dois com quantidade 0 é `422`.
+
+O símbolo é normalizado para
 maiúsculas, sem `.SA`. Responde
 `201` com o ativo no mesmo formato de `portfolio.assets[]`. Mesmo símbolo na
 mesma classe: `409 asset_already_exists`.
@@ -327,6 +368,10 @@ Qualquer subconjunto de:
   "listed_on_b3": true
 }
 ```
+
+`quantity`/`amount` diferente da atual grava um `adjustment` no livro, datado
+hoje, com a diferença (o custo não muda). Compra e venda vão por `POST
+/transactions`, com data e preço.
 
 `null` em `manual_price`/`score_override`/`max_price` limpa o campo.
 `max_price` maior que zero; em renda fixa por valor, `422`. Em `answers`, `true`/
@@ -453,8 +498,9 @@ Registra o que a pessoa comprou de fato — normalmente o plano, editado ou não
 { "amount": 6000, "items": [{ "asset_id": "…", "quantity": 5, "unit_price": 94.55 }] }
 ```
 
-Soma `quantity` em cada ativo (nas classes por valor, soma `quantity ×
-unit_price` ao valor). Responde `201`:
+Cada item vira uma compra (`buy`, `source: "plan"`, com `contribution_id`) no
+livro do ativo, datada hoje, com o preço do item — nas classes por valor, a
+compra é `quantity × unit_price` em reais, a preço 1. Responde `201`:
 
 ```json
 { "id": "…", "created_at": "…", "amount": 6000, "invested": 472.75, "items": [
@@ -821,6 +867,175 @@ Erros: `401` sem credencial; `413 payload_too_large` acima de 10 MiB; `422`
 sem arquivo, com mais de 10 arquivos ou fora de `multipart/form-data`;
 `422 unreadable_file` se a leitura de um arquivo entrar em pânico (o arquivo
 é entrada não confiável; o erro cita só o nome dele, e nada de dentro).
+
+## Lançamentos
+
+Toda mudança de quantidade é um **lançamento** datado no livro do ativo, e a
+quantidade do ativo é a soma do livro — uma fonte da verdade só. Do livro
+saem o **preço médio**, o **custo**, o **lucro realizado** e a
+**rentabilidade** de cada posição. A regra é a da Receita: custo médio
+ponderado, com as taxas da compra somadas ao custo; a venda não muda o preço
+médio. O código é `backend/src/domain/ledger.rs`.
+
+### Tipos (`kind`)
+
+| `kind` | Quantidade | Preço (`unit_price`) | Efeito no custo |
+|---|---|---|---|
+| `opening` | soma | opcional — sem ele, custo **desconhecido** | soma `qtd × preço + taxas` |
+| `buy` | soma | obrigatório | soma `qtd × preço + taxas` |
+| `sell` | tira (não passa da posição) | obrigatório | sai o custo médio do que saiu; lucro = `qtd × preço − taxas − custo que saiu` |
+| `redemption` | tira | obrigatório | igual à venda (resgate de renda fixa, Tesouro) |
+| `split` | soma as cotas novas | — | igual (desdobramento preserva o custo total) |
+| `reverse_split` | tira as cotas que deixam de existir; não zera | — | igual |
+| `bonus` | soma | opcional: custo atribuído por cota | soma `qtd × preço` (zero sem preço) |
+| `amortization` | igual (`quantity` = cotas que receberam) | obrigatório: valor por cota | cai `qtd × preço`; o que passar do custo é lucro realizado |
+| `adjustment` | soma, **com sinal** | — | igual; zera se a posição zerar |
+
+- **Ordem do livro:** data do negócio (`trade_date`) e, no mesmo dia, a ordem
+  em que o lançamento entrou. É ela que decide "a posição naquela data".
+- **A venda não passa da posição** em nenhuma data — nem ao gravar, nem ao
+  editar ou apagar um lançamento antigo (que muda tudo depois dele). O que
+  deixaria a quantidade negativa em alguma data volta `422 exceeds_position`
+  e nada é gravado. Grupamento não pode zerar a posição e amortização não pode
+  contar mais cotas do que havia.
+- **`adjustment`** é a correção manual: muda a quantidade e não mexe no custo.
+  É o que a edição da quantidade na folha do ativo grava (`PATCH
+  /assets/{id}` com `quantity` ou `amount`). Em renda fixa por valor é a
+  atualização do saldo — o rendimento, que não é custo.
+- **Custo desconhecido** é diferente de zero. Um `opening` sem preço deixa o
+  custo desconhecido até a posição zerar: `average_price`, `cost_basis`,
+  `unrealized_gain` e `return_percent` saem `null`, e a tela pede "informe o
+  preço médio". Venda feita nesse meio-tempo deixa `realized_gain` `null`.
+  Informar o preço do saldo inicial refaz o livro do começo e tudo aparece.
+- **Renda fixa por valor** (`fixed_income`/`intl_fixed_income` sem B3): a
+  quantidade é o saldo em reais e o preço é sempre 1 (mande só `quantity`; o
+  servidor preenche). Os tipos são `opening`, `buy` (aplicação), `redemption`
+  (resgate) e `adjustment` (atualização do saldo). Não há preço médio, só
+  custo (o aplicado).
+- **Unidade:** onde a cota é inteira (B3 e EUA), a quantidade de todo
+  lançamento é inteira; cripto fora da B3 aceita fração. As mesmas regras de
+  `POST /assets`.
+- **Moeda:** `unit_price` e `fees` estão na moeda do lançamento (`currency`,
+  padrão `BRL`). Em outra moeda, `fx_rate` (reais por 1 unidade da moeda, no
+  dia) é obrigatório quando há preço. O custo, o preço médio e o lucro saem
+  **em reais**, cada compra pelo câmbio dela: o preço médio de uma ação
+  americana é o que a pessoa pagou em reais, e o ganho de hoje (`valor de hoje
+  em reais − custo em reais`) inclui o câmbio. Em `BRL`, `fx_rate` é `null`.
+- **Data** no futuro é `422`. O que o Prumo grava sozinho (saldo inicial do
+  cadastro, ajuste da edição, "Já comprei") leva a data de hoje em Brasília.
+- **`source`:** `manual` (digitado), `plan` (o "Já comprei", com
+  `contribution_id`), `b3_import` (importação, com `external_ref` único por
+  pessoa — reimportar não duplica) ou `migration` (criado pela migração 0004 a
+  partir dos dados de antes do livro).
+- **Ativo removido:** o livro dele fica como histórico, com `asset_id: null` e
+  a foto de `symbol`, `asset_class` e `display_name`. Lançamento de ativo
+  removido só pode ser apagado.
+
+### `GET /api/v1/transactions?asset_id=…&from=AAAA-MM-DD&to=AAAA-MM-DD`
+
+Os lançamentos da pessoa, do mais novo para o mais antigo (data, depois ordem
+de entrada), até 5.000. Todos os filtros são opcionais; as datas incluem as
+pontas. `from` depois de `to` é `422`.
+
+```json
+[
+  {
+    "id": "…",
+    "asset_id": "…",
+    "symbol": "KNRI11",
+    "display_name": "Kinea Renda Imobiliária",
+    "asset_class": "br_reits",
+    "kind": "buy",
+    "trade_date": "2026-03-02",
+    "quantity": 10,
+    "unit_price": 120.0,
+    "fees": 10.0,
+    "currency": "BRL",
+    "fx_rate": null,
+    "source": "manual",
+    "external_ref": null,
+    "contribution_id": null,
+    "created_at": "2026-03-02T14:10:00Z"
+  }
+]
+```
+
+### `POST /api/v1/transactions`
+
+```json
+{ "asset_id": "…", "kind": "buy", "trade_date": "2026-03-02", "quantity": 10, "unit_price": 120, "fees": 10 }
+```
+
+Ativo em dólar:
+
+```json
+{ "asset_id": "…", "kind": "buy", "trade_date": "2026-03-03", "quantity": 2, "unit_price": 180, "fees": 1, "currency": "USD", "fx_rate": 5.0 }
+```
+
+`unit_price`, `fees` (padrão 0), `currency` (padrão `BRL`) e `fx_rate` seguem
+a tabela acima. Responde `201` com o lançamento; a posição do ativo já vem
+refeita no próximo `GET /portfolio`. Ativo que não é da pessoa: `404`.
+
+### `PATCH /api/v1/transactions/{id}`
+
+Qualquer subconjunto de `kind`, `trade_date`, `quantity`, `unit_price`,
+`fees`, `currency` e `fx_rate`; `null` em `unit_price`/`fx_rate` limpa. O
+ativo não muda. O livro inteiro é refeito; `422 exceeds_position` se a
+edição deixar alguma data negativa. Responde `200` com o lançamento.
+
+### `DELETE /api/v1/transactions/{id}`
+
+`204`. Apagar a compra que sustenta uma venda posterior é `422
+exceeds_position`.
+
+### Custo da leitura
+
+`assets.quantity`, `assets.cost_basis` e `assets.realized_gain` são **cache**
+da posição: toda escrita no livro trava o ativo, grava, refaz a posição a
+partir do livro inteiro dele e atualiza o cache **na mesma transação**. A
+leitura da carteira — e o stream ao vivo, que a recalcula a cada preço que
+muda — só lê o cache, numa consulta indexada por pessoa, e não refaz o livro.
+
+Medido em 25/11/2026 (build de depuração, Postgres 17 em contêiner na mesma
+máquina; carteira fictícia de 40 ativos e 20.080 lançamentos):
+
+| | mediana |
+|---|---|
+| `GET /portfolio` (o que o stream faz por evento) | 6,9–7,8 ms |
+| … dos quais a leitura do cache da posição | 1,4 ms |
+| a mesma carteira refazendo o livro a cada leitura | 159–188 ms |
+| uma escrita no livro (ativo com 500 lançamentos) | 9,4–10,3 ms |
+
+O custo da leitura não cresce com o tamanho do livro; o da escrita cresce com
+o livro **daquele ativo**, que a escrita refaz inteiro.
+
+### De antes do livro (migração 0004)
+
+Antes do livro, a quantidade vinha do que a pessoa digitou e do "Já comprei"
+(`contribution_items`). A migração separa os dois, na mesma transação:
+
+1. Cada item de aporte vira um `buy` (`source: "plan"`, com o
+   `contribution_id`), na data do aporte em Brasília e com o preço do item.
+   Em renda fixa por valor, o valor do item a preço 1. Item de ativo já
+   removido não vira lançamento (não há posição) e continua no histórico de
+   aportes.
+2. A diferença `d = quantidade atual − Σ compras dos aportes` é o que a pessoa
+   digitou:
+   - `d > 0` → `opening` de `d` com **custo desconhecido** (`source:
+     "migration"`), datado no cadastro do ativo (ou no primeiro aporte, se
+     vier antes) e antes das compras no livro;
+   - `d = 0` → nenhum saldo inicial; o custo é o das compras;
+   - `d < 0` → a pessoa baixou a quantidade à mão depois de comprar: um
+     `adjustment` de `d`, datado no dia da migração, depois das compras. O
+     custo fica o das compras (zero se zerou); trocar o ajuste por uma venda
+     com preço, na folha do ativo, acerta o lucro realizado.
+3. O cache de custo sai das mesmas regras, e a migração termina conferindo
+   que a soma do livro é a quantidade de **todo** ativo — se não for, ela
+   falha e nada muda.
+
+Na prática: depois da migração, todo ativo que tinha quantidade digitada
+aparece com "informe o preço médio"; os que só receberam pelo "Já comprei"
+já mostram preço médio e rentabilidade.
 
 ## Operacional (porta interna 9090)
 

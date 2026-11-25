@@ -149,13 +149,24 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
   No topo da tela, "N ativos abaixo do ideal" (ou "Nenhum ativo abaixo do
   ideal"); a linha não aparece sem nenhum ativo que receba. Tudo acompanha o
   preço ao vivo, porque o evento `prices` leva o ideal.
+- Na linha do ativo, a **rentabilidade** fica embaixo do valor: `+9,2%` /
+  `−3,0%`, em verde ou vermelho, com o **sinal escrito** (cor nunca sozinha; a
+  seta ▲/▼ continua sendo só do preço que acabou de andar, para as duas coisas
+  não se confundirem). Sem ideal, ela divide a linha com o "% da classe"; com
+  ideal, o "% da classe" já está na linha do ideal embaixo e a rentabilidade
+  fica sozinha sob o valor — cada número aparece uma vez. O **preço médio**
+  entra na coluna de quantidade ("10 cotas · R$ 142,00 · PM R$ 130,00"), que
+  só existe do desktop (≥ 720px) para cima: no celular a linha fica com
+  valor, rentabilidade e o ideal, e o PM está na folha do ativo. Sem custo
+  conhecido, nem PM nem rentabilidade aparecem — nada de "0%" que não é
+  verdade. A rentabilidade anda com o preço ao vivo.
 - Botão flutuante **+** abre uma folha (sheet) com **um campo só**: digita o
   ticker, aparece o autocompletar (`/symbols`), escolhe, a classe já vem
   sugerida em chips (troca com um toque), informa a quantidade, pronto. Para
   renda fixa: nome + valor, ou "Tesouro Direto" (busca pelo nome, quantidade
   fracionária, preço automático).
 - Tocar num ativo abre a folha de edição: quantidade com stepper, preço manual
-  opcional, **teto de preço** opcional, o checklist (perguntas com sim/não/sem
+  opcional, **teto de preço** opcional, os **Lançamentos**, o checklist (perguntas com sim/não/sem
   resposta) e a nota ao vivo; ou o controle de nota manual (0–10) para cripto e
   renda fixa.
 - Teto de preço: uma chave "Teto de preço" com a explicação curta ("Seu
@@ -165,6 +176,29 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
   "Hoje está a R$ X, acima do teto: fica fora do aporte". Renda fixa por valor
   não tem a chave. Remover fica no
   fim, discreto, com confirmação na própria folha (nunca `window.confirm`).
+- **Lançamentos**, dentro da folha:
+  - um resumo em quatro números — preço médio, custo (em renda fixa,
+    "aplicado"), resultado com a rentabilidade e lucro realizado —, "—" onde
+    o custo é desconhecido;
+  - custo desconhecido mostra o aviso dourado "Informe o preço médio para ver
+    a rentabilidade" com o botão que abre o saldo inicial já com o foco no
+    preço;
+  - a lista, do mais novo para o mais antigo: tipo (com a etiqueta "do aporte"
+    ou "de antes do livro"), quantidade × preço, taxa e data; editar e apagar
+    por ícone, apagar com confirmação na própria linha;
+  - adicionar abre o formulário no lugar: tipo, data (hoje por padrão, nunca
+    futura), quantidade e, conforme o tipo, preço, taxas e — em ativo cotado
+    em dólar — moeda e câmbio. Cada tipo diz o que a quantidade é
+    (desdobramento: "as cotas novas que você recebeu"). Renda fixa troca os
+    nomes (aplicação, resgate, atualização do saldo) e não pede preço;
+  - salvar refaz a posição no servidor; a quantidade da folha acompanha o
+    livro. Venda maior que a posição numa data volta com a frase que diz o
+    que conferir, sem fechar o formulário.
+- A quantidade editada na própria folha vira um "ajuste" em Lançamentos (a
+  dica sob o campo diz isso); compra e venda vão em Lançamentos, com data e
+  preço.
+- No cadastro, com quantidade, um campo opcional de **preço médio** (renda
+  fixa: "quanto você aplicou"). Sem ele, o ativo entra e a tela pede depois.
 
 ### 3. Ajustes › Metas por classe
 
@@ -339,6 +373,12 @@ junto do tema) mascara os valores em todas as telas e fica salvo no
 - Cor nunca sozinha: os avisos do teto e do limite são frase com ícone; o
   estado da chave do limite também vem escrito. O controle do limite anuncia
   o valor como "15% da carteira" (`aria-valuetext`).
+- Rentabilidade: o leitor de tela ouve "rentabilidade +9,2%" (o rótulo é
+  texto `sr-only`); o sinal é texto, não só cor. Verde e vermelho são os
+  `--success`/`--danger` dos temas, com contraste ≥ 4,5:1 nos dois.
+- Lançamentos: cada campo com rótulo; o que muda o sentido da quantidade é
+  dito no `aria-describedby` do campo; os botões de editar e apagar dizem qual
+  lançamento ("Apagar Compra de 10/02/2026"); erros em `role="alert"`.
 
 ## Texto
 

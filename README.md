@@ -34,6 +34,11 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   Movimentação, Proventos) e veja o que entraria: agrupado por ativo, com as
   linhas que o Prumo não entendeu. Nesta versão só lê e mostra; gravar chega
   depois. Ver [`docs/importacao-b3.md`](docs/importacao-b3.md).
+- **Livro de lançamentos** — compra, venda, desdobramento, grupamento,
+  bonificação, amortização, resgate, saldo inicial e ajuste, com data. A
+  quantidade é a soma do livro; dele saem o preço médio (regra da Receita,
+  com taxas), o lucro realizado e a rentabilidade de cada ativo, em reais
+  mesmo no que é cotado em dólar. O "Já comprei" grava as compras sozinho.
 - **Preço ao vivo** — patrimônio e ativos mudam na tela sem recarregar, pelo
   streamer do Yahoo: EUA, câmbio e cripto em segundos; B3 com os 15 minutos
   de atraso do dado gratuito. Tudo convertido para reais.

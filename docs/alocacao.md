@@ -234,6 +234,14 @@ classe e a nota do ativo. Quem quer reagir a preço tem o teto, que é critério
 da própria pessoa sobre o preço de **hoje**, e só tira o ativo do aporte — não
 puxa dinheiro para ele.
 
+**De onde vem a quantidade.** A quantidade de cada ativo que o motor usa é a
+soma do livro de lançamentos (compras, vendas, eventos, ajustes — ver
+[Lançamentos](api.md#lançamentos)). O "Já comprei" grava compras no livro;
+nada muda a quantidade por fora dele. Para o motor, isso não muda nada: ele lê
+o valor de hoje (`quantidade × preço`), como antes. `domain/allocation.rs` não
+recebe nada do livro além disso — nem o preço médio, nem o custo, nem a
+rentabilidade, que saem do livro só para a pessoa ver.
+
 ## O que o resultado garante
 
 Conferido por teste de propriedade (300 carteiras aleatórias por propriedade, a
