@@ -90,10 +90,9 @@ em `alerts::AlertService::collect`; o limite (padrão 80%) já é guardado.
 
 ### Objetivo atingido
 
-O Prumo marca `achieved_at` quando a tela Renda calcula a meta pela primeira
-vez como atingida. Se você nunca abre a tela, a data demora a existir, e o
-alerta demora junto. Quando as metas passarem a ser apuradas em segundo plano
-(frente de objetivos), o alerta já as enxerga: ele só lê `achieved_at`.
+O alerta só lê `objectives.achieved_at`, que a tarefa diária dos objetivos
+preenche para todas as pessoas (e a tela, ao abrir). Um objetivo que a tarefa
+marcou durante a noite entra no resumo da manhã.
 
 ## Valores no resumo
 
