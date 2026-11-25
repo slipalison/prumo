@@ -47,7 +47,13 @@ describe("datas e meses", () => {
 });
 
 describe("payerSlices", () => {
-  const payer = (label: string, total: number, percent: number): IncomePayer => ({ asset_id: null, label, total, percent });
+  const payer = (label: string, total: number, percent: number): IncomePayer => ({
+    asset_id: null,
+    label,
+    total,
+    percent,
+    yield_on_cost: { income_12m: total, basis: "received", cost: 1000, percent: total / 10, gap: null, message: null },
+  });
 
   it("mostra todos quando são poucos", () => {
     const slices = payerSlices([payer("A", 70, 70), payer("B", 30, 30)]);
@@ -59,11 +65,13 @@ describe("payerSlices", () => {
     const many = Array.from({ length: 9 }, (_, i) => payer(`P${i}`, 10, 11.1));
     const slices = payerSlices(many);
     expect(slices).toHaveLength(7);
-    expect(slices[6]).toMatchObject({ key: "others", label: "Outros (3)", total: 30, percent: 33.3 });
+    expect(slices[6]).toMatchObject({ key: "others", label: "Outros (3)", total: 30, percent: 33.3, yield: null });
+    // Cada pagador mostrado leva o próprio yield; o grupo "Outros" não tem um só.
+    expect(slices[0]?.yield?.percent).toBe(1);
   });
 
   it("usa o id do ativo como chave quando há", () => {
-    expect(payerSlices([{ asset_id: "a-1", label: "A", total: 1, percent: 100 }])[0]?.key).toBe("a-1");
+    expect(payerSlices([{ ...payer("A", 1, 100), asset_id: "a-1" }])[0]?.key).toBe("a-1");
   });
 });
 

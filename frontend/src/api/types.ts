@@ -94,11 +94,32 @@ export type ChecklistQuestion = {
 
 export type Checklists = Record<ChecklistKind, ChecklistQuestion[]>;
 
+/** Por que um ativo não entrou inteiro no lucro total. */
+export type ProfitGap = "unknown_cost" | "unknown_realized" | "missing_price";
+
+/**
+ * Lucro total: ganho de capital (realizado + não realizado) + proventos
+ * recebidos. O que o Prumo não sabe fica de fora e vem em `partial_assets`
+ * (docs/api.md § Lucro total).
+ */
+export type Profit = {
+  unrealized: number;
+  realized: number;
+  income_received: number;
+  total: number;
+  /** Algum ativo ficou fora (custo desconhecido ou sem cotação): o total é parcial. */
+  partial: boolean;
+  partial_assets: Array<{ asset_id: string; label: string; reason: ProfitGap }>;
+  /** Há venda de ativo já removido da carteira, que o total não enxerga. */
+  removed_assets: boolean;
+};
+
 export type Portfolio = {
   total_value: number;
   quotes_updated_at: string | null;
   classes: ClassSummary[];
   assets: Asset[];
+  profit: Profit;
   checklists: Checklists;
 };
 
@@ -123,6 +144,8 @@ export type LivePrices = {
   quotes_updated_at: string | null;
   classes: ClassSummary[];
   assets: LiveAsset[];
+  /** Muda com o preço (o ganho não realizado). */
+  profit: Profit;
 };
 
 export type GoalTargets = Record<AssetClass, number>;
@@ -239,6 +262,8 @@ export type ContributionItemRequest = {
 
 export type ContributionRequest = {
   amount: number;
+  /** Quanto do aporte veio do caixa (`GET /cash`); ausente = dinheiro todo de fora. */
+  cash_used?: number;
   items: ContributionItemRequest[];
 };
 
@@ -255,6 +280,8 @@ export type Contribution = {
   id: string;
   created_at: string;
   amount: number;
+  /** A parte do aporte que saiu do caixa. */
+  cash_used: number;
   invested: number;
   items: ContributionItem[];
 };

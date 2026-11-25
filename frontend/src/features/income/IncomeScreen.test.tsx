@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import type { IncomeEvent, IncomeSummary } from "../../api/incomeTypes";
-import { emptySummary, sampleEvent, sampleSummary } from "../../test/incomeHandlers";
+import { emptySummary, knownYield, sampleEvent, sampleSummary } from "../../test/incomeHandlers";
 import { renderApp } from "../../test/render";
 import { getDb, server } from "../../test/server";
 
@@ -172,7 +172,13 @@ describe("Renda: com proventos", () => {
 
   it("junta o que passa de seis pagadores em Outros", async () => {
     const summary = sampleSummary();
-    summary.by_payer = Array.from({ length: 8 }, (_, i) => ({ asset_id: `a-${i}`, label: `PAG${i}`, total: 100 - i, percent: 12.5 }));
+    summary.by_payer = Array.from({ length: 8 }, (_, i) => ({
+      asset_id: `a-${i}`,
+      label: `PAG${i}`,
+      total: 100 - i,
+      percent: 12.5,
+      yield_on_cost: knownYield(100 - i, 1000),
+    }));
     useSummary(summary);
     await openIncome();
     expect(await screen.findByText("Outros (2)")).toBeInTheDocument();
@@ -282,7 +288,7 @@ describe("Renda: lançar provento", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
-  it("FII sugere rendimento e usa a quantidade da carteira; data ex opcional vai junto", async () => {
+  it("FII sugere rendimento e deixa a quantidade para o livro na data com; data ex opcional vai junto", async () => {
     let body: unknown;
     server.use(
       http.post("/api/v1/income", async ({ request }) => {
@@ -293,13 +299,13 @@ describe("Renda: lançar provento", () => {
     const { user, dialog } = await openSheet();
     await user.selectOptions(within(dialog).getByRole("combobox", { name: "Ativo" }), "a-knri");
     expect(within(dialog).getByRole("radio", { name: "Rendimento" })).toBeChecked();
-    expect(within(dialog).getByLabelText("Quantidade")).toHaveAttribute("placeholder", "10");
+    await waitFor(() => expect(within(dialog).getByLabelText("Quantidade")).toHaveAttribute("placeholder", "10"));
     await user.type(within(dialog).getByLabelText("Valor por cota (R$)"), "1,10");
     expect(within(dialog).getByText(/^Líquido/).parentElement).toHaveTextContent(/R\$\s11,00/);
     await user.type(within(dialog).getByLabelText("Data ex (opcional)"), "2026-11-10");
     await user.click(within(dialog).getByRole("button", { name: "Lançar provento" }));
     await waitFor(() =>
-      expect(body).toEqual({ asset_id: "a-knri", kind: "reit_income", pay_date: "2026-11-25", ex_date: "2026-11-10", amount_per_unit: 1.1, quantity: 10 }),
+      expect(body).toEqual({ asset_id: "a-knri", kind: "reit_income", pay_date: "2026-11-25", ex_date: "2026-11-10", amount_per_unit: 1.1 }),
     );
   });
 
@@ -317,7 +323,7 @@ describe("Renda: lançar provento", () => {
     await user.click(within(dialog).getByRole("radio", { name: "Outro" }));
     await user.type(within(dialog).getByLabelText("Valor recebido (R$)"), "250");
     await user.click(within(dialog).getByRole("button", { name: "Lançar provento" }));
-    await waitFor(() => expect(body).toEqual({ asset_id: "a-ipca", kind: "other", pay_date: "2026-11-25", amount_per_unit: 250, quantity: 1 }));
+    await waitFor(() => expect(body).toEqual({ asset_id: "a-ipca", kind: "other", pay_date: "2026-11-25", amount_per_unit: 250 }));
   });
 
   it("não deixa gravar com data ex depois do pagamento e mostra o erro do servidor", async () => {

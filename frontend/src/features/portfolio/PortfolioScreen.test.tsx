@@ -485,6 +485,7 @@ describe("Carteira", () => {
       id: "c-1",
       created_at: "2026-11-20T15:00:00Z",
       amount: 1000,
+      cash_used: 0,
       invested: 990.3,
       items: [
         { asset_id: "a-trxf", symbol: "TRXF11", display_name: "TRX Real Estate", quantity: 10, unit_price: 53.81, value: 538.1 },

@@ -1195,3 +1195,55 @@
   padding: 10px 0;
   text-align: center;
 }
+
+/* ---------- Lucro total ---------- */
+
+.profit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 4px;
+}
+
+.profit__value {
+  font-family: var(--font-display);
+  font-size: clamp(1.3rem, 4.6vw, 1.8rem);
+  font-variant-numeric: tabular-nums;
+}
+
+.profit__value.is-up {
+  color: var(--positive, var(--gold-text));
+}
+
+.profit__value.is-down {
+  color: var(--negative, var(--danger, var(--text)));
+}
+
+.profit__detail summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.profit__parts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+}
+
+.profit__parts div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.profit__parts dt {
+  color: var(--text-muted);
+}
+
+.profit__parts dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}

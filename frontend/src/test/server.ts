@@ -326,6 +326,7 @@ export const handlers = [
       id: `c-${db.nextId++}`,
       created_at: "2026-11-25T12:00:00Z",
       amount: body.amount,
+      cash_used: body.cash_used ?? 0,
       invested: items.reduce((acc, i) => acc + i.value, 0),
       items,
     };
@@ -334,6 +335,14 @@ export const handlers = [
   }),
 
   http.get("/api/v1/contributions", () => HttpResponse.json(db.contributions)),
+
+  // As cotas do livro na data com: na carteira falsa, as de hoje (o fake não guarda datas).
+  http.get("/api/v1/income/entitlement", ({ request }) => {
+    const asset = new URL(request.url).searchParams.get("asset");
+    const stored = db.assets.find((a) => a.id === asset);
+    if (!stored) return HttpResponse.json({ code: "not_found", status: 404 }, { status: 404 });
+    return HttpResponse.json({ quantity: stored.quantity, record_date: "2026-11-24" });
+  }),
 
   http.get("/api/v1/transactions", ({ request }) => {
     const assetId = new URL(request.url).searchParams.get("asset_id");

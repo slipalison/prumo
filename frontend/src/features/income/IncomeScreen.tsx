@@ -8,6 +8,7 @@ import { IconPlus } from "../../components/icons";
 import { MagneticButton } from "../../components/MagneticButton";
 import { Skeleton } from "../../components/Skeleton";
 import { useMoney } from "../../lib/privacy";
+import { yieldText } from "../../lib/yieldOnCost";
 import { AddIncomeSheet } from "./AddIncomeSheet";
 import { EstimateCard } from "./EstimateCard";
 import { IncomeGoalCard } from "./IncomeGoalCard";
@@ -73,6 +74,8 @@ function Loaded({ summary }: { summary: IncomeSummary }) {
         <Stat label="A receber" value={summary.upcoming_total} />
       </section>
 
+      <PortfolioYieldCard yield={summary.yield_on_cost} />
+
       <GlassCard as="section" className="income-card" aria-labelledby="income-months">
         <h2 id="income-months" className="section-title">
           Mês a mês
@@ -125,6 +128,31 @@ function Stat({ label, value }: { label: string; value: number }) {
     <GlassCard className="income-stat">
       <span className="income-stat__label">{label}</span>
       <strong className="income-stat__value">{money.brl(value)}</strong>
+    </GlassCard>
+  );
+}
+
+/**
+ * Yield on cost da carteira: a renda dos 12 meses sobre o que foi pago. Ativo de
+ * custo desconhecido sai da conta, e a tela diz quem.
+ */
+function PortfolioYieldCard({ yield: y }: { yield: IncomeSummary["yield_on_cost"] }) {
+  const money = useMoney();
+  return (
+    <GlassCard as="section" className="income-card income-yield" aria-labelledby="income-yield">
+      <h2 id="income-yield" className="section-title">
+        Yield on cost
+      </h2>
+      <p className="income-yield__value">{yieldText(y)}</p>
+      <p className="field__hint">
+        Renda dos últimos 12 meses ({y.basis === "estimate" ? "estimada, não é extrato" : "recebida"}) ÷ o que você pagou. Hoje: {money.brl(y.income_12m)} sobre{" "}
+        {money.brl(y.cost)}.
+      </p>
+      {y.partial && (
+        <p className="field__hint">
+          Parcial: fica de fora o que está sem preço médio ({y.unknown_cost.join(", ")}). Informe o preço médio na folha do ativo.
+        </p>
+      )}
     </GlassCard>
   );
 }

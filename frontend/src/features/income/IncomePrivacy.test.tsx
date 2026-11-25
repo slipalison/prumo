@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { MASK_BRL } from "../../lib/money";
 import { HIDE_VALUES_KEY } from "../../lib/privacy";
 import { samplePlan } from "../../test/fixtures";
-import { emptySummary, sampleEvent, sampleSummary } from "../../test/incomeHandlers";
+import { emptySummary, sampleCash, sampleEvent, sampleSummary } from "../../test/incomeHandlers";
 import { renderApp } from "../../test/render";
 import { server } from "../../test/server";
 
@@ -110,7 +110,7 @@ describe("Renda com o olho fechado", () => {
     summary.estimate = {
       monthly: 410.5,
       updated_at: "2026-11-25T11:00:00Z",
-      assets: [{ asset_id: "a-knri", symbol: "KNRI11", display_name: "Kinea", quantity: 10, per_unit_12m: 12.6, monthly: 10.5 }],
+      assets: [{ asset_id: "a-knri", symbol: "KNRI11", display_name: "Kinea", quantity: 10, per_unit_12m: 12.6, monthly: 10.5, trailing_12m: 126 }],
       missing: [],
     };
     server.use(http.get("/api/v1/income/summary", () => HttpResponse.json(summary)));
@@ -122,22 +122,22 @@ describe("Renda com o olho fechado", () => {
 });
 
 describe("Aportar com o olho fechado", () => {
-  it("a renda do plano e a sugestão de caixa saem mascaradas", async () => {
+  it("a renda do plano e o caixa saem mascarados", async () => {
     window.localStorage.setItem(HIDE_VALUES_KEY, "1");
     const plan = samplePlan(6000);
     plan.income = { available: true, missing: [], added_monthly: 35.4, before_monthly: 410.5, after_monthly: 445.9 };
     plan.items = plan.items.map((item, index) => ({ ...item, estimated_monthly_income: index === 0 ? 20.25 : null }));
     server.use(
       http.post("/api/v1/plans", () => HttpResponse.json(plan)),
-      http.get("/api/v1/income/cash-suggestion", () => HttpResponse.json({ amount: 812, count: 3, since: "2026-11-01" })),
+      http.get("/api/v1/cash", () => HttpResponse.json(sampleCash())),
     );
     const { user } = renderApp("aportar");
-    const offer = await screen.findByRole("group", { name: "Proventos recebidos desde o último aporte" });
-    expect(offer).toHaveTextContent(`+ ${MASK_BRL} de proventos recebidos desde o último aporte (3 pagamentos)`);
+    const offer = await screen.findByRole("group", { name: "Caixa disponível para aportar" });
+    expect(offer).toHaveTextContent(`+ ${MASK_BRL} em caixa`);
 
     const input = screen.getByRole("textbox", { name: "Quanto você vai aportar?" });
     await user.click(screen.getByRole("button", { name: "Incluir" }));
-    expect(screen.getByRole("group", { name: "Proventos recebidos desde o último aporte" })).toHaveTextContent(MASK_BRL);
+    expect(screen.getByRole("group", { name: "Caixa disponível para aportar" })).toHaveTextContent(MASK_BRL);
     expect(input.getAttribute("value")).not.toMatch(MONEY);
     await user.click(screen.getByRole("button", { name: /Calcular/ }));
     const result = await screen.findByRole("region", { name: "Resultado do aporte" });

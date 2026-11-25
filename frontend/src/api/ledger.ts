@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { cashKeys } from "./cashQueries";
 import { request } from "./client";
+import { incomeKeys } from "./incomeQueries";
 import type {
   CreateTransactionRequest,
   Transaction,
@@ -31,6 +33,9 @@ function refresh(client: QueryClient) {
   return Promise.all([
     client.invalidateQueries({ queryKey: ledgerKeys.all }),
     client.invalidateQueries({ queryKey: keys.portfolio }),
+    // Uma venda entra no caixa; custo novo muda o yield on cost.
+    client.invalidateQueries({ queryKey: cashKeys.all }),
+    client.invalidateQueries({ queryKey: incomeKeys.yield }),
   ]);
 }
 

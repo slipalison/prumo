@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { errorMessage } from "../../api/client";
+import { cashKeys } from "../../api/cashQueries";
 import { incomeKeys } from "../../api/incomeQueries";
 import { useContributions, usePlan } from "../../api/queries";
 import type { AssetClass, Plan, Portfolio } from "../../api/types";
@@ -16,7 +17,7 @@ import { formatBRL } from "../../lib/format";
 import { sumTargets, targetsFromClasses } from "../../lib/goals";
 import { useMoney } from "../../lib/privacy";
 import { needsRating, ratingIntro } from "../../lib/rating";
-import { CashSuggestion } from "../income/CashSuggestion";
+import { CashSuggestion } from "../cash/CashSuggestion";
 import { Onboarding } from "../onboarding/Onboarding";
 import { AddAssetSheet } from "../portfolio/AddAssetSheet";
 import { RateAssetSheet, type RatingTarget } from "../portfolio/RateAssetSheet";
@@ -74,6 +75,8 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
   const titleId = useId();
   const inputId = useId();
   const [amount, setAmount] = useState(0);
+  // Quanto do valor digitado é caixa (o que o aporte registrado vai baixar).
+  const [cashIncluded, setCashIncluded] = useState(0);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [registered, setRegistered] = useState(false);
@@ -98,10 +101,12 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
     });
   };
 
-  // O valor muda por digitação, chip ou proventos incluídos: o plano na tela
-  // deixa de valer em qualquer um dos três.
-  const changeAmount = (value: number) => {
+  // O valor muda por digitação, chip ou caixa incluído: o plano na tela deixa
+  // de valer em qualquer um dos três. Valor menor que o caixa incluído desfaz
+  // a inclusão: o caixa nunca passa do aporte.
+  const changeAmount = (value: number, included: number = cashIncluded) => {
     setAmount(value);
+    setCashIncluded(value >= included ? included : 0);
     if (plan) setPlan(null);
   };
 
@@ -139,7 +144,7 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
             screenFocus
             onEnter={() => calculate()}
           />
-          <CashSuggestion amount={amount} onChange={changeAmount} />
+          <CashSuggestion amount={amount} included={cashIncluded} onChange={changeAmount} />
           <div className="quick" role="group" aria-label="Valores rápidos">
             {quick.map((value) => (
               <motion.button
@@ -149,6 +154,7 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
                 whileTap={{ scale: 0.94 }}
                 onClick={() => {
                   setAmount(value);
+                  setCashIncluded((current) => (value >= current ? current : 0));
                   calculate(value);
                 }}
               >
@@ -226,13 +232,16 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
         <ContributionSheet
           open={confirming}
           plan={plan}
+          cashUsed={Math.min(cashIncluded, plan.amount)}
           onClose={() => setConfirming(false)}
           onRegistered={() => {
             setConfirming(false);
             setRegistered(true);
             setPlan(null);
             setAmount(0);
-            // O aporte novo zera a conta dos proventos "desde o último aporte".
+            setCashIncluded(0);
+            // O aporte baixou o caixa que usou: o saldo e a renda se refazem.
+            void queryClient.invalidateQueries({ queryKey: cashKeys.all });
             void queryClient.invalidateQueries({ queryKey: incomeKeys.all });
             toast({ tone: "success", message: "Aporte registrado. A carteira já está atualizada." });
           }}

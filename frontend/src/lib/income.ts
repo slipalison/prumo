@@ -1,4 +1,4 @@
-import type { IncomeKind, IncomeMonth, IncomePayer, IncomeStatus } from "../api/incomeTypes";
+import type { IncomeKind, IncomeMonth, IncomePayer, IncomeStatus, YieldOnCost } from "../api/incomeTypes";
 
 /** IR retido na fonte sobre o JCP — a mesma regra do servidor. */
 export const JCP_WITHHOLDING_RATE = 0.15;
@@ -65,7 +65,15 @@ export function previewAmounts(kind: IncomeKind, perUnit: number, quantity: numb
   return { gross, withholding: retained, net: cents(gross - retained) };
 }
 
-export type PayerSlice = { key: string; label: string; total: number; percent: number; color: string };
+export type PayerSlice = {
+  key: string;
+  label: string;
+  total: number;
+  percent: number;
+  color: string;
+  /** O yield on cost do pagador; `null` no grupo "Outros", que junta vários. */
+  yield: YieldOnCost | null;
+};
 
 /** Sete tons que a interface já usa, sempre ao lado do nome. */
 const PAYER_COLORS = [
@@ -87,6 +95,7 @@ export function payerSlices(payers: IncomePayer[]): PayerSlice[] {
     total: p.total,
     percent: p.percent,
     color: PAYER_COLORS[index] ?? OTHERS_COLOR,
+    yield: p.yield_on_cost,
   }));
   const tail = payers.slice(SHOWN_PAYERS);
   if (tail.length === 0) return head;
@@ -98,6 +107,7 @@ export function payerSlices(payers: IncomePayer[]): PayerSlice[] {
       total: cents(tail.reduce((acc, p) => acc + p.total, 0)),
       percent: cents(tail.reduce((acc, p) => acc + p.percent, 0)),
       color: OTHERS_COLOR,
+      yield: null,
     },
   ];
 }

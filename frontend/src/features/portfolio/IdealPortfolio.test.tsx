@@ -23,6 +23,7 @@ function pricesNow(): LivePrices {
     total_value: portfolio.total_value,
     quotes_updated_at: portfolio.quotes_updated_at,
     classes: portfolio.classes,
+    profit: portfolio.profit,
     assets: portfolio.assets.map(
       ({
         id,

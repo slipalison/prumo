@@ -24,6 +24,7 @@ import { formatSignedPercent } from "../ledger/format";
 import "../ledger/ledger.css";
 import { AddAssetSheet } from "./AddAssetSheet";
 import { ContributionHistory } from "./ContributionHistory";
+import { ProfitSummary } from "./ProfitSummary";
 import { EditAssetSheet } from "./EditAssetSheet";
 import { SectorBreakdown } from "./SectorBreakdown";
 
@@ -111,6 +112,8 @@ export function PortfolioScreen({ portfolio }: PortfolioScreenProps) {
           <span className="donut__caption">{plural(portfolio.assets.length, ["ativo", "ativos"])}</span>
         </Donut>
       </GlassCard>
+
+      <ProfitSummary profit={portfolio.profit} />
 
       <HealthSummary />
 

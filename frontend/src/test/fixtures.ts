@@ -1,5 +1,5 @@
 import type { Transaction } from "../api/ledgerTypes";
-import { ASSET_CLASSES, type Asset, type AssetClass, type Checklists, type GoalTargets, type Plan, type Portfolio } from "../api/types";
+import { ASSET_CLASSES, type Asset, type AssetClass, type Checklists, type GoalTargets, type Plan, type Portfolio, type Profit } from "../api/types";
 import type { HealthRule, HealthWarning, SectorSourceInfo } from "../api/healthTypes";
 import { checklistScore } from "../lib/score";
 
@@ -227,6 +227,33 @@ export function toAsset(stored: StoredAsset, checklists: Checklists, classTotal:
   };
 }
 
+/**
+ * O lucro total como o servidor soma: ganho de capital dos ativos de custo e
+ * preço conhecidos mais os proventos recebidos; ativo de custo desconhecido sai
+ * da soma e vai para `partial_assets`.
+ */
+export function toProfit(assets: Asset[], incomeReceived = 0): Profit {
+  const partial: Profit["partial_assets"] = [];
+  let unrealized = 0;
+  let realized = 0;
+  for (const asset of assets) {
+    if (asset.realized_gain !== null) realized += asset.realized_gain;
+    if (asset.quantity > 0) {
+      if (asset.cost_basis === null) partial.push({ asset_id: asset.id, label: asset.symbol ?? asset.display_name, reason: "unknown_cost" });
+      else if (asset.unrealized_gain !== null) unrealized += asset.unrealized_gain;
+    }
+  }
+  return {
+    unrealized: round2(unrealized),
+    realized: round2(realized),
+    income_received: incomeReceived,
+    total: round2(unrealized + realized + incomeReceived),
+    partial: partial.length > 0,
+    partial_assets: partial,
+    removed_assets: false,
+  };
+}
+
 export function toPortfolio(assets: StoredAsset[], goals: GoalTargets, checklists: Checklists): Portfolio {
   const valueOf = (a: StoredAsset) => {
     const price = a.manual_price ?? a.quote_price;
@@ -250,6 +277,7 @@ export function toPortfolio(assets: StoredAsset[], goals: GoalTargets, checklist
       eligible: mapped.some((a) => a.asset_class === c && a.score > 0 && (a.unit_price ?? 0) > 0),
     })),
     assets: mapped,
+    profit: toProfit(mapped),
     checklists,
   };
 }

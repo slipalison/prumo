@@ -51,11 +51,40 @@ export type IncomeMonth = {
   upcoming: number;
 };
 
+/** Por que não há percentual de yield on cost. */
+export type YieldGap = "unknown_cost" | "zero_cost" | "no_position";
+
+/** Yield on cost de um ativo ou pagador: renda de 12 meses ÷ custo. */
+export type YieldOnCost = {
+  /** A renda usada: a recebida (líquida) ou, sem recebido, a estimada (bruta). */
+  income_12m: number;
+  basis: "received" | "estimate";
+  /** `null`: custo desconhecido. */
+  cost: number | null;
+  /** De 0 a 100; `null` com o motivo em `gap`. */
+  percent: number | null;
+  gap: YieldGap | null;
+  /** Ex.: `informe o preco medio`. */
+  message: string | null;
+};
+
+export type PortfolioYield = Omit<YieldOnCost, "cost"> & {
+  cost: number;
+  /** Algum ativo com posição ficou de fora por custo desconhecido. */
+  partial: boolean;
+  unknown_cost: string[];
+};
+
+export type AssetYield = YieldOnCost & { asset_id: string };
+
+export type YieldReport = { portfolio: PortfolioYield; assets: AssetYield[] };
+
 export type IncomePayer = {
   asset_id: string | null;
   label: string;
   total: number;
   percent: number;
+  yield_on_cost: YieldOnCost;
 };
 
 export type IncomeYear = {
@@ -72,6 +101,8 @@ export type IncomeEstimateAsset = {
   quantity: number;
   per_unit_12m: number;
   monthly: number;
+  /** O que a posição teria rendido em 12 meses (bruto), com as cotas da data com de cada dividendo. */
+  trailing_12m: number | null;
 };
 
 /** A renda mensal estimada pelo histórico por cota — nunca é extrato. */
@@ -103,12 +134,13 @@ export type IncomeSummary = {
   years: IncomeYear[];
   upcoming: IncomeEvent[];
   estimate: IncomeEstimate;
+  yield_on_cost: PortfolioYield;
   goal: IncomeGoal | null;
 };
 
-export type CashSuggestion = {
-  amount: number;
-  count: number;
-  /** O dia do último aporte; `null` sem aporte registrado. */
-  since: string | null;
+/** `GET /income/entitlement`: as cotas do livro na data com. */
+export type Entitlement = {
+  quantity: number;
+  /** `AAAA-MM-DD`. */
+  record_date: string;
 };

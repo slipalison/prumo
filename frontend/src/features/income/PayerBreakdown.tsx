@@ -3,6 +3,7 @@ import { Donut } from "../../components/Donut";
 import { formatPercent } from "../../lib/format";
 import { payerSlices } from "../../lib/income";
 import { useMoney } from "../../lib/privacy";
+import { yieldText } from "../../lib/yieldOnCost";
 
 /** Quem pagou nos últimos 12 meses: rosca e lista com o nome de cada um. */
 export function PayerBreakdown({ payers, total }: { payers: IncomePayer[]; total: number }) {
@@ -29,6 +30,12 @@ export function PayerBreakdown({ payers, total }: { payers: IncomePayer[]; total
             <span className="payers__numbers">
               <strong>{money.brl(slice.total)}</strong>
               <span className="muted"> · {formatPercent(slice.percent)}</span>
+              {slice.yield && (
+                <span className="payers__yield">
+                  {" "}
+                  · yield on cost <strong>{yieldText(slice.yield)}</strong>
+                </span>
+              )}
             </span>
           </li>
         ))}

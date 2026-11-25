@@ -15,6 +15,7 @@ export function mergePrices(portfolio: Portfolio, prices: LivePrices): Portfolio
     ...portfolio,
     total_value: prices.total_value,
     quotes_updated_at: prices.quotes_updated_at,
+    profit: prices.profit,
     classes: portfolio.classes.map((summary) => {
       const live = classes.get(summary.asset_class);
       return live

@@ -421,3 +421,87 @@
   font-size: 0.92rem;
   text-align: center;
 }
+
+/* --- Yield on cost --- */
+
+.payers__yield {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.payers__yield strong {
+  color: var(--text);
+}
+
+.income-yield__value {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.3rem, 4.4vw, 1.8rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Caixa no campo do aporte --- */
+
+.cash-suggestion {
+  flex-direction: column;
+}
+
+.cash-suggestion__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 12px;
+  margin: 0;
+}
+
+.cash-detail {
+  width: 100%;
+  max-width: 460px;
+  text-align: left;
+}
+
+.cash-detail summary {
+  cursor: pointer;
+  text-align: center;
+}
+
+.cash-detail__sources {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 10px 0 6px;
+}
+
+.cash-detail__sources div,
+.cash-detail__recent li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cash-detail__sources dt {
+  color: var(--text-muted);
+}
+
+.cash-detail__sources dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.cash-detail__recent {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.85rem;
+}
+
+.cash-detail__recent strong {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

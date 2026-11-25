@@ -58,6 +58,7 @@ const history: Contribution = {
   id: "c1",
   created_at: "2026-11-20T14:00:00Z",
   amount: 3000,
+  cash_used: 0,
   invested: 2987.5,
   items: [
     { asset_id: "a-knri", symbol: "KNRI11", display_name: "Kinea", quantity: 7, unit_price: 142, value: 994 },
@@ -245,6 +246,7 @@ describe("Ocultar valores", () => {
       quotes_updated_at: portfolio.quotes_updated_at,
       classes: portfolio.classes,
       assets: portfolio.assets,
+      profit: portfolio.profit,
     };
     act(() => FakeEventSource.latest().emit("prices", event));
 

@@ -1,6 +1,6 @@
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { errorMessage } from "../../api/client";
-import { useCreateIncome } from "../../api/incomeQueries";
+import { useCreateIncome, useEntitlement } from "../../api/incomeQueries";
 import { INCOME_KINDS, type IncomeKind } from "../../api/incomeTypes";
 import type { Asset } from "../../api/types";
 import { MagneticButton } from "../../components/MagneticButton";
@@ -9,7 +9,7 @@ import { useToast } from "../../components/toastContext";
 import { unitOf } from "../../lib/assetClasses";
 import { cx } from "../../lib/cx";
 import { parseDecimal } from "../../lib/format";
-import { KIND_LABEL, previewAmounts } from "../../lib/income";
+import { formatIsoDate, KIND_LABEL, previewAmounts } from "../../lib/income";
 import { useMoney } from "../../lib/privacy";
 
 type AddIncomeSheetProps = {
@@ -45,6 +45,9 @@ export function AddIncomeSheet({ open, onClose, assets, today, initialAssetId }:
   const [perUnit, setPerUnit] = useState("");
   const [quantity, setQuantity] = useState("");
   const create = useCreateIncome();
+  // As cotas que o livro tinha na data com: é o que vale com a quantidade em
+  // branco, e o servidor usa a mesma regra.
+  const entitlement = useEntitlement(assetId, exDate, payDate, open && !byValue);
   const money = useMoney();
   const toast = useToast();
 
@@ -71,10 +74,20 @@ export function AddIncomeSheet({ open, onClose, assets, today, initialAssetId }:
 
   const unitValue = parseDecimal(perUnit);
   const typedQuantity = parseDecimal(quantity);
-  const effectiveQuantity = byValue ? 1 : (typedQuantity ?? asset?.quantity ?? 0);
+  // Com a quantidade em branco, vale a do livro na data com — se o servidor
+  // ainda não disse qual é, a prévia espera, e quem decide é ele ao lançar.
+  const bookQuantity = byValue ? 1 : (entitlement.data?.quantity ?? null);
+  const effectiveQuantity = typedQuantity ?? bookQuantity;
+  const noSharesOnRecordDate = typedQuantity === null && bookQuantity !== null && bookQuantity <= 0;
   const valid =
-    asset !== undefined && unitValue !== null && unitValue > 0 && effectiveQuantity > 0 && payDate !== "" && (exDate === "" || exDate <= payDate);
-  const preview = valid ? previewAmounts(kind, unitValue, effectiveQuantity) : null;
+    asset !== undefined &&
+    unitValue !== null &&
+    unitValue > 0 &&
+    !noSharesOnRecordDate &&
+    (typedQuantity === null || typedQuantity > 0) &&
+    payDate !== "" &&
+    (exDate === "" || exDate <= payDate);
+  const preview = valid && effectiveQuantity !== null ? previewAmounts(kind, unitValue, effectiveQuantity) : null;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -85,7 +98,7 @@ export function AddIncomeSheet({ open, onClose, assets, today, initialAssetId }:
         kind,
         pay_date: payDate,
         amount_per_unit: unitValue,
-        quantity: effectiveQuantity,
+        ...(typedQuantity !== null ? { quantity: typedQuantity } : {}),
         ...(exDate ? { ex_date: exDate } : {}),
       },
       {
@@ -173,11 +186,20 @@ export function AddIncomeSheet({ open, onClose, assets, today, initialAssetId }:
                 type="text"
                 inputMode="decimal"
                 autoComplete="off"
-                placeholder={asset ? money.quantity(asset.quantity, !Number.isInteger(asset.quantity)) : "0"}
+                placeholder={bookQuantity !== null ? money.quantity(bookQuantity, !Number.isInteger(bookQuantity)) : "0"}
                 value={quantity}
                 onChange={(event) => setQuantity(event.target.value)}
               />
-              <span className="field__hint">Em branco vale o que você tem hoje.</span>
+              <span className="field__hint">
+                {entitlement.data
+                  ? `Em branco vale o que o livro tinha na data com (${formatIsoDate(entitlement.data.record_date)}).`
+                  : "Em branco vale o que o livro tinha na data com."}
+              </span>
+              {noSharesOnRecordDate && (
+                <span className="form-error" role="alert">
+                  Você não tinha cotas na data com. Informe a quantidade se mesmo assim recebeu.
+                </span>
+              )}
             </div>
           )}
 

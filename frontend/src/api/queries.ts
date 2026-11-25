@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useDebouncedValue } from "../lib/useDebouncedValue";
+import { cashKeys } from "./cashQueries";
 import { api } from "./client";
 import { healthKeys } from "./health";
 import type {
@@ -51,7 +52,12 @@ export function useContribute() {
   return useMutation({
     mutationFn: (body: ContributionRequest) => api.contribute(body),
     onSuccess: async () => {
-      await Promise.all([invalidatePortfolio(client), client.invalidateQueries({ queryKey: keys.contributions })]);
+      await Promise.all([
+        invalidatePortfolio(client),
+        client.invalidateQueries({ queryKey: keys.contributions }),
+        // O aporte baixou o caixa que usou.
+        client.invalidateQueries({ queryKey: cashKeys.all }),
+      ]);
     },
   });
 }

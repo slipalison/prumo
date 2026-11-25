@@ -1,5 +1,6 @@
 import { useId, useState } from "react";
 import { errorMessage } from "../../api/client";
+import { useYieldOnCost } from "../../api/incomeQueries";
 import { useDeleteTransaction, useTransactions } from "../../api/ledger";
 import type { Transaction } from "../../api/ledgerTypes";
 import type { Asset } from "../../api/types";
@@ -11,6 +12,7 @@ import { nounOf, unitOf, type UnitKind } from "../../lib/assetClasses";
 import { formatBRL, plural } from "../../lib/format";
 import type { Money } from "../../lib/money";
 import { useMoney } from "../../lib/privacy";
+import { yieldText } from "../../lib/yieldOnCost";
 import { formatSignedPercent, signedBRL } from "./format";
 import { formatTradeDate, kindLabel, quantityDelta } from "./kinds";
 import { TransactionForm } from "./TransactionForm";
@@ -65,6 +67,10 @@ type TransactionsSectionProps = { asset: Asset };
 export function TransactionsSection({ asset }: TransactionsSectionProps) {
   const headingId = useId();
   const list = useTransactions(asset.id);
+  const yields = useYieldOnCost();
+  // Só quem rendeu provento tem yield para mostrar; o resto ficaria em "0,0%".
+  const assetYield = yields.data?.assets.find((y) => y.asset_id === asset.id);
+  const showYield = assetYield !== undefined && assetYield.income_12m > 0;
   // `"new"`: o formulário de lançamento novo; um id: a edição daquele.
   const [editing, setEditing] = useState<string | null>(null);
   const [focusPrice, setFocusPrice] = useState(false);
@@ -134,6 +140,12 @@ export function TransactionsSection({ asset }: TransactionsSectionProps) {
           <dt>Lucro realizado</dt>
           <dd>{asset.realized_gain === null ? "—" : signedBRL(money, asset.realized_gain)}</dd>
         </div>
+        {showYield && (
+          <div>
+            <dt>Yield on cost (12 meses)</dt>
+            <dd>{yieldText(assetYield)}</dd>
+          </div>
+        )}
       </dl>
 
       {costMissing && (

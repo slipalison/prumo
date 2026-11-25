@@ -1,10 +1,29 @@
 import { http, HttpResponse } from "msw";
-import type { CashSuggestion, IncomeEvent, IncomeMonth, IncomeSummary } from "../api/incomeTypes";
+import type { Cash } from "../api/cashTypes";
+import type { IncomeEvent, IncomeMonth, IncomeSummary, PortfolioYield, YieldOnCost, YieldReport } from "../api/incomeTypes";
 
 /** Os 12 meses que terminam em novembro de 2026, todos zerados. */
 export function emptyMonths(): IncomeMonth[] {
   const labels = ["2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11"];
   return labels.map((month) => ({ month, received: 0, upcoming: 0 }));
+}
+
+/** O yield on cost de um pagador com custo conhecido: renda ÷ custo. */
+export function knownYield(income: number, cost: number): YieldOnCost {
+  return { income_12m: income, basis: "received", cost, percent: Math.round((income / cost) * 10000) / 100, gap: null, message: null };
+}
+
+/** O yield de quem está sem preço médio: sem percentual, com a frase que o pede. */
+export function unknownCostYield(income: number): YieldOnCost {
+  return { income_12m: income, basis: "received", cost: null, percent: null, gap: "unknown_cost", message: "informe o preco medio" };
+}
+
+export function noPortfolioYield(): PortfolioYield {
+  return { income_12m: 0, basis: "received", cost: 0, percent: null, gap: "no_position", message: "sem posicao", partial: false, unknown_cost: [] };
+}
+
+export function emptyYieldReport(): YieldReport {
+  return { portfolio: noPortfolioYield(), assets: [] };
 }
 
 export function emptySummary(): IncomeSummary {
@@ -18,6 +37,7 @@ export function emptySummary(): IncomeSummary {
     years: [],
     upcoming: [],
     estimate: { monthly: 0, updated_at: null, assets: [], missing: [] },
+    yield_on_cost: noPortfolioYield(),
     goal: null,
   };
 }
@@ -37,9 +57,9 @@ export function sampleSummary(): IncomeSummary {
     upcoming_total: 90,
     months,
     by_payer: [
-      { asset_id: "a-knri", label: "KNRI11", total: total * 0.6, percent: 60 },
-      { asset_id: "a-itsa", label: "ITSA4", total: total * 0.3, percent: 30 },
-      { asset_id: "a-mxrf", label: "MXRF11", total: total * 0.1, percent: 10 },
+      { asset_id: "a-knri", label: "KNRI11", total: total * 0.6, percent: 60, yield_on_cost: knownYield(total * 0.6, 10000) },
+      { asset_id: "a-itsa", label: "ITSA4", total: total * 0.3, percent: 30, yield_on_cost: knownYield(total * 0.3, 20000) },
+      { asset_id: "a-mxrf", label: "MXRF11", total: total * 0.1, percent: 10, yield_on_cost: unknownCostYield(total * 0.1) },
     ],
     years: [
       { year: 2026, months: [0, 125, 130, 0, 140, 145, 0, 155, 160, 0, 170, 240], total: 1265 },
@@ -68,10 +88,20 @@ export function sampleSummary(): IncomeSummary {
       monthly: 410.5,
       updated_at: "2026-11-25T11:00:00Z",
       assets: [
-        { asset_id: "a-knri", symbol: "KNRI11", display_name: "Kinea Renda Imobiliária", quantity: 10, per_unit_12m: 12.6, monthly: 10.5 },
-        { asset_id: "a-itsa", symbol: "ITSA4", display_name: "Itaúsa", quantity: 2500, per_unit_12m: 0.96, monthly: 200 },
+        { asset_id: "a-knri", symbol: "KNRI11", display_name: "Kinea Renda Imobiliária", quantity: 10, per_unit_12m: 12.6, monthly: 10.5, trailing_12m: 126 },
+        { asset_id: "a-itsa", symbol: "ITSA4", display_name: "Itaúsa", quantity: 2500, per_unit_12m: 0.96, monthly: 200, trailing_12m: 2400 },
       ],
       missing: ["ZZZZ3"],
+    },
+    yield_on_cost: {
+      income_12m: total * 0.9,
+      basis: "received",
+      cost: 30000,
+      percent: Math.round(((total * 0.9) / 30000) * 10000) / 100,
+      gap: null,
+      message: null,
+      partial: true,
+      unknown_cost: ["MXRF11"],
     },
     goal: {
       id: "g-1",
@@ -106,7 +136,27 @@ export function sampleEvent(overrides: Partial<IncomeEvent> = {}): IncomeEvent {
   };
 }
 
-const noCash: CashSuggestion = { amount: 0, count: 0, since: null };
+/** Caixa vazio: nada entrou, nada saiu. */
+export function emptyCash(): Cash {
+  return { balance: 0, since: "2026-11-25", income: { amount: 0, count: 0 }, sales: { amount: 0, count: 0 }, used: 0, adjustment: 0, recent: [] };
+}
+
+/** Caixa FICTÍCIO: 812 de proventos e vendas, já com um aporte que usou 100. */
+export function sampleCash(): Cash {
+  return {
+    balance: 812,
+    since: "2026-10-01",
+    income: { amount: 612, count: 3 },
+    sales: { amount: 300, count: 1 },
+    used: 100,
+    adjustment: 0,
+    recent: [
+      { date: "2026-11-20", kind: "sale", label: "ITSA4", amount: 300 },
+      { date: "2026-11-14", kind: "income", label: "KNRI11", amount: 12 },
+      { date: "2026-11-02", kind: "contribution", label: "Aporte", amount: 100 },
+    ],
+  };
+}
 
 /**
  * O padrão da renda nos testes das outras telas: livro vazio, nada de caixa.
@@ -114,6 +164,7 @@ const noCash: CashSuggestion = { amount: 0, count: 0, since: null };
  */
 export const incomeHandlers = [
   http.get("/api/v1/income/summary", () => HttpResponse.json(emptySummary())),
-  http.get("/api/v1/income/cash-suggestion", () => HttpResponse.json(noCash)),
+  http.get("/api/v1/income/yield-on-cost", () => HttpResponse.json(emptyYieldReport())),
+  http.get("/api/v1/cash", () => HttpResponse.json(emptyCash())),
   http.get("/api/v1/income", () => HttpResponse.json([])),
 ];
