@@ -1537,9 +1537,15 @@ Do mais antigo para o mais novo. Cada leitura recalcula o progresso; se o valor
 chegou à meta, grava `achieved_at` (uma vez só) e o objetivo passa a
 `status: "achieved"`, com `assumptions: null` e `projection.state: "reached"`.
 **Meta atingida não volta a ser ativa** se o patrimônio cair depois; só trocar o
-valor da meta apaga a data (meta nova, conquista nova). A data registrada é a da
-primeira leitura que viu a meta atingida (a tela Aportar e Ajustes › Objetivos
-leem a cada uso).
+valor da meta apaga a data (meta nova, conquista nova). A data é gravada por
+quem primeiro vir a meta atingida: a **tarefa diária de desempenho** apura todos
+os objetivos abertos de todas as pessoas (patrimônio, classe e a meta de renda
+mensal, que só conquista com proventos recebidos), com o lock de job e um
+`update ... where achieved_at is null`, então duas réplicas gravam uma data só e
+reexecutar não muda nada; as leituras de `GET /objectives`, do Aportar e da tela
+Renda fazem a mesma apuração na hora, sem esperar o dia seguinte. A data pode
+ter, portanto, até um dia de atraso em relação ao momento em que o valor passou
+da meta.
 
 - `current`: o patrimônio total (`total_value` do `GET /portfolio`) ou o valor da
   classe.

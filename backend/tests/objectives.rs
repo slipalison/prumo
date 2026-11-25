@@ -8,11 +8,18 @@
 
 mod common;
 
+use async_trait::async_trait;
 use axum::http::StatusCode;
 use common::*;
+use prumo::domain::asset_class::AssetClass;
 use prumo::domain::income::today_in_brazil;
+use prumo::domain::objectives::Target;
 use prumo::domain::performance::Quota;
 use prumo::history::IndexCode;
+use prumo::history::{HistoryError, HistoryProvider, Series};
+use prumo::objectives::{record_achieved, record_achieved_for};
+use prumo::performance::Performance;
+use prumo::store::NewObjective;
 use prumo::store::Snapshot;
 use rust_decimal_macros::dec;
 use serde_json::{json, Value};
@@ -84,6 +91,7 @@ async fn objectives_contract() {
     contribution_comes_from_the_ledger(&db, &dir).await;
     return_premise_comes_from_the_best_source(&db, &dir).await;
     impact_of_a_contribution(&db, &dir).await;
+    background_job_records_every_kind(&db, &dir).await;
 }
 
 async fn crud_validation_and_owner(db: &Database, dir: &tempfile_dir::Dir) {
@@ -650,4 +658,154 @@ async fn impact_of_a_contribution(db: &Database, dir: &tempfile_dir::Dir) {
     )
     .await;
     assert_eq!(theirs.body["objectives"], json!([]));
+}
+
+/// Sem dado de fora: o teste mexe só no que a tarefa faz com os objetivos.
+struct NoHistory;
+
+#[async_trait]
+impl HistoryProvider for NoHistory {
+    async fn index(
+        &self,
+        _code: IndexCode,
+        _from: Date,
+        _to: Date,
+    ) -> Result<Series, HistoryError> {
+        Ok(Vec::new())
+    }
+
+    async fn closes(&self, _symbol: &str, _from: Date, _to: Date) -> Result<Series, HistoryError> {
+        Ok(Vec::new())
+    }
+}
+
+fn new_objective(kind: Target, asset_class: Option<AssetClass>, target: u32) -> NewObjective {
+    NewObjective {
+        target_kind: kind,
+        asset_class,
+        target: target.into(),
+        monthly_contribution: None,
+        expected_return: None,
+    }
+}
+
+async fn background_job_records_every_kind(db: &Database, dir: &tempfile_dir::Dir) {
+    let me = person(db, "obj-tarefa@prumo.test", dir);
+    let other = person(db, "obj-tarefa-outra@prumo.test", dir);
+    let knri = add_asset(
+        &me,
+        json!({ "asset_class": "br_reits", "symbol": "KNRI11", "quantity": 10 }),
+    )
+    .await;
+    let user = db.store.ensure_user(&me.email).await.unwrap();
+
+    // A meta de renda existe antes de haver provento: ainda aberta.
+    let goal = put(&me.router, "/api/v1/income/goal", json!({ "target": 50 })).await;
+    assert_eq!(goal.status, StatusCode::OK, "{}", goal.text);
+    assert_eq!(goal.body["achieved_at"], Value::Null);
+    let income = post(
+        &me.router,
+        "/api/v1/income",
+        json!({ "asset_id": knri, "kind": "reit_income", "pay_date": days_ago(10), "amount_per_unit": 120 }),
+    )
+    .await;
+    assert_eq!(income.status, StatusCode::CREATED, "{}", income.text);
+
+    // Criados direto no banco: nenhuma rota os avalia.
+    let reached_total = db
+        .store
+        .insert_objective(user, &new_objective(Target::NetWorth, None, 100))
+        .await
+        .unwrap();
+    let reached_class = db
+        .store
+        .insert_objective(
+            user,
+            &new_objective(Target::ClassValue, Some(AssetClass::BrReits), 100),
+        )
+        .await
+        .unwrap();
+    let open_class = db
+        .store
+        .insert_objective(
+            user,
+            &new_objective(Target::ClassValue, Some(AssetClass::Crypto), 5000),
+        )
+        .await
+        .unwrap();
+    let theirs = db
+        .store
+        .insert_objective(
+            db.store.ensure_user(&other.email).await.unwrap(),
+            &new_objective(Target::NetWorth, None, 1_000_000_000),
+        )
+        .await
+        .unwrap();
+
+    // Duas réplicas ao mesmo tempo: cada objetivo é gravado uma vez só.
+    let now = OffsetDateTime::now_utc();
+    let (first, second) = tokio::join!(
+        record_achieved_for(&db.store, user, now),
+        record_achieved_for(&db.store, user, now),
+    );
+    assert_eq!(first.unwrap() + second.unwrap(), 3);
+
+    let open = db.store.open_objectives(user).await.unwrap();
+    assert_eq!(open.len(), 1);
+    assert_eq!(open[0].id, open_class.id);
+    // Idempotente: outra rodada não grava nem mexe na data.
+    assert_eq!(
+        record_achieved_for(&db.store, user, now + Duration::hours(1))
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        record_achieved(&db.store, now + Duration::hours(1))
+            .await
+            .unwrap(),
+        0
+    );
+
+    // As telas mostram a data que a tarefa gravou, sem mudá-la.
+    let list = get(&me.router, "/api/v1/objectives").await;
+    for id in [reached_total.id, reached_class.id] {
+        let found = objective(&list.body, &id.to_string());
+        assert_eq!(found["status"], "achieved");
+        assert!(found["achieved_at"].as_str().is_some());
+    }
+    assert_eq!(
+        objective(&list.body, &open_class.id.to_string())["status"],
+        "active"
+    );
+    let goal = get(&me.router, "/api/v1/income/goal").await;
+    assert!(goal.body["achieved_at"].as_str().is_some(), "{}", goal.text);
+    assert_eq!(goal.body["reached"], true);
+
+    // O objetivo de outra pessoa não foi tocado.
+    let theirs_now = db
+        .store
+        .open_objectives(db.store.ensure_user(&other.email).await.unwrap())
+        .await
+        .unwrap();
+    assert_eq!(theirs_now.len(), 1);
+    assert_eq!(theirs_now[0].id, theirs.id);
+
+    // A tarefa diária faz a apuração sozinha, com o lock de job.
+    let later = db
+        .store
+        .insert_objective(user, &new_objective(Target::NetWorth, None, 200))
+        .await
+        .unwrap();
+    let job = Performance::new(db.store.clone(), std::sync::Arc::new(NoHistory));
+    let report = job.run_daily(OffsetDateTime::now_utc()).await.unwrap();
+    assert!(report.ran);
+    assert!(report.objectives >= 1, "{report:?}");
+    assert!(!db
+        .store
+        .open_objectives(user)
+        .await
+        .unwrap()
+        .iter()
+        .any(|o| o.id == later.id));
 }

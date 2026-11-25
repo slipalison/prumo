@@ -27,6 +27,7 @@ use crate::domain::objectives::{
 use crate::domain::performance::{months_before, period_return, QuotaPoint};
 use crate::error::{ApiError, ApiResult};
 use crate::history::IndexCode;
+use crate::objectives::current_value;
 use crate::service::{self, PortfolioView};
 use crate::store::{NewObjective, Objective, ObjectiveChanges};
 
@@ -263,17 +264,7 @@ impl<'a> Evaluator<'a> {
 
     /// O que o objetivo mede hoje.
     fn current(&self, objective: &Objective) -> ApiResult<Decimal> {
-        Ok(Self::target_of(objective)?.current(
-            objective.asset_class,
-            self.view.total_value,
-            |class| {
-                self.view
-                    .classes
-                    .iter()
-                    .find(|c| c.asset_class == class)
-                    .map_or(Decimal::ZERO, |c| c.current_value)
-            },
-        ))
+        current_value(&self.view, objective).ok_or_else(ApiError::internal)
     }
 
     /// A rentabilidade anual (fração) de quem não informou a sua: a do

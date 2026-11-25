@@ -20,6 +20,7 @@ use crate::domain::yoc::{
 use crate::error::ApiResult;
 use crate::income::PortfolioIncome;
 use crate::service::{self, PortfolioView};
+use crate::store::IncomeEvent;
 
 /// O yield on cost de um ativo, ou de um pagador.
 #[derive(Debug, Serialize)]
@@ -175,7 +176,7 @@ pub async fn show(
 ) -> ApiResult<Json<YieldReportDto>> {
     let today = today_in_brazil(OffsetDateTime::now_utc());
     let ledger = state.store.income_ledger(user.id).await?;
-    let entries: Vec<Entry> = ledger.iter().map(super::income::entry).collect();
+    let entries: Vec<Entry> = ledger.iter().map(IncomeEvent::entry).collect();
     let summary = summarize(&entries, today);
     let view = service::portfolio(&state.store, user.id).await?;
     let estimate = state

@@ -367,15 +367,6 @@ fn pay_date_in_range(date: Date) -> ApiResult<Date> {
     Ok(date)
 }
 
-pub(super) fn entry(event: &IncomeEvent) -> Entry {
-    Entry {
-        pay_date: event.pay_date,
-        net: event.net,
-        payer_key: event.payer_key(),
-        payer_label: event.payer_label(),
-    }
-}
-
 /// Valida e calcula os campos de um provento (criação ou edição).
 fn build_fields(
     kind: IncomeKind,
@@ -453,7 +444,7 @@ async fn summary_of(
     today: Date,
 ) -> ApiResult<(IncomeSummary, Vec<IncomeEvent>)> {
     let ledger = state.store.income_ledger(user).await?;
-    let entries: Vec<Entry> = ledger.iter().map(entry).collect();
+    let entries: Vec<Entry> = ledger.iter().map(IncomeEvent::entry).collect();
     Ok((summarize(&entries, today), ledger))
 }
 

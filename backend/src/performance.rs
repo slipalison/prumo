@@ -77,6 +77,8 @@ pub struct JobReport {
     pub failed: usize,
     pub prices: usize,
     pub indexes: usize,
+    /// Objetivos que passaram a atingidos nesta rodada.
+    pub objectives: usize,
 }
 
 /// O que uma rodada da reconstrução fez.
@@ -163,6 +165,15 @@ impl Performance {
                     report.failed += 1;
                     tracing::error!(error = %error, "serie da carteira nao gravada");
                 }
+            }
+        }
+        // Antes dos índices, que podem falhar: a data de conquista não espera
+        // por eles. Falha aqui não derruba a tarefa.
+        match crate::objectives::record_achieved(&self.store, now).await {
+            Ok(count) => report.objectives = count,
+            Err(error) => {
+                report.failed += 1;
+                tracing::error!(error = %error, "objetivos atingidos nao apurados");
             }
         }
         report.indexes = self.sync_indexes(today).await?;

@@ -14,6 +14,7 @@ pub mod history;
 pub mod http;
 pub mod income;
 pub mod live;
+pub mod objectives;
 pub mod performance;
 pub mod quotes;
 pub mod sectors;

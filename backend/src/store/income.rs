@@ -13,7 +13,7 @@ use super::{decode_error, is_unique_violation, Store, StoreError};
 use crate::dividends::{DividendEvent, DividendHistory};
 use crate::domain::asset_class::AssetClass;
 use crate::domain::income::{
-    status, IncomeAmounts, IncomeKind, IncomeSource, IncomeStatus, ObjectiveKind,
+    status, Entry, IncomeAmounts, IncomeKind, IncomeSource, IncomeStatus, ObjectiveKind,
 };
 
 /// Um provento gravado.
@@ -38,6 +38,16 @@ pub struct IncomeEvent {
 impl IncomeEvent {
     pub fn status(&self, today: Date) -> IncomeStatus {
         status(self.pay_date, today)
+    }
+
+    /// O provento como o resumo de renda o lê.
+    pub fn entry(&self) -> Entry {
+        Entry {
+            pay_date: self.pay_date,
+            net: self.net,
+            payer_key: self.payer_key(),
+            payer_label: self.payer_label(),
+        }
     }
 
     /// A chave do pagador: o ativo, ou o símbolo/nome quando o ativo já foi

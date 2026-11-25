@@ -3,7 +3,7 @@
 //! rotas e consultas de `store/income.rs`; aqui ela nunca aparece.
 
 use rust_decimal::Decimal;
-use time::Date;
+use time::{Date, OffsetDateTime};
 use uuid::Uuid;
 
 use super::income::ObjectiveRow;
@@ -161,5 +161,54 @@ impl Store {
         .fetch_one(&self.pool)
         .await?;
         Ok((buys, first))
+    }
+
+    /// Os objetivos que ainda não foram atingidos, de todos os tipos (a meta
+    /// de renda mensal inclusive).
+    pub async fn open_objectives(&self, user: Uuid) -> Result<Vec<Objective>, StoreError> {
+        let rows: Vec<ObjectiveRow> = sqlx::query_as(concat!(
+            "select ",
+            columns!(),
+            " from objectives
+              where user_id = $1 and achieved_at is null
+              order by created_at, id"
+        ))
+        .bind(user)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(Objective::try_from)
+            .collect::<Result<_, _>>()?)
+    }
+
+    /// As pessoas com algum objetivo ainda aberto.
+    pub async fn users_with_open_objectives(&self) -> Result<Vec<Uuid>, StoreError> {
+        let rows: Vec<(Uuid,)> = sqlx::query_as(
+            "select distinct user_id from objectives where achieved_at is null order by user_id",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(|(id,)| id).collect())
+    }
+
+    /// Grava a data de conquista, só se ainda não houver uma. `true` se esta
+    /// chamada foi a que gravou: duas réplicas na mesma hora gravam uma vez só.
+    pub async fn achieve_objective(
+        &self,
+        user: Uuid,
+        id: Uuid,
+        at: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        let done = sqlx::query(
+            "update objectives set achieved_at = $3
+              where user_id = $1 and id = $2 and achieved_at is null",
+        )
+        .bind(user)
+        .bind(id)
+        .bind(at)
+        .execute(&self.pool)
+        .await?;
+        Ok(done.rows_affected() > 0)
     }
 }
