@@ -1,11 +1,13 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
+import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import type { Contribution, LivePrices } from "../api/types";
+import { MASK_QUANTITY } from "../lib/money";
 import { HIDE_VALUES_KEY } from "../lib/privacy";
 import { FakeEventSource } from "../test/eventSource";
-import { toPortfolio } from "../test/fixtures";
+import { samplePlan, toPortfolio, TREASURY_AT } from "../test/fixtures";
 import { renderApp } from "../test/render";
-import { getDb } from "../test/server";
+import { getDb, server } from "../test/server";
 
 /** Qualquer R$ seguido de dígito é valor vazando. */
 const MONEY = /R\$\s*\d/;
@@ -256,6 +258,109 @@ describe("Ocultar valores", () => {
     // Mostrando de novo, o valor novo aparece (o stream seguiu rodando).
     await user.click(eye());
     expect(await screen.findByText(/R\$\s1\.500,00/)).toBeInTheDocument();
+  });
+
+  it("título do Tesouro: o nome segue visível; quantidade, preço e valor ficam mascarados em toda tela", async () => {
+    getDb().assets.push({
+      id: "a-td",
+      asset_class: "fixed_income",
+      symbol: "TD-SELIC-20290301",
+      display_name: "Tesouro Selic 2029",
+      quantity: 0.35,
+      quote_price: 20305.65,
+      manual_price: null,
+      currency: "BRL",
+      score_override: 6,
+      answers: {},
+      treasury: true,
+      quote_at: TREASURY_AT,
+    });
+    // O título soma ao patrimônio: a abertura padrão espera o total sem ele.
+    const { user } = renderApp("carteira");
+    await screen.findByRole("heading", { name: "Tudo o que você tem, no eixo certo" });
+    const rf = screen.getByRole("region", { name: "Renda Fixa" });
+    expect(await within(rf).findByText(/0,35 títulos · R\$\s20\.305,65/)).toBeInTheDocument();
+
+    await user.click(eye());
+    const row = within(rf).getByRole("button", { name: /Tesouro Selic 2029/ });
+    expect(row).toHaveTextContent("Tesouro Selic 2029");
+    expect(row).toHaveTextContent("Tesouro Direto");
+    expect(row).toHaveTextContent(`${MASK_QUANTITY} títulos · ${MASK}`);
+    expect(row).not.toHaveTextContent("TD-SELIC");
+    expectNoMoney();
+
+    // A folha de edição: o nome e a data do preço aparecem; o valor, não.
+    await user.click(row);
+    const dialog = await screen.findByRole("dialog", { name: "Tesouro Selic 2029" });
+    expect(within(dialog).getByText(/preço de resgate de 19\/11\/2026/)).toBeInTheDocument();
+    expectNoMoney(dialog);
+    expect(dialog).toHaveTextContent(MASK);
+    await user.click(within(dialog).getByRole("button", { name: "Fechar" }));
+
+    // O cadastro: a lista de títulos fala o nome, sem preço nenhum.
+    await user.click(screen.getByRole("button", { name: "Adicionar ativo" }));
+    const add = await screen.findByRole("dialog", { name: "Novo ativo" });
+    await user.type(within(add).getByRole("combobox", { name: "Ticker ou nome" }), "tesouro");
+    const option = await within(add).findByRole("option", { name: /Tesouro Selic 2029/ });
+    expect(option).toHaveTextContent("Tesouro Direto");
+    expectNoMoney(add);
+  });
+
+  it("título do Tesouro no aporte: nome visível, fração e preço mascarados no plano e na folha de registro", async () => {
+    getDb().assets.push({
+      id: "a-td",
+      asset_class: "fixed_income",
+      symbol: "TD-IPCA-20350515",
+      display_name: "Tesouro IPCA+ 2035",
+      quantity: 0,
+      quote_price: 2500.95,
+      manual_price: null,
+      currency: "BRL",
+      score_override: 6,
+      answers: {},
+      treasury: true,
+    });
+    server.use(
+      http.post("/api/v1/plans", () =>
+        HttpResponse.json({
+          ...samplePlan(),
+          items: [
+            {
+              asset_id: "a-td",
+              asset_class: "fixed_income",
+              symbol: "TD-IPCA-20350515",
+              display_name: "Tesouro IPCA+ 2035",
+              listed_on_b3: false,
+              treasury: true,
+              quantity: 0.39,
+              unit_price: 2500.95,
+              value: 975.37,
+              divisible: true,
+              class_percent_after: 100,
+            },
+          ],
+          notices: [{ code: "assets_without_price", symbols: ["Tesouro IPCA+ 2035"] }],
+        }),
+      ),
+    );
+    const { user } = renderApp("aportar");
+    const input = await screen.findByRole("textbox", { name: "Quanto você vai aportar?" });
+    await user.type(input, "100000");
+    await user.click(screen.getByRole("button", { name: /Calcular/ }));
+    const result = await screen.findByRole("region", { name: "Resultado do aporte" });
+    await within(result).findByText(/0,39 títulos × R\$\s2\.500,95/);
+
+    await user.click(eye());
+    expect(within(result).getByText("Tesouro IPCA+ 2035")).toBeInTheDocument();
+    expect(within(result).getByText(`${MASK_QUANTITY} títulos × ${MASK}`)).toBeInTheDocument();
+    expect(within(result).getByText(/Sem cotação agora: Tesouro IPCA\+ 2035/)).toBeInTheDocument();
+    expectNoMoney();
+
+    await user.click(await screen.findByRole("button", { name: /Já comprei/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Registrar aporte" });
+    expect(within(dialog).getByText("Tesouro IPCA+ 2035")).toBeInTheDocument();
+    expectNoMoney(dialog);
+    expect(within(dialog).getByRole("textbox", { name: "Quantidade" })).toHaveValue(MASK_QUANTITY);
   });
 
   it("o botão de olho não carrega valor nenhum no nome", async () => {
