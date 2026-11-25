@@ -139,6 +139,12 @@ async fn an_asset_above_its_ceiling_sits_out_of_the_plan(db: &Database, dir: &te
         find(&portfolio.body["classes"], "asset_class", "br_reits")["eligible"],
         false
     );
+    // O teto é filtro de compra, não composição: o ideal de KNRI11 continua
+    // sendo a classe inteira (é o único FII com nota).
+    assert_eq!(
+        find(&portfolio.body["assets"], "symbol", "KNRI11")["ideal_class_percent"],
+        100.0
+    );
 
     // Subir o teto devolve o ativo à divisão.
     let id = knri["id"].as_str().unwrap();

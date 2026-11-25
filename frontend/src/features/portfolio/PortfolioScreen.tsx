@@ -18,7 +18,7 @@ import { formatPercent, plural } from "../../lib/format";
 import { countBelowIdeal, hasIdeal, readIdeal, type IdealReading } from "../../lib/ideal";
 import { useLiveStatus } from "../../lib/liveStatus";
 import { useMoney } from "../../lib/privacy";
-import { assetName, needsRating, ratingIntro } from "../../lib/rating";
+import { assetName, isAboveCeiling, needsRating, ratingIntro } from "../../lib/rating";
 import { HealthSummary } from "../health/HealthSummary";
 import { AddAssetSheet } from "./AddAssetSheet";
 import { ContributionHistory } from "./ContributionHistory";
@@ -298,7 +298,7 @@ function AssetRow({ asset, classAssets, onClick }: { asset: Asset; classAssets: 
         )}
         <ScoreBadge score={asset.score} />
       </span>
-      {ideal.counts && <IdealLine reading={ideal} />}
+      {ideal.counts && <IdealLine reading={ideal} aboveCeiling={asset.score > 0 && isAboveCeiling(asset)} />}
     </button>
   );
 }
@@ -306,10 +306,11 @@ function AssetRow({ asset, classAssets, onClick }: { asset: Asset; classAssets: 
 /**
  * Atual × ideal do ativo dentro da classe: uma barra fina com um traço no
  * ideal, os dois números por extenso e, abaixo do ideal, o selo com seta e
- * texto (cor nunca é a única pista). A barra é só desenho; quem lê o leitor de
+ * texto (cor nunca é a única pista). Com o preço acima do teto da pessoa, o
+ * selo "acima do teto" (ícone e texto) diz por que o ativo não recebe agora. A barra é só desenho; quem lê o leitor de
  * tela é o texto ao lado.
  */
-function IdealLine({ reading }: { reading: IdealReading }) {
+function IdealLine({ reading, aboveCeiling }: { reading: IdealReading; aboveCeiling: boolean }) {
   const scale = Math.min(Math.max(reading.idealShare, reading.currentShare, 1) * 1.15, 100);
   const at = (value: number) => `${Math.min((value / scale) * 100, 100)}%`;
   return (
@@ -324,6 +325,13 @@ function IdealLine({ reading }: { reading: IdealReading }) {
       {reading.below && (
         <span className="below-badge">
           <IconArrowDown width={12} height={12} /> abaixo do ideal
+        </span>
+      )}
+      {/* O teto não muda o ideal (é a carteira que a pessoa quer ter); só
+          explica por que, abaixo do ideal ou não, o ativo não recebe agora. */}
+      {aboveCeiling && (
+        <span className="below-badge ceiling-badge">
+          <IconAlert width={12} height={12} /> acima do teto
         </span>
       )}
     </span>

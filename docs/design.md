@@ -141,7 +141,10 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
   ideal 30,0%". O ideal é a fatia `nota ÷ soma das notas` que o motor usa
   (`ideal_class_percent`); o "atual" é o quanto o ativo vale entre os ativos
   da classe que recebem. Abaixo do ideal por mais de 0,5 ponto, aparece o selo
-  **↓ abaixo do ideal** (seta e texto, nunca só cor). Ativo sem nota ou sem
+  **↓ abaixo do ideal** (seta e texto, nunca só cor). Com o preço acima do
+  teto da pessoa, ao lado aparece o selo **⚠ acima do teto** (ícone e texto, em
+  tom neutro): o ideal não muda por causa do teto, e o selo explica por que o
+  ativo não recebe agora. Ativo sem nota ou sem
   preço não tem ideal nem selo: mostra só "% da classe" e o aviso que já tinha.
   No topo da tela, "N ativos abaixo do ideal" (ou "Nenhum ativo abaixo do
   ideal"); a linha não aparece sem nenhum ativo que receba. Tudo acompanha o
@@ -176,8 +179,8 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
   o estado salvo ("Desligado: cada ativo recebe pela nota, sem teto." / "Ligado
   em 15% da carteira.") e, ligada, um controle deslizante de 1% a 100% (começa
   em 20%). O texto explica que o que passaria vai para os outros ativos da
-  classe e que o motor nunca vende. Quando a navegação ganhar **Ajustes**, o
-  cartão vai junto com as Metas.
+  classe e que o motor nunca vende. Os avisos do plano sobre o limite levam
+  para cá (`#/ajustes/metas`).
 
 ### 4. Ajustes › Critérios
 
@@ -291,7 +294,11 @@ junto do tema) mascara os valores em todas as telas e fica salvo no
   `CountUp` não conta número nenhum) e a rosca do plano.
 - O leitor de tela lê a máscara: não há `aria-label` nem texto `sr-only` com o
   valor, e o `CountUp` só tem texto escondido quando está contando.
-- **Campos de valor** (aporte, quantidade, valor atual, preço manual) seguem
+- Os avisos do teto e do limite também: o preço e o teto do "acima do seu
+  teto" e o que ficou sem destino por causa do limite saem como `R$ ••••`; o
+  limite em si (15%) é percentual e fica.
+- **Campos de valor** (aporte, quantidade, valor atual, preço manual, teto de
+  preço) seguem
   editáveis: fora do foco mostram a máscara; com o foco mostram o número, para
   a pessoa ver o que digita — o campo do aporte abre vazio, então nada vaza ao
   abrir. Os botões − e + da quantidade continuam funcionando às cegas.

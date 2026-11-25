@@ -100,6 +100,17 @@ numa classe com algum elegível os ideais somam 100 (conferido por teste de
 propriedade). Com `KNRI11` e `HGLG11` de nota 6, `BTLG11` e `TRXF11` de nota 4 e
 `MXRF11` de nota 0: 30%, 30%, 20%, 20% e 0%.
 
+**O ideal não muda com o teto de preço.** O ideal é a **composição-alvo** pela
+nota: a carteira que a pessoa quer ter. O teto é um **filtro temporário de
+compra**: tira o ativo deste aporte enquanto o preço estiver acima dele, sem
+tirá-lo da carteira desejada. Por isso um ativo acima do teto mantém o
+`ideal_class_percent` dele (e pode até aparecer "abaixo do ideal"), e a
+Carteira mostra ao lado o selo "acima do teto" para dizer por que ele não
+recebe agora. No plano, o passo 4 trabalha com quem recebe hoje: o ativo acima
+do teto ocupa o espaço que já tem, e os outros dividem o resto pela nota. O
+limite de concentração também não entra no ideal: ele depende do valor do
+aporte e aparece só no plano.
+
 ### 5. Unidades compráveis
 
 A unidade vem do **mercado** do ativo, não da classe:

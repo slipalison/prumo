@@ -20,3 +20,10 @@ export function ratingIntro(asset: Pick<Asset, "symbol" | "display_name">): stri
 export function findAssetByLabel(assets: Asset[], label: string): Asset | undefined {
   return assets.find((a) => a.symbol === label) ?? assets.find((a) => a.display_name === label);
 }
+
+/** O preço de hoje passou do teto da pessoa: o ativo fica fora do aporte. */
+export function isAboveCeiling(asset: Pick<Asset, "unit_price" | "max_price" | "price_source">): boolean {
+  return (
+    asset.max_price !== null && asset.unit_price !== null && asset.price_source !== "missing" && asset.unit_price > asset.max_price
+  );
+}

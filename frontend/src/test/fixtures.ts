@@ -24,6 +24,8 @@ export type StoredAsset = {
   sector?: string;
   subsector?: string;
   segment?: string;
+  /** Teto de preço; ausente = sem teto. */
+  max_price?: number | null;
 };
 
 const nativeB3 = (assetClass: AssetClass) => assetClass === "br_stocks" || assetClass === "br_reits";
@@ -169,6 +171,7 @@ export function toAsset(stored: StoredAsset, checklists: Checklists, classTotal:
     quantity: stored.quantity,
     unit_price: price,
     manual_price: stored.manual_price,
+    max_price: stored.max_price ?? null,
     currency: stored.currency,
     price_source: stored.manual_price !== null ? "manual" : price === null ? "missing" : "quote",
     quote_updated_at: stored.quote_price === null ? null : (stored.quote_at ?? QUOTES_AT),

@@ -986,6 +986,19 @@
   flex: 1 1 140px;
 }
 
+/* Limite por ativo (guarda-corpo do motor) */
+
+.limit-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+}
+
+.limit-card__save {
+  align-self: flex-start;
+}
+
 @media (min-width: 960px) {
   .goals__layout {
     grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr);

@@ -12,7 +12,7 @@ import { cx } from "../../lib/cx";
 import { formatPercent, plural } from "../../lib/format";
 import { noticeText, unitLine } from "../../lib/planText";
 import { useMoney } from "../../lib/privacy";
-import { assetName, findAssetByLabel } from "../../lib/rating";
+import { assetName, findAssetByLabel, isAboveCeiling } from "../../lib/rating";
 
 type AssetActions = {
   /** Abre a folha do ativo no checklist, para dar nota. */
@@ -29,6 +29,9 @@ type PlanResultProps = AssetActions & {
   assets: Asset[];
   onConfirm: () => void;
 };
+
+/** Onde fica o limite por ativo: no fim de Metas por classe, em Ajustes. */
+const LIMIT_HREF = "#/ajustes/metas";
 
 function single(list: Array<Asset | undefined>): Asset | undefined {
   const found = list.filter((a): a is Asset => a !== undefined);
@@ -52,12 +55,23 @@ function NoticeAction({ notice, assets, onRateAsset, onEditAsset, onAddAsset }: 
     );
   const bySymbol = (symbols: string[]) => single(symbols.map((s) => findAssetByLabel(assets, s)));
 
+  const adjustLimit = (
+    <a className="link-btn" href={LIMIT_HREF}>
+      Ajustar o limite {arrow}
+    </a>
+  );
+
   if (notice.code === "no_targets") {
     return (
       <a className="link-btn" href="#/ajustes/metas">
         Ir para Metas {arrow}
       </a>
     );
+  }
+  if (notice.code === "concentration_limit") return adjustLimit;
+  if (notice.code === "asset_above_ceiling") {
+    const action = open(assets.find((a) => a.id === notice.asset_id) ?? findAssetByLabel(assets, notice.symbol));
+    if (action) return action;
   }
   if (notice.code === "class_blocked") {
     if (notice.reason === "no_assets") {
@@ -67,11 +81,14 @@ function NoticeAction({ notice, assets, onRateAsset, onEditAsset, onAddAsset }: 
         </button>
       );
     }
+    if (notice.reason === "concentration_limit") return adjustLimit;
     const members = assets.filter((a) => a.asset_class === notice.asset_class);
     const action =
       notice.reason === "unrated"
         ? rate(single(members.filter((a) => a.score <= 0)))
-        : open(single(members.filter((a) => a.score > 0 && a.price_source === "missing")));
+        : notice.reason === "above_ceiling"
+          ? open(single(members.filter((a) => a.score > 0 && isAboveCeiling(a))))
+          : open(single(members.filter((a) => a.score > 0 && a.price_source === "missing")));
     if (action) return action;
   }
   if (notice.code === "assets_without_score") {

@@ -3,7 +3,7 @@ import { errorMessage } from "../../api/client";
 import { useDeleteAsset, useUpdateAsset } from "../../api/queries";
 import type { Asset, Portfolio, UpdateAssetRequest } from "../../api/types";
 import { AnswerToggle } from "../../components/AnswerToggle";
-import { IconSparkle, IconTrash } from "../../components/icons";
+import { IconAlert, IconSparkle, IconTrash } from "../../components/icons";
 import { MagneticButton } from "../../components/MagneticButton";
 import { MoneyInput } from "../../components/MoneyInput";
 import { QuantityInput } from "../../components/QuantityInput";
@@ -76,6 +76,8 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
     manualToggle: useId(),
     priceToggle: useId(),
     b3Toggle: useId(),
+    ceiling: useId(),
+    ceilingToggle: useId(),
   };
   const money = useMoney();
   const meta = CLASS_META[asset.asset_class];
@@ -93,6 +95,8 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
   const [manualPrice, setManualPrice] = useState(asset.manual_price ?? asset.unit_price ?? 0);
   const [useManualScore, setUseManualScore] = useState(asset.score_override !== null);
   const [scoreOverride, setScoreOverride] = useState(asset.score_override ?? 5);
+  const [useCeiling, setUseCeiling] = useState(asset.max_price !== null);
+  const [maxPrice, setMaxPrice] = useState(asset.max_price ?? asset.unit_price ?? 0);
   const [answers, setAnswers] = useState<Record<string, Answer>>({ ...asset.answers });
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -118,6 +122,11 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
         body.manual_price = manualPrice;
       } else if (!useManualPrice && asset.manual_price !== null) {
         body.manual_price = null;
+      }
+      if (useCeiling && maxPrice !== asset.max_price) {
+        body.max_price = maxPrice;
+      } else if (!useCeiling && asset.max_price !== null) {
+        body.max_price = null;
       }
     }
     if (manualScoreActive) {
@@ -214,6 +223,40 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
     </>
   );
 
+  // O preço que o motor vai ver (o manual em edição vence a cotação) contra o
+  // teto que a pessoa está digitando.
+  const priceNow = useManualPrice ? manualPrice : asset.price_source === "missing" ? null : asset.unit_price;
+  const aboveNow = useCeiling && maxPrice > 0 && priceNow !== null && priceNow > maxPrice;
+
+  const ceilingBlock = !valueBased && (
+    <>
+      <div className="switch-row">
+        <label htmlFor={ids.ceilingToggle} className="switch-row__label">
+          Teto de preço
+          <span className="field__hint">
+            Seu critério: acima deste preço o ativo fica fora do aporte até voltar. Não é preço justo de ninguém.
+          </span>
+        </label>
+        <input
+          id={ids.ceilingToggle}
+          type="checkbox"
+          role="switch"
+          className="switch"
+          checked={useCeiling}
+          onChange={(event) => setUseCeiling(event.target.checked)}
+        />
+      </div>
+      {useCeiling && (
+        <MoneyInput id={ids.ceiling} label="Pagar no máximo, por unidade" value={maxPrice} onChange={setMaxPrice} />
+      )}
+      {aboveNow && priceNow !== null && (
+        <p className="inline-notice">
+          <IconAlert width={16} height={16} style={{ verticalAlign: "-3px" }} /> Hoje está a {money.brl(priceNow)}, acima do teto: fica fora do aporte.
+        </p>
+      )}
+    </>
+  );
+
   const scoreBlock = (
     <>
       {meta.checklist && (
@@ -286,11 +329,13 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
           {scoreBlock}
           {amountBlock}
           {priceBlock}
+          {ceilingBlock}
         </>
       ) : (
         <>
           {amountBlock}
           {priceBlock}
+          {ceilingBlock}
           {scoreBlock}
         </>
       )}

@@ -10,6 +10,7 @@ import { ASSET_CLASSES, CLASS_META, classColor } from "../../lib/assetClasses";
 import { cx } from "../../lib/cx";
 import { formatPercent } from "../../lib/format";
 import { balanceTargets, isComplete, PRESETS, sameTargets, sumTargets, targetsFromClasses } from "../../lib/goals";
+import { ConcentrationLimitCard } from "../allocation/ConcentrationLimitCard";
 import { SumRing } from "./SumRing";
 
 type GoalsScreenProps = { portfolio: Portfolio };
@@ -141,6 +142,8 @@ export function GoalsScreen({ portfolio }: GoalsScreenProps) {
           )}
         </GlassCard>
       </div>
+
+      <ConcentrationLimitCard />
     </div>
   );
 }

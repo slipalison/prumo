@@ -13,6 +13,7 @@ import type {
   UpdateAssetRequest,
 } from "../api/types";
 import { ASSET_CLASSES } from "../api/types";
+import type { AllocationSettings } from "../api/allocationTypes";
 import type { HealthRule, HealthWarning, RuleId, RulesRequest, SectorSourceInfo } from "../api/healthTypes";
 import {
   defaultAssets,
@@ -30,6 +31,8 @@ import {
 /** Banco em memória que segue docs/api.md; cada teste começa do zero. */
 export type FakeDb = {
   assets: StoredAsset[];
+  /** `GET/PUT /settings/allocation`. */
+  maxAssetPercent: number | null;
   goals: GoalTargets;
   checklists: Checklists;
   contributions: Contribution[];
@@ -45,6 +48,7 @@ export type FakeDb = {
 function createDb(): FakeDb {
   return {
     assets: defaultAssets(),
+    maxAssetPercent: null,
     goals: defaultGoals(),
     checklists: defaultChecklists(),
     contributions: [],
@@ -160,6 +164,7 @@ export const handlers = [
       answers: {},
       listed_on_b3: listed,
       ...(body.treasury === true ? { treasury: true, quote_at: TREASURY_AT } : {}),
+      max_price: body.max_price ?? null,
     };
     db.assets.push(stored);
     return HttpResponse.json(assetView(stored), { status: 201 });
@@ -174,6 +179,7 @@ export const handlers = [
     if (body.display_name !== undefined) stored.display_name = body.display_name;
     if (body.manual_price !== undefined) stored.manual_price = body.manual_price;
     if (body.score_override !== undefined) stored.score_override = body.score_override;
+    if (body.max_price !== undefined) stored.max_price = body.max_price;
     if (body.listed_on_b3 !== undefined) {
       stored.listed_on_b3 = body.listed_on_b3;
       // Na B3 o ativo tem cotação; fora dela, um ticker da B3 fica sem preço.
@@ -300,6 +306,18 @@ export const handlers = [
       if (change.threshold !== undefined) stored.threshold = change.threshold;
     }
     return HttpResponse.json({ rules: db.healthRules });
+  }),
+
+  http.get("/api/v1/settings/allocation", () => HttpResponse.json({ max_asset_percent: db.maxAssetPercent })),
+
+  http.put("/api/v1/settings/allocation", async ({ request }) => {
+    const body = (await request.json()) as AllocationSettings;
+    const percent = body.max_asset_percent;
+    if (percent !== null && (percent <= 0 || percent > 100)) {
+      return problem(422, "validation_failed", "Dado inválido", "O limite por ativo vai de 0,01% a 100%.");
+    }
+    db.maxAssetPercent = percent;
+    return HttpResponse.json({ max_asset_percent: percent });
   }),
 
   http.post("/api/v1/quotes/refresh", () =>

@@ -1,6 +1,6 @@
 import type { Asset, PlanItem, PlanNotice } from "../api/types";
 import { acceptsB3Listing, CLASS_META, looksLikeB3Ticker, nounOf, unitOf } from "./assetClasses";
-import { plural } from "./format";
+import { formatPercent, plural } from "./format";
 import type { Money } from "./money";
 import { findAssetByLabel } from "./rating";
 
@@ -21,7 +21,30 @@ function blockedText(notice: Extract<PlanNotice, { code: "class_blocked" }>, mon
       return `${lead}, mas nenhum ativo dela tem nota. Dê nota a eles e o aporte chega lá.`;
     case "unpriced":
       return `${lead}, mas os ativos com nota estão sem cotação.`;
+    case "above_ceiling":
+      return `${lead}, mas os ativos com nota estão acima do teto de preço que você definiu. Espere o preço voltar ou revise o teto.`;
+    case "concentration_limit":
+      return `${lead}, mas os ativos dela já estão no seu limite por ativo. Cadastre outro ativo na classe ou suba o limite.`;
   }
+}
+
+/** "A", "A e B", "A, B e C". */
+function joinNames(names: string[]): string {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
+}
+
+function limitText(notice: Extract<PlanNotice, { code: "concentration_limit" }>, money: Money): string {
+  const limit = formatPercent(notice.max_percent, 0);
+  const left = notice.amount >= 0.01;
+  if (notice.symbols.length === 0) {
+    return `${money.brl(notice.amount)} ficaram sem destino: nenhum ativo cabe mais sem passar do seu limite de ${limit} da carteira.`;
+  }
+  const one = notice.symbols.length === 1;
+  const lead = `${joinNames(notice.symbols)} ${one ? "chegou" : "chegaram"} no seu limite de ${limit} da carteira`;
+  return left
+    ? `${lead}. ${money.brl(notice.amount)} ficaram sem destino: não cabem em nenhum ativo sem passar do limite.`
+    : `${lead}; o que passaria foi para os outros ativos da classe.`;
 }
 
 /** O aviso do plano em uma frase que diz o que fazer. */
@@ -42,6 +65,10 @@ export function noticeText(notice: PlanNotice, assets: Asset[], money: Money): s
       return `Sem nota: ${notice.symbols.join(", ")}. Responda o checklist ${notice.symbols.length === 1 ? "dele" : "deles"} para receber aporte.`;
     case "no_targets":
       return "Você ainda não definiu metas. Sem elas eu não sei para onde levar a carteira.";
+    case "asset_above_ceiling":
+      return `${notice.symbol} está a ${money.brl(notice.unit_price)}, acima do seu teto de ${money.brl(notice.max_price)}. Fica fora deste aporte.`;
+    case "concentration_limit":
+      return limitText(notice, money);
   }
 }
 

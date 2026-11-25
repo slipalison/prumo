@@ -207,7 +207,9 @@ A tela inteira numa chamada.
   ou sem preço vale `0`; numa classe com ao menos um ativo que recebe, a soma
   dos ideais é 100 (com a folga do arredondamento). O ideal não depende de
   quanto se aporta nem do valor dos ativos: muda com a nota e com o ativo
-  ganhar ou perder preço.
+  ganhar ou perder preço. Também **não** muda com o `max_price`: o ideal é a
+  composição-alvo pela nota, e o teto é filtro temporário de compra (o ativo
+  acima dele mantém o ideal e só fica fora do aporte de hoje).
   - **O selo "abaixo do ideal" é da tela**, não do servidor: ele compara o
     valor do ativo com o ideal, e o valor muda ao vivo. A tela mede o ativo
     entre os ativos da classe que recebem (`ideal_class_percent > 0`),
