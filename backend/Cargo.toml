@@ -25,12 +25,16 @@ jsonwebtoken = { version = "10", default-features = false, features = ["aws_lc_r
 # correcao. Os testes geram a chave RSA com o proprio aws-lc-rs.
 aws-lc-rs = { version = "1", features = ["prebuilt-nasm"] }
 base64 = "0.22"
+# Informe mensal de FII da CVM (CSV com ponto e virgula, em ISO-8859-1).
+csv = "1.4"
 futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
 metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.17", default-features = false }
 # Só o derive: a mensagem do streamer do Yahoo tem três campos que importam e
 # o esquema mora em `live/yahoo.rs`, sem `.proto` nem build script.
 prost = { version = "0.14", default-features = false, features = ["derive", "std"] }
+# Planilha de classificacao setorial da B3 (.xlsx e um zip de XML).
+quick-xml = "0.42"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "json", "http2"] }
 rust_decimal = { version = "1", features = ["serde-with-float", "maths"] }
 serde = { version = "1", features = ["derive"] }
@@ -47,6 +51,8 @@ tower-http = { version = "0.6", features = ["fs", "trace", "timeout", "limit", "
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
 uuid = { version = "1", features = ["v4", "serde"] }
+# Leitura do .xlsx da B3 e do .zip da CVM; so descompacta, nao grava.
+zip = { version = "9.8", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 http-body-util = "0.1"

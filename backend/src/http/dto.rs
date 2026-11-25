@@ -253,6 +253,11 @@ pub struct AssetDto {
     pub score_source: ScoreSource,
     pub score_override: Option<u8>,
     pub answers: BTreeMap<Uuid, bool>,
+    /// Setor, subsetor e segmento da fonte pública (B3 nas ações, CVM nos
+    /// FIIs); nulos onde não há fonte ou ela ainda não respondeu.
+    pub sector: Option<String>,
+    pub subsector: Option<String>,
+    pub segment: Option<String>,
 }
 
 impl From<&AssetView> for AssetDto {
@@ -277,6 +282,9 @@ impl From<&AssetView> for AssetDto {
             score_source: a.score_source,
             score_override: a.asset.score_override,
             answers: a.answers.iter().map(|(k, v)| (*k, *v)).collect(),
+            sector: a.sector.as_ref().map(|s| s.sector.clone()),
+            subsector: a.sector.as_ref().and_then(|s| s.subsector.clone()),
+            segment: a.sector.as_ref().and_then(|s| s.segment.clone()),
         }
     }
 }

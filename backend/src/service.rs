@@ -12,6 +12,7 @@ use uuid::Uuid;
 use crate::domain::allocation::{self, class_index, percent, round_cents, Holding, Plan, Targets};
 use crate::domain::asset_class::{AssetClass, Market, UnitKind};
 use crate::domain::scoring::{self, ScoreSource};
+use crate::domain::sector::{reference_key, SectorInfo};
 use crate::live::LiveQuotes;
 use crate::quotes::{fx_symbol, Quote, QuoteError, QuoteProvider};
 use crate::store::{unit_value, Asset, Question, Store, StoreError, StoredQuote};
@@ -48,6 +49,9 @@ pub struct AssetView {
     pub score: u8,
     pub score_source: ScoreSource,
     pub answers: HashMap<Uuid, bool>,
+    /// Setor e segmento da fonte pública; `None` fora de Ações Nacionais e FIIs,
+    /// ou enquanto a fonte não respondeu.
+    pub sector: Option<SectorInfo>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -182,6 +186,14 @@ pub async fn portfolio(store: &Store, user: Uuid) -> Result<PortfolioView, Store
         .collect();
     quotes.extend(store.quotes(&fx).await?);
 
+    let keys: Vec<_> = assets
+        .iter()
+        .filter_map(|a| reference_key(a.asset_class, a.symbol.as_deref()?))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let sectors = store.sector_reference(&keys).await?;
+
     let mut by_asset: HashMap<Uuid, HashMap<Uuid, bool>> = HashMap::new();
     for answer in answers {
         by_asset
@@ -212,6 +224,11 @@ pub async fn portfolio(store: &Store, user: Uuid) -> Result<PortfolioView, Store
                     .map(|p| unit_value(asset.market().unit_kind(), asset.quantity, p))
                     .unwrap_or(Decimal::ZERO),
             );
+            let sector = reference_key(
+                asset.asset_class,
+                asset.symbol.as_deref().unwrap_or_default(),
+            )
+            .and_then(|key| sectors.get(&key).cloned());
             AssetView {
                 asset,
                 unit_price,
@@ -224,6 +241,7 @@ pub async fn portfolio(store: &Store, user: Uuid) -> Result<PortfolioView, Store
                 score,
                 score_source,
                 answers,
+                sector,
             }
         })
         .collect();

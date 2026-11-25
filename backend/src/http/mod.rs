@@ -2,6 +2,7 @@
 
 pub mod dto;
 mod handlers;
+mod health;
 mod live;
 mod ops;
 mod treasury;
@@ -228,6 +229,8 @@ pub fn public_router(state: AppState, static_dir: &str) -> Router {
             "/contributions",
             get(handlers::contributions).post(handlers::record_contribution),
         )
+        .route("/health", get(health::health))
+        .route("/health/rules", get(health::rules).put(health::save_rules))
         .route("/symbols", get(handlers::symbols))
         .route("/quotes/refresh", post(handlers::refresh_quotes))
         .fallback(|| async { ApiError::not_found() })

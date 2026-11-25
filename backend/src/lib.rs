@@ -11,6 +11,7 @@ pub mod error;
 pub mod http;
 pub mod live;
 pub mod quotes;
+pub mod sectors;
 pub mod service;
 pub mod store;
 pub mod telemetry;
@@ -27,6 +28,7 @@ use crate::http::{AppState, BuildInfo};
 use crate::live::yahoo::YahooStreamer;
 use crate::live::LiveQuotes;
 use crate::quotes::{QuoteError, QuoteProvider, SymbolMatch, YahooProvider};
+use crate::sectors::SectorService;
 use crate::service::QuoteService;
 use crate::store::Store;
 use crate::treasury::{TransparenteFeed, TreasurySync};
@@ -81,6 +83,9 @@ pub async fn run(config: Config) -> Result<(), StartError> {
     tracing::info!("migracoes aplicadas");
 
     let http = http_client()?;
+    if config.sectors_enabled {
+        Arc::new(SectorService::with_public_sources(store.clone(), &http)).spawn();
+    }
     let auth: Arc<dyn Authenticator> = match &config.auth {
         AuthConfig::CloudflareAccess {
             team_domain,

@@ -4,6 +4,9 @@
 //! Cada área nova mora num submódulo (`store/<area>.rs`, com o próprio
 //! `impl Store`): o submódulo enxerga o `pool` e este arquivo não cresce.
 
+pub mod health;
+pub mod sectors;
+
 use std::collections::{BTreeSet, HashMap};
 
 use rust_decimal::Decimal;
