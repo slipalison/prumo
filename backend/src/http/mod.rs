@@ -1,11 +1,12 @@
 //! Rotas, estado e extratores.
 
+mod alerts;
 mod allocation;
 mod b3_import;
 mod cash;
 pub mod dto;
 mod handlers;
-mod health;
+pub(crate) mod health;
 mod income;
 mod ledger;
 mod live;
@@ -40,6 +41,7 @@ use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
+use crate::alerts::AlertService;
 use crate::auth::Authenticator;
 use crate::dividends::DividendProvider;
 use crate::error::ApiError;
@@ -60,6 +62,7 @@ pub struct AppState {
     pub auth: Arc<dyn Authenticator>,
     pub quotes: Arc<QuoteService>,
     pub income: Arc<IncomeService>,
+    pub alerts: Arc<AlertService>,
     pub info: Arc<BuildInfo>,
     pub metrics: Option<PrometheusHandle>,
     users: Arc<RwLock<HashMap<String, Uuid>>>,
@@ -80,6 +83,7 @@ impl AppState {
     ) -> Self {
         Self {
             income: Arc::new(IncomeService::disabled(store.clone())),
+            alerts: Arc::new(AlertService::disabled(store.clone())),
             store,
             auth,
             quotes,
@@ -102,6 +106,13 @@ impl AppState {
     /// periódica que enche o cache).
     pub fn with_income_service(mut self, income: Arc<IncomeService>) -> Self {
         self.income = income;
+        self
+    }
+
+    /// Usa o serviço de alertas já montado (o `run` o guarda para as tarefas de
+    /// leitura do Telegram e de resumo diário).
+    pub fn with_alerts_service(mut self, alerts: Arc<AlertService>) -> Self {
+        self.alerts = alerts;
         self
     }
 
@@ -285,6 +296,12 @@ pub fn public_router(state: AppState, static_dir: &str) -> Router {
             "/objectives/{id}",
             patch(objectives::update).delete(objectives::delete),
         )
+        .route("/alerts", get(alerts::get).put(alerts::save))
+        .route(
+            "/alerts/telegram",
+            post(alerts::link).delete(alerts::unlink),
+        )
+        .route("/alerts/test", post(alerts::test))
         .route("/symbols", get(handlers::symbols))
         .route("/quotes/refresh", post(handlers::refresh_quotes))
         .route("/history/net-worth", get(performance::net_worth))

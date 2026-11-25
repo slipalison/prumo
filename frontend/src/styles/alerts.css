@@ -1,0 +1,69 @@
+/*
+ * Alertas no Telegram. Reaproveita o vidro e a lista de regras da Saúde
+ * (`.rule-row`); aqui só o que é próprio: vinculação e o exemplo do resumo.
+ */
+
+.alerts__card,
+.alerts__loading,
+.alerts__error {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+}
+
+.alerts__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+}
+
+.alerts__pairing {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.alerts__steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-left: 22px;
+}
+
+.alerts__code {
+  padding: 3px 10px;
+  border-radius: var(--r-sm);
+  background: var(--surface-sunken);
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  user-select: all;
+}
+
+.alerts__time {
+  width: 160px;
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.alerts__digest {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+  font-size: 0.92rem;
+  overflow-wrap: anywhere;
+}
+
+.alerts__digest-title,
+.alerts__digest-section {
+  font-weight: 650;
+}

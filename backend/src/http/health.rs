@@ -259,7 +259,7 @@ pub struct RulesRequest {
 // --------------------------------------------------------------- handlers --
 
 /// Os ativos da carteira como as regras os enxergam.
-fn health_assets(view: &PortfolioView) -> Vec<HealthAsset> {
+pub(crate) fn health_assets(view: &PortfolioView) -> Vec<HealthAsset> {
     view.assets
         .iter()
         .map(|a| HealthAsset {

@@ -4,6 +4,7 @@
 //! Postgres; `quotes` o provedor de cotações; `treasury` a tabela diária do
 //! Tesouro Direto; `service` junta tudo; `http` expõe a API e os estáticos.
 
+pub mod alerts;
 pub mod auth;
 pub mod b3_xlsx;
 pub mod config;
@@ -20,6 +21,7 @@ pub mod quotes;
 pub mod sectors;
 pub mod service;
 pub mod store;
+pub mod telegram;
 pub mod telemetry;
 pub mod treasury;
 
@@ -28,6 +30,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
+use crate::alerts::AlertService;
 use crate::auth::{AccessAuthenticator, Authenticator, DevAuthenticator};
 use crate::config::{AuthConfig, Config};
 use crate::dividends::{DisabledDividends, DividendProvider, YahooDividends};
@@ -40,6 +43,7 @@ use crate::quotes::{QuoteError, QuoteProvider, SymbolMatch, YahooProvider};
 use crate::sectors::SectorService;
 use crate::service::QuoteService;
 use crate::store::Store;
+use crate::telegram::{BotApi, TelegramApi};
 use crate::treasury::history::{DisabledTreasuryHistory, TreasuryHistory};
 use crate::treasury::{TransparenteFeed, TreasurySync};
 
@@ -162,6 +166,17 @@ pub async fn run(config: Config) -> Result<(), StartError> {
         }
     }
 
+    // Alertas: só com o token do bot. Sem ele a tela diz que estão desligados.
+    let alerts = Arc::new(AlertService::new(
+        store.clone(),
+        config
+            .telegram_bot_token
+            .clone()
+            .map(|token| Arc::new(BotApi::new(http.clone(), token)) as Arc<dyn TelegramApi>),
+    ));
+    Arc::clone(&alerts).spawn_polling();
+    Arc::clone(&alerts).spawn_digest(alerts::DIGEST_EVERY);
+
     let state = AppState::new(
         store,
         auth,
@@ -172,7 +187,8 @@ pub async fn run(config: Config) -> Result<(), StartError> {
         },
         telemetry::install_metrics(),
     )
-    .with_income_service(income);
+    .with_income_service(income)
+    .with_alerts_service(alerts);
     let public = http::public_router(state.clone(), &config.static_dir);
     let operational = http::operational_router(state.clone());
 

@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import type { Portfolio } from "../../api/types";
+import { AlertsScreen } from "../alerts/AlertsScreen";
 import { CriteriaScreen } from "../criteria/CriteriaScreen";
 import { GoalsScreen } from "../goals/GoalsScreen";
 import { HealthScreen } from "../health/HealthScreen";
@@ -26,4 +27,5 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { id: "saude", label: "Saúde da carteira", Component: HealthScreen },
   { id: "importar-b3", label: "Importar da B3", Component: ImportB3Screen },
   { id: "impostos", label: "Impostos", Component: TaxScreen },
+  { id: "alertas", label: "Alertas", Component: AlertsScreen },
 ];

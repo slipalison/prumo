@@ -4,6 +4,7 @@
 //! Cada área nova mora num submódulo (`store/<area>.rs`, com o próprio
 //! `impl Store`): o submódulo enxerga o `pool` e este arquivo não cresce.
 
+mod alerts;
 mod allocation;
 mod b3_import;
 mod cash;
@@ -31,6 +32,7 @@ mod performance;
 mod retro;
 mod treasury;
 
+pub use alerts::{AchievedObjective, AlertSettings};
 pub use b3_import::{Applied, CreatedAsset};
 pub use performance::{JobLock, Snapshot, SnapshotPoint};
 pub use retro::{DirtySeries, HeldSymbol};

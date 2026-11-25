@@ -77,6 +77,12 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   pagador que carrega renda demais. As sete regras são suas: liga, desliga e
   escolhe o limite. O setor vem da B3 (ações) e da CVM (FIIs).
   Detalhes em [`docs/saude.md`](docs/saude.md).
+- **Alertas** — um resumo por dia no Telegram, só quando há algo a dizer:
+  provento que cai amanhã, classe fora da meta, ativo de volta ao teto de
+  preço, objetivo atingido e aviso novo de saúde. Cada tipo liga e desliga, a
+  hora é sua, e dá para mandar sem valores em reais. Você cria o bot no
+  @BotFather e o vincula por um código, sem procurar chat id. Passo a passo em
+  [`docs/alertas.md`](docs/alertas.md).
 - **Desempenho** — patrimônio no tempo (aplicado × ganho, e os proventos) e
   rentabilidade pelo método de cotas, com os proventos como retorno, contra
   CDI, IPCA e Ibovespa, com a tabela mês a mês. A série começa no primeiro
@@ -115,6 +121,7 @@ Documentos:
 - [`docs/importacao-b3.md`](docs/importacao-b3.md) — planilhas da B3: formato, mapeamento e limites
 - [`docs/design.md`](docs/design.md) — interface, identidade e movimento
 - [`docs/ir.md`](docs/ir.md) — regras de IR por ano, com fonte, e o que não é calculado
+- [`docs/alertas.md`](docs/alertas.md) — alertas no Telegram: criar o bot, vincular, tipos, privacidade
 - [`docs/desempenho.md`](docs/desempenho.md) — rentabilidade por cotas, índices e fontes
 - [`deploy/README.md`](deploy/README.md) — como o app chega ao cluster
 
@@ -156,6 +163,7 @@ npm run dev
 | `QUOTES_REFRESH_SECS` | `900` | intervalo da atualização automática (mín. 60) |
 | `SECTORS_ENABLED` | `true` | `false` desliga a busca de setor (B3 e CVM, a cada 30 dias) |
 | `SNAPSHOT_AT` | `19:00` | horário de Brasília da foto diária do desempenho (`HH:MM`), ou `off` |
+| `TELEGRAM_BOT_TOKEN` | — | segredo: token do bot do Telegram (criado por você no @BotFather). Sem ele, os alertas ficam desligados e a tela diz isso; precisa de saída HTTPS para `api.telegram.org` |
 
 O binário recusa subir com configuração pela metade.
 
