@@ -5,6 +5,7 @@ pub mod asset_class;
 pub mod b3_import;
 pub mod defaults;
 pub mod health;
+pub mod ledger;
 pub mod performance;
 pub mod scoring;
 pub mod sector;

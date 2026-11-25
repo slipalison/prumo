@@ -18,7 +18,7 @@ use crate::domain::scoring::ScoreSource;
 use crate::service::{AssetView, ClassView, PortfolioView};
 use crate::store::{Contribution, ContributionItem, Question};
 
-mod decimal_out {
+pub(crate) mod decimal_out {
     use rust_decimal::prelude::ToPrimitive;
     use rust_decimal::Decimal;
     use serde::Serializer;
@@ -114,6 +114,13 @@ pub struct CreateAssetRequest {
     pub treasury: Option<bool>,
     #[serde(default, deserialize_with = "optional_decimal")]
     pub max_price: Option<Decimal>,
+    /// Preço médio de entrada, em reais (por unidade). Sem ele, o saldo
+    /// inicial fica de custo desconhecido.
+    #[serde(default, deserialize_with = "optional_decimal")]
+    pub average_price: Option<Decimal>,
+    /// Renda fixa por valor: quanto foi aplicado.
+    #[serde(default, deserialize_with = "optional_decimal")]
+    pub invested: Option<Decimal>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -264,6 +271,17 @@ pub struct AssetDto {
     pub sector: Option<String>,
     pub subsector: Option<String>,
     pub segment: Option<String>,
+    /// Do livro (ver docs/api.md § Lançamentos). Nulo = desconhecido.
+    #[serde(with = "decimal_out::option")]
+    pub average_price: Option<Decimal>,
+    #[serde(with = "decimal_out::option")]
+    pub cost_basis: Option<Decimal>,
+    #[serde(with = "decimal_out::option")]
+    pub unrealized_gain: Option<Decimal>,
+    #[serde(with = "decimal_out::option")]
+    pub realized_gain: Option<Decimal>,
+    #[serde(with = "decimal_out::option")]
+    pub return_percent: Option<Decimal>,
 }
 
 impl From<&AssetView> for AssetDto {
@@ -292,6 +310,11 @@ impl From<&AssetView> for AssetDto {
             sector: a.sector.as_ref().map(|s| s.sector.clone()),
             subsector: a.sector.as_ref().and_then(|s| s.subsector.clone()),
             segment: a.sector.as_ref().and_then(|s| s.segment.clone()),
+            average_price: a.performance.average_price,
+            cost_basis: a.performance.cost_basis,
+            unrealized_gain: a.performance.unrealized_gain,
+            realized_gain: a.performance.realized_gain,
+            return_percent: a.performance.return_percent,
         }
     }
 }
@@ -368,6 +391,11 @@ pub struct LiveAssetDto {
     pub class_percent: Decimal,
     #[serde(with = "decimal_out")]
     pub ideal_class_percent: Decimal,
+    /// Mudam com o preço: sem eles, a linha ao vivo mostraria o ganho velho.
+    #[serde(with = "decimal_out::option")]
+    pub unrealized_gain: Option<Decimal>,
+    #[serde(with = "decimal_out::option")]
+    pub return_percent: Option<Decimal>,
 }
 
 impl From<&PortfolioView> for LivePricesDto {
@@ -388,6 +416,8 @@ impl From<&PortfolioView> for LivePricesDto {
                     current_value: a.current_value,
                     class_percent: a.class_percent,
                     ideal_class_percent: a.ideal_class_percent,
+                    unrealized_gain: a.performance.unrealized_gain,
+                    return_percent: a.performance.return_percent,
                 })
                 .collect(),
         }

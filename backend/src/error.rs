@@ -61,6 +61,17 @@ impl ApiError {
         }
     }
 
+    /// O livro de lançamentos não fecha: venda (ou resgate, grupamento,
+    /// ajuste) maior que a posição naquela data.
+    pub fn exceeds_position(detail: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::UNPROCESSABLE_ENTITY,
+            code: "exceeds_position",
+            title: "O lancamento passa da posicao",
+            detail: detail.into(),
+        }
+    }
+
     pub fn not_found() -> Self {
         Self {
             status: StatusCode::NOT_FOUND,
@@ -156,6 +167,10 @@ mod tests {
             StatusCode::CONFLICT
         );
         assert_eq!(ApiError::not_found().status, StatusCode::NOT_FOUND);
+        assert_eq!(
+            ApiError::exceeds_position("x").status,
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
         assert_eq!(
             ApiError::quote_provider_unavailable().status,
             StatusCode::BAD_GATEWAY

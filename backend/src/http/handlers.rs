@@ -17,7 +17,7 @@ use crate::domain::asset_class::{normalize_symbol, AssetClass, Checklist, Market
 use crate::domain::treasury::Bond;
 use crate::error::{ApiError, ApiResult};
 use crate::service;
-use crate::store::{AssetPatch, NewAsset, NewContributionItem, StoreError};
+use crate::store::{AssetPatch, NewAsset, NewContributionItem, OpeningCost, StoreError};
 
 /// Teto de valores aceitos (10^15), para número absurdo não virar overflow de `numeric`.
 fn max_money() -> Decimal {
@@ -32,6 +32,7 @@ impl From<StoreError> for ApiError {
             }
             StoreError::NotFound => ApiError::not_found(),
             StoreError::Invalid(detail) => ApiError::validation(detail),
+            StoreError::Ledger(error) => super::ledger::ledger_error(&error),
             StoreError::Db(error) => error.into(),
         }
     }
@@ -90,6 +91,7 @@ fn b3_listing(class: AssetClass, requested: Option<bool>) -> ApiResult<bool> {
 const WHOLE_ONLY: &str = "Esse ativo so aceita quantidade inteira.";
 const NO_CEILING_BY_VALUE: &str =
     "Renda fixa por valor nao tem preco por unidade; o teto de preco nao se aplica.";
+const NO_OPENING: &str = "Sem quantidade nao ha custo de entrada para informar.";
 
 /// O nome de um ativo cotado quando nem o usuário nem a cotação dão um: o
 /// título do Tesouro se chama pelo tipo e o ano; o resto, pelo símbolo.
@@ -181,6 +183,7 @@ pub async fn create_asset(
     }
     let listed_on_b3 = !treasury && b3_listing(class, body.listed_on_b3)?;
     let market = class.market_of(listed_on_b3, treasury);
+    let cost;
     let new = match market.unit_kind() {
         UnitKind::Value => {
             let display_name = text(
@@ -190,7 +193,7 @@ pub async fn create_asset(
             )?;
             let amount =
                 non_negative("O valor", body.amount.or(body.quantity).unwrap_or_default())?;
-            if body.manual_price.is_some() {
+            if body.manual_price.is_some() || body.average_price.is_some() {
                 return Err(ApiError::validation(
                     "Renda fixa nao tem preco por unidade; informe o valor.",
                 ));
@@ -198,6 +201,13 @@ pub async fn create_asset(
             if body.max_price.is_some() {
                 return Err(ApiError::validation(NO_CEILING_BY_VALUE));
             }
+            cost = match body.invested {
+                None => OpeningCost::Unknown,
+                Some(_) if amount.is_zero() => {
+                    return Err(ApiError::validation(NO_OPENING));
+                }
+                Some(invested) => OpeningCost::Invested(positive("O valor aplicado", invested)?),
+            };
             NewAsset {
                 asset_class: class,
                 symbol: None,
@@ -233,6 +243,18 @@ pub async fn create_asset(
                 .max_price
                 .map(|p| positive("O teto de preco", p))
                 .transpose()?;
+            if body.invested.is_some() {
+                return Err(ApiError::validation(
+                    "Ativo com cotacao tem preco medio (average_price), nao valor aplicado.",
+                ));
+            }
+            cost = match body.average_price {
+                None => OpeningCost::Unknown,
+                Some(_) if quantity.is_zero() => {
+                    return Err(ApiError::validation(NO_OPENING));
+                }
+                Some(price) => OpeningCost::AveragePrice(positive("O preco medio", price)?),
+            };
             let quote = state.quotes.quote_now(market, &symbol).await;
             let display_name = match body
                 .display_name
@@ -261,7 +283,10 @@ pub async fn create_asset(
             }
         }
     };
-    let asset = state.store.insert_asset(user.id, &new).await?;
+    let asset = state
+        .store
+        .insert_asset_with_opening(user.id, &new, cost)
+        .await?;
     let dto = asset_response(&state, user.id, asset.id).await?;
     Ok((StatusCode::CREATED, Json(dto)))
 }

@@ -12,13 +12,14 @@ use std::collections::{BTreeSet, HashMap};
 
 use rust_decimal::Decimal;
 use sqlx::postgres::{PgPool, PgPoolOptions};
-use sqlx::{FromRow, Postgres, Transaction};
+use sqlx::{FromRow, Postgres, Transaction as DbTransaction};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::domain::allocation::{round_cents, Targets};
 use crate::domain::asset_class::{AssetClass, Checklist, Market, UnitKind};
 use crate::domain::defaults;
+use crate::domain::ledger::{Kind, LedgerError};
 use crate::live::Tick;
 use crate::quotes::Quote;
 
@@ -37,6 +38,9 @@ pub enum StoreError {
     NotFound,
     #[error("dado invalido: {0}")]
     Invalid(String),
+    /// O livro de lançamentos não fecha (venda além da posição, por exemplo).
+    #[error("livro: {0}")]
+    Ledger(LedgerError),
     #[error(transparent)]
     Db(#[from] sqlx::Error),
 }
@@ -205,6 +209,12 @@ macro_rules! asset_columns {
         "id, asset_class, symbol, display_name, quantity, manual_price, score_override, listed_on_b3, treasury, max_price"
     };
 }
+
+pub mod ledger;
+
+pub use ledger::{
+    NewTransaction, OpeningCost, Source, Transaction, TransactionFields, TransactionFilter,
+};
 
 fn decode_error(what: &str) -> sqlx::Error {
     sqlx::Error::Decode(format!("valor desconhecido no banco: {what}").into())
@@ -376,43 +386,37 @@ impl Store {
         Ok(row.map(Asset::try_from).transpose()?)
     }
 
+    /// Cadastra o ativo; com quantidade, ela entra no livro como saldo
+    /// inicial de custo desconhecido (ver [`Store::insert_asset_with_opening`]).
     pub async fn insert_asset(&self, user: Uuid, new: &NewAsset) -> Result<Asset, StoreError> {
-        let result: Result<AssetRow, sqlx::Error> = sqlx::query_as(concat!("insert into assets (id, user_id, asset_class, symbol, display_name, quantity, manual_price, score_override, listed_on_b3, treasury, max_price)
-             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning ", asset_columns!(), ""))
-        .bind(Uuid::new_v4())
-        .bind(user)
-        .bind(new.asset_class.as_str())
-        .bind(&new.symbol)
-        .bind(&new.display_name)
-        .bind(new.quantity)
-        .bind(new.manual_price)
-        .bind(new.score_override.map(i16::from))
-        .bind(new.listed_on_b3)
-        .bind(new.treasury)
-        .bind(new.max_price)
-        .fetch_one(&self.pool)
-        .await;
-        match result {
-            Ok(row) => Ok(Asset::try_from(row)?),
-            Err(error) if is_unique_violation(&error) => Err(StoreError::Duplicate),
-            Err(error) => Err(error.into()),
-        }
+        self.insert_asset_with_opening(user, new, OpeningCost::Unknown)
+            .await
     }
 
+    /// Edita o ativo. Quantidade diferente da atual vira um ajuste no livro,
+    /// datado hoje, na mesma transação.
     pub async fn update_asset(
         &self,
         user: Uuid,
         id: Uuid,
         patch: &AssetPatch,
     ) -> Result<Option<Asset>, StoreError> {
-        let row: Option<AssetRow> = sqlx::query_as(concat!(
+        let mut tx = self.pool.begin().await?;
+        let Some(current) = ledger::lock_asset(&mut tx, user, id).await? else {
+            return Ok(None);
+        };
+        if let Some(quantity) = patch.quantity {
+            if ledger::adjust_to(&mut tx, user, &current, quantity).await? {
+                ledger::rebuild(&mut tx, id).await?;
+            }
+        }
+        let row: AssetRow = sqlx::query_as(concat!(
             "update assets set
-                quantity = coalesce($3, quantity),
-                display_name = coalesce($4, display_name),
-                manual_price = case when $5 then $6 else manual_price end,
-                score_override = case when $7 then $8 else score_override end,
-                listed_on_b3 = coalesce($9, listed_on_b3),
-                max_price = case when $10 then $11 else max_price end,
+                display_name = coalesce($3, display_name),
+                manual_price = case when $4 then $5 else manual_price end,
+                score_override = case when $6 then $7 else score_override end,
+                listed_on_b3 = coalesce($8, listed_on_b3),
+                max_price = case when $9 then $10 else max_price end,
                 updated_at = now()
              where user_id = $1 and id = $2
              returning ",
@@ -421,7 +425,6 @@ impl Store {
         ))
         .bind(user)
         .bind(id)
-        .bind(patch.quantity)
         .bind(&patch.display_name)
         .bind(patch.manual_price.is_some())
         .bind(patch.manual_price.flatten())
@@ -430,9 +433,10 @@ impl Store {
         .bind(patch.listed_on_b3)
         .bind(patch.max_price.is_some())
         .bind(patch.max_price.flatten())
-        .fetch_optional(&self.pool)
+        .fetch_one(&mut *tx)
         .await?;
-        Ok(row.map(Asset::try_from).transpose()?)
+        tx.commit().await?;
+        Ok(Some(Asset::try_from(row)?))
     }
 
     pub async fn delete_asset(&self, user: Uuid, id: Uuid) -> Result<bool, StoreError> {
@@ -728,7 +732,8 @@ impl Store {
         Ok(tracked.into_iter().collect())
     }
 
-    /// Registra o aporte e soma o que foi comprado em cada ativo, numa transação.
+    /// Registra o aporte e grava cada item como compra no livro (ligada ao
+    /// aporte, datada hoje), numa transação.
     pub async fn record_contribution(
         &self,
         user: Uuid,
@@ -744,18 +749,12 @@ impl Store {
                 .bind(amount)
                 .fetch_one(&mut *tx)
                 .await?;
+        let date = ledger::today(&mut tx).await?;
         let mut stored = Vec::with_capacity(items.len());
         for item in items {
-            let row: Option<AssetRow> = sqlx::query_as(concat!(
-                "select ",
-                asset_columns!(),
-                " from assets where user_id = $1 and id = $2 for update"
-            ))
-            .bind(user)
-            .bind(item.asset_id)
-            .fetch_optional(&mut *tx)
-            .await?;
-            let asset = Asset::try_from(row.ok_or(StoreError::NotFound)?)?;
+            let asset = ledger::lock_asset(&mut tx, user, item.asset_id)
+                .await?
+                .ok_or(StoreError::NotFound)?;
             let value = round_cents(item.quantity * item.unit_price);
             if item.quantity <= Decimal::ZERO
                 || item.unit_price <= Decimal::ZERO
@@ -765,17 +764,22 @@ impl Store {
                     "quantidade e preco precisam ser positivos".into(),
                 ));
             }
-            let added = match asset.market().unit_kind() {
-                UnitKind::Value => value,
-                UnitKind::Whole | UnitKind::Fractional | UnitKind::Hundredth => item.quantity,
+            // No livro, a compra de renda fixa por valor é o valor, a preço 1.
+            let (quantity, unit_price) = match asset.market().unit_kind() {
+                UnitKind::Value => (value, Decimal::ONE),
+                UnitKind::Whole | UnitKind::Fractional | UnitKind::Hundredth => {
+                    (item.quantity, item.unit_price)
+                }
             };
-            sqlx::query(
-                "update assets set quantity = quantity + $2, updated_at = now() where id = $1",
-            )
-            .bind(asset.id)
-            .bind(added)
-            .execute(&mut *tx)
-            .await?;
+            let buy = NewTransaction {
+                asset_id: asset.id,
+                fields: TransactionFields::brl(Kind::Buy, date, quantity, Some(unit_price)),
+                source: Source::Plan,
+                external_ref: None,
+                contribution_id: Some(id),
+            };
+            ledger::insert_row(&mut tx, user, &asset, &buy).await?;
+            ledger::rebuild(&mut tx, asset.id).await?;
             sqlx::query(
                 "insert into contribution_items
                     (id, contribution_id, asset_id, symbol, display_name, quantity, unit_price, value)
@@ -851,8 +855,39 @@ impl Store {
     }
 }
 
+/// Insere a linha do ativo com quantidade zero: a quantidade vem do livro.
+async fn insert_asset_row(
+    tx: &mut DbTransaction<'_, Postgres>,
+    user: Uuid,
+    new: &NewAsset,
+) -> Result<Asset, StoreError> {
+    let result: Result<AssetRow, sqlx::Error> = sqlx::query_as(concat!(
+        "insert into assets (id, user_id, asset_class, symbol, display_name, quantity, manual_price, score_override, listed_on_b3, treasury, max_price)
+         values ($1, $2, $3, $4, $5, 0, $6, $7, $8, $9, $10) returning ",
+        asset_columns!(),
+        ""
+    ))
+    .bind(Uuid::new_v4())
+    .bind(user)
+    .bind(new.asset_class.as_str())
+    .bind(&new.symbol)
+    .bind(&new.display_name)
+    .bind(new.manual_price)
+    .bind(new.score_override.map(i16::from))
+    .bind(new.listed_on_b3)
+    .bind(new.treasury)
+    .bind(new.max_price)
+    .fetch_one(&mut **tx)
+    .await;
+    match result {
+        Ok(row) => Ok(Asset::try_from(row)?),
+        Err(error) if is_unique_violation(&error) => Err(StoreError::Duplicate),
+        Err(error) => Err(error.into()),
+    }
+}
+
 async fn seed_questions(
-    tx: &mut Transaction<'_, Postgres>,
+    tx: &mut DbTransaction<'_, Postgres>,
     user: Uuid,
     checklist: Checklist,
 ) -> Result<(), sqlx::Error> {

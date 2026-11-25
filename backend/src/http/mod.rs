@@ -5,6 +5,7 @@ mod b3_import;
 pub mod dto;
 mod handlers;
 mod health;
+mod ledger;
 mod live;
 mod ops;
 mod performance;
@@ -234,6 +235,11 @@ pub fn public_router(state: AppState, static_dir: &str) -> Router {
         )
         .route("/health", get(health::health))
         .route("/health/rules", get(health::rules).put(health::save_rules))
+        .route("/transactions", get(ledger::list).post(ledger::create))
+        .route(
+            "/transactions/{id}",
+            patch(ledger::update).delete(ledger::delete),
+        )
         .route("/symbols", get(handlers::symbols))
         .route("/quotes/refresh", post(handlers::refresh_quotes))
         .route("/history/net-worth", get(performance::net_worth))

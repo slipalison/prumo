@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use crate::domain::allocation::{self, class_index, percent, round_cents, Holding, Plan, Targets};
 use crate::domain::asset_class::{AssetClass, Market, UnitKind};
+use crate::domain::ledger::{self, Performance, Position};
 use crate::domain::scoring::{self, ScoreSource};
 use crate::domain::sector::{reference_key, SectorInfo, SectorSource};
 use crate::live::LiveQuotes;
@@ -52,6 +53,8 @@ pub struct AssetView {
     /// Setor e segmento da fonte pública; `None` fora de Ações Nacionais e FIIs,
     /// ou enquanto a fonte não respondeu.
     pub sector: Option<SectorInfo>,
+    /// Preço médio, custo e rentabilidade, do cache do livro.
+    pub performance: Performance,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -183,6 +186,9 @@ pub async fn portfolio(store: &Store, user: Uuid) -> Result<PortfolioView, Store
     let assets = store.assets(user).await?;
     let questions = store.questions(user).await?;
     let answers = store.answers(user).await?;
+    // O cache da posição (livro já consolidado): uma leitura de `assets`, sem
+    // refazer o livro — o stream chama isto a cada preço que muda.
+    let positions = store.positions(user).await?;
 
     let symbols: Vec<String> = assets
         .iter()
@@ -218,7 +224,14 @@ pub async fn portfolio(store: &Store, user: Uuid) -> Result<PortfolioView, Store
 
     let mut views: Vec<AssetView> = assets
         .into_iter()
-        .map(|asset| {
+        .map(|mut asset| {
+            // Quantidade e custo da mesma leitura: o valor e o custo batem
+            // mesmo que um lançamento entre entre as duas consultas.
+            let position = positions.get(&asset.id).copied().unwrap_or(Position {
+                quantity: asset.quantity,
+                ..Position::EMPTY
+            });
+            asset.quantity = position.quantity;
             let (unit_price, currency, price_source, quote_updated_at) =
                 resolve_price(&asset, &quotes);
             let answers = by_asset.remove(&asset.id).unwrap_or_default();
@@ -233,12 +246,15 @@ pub async fn portfolio(store: &Store, user: Uuid) -> Result<PortfolioView, Store
                 checklist,
                 relevant.map(|(_, answer)| *answer),
             );
+            let unit = asset.market().unit_kind();
             let current_value = round_cents(
                 unit_price
-                    .map(|p| unit_value(asset.market().unit_kind(), asset.quantity, p))
+                    .map(|p| unit_value(unit, asset.quantity, p))
                     .unwrap_or(Decimal::ZERO),
             );
             let sector = sector_key(&asset).and_then(|key| sectors.get(&key).cloned());
+            let performance =
+                ledger::performance(&position, unit_price.map(|_| current_value), unit);
             AssetView {
                 asset,
                 unit_price,
@@ -252,6 +268,7 @@ pub async fn portfolio(store: &Store, user: Uuid) -> Result<PortfolioView, Store
                 score_source,
                 answers,
                 sector,
+                performance,
             }
         })
         .collect();

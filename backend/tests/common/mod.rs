@@ -27,6 +27,8 @@ use tower::ServiceExt;
 
 pub struct Database {
     pub store: Store,
+    /// Para o teste abrir o próprio pool (o `Store` não expõe o dele).
+    pub url: String,
     _container: ContainerAsync<Postgres>,
 }
 
@@ -46,6 +48,7 @@ pub async fn database() -> Database {
     store.migrate().await.expect("migracoes");
     Database {
         store,
+        url,
         _container: container,
     }
 }
