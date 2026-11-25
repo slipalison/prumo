@@ -112,12 +112,15 @@ impl Performance {
 
     /// Baixa o que falta do fechamento de cada símbolo cotado de alguma
     /// carteira (e do câmbio das moedas deles). Devolve quantos dias entraram.
+    /// Só o que vem do Yahoo: título do Tesouro (`TD-...`) não existe lá, e o
+    /// preço do dia dele já está em `quotes`, vindo do CSV do Tesouro.
     async fn sync_prices(&self, today: Date) -> Result<usize, StoreError> {
         let mut symbols: BTreeSet<String> = self
             .store
             .tracked_symbols()
             .await?
             .into_iter()
+            .filter(|(market, _)| market.from_provider())
             .filter_map(|(market, symbol)| market.quote_symbol(&symbol))
             .collect();
         let listed: Vec<String> = symbols.iter().cloned().collect();
@@ -222,7 +225,8 @@ impl Performance {
 
 /// As posições da carteira no dia: o fechamento de `price_history` quando
 /// existe para a data (com o câmbio do mesmo dia), senão o preço que a tela
-/// mostra (cotação de agora ou preço manual).
+/// mostra (cotação de agora ou preço manual). Título do Tesouro usa sempre a
+/// cotação do dia em `quotes` (o preço de resgate do Tesouro Transparente).
 fn positions(view: &PortfolioView, closes: &HashMap<String, Decimal>) -> Vec<Position> {
     view.assets
         .iter()
@@ -240,7 +244,7 @@ fn positions(view: &PortfolioView, closes: &HashMap<String, Decimal>) -> Vec<Pos
                 .asset
                 .symbol
                 .as_deref()
-                .filter(|_| a.asset.manual_price.is_none())
+                .filter(|_| a.asset.manual_price.is_none() && market.from_provider())
                 .and_then(|s| market.quote_symbol(s))
                 .and_then(|s| closes.get(&s).copied())
                 .and_then(|close| {

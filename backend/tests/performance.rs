@@ -13,6 +13,7 @@ use axum::http::StatusCode;
 use common::*;
 use prumo::history::{HistoryError, HistoryProvider, IndexCode, Series};
 use prumo::performance::{local_date, Performance, JOB_LOCK_KEY};
+use prumo::quotes::Quote;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde_json::{json, Value};
@@ -87,6 +88,7 @@ async fn performance_end_to_end() {
     today_is_partial_until_the_close(&db, &dir).await;
     each_person_sees_only_their_own_series(&db, &dir).await;
     rejects_unknown_period_and_index(&db, &dir).await;
+    treasury_title_is_valued_by_its_daily_quote(&db, &dir).await;
 }
 
 async fn daily_job_is_idempotent_and_separates_flow_from_return(
@@ -349,4 +351,69 @@ async fn rejects_unknown_period_and_index(db: &Database, dir: &tempfile_dir::Dir
     assert_eq!(bad_index.status, StatusCode::UNPROCESSABLE_ENTITY);
     let bad_worth = get(&app.router, "/api/v1/history/net-worth?period=semana").await;
     assert_eq!(bad_worth.status, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+/// Título do Tesouro (`TD-...`) não existe no Yahoo: o job não pede histórico
+/// dele, e a foto usa o preço de resgate do dia guardado em `quotes` (vindo do
+/// CSV do Tesouro). O aporte nele é fluxo pela quantidade, não por valor.
+async fn treasury_title_is_valued_by_its_daily_quote(db: &Database, dir: &tempfile_dir::Dir) {
+    let email = "tesouro-desempenho@exemplo.com";
+    let symbol = "TD-IPCA-20350515";
+    let quote = |price: Decimal| Quote {
+        symbol: symbol.to_owned(),
+        price,
+        currency: "BRL".to_owned(),
+        name: Some("Tesouro IPCA+ 2035".to_owned()),
+        traded_at: None,
+    };
+    db.store
+        .upsert_quote(&quote(dec!(3000)), OffsetDateTime::now_utc())
+        .await
+        .unwrap();
+    let app = app(&db.store, email, FakeQuotes::with_market(), &dir.path());
+    let bond = post(
+        &app.router,
+        "/api/v1/assets",
+        json!({ "asset_class": "fixed_income", "symbol": symbol, "treasury": true, "quantity": 1.5, "score_override": 5 }),
+    )
+    .await;
+    assert_eq!(bond.status, StatusCode::CREATED, "{}", bond.text);
+
+    let history = Arc::new(FakeHistory::default());
+    let job = Performance::new(db.store.clone(), history.clone());
+    let day1_at = OffsetDateTime::now_utc() - Duration::days(1);
+    job.run_daily(day1_at).await.unwrap();
+
+    let id = bond.body["id"].as_str().unwrap();
+    let contribution = post(
+        &app.router,
+        "/api/v1/contributions",
+        json!({ "amount": 1500, "items": [{ "asset_id": id, "quantity": 0.5, "unit_price": 3000 }] }),
+    )
+    .await;
+    assert_eq!(
+        contribution.status,
+        StatusCode::CREATED,
+        "{}",
+        contribution.text
+    );
+    db.store
+        .upsert_quote(&quote(dec!(3010)), OffsetDateTime::now_utc())
+        .await
+        .unwrap();
+    job.run_daily(OffsetDateTime::now_utc()).await.unwrap();
+
+    let rows = snapshot_rows(db, email).await;
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    assert_eq!((rows[0].1, rows[0].2), (dec!(4500), dec!(4500)));
+    // 2 × 3.010; o fluxo é o aporte (0,5 × 3.000); o resto é a alta do título.
+    assert_eq!((rows[1].1, rows[1].2), (dec!(6020), dec!(1500)));
+    assert_eq!(rows[1].3, (dec!(4520) / dec!(4500)).round_dp(12));
+
+    let asked = history.requests.lock().unwrap().clone();
+    assert!(
+        asked.iter().all(|(s, _, _)| !s.starts_with("TD-")),
+        "{asked:?}"
+    );
+    assert!(db.store.last_price_date(symbol).await.unwrap().is_none());
 }

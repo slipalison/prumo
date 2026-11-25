@@ -323,8 +323,8 @@ impl Store {
         after: OffsetDateTime,
         until: OffsetDateTime,
     ) -> Result<Vec<Purchase>, StoreError> {
-        let rows: Vec<(Uuid, Decimal, Decimal, String, bool)> = sqlx::query_as(
-            "select i.asset_id, i.quantity, i.value, a.asset_class, a.listed_on_b3
+        let rows: Vec<(Uuid, Decimal, Decimal, String, bool, bool)> = sqlx::query_as(
+            "select i.asset_id, i.quantity, i.value, a.asset_class, a.listed_on_b3, a.treasury
                from contribution_items i
                join contributions c on c.id = i.contribution_id
                join assets a on a.id = i.asset_id
@@ -337,15 +337,19 @@ impl Store {
         .await?;
         Ok(rows
             .into_iter()
-            .map(|(asset_id, quantity, value, class, listed_on_b3)| {
-                let by_value = crate::domain::asset_class::AssetClass::parse(&class)
-                    .is_some_and(|c| c.market(listed_on_b3).unit_kind() == UnitKind::Value);
-                Purchase {
-                    asset_id,
-                    quantity: if by_value { value } else { quantity },
-                    value,
-                }
-            })
+            .map(
+                |(asset_id, quantity, value, class, listed_on_b3, treasury)| {
+                    let by_value = crate::domain::asset_class::AssetClass::parse(&class)
+                        .is_some_and(|c| {
+                            c.market_of(listed_on_b3, treasury).unit_kind() == UnitKind::Value
+                        });
+                    Purchase {
+                        asset_id,
+                        quantity: if by_value { value } else { quantity },
+                        value,
+                    }
+                },
+            )
             .collect())
     }
 }

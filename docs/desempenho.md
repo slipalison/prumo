@@ -64,7 +64,9 @@ antes dela — ver [Limitações](#limitações)). Ganho = patrimônio − aplic
      e do câmbio das moedas deles (`price_history`);
   2. tira a foto de cada pessoa que tem ativo ou série
      (`portfolio_snapshots`), com o fechamento do dia quando existe e, senão,
-     o preço que a tela mostra (cotação de agora ou preço manual);
+     o preço que a tela mostra (cotação de agora ou preço manual). Título
+     do Tesouro não existe no Yahoo: fica fora do `price_history` (como fica
+     fora do streamer) e vale pela cotação do dia em `quotes`;
   3. baixa o que falta dos índices, desde 10 dias antes da primeira foto
      (`index_history`).
 - **Idempotente:** a foto é um `upsert` por (pessoa, dia). Rodar duas vezes no
@@ -89,6 +91,7 @@ antes dela — ver [Limitações](#limitações)). Ganho = patrimônio − aplic
 | IPCA | BCB/SGS série 433 | % no mês, datado no dia 1º | `index_history`, `ipca` |
 | Ibovespa | Yahoo `chart`, `^BVSP` | pontos | `index_history`, `ibov` |
 | Ativos e câmbio | Yahoo `chart` diário (`KNRI11.SA`, `AAPL`, `BTC-USD`, `USDBRL=X`) | moeda do símbolo | `price_history` |
+| Título do Tesouro (`TD-IPCA-20350515`) | a cotação do dia em `quotes` (preço de resgate do CSV do Tesouro Transparente) | reais | — (a foto guarda o preço) |
 
 Hosts: `api.bcb.gov.br` (novo) e `query1.finance.yahoo.com` (já usado pela
 cotação). Nenhum pede chave nem contato; o cliente HTTP é o do app, que se
@@ -194,6 +197,9 @@ começar no primeiro lançamento. Para isso:
    evento precisa ser convertida pelo fator do desdobramento (ou pedir
    `events=split` e desfazer o ajuste no preço).
 5. **Renda fixa**: valor por data (o que a pessoa informou, ou o indexador).
+   **Tesouro Direto**: o histórico do título pode vir do próprio CSV do
+   Tesouro Transparente, que traz o preço de resgate de todos os dias desde o
+   lançamento — sem o Yahoo.
 6. Os índices já se estendem sozinhos para trás: `sync_indexes` busca o que
    falta antes do primeiro dia guardado quando a primeira foto fica mais
    antiga.
