@@ -30,6 +30,8 @@ pub struct Config {
     pub quotes_refresh: Duration,
     /// Setor e segmento dos papeis, de fontes publicas da B3 e da CVM.
     pub sectors_enabled: bool,
+    /// Horário de Brasília da tarefa diária de desempenho (`None` = desligada).
+    pub snapshot_at: Option<time::Time>,
     pub version: String,
     pub commit: String,
 }
@@ -109,9 +111,31 @@ impl Config {
             quotes_stream: flag("QUOTES_STREAM")?,
             quotes_refresh: Duration::from_secs(number("QUOTES_REFRESH_SECS", 900)?.max(60)),
             sectors_enabled: flag("SECTORS_ENABLED")?,
+            snapshot_at: snapshot_time(get("SNAPSHOT_AT"))?,
             version: get("APP_VERSION").unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_owned()),
             commit: get("GIT_SHA").unwrap_or_else(|| "unknown".to_owned()),
         })
+    }
+}
+
+/// `SNAPSHOT_AT`: `HH:MM` no horário de Brasília (padrão 19:00, depois do
+/// fechamento da B3), ou `off`.
+fn snapshot_time(value: Option<String>) -> Result<Option<time::Time>, ConfigError> {
+    let invalid = |value: &str| ConfigError::Invalid {
+        name: "SNAPSHOT_AT",
+        value: value.to_owned(),
+    };
+    match value.as_deref() {
+        None => Ok(Some(time::macros::time!(19:00))),
+        Some("off") => Ok(None),
+        Some(text) => {
+            let (hour, minute) = text.split_once(':').ok_or_else(|| invalid(text))?;
+            let hour: u8 = hour.parse().map_err(|_| invalid(text))?;
+            let minute: u8 = minute.parse().map_err(|_| invalid(text))?;
+            time::Time::from_hms(hour, minute, 0)
+                .map(Some)
+                .map_err(|_| invalid(text))
+        }
     }
 }
 
@@ -165,6 +189,7 @@ mod tests {
         assert!(config.quotes_stream);
         assert!(config.sectors_enabled);
         assert_eq!(config.quotes_refresh, Duration::from_secs(900));
+        assert_eq!(config.snapshot_at, Some(time::macros::time!(19:00)));
         assert_eq!(config.commit, "a1b2c3d");
     }
 
@@ -191,6 +216,31 @@ mod tests {
         assert!(!config.quotes_stream);
         assert!(!config.sectors_enabled);
         assert_eq!(config.quotes_refresh, Duration::from_secs(60));
+    }
+
+    #[test]
+    fn snapshot_time_is_configurable() {
+        let with = |value: &str| {
+            Config::from_lookup(lookup(&[
+                ("DATABASE_URL", "postgres://x"),
+                ("AUTH_MODE", "dev"),
+                ("SNAPSHOT_AT", value),
+            ]))
+        };
+        assert_eq!(
+            with("18:45").unwrap().snapshot_at,
+            Some(time::macros::time!(18:45))
+        );
+        assert_eq!(with("off").unwrap().snapshot_at, None);
+        for bad in ["19", "25:00", "19:60", "sete:00", "19:xx"] {
+            assert!(matches!(
+                with(bad),
+                Err(ConfigError::Invalid {
+                    name: "SNAPSHOT_AT",
+                    ..
+                })
+            ));
+        }
     }
 
     #[test]

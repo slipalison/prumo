@@ -8,8 +8,10 @@ pub mod auth;
 pub mod config;
 pub mod domain;
 pub mod error;
+pub mod history;
 pub mod http;
 pub mod live;
+pub mod performance;
 pub mod quotes;
 pub mod sectors;
 pub mod service;
@@ -24,6 +26,7 @@ use async_trait::async_trait;
 
 use crate::auth::{AccessAuthenticator, Authenticator, DevAuthenticator};
 use crate::config::{AuthConfig, Config};
+use crate::history::{DisabledHistory, HistoryProvider, PublicHistory};
 use crate::http::{AppState, BuildInfo};
 use crate::live::yahoo::YahooStreamer;
 use crate::live::LiveQuotes;
@@ -100,6 +103,14 @@ pub async fn run(config: Config) -> Result<(), StartError> {
             Arc::new(DevAuthenticator::new(email.clone()))
         }
     };
+    if let Some(at) = config.snapshot_at {
+        let history: Arc<dyn HistoryProvider> = if config.quotes_enabled {
+            Arc::new(PublicHistory::new(http.clone()))
+        } else {
+            Arc::new(DisabledHistory)
+        };
+        Arc::new(performance::Performance::new(store.clone(), history)).spawn(at);
+    }
     let provider: Arc<dyn QuoteProvider> = if config.quotes_enabled {
         Arc::new(YahooProvider::new(http.clone()))
     } else {

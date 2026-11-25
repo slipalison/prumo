@@ -21,7 +21,10 @@ use crate::domain::defaults;
 use crate::live::Tick;
 use crate::quotes::Quote;
 
+mod performance;
 mod treasury;
+
+pub use performance::{JobLock, Snapshot, SnapshotPoint};
 
 static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 

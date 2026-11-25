@@ -5,6 +5,7 @@ mod handlers;
 mod health;
 mod live;
 mod ops;
+mod performance;
 mod treasury;
 
 use std::collections::HashMap;
@@ -233,6 +234,8 @@ pub fn public_router(state: AppState, static_dir: &str) -> Router {
         .route("/health/rules", get(health::rules).put(health::save_rules))
         .route("/symbols", get(handlers::symbols))
         .route("/quotes/refresh", post(handlers::refresh_quotes))
+        .route("/history/net-worth", get(performance::net_worth))
+        .route("/performance", get(performance::performance))
         .fallback(|| async { ApiError::not_found() })
         .layer(RequestBodyLimitLayer::new(64 * 1024))
         .layer(SetResponseHeaderLayer::overriding(
