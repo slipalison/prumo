@@ -226,7 +226,7 @@ async fn cash_comes_from_income_and_sales_and_goes_out_with_contributions(
     assert_eq!(empty["recent"], json!([]));
 
     start_cash_at(env, &me, 30).await;
-    // Entra: 20 (FII) e 8,50 líquido de JCP (15% retido). Fica de fora: o que
+    // Entra: 20 (FII) e 8,25 líquido de JCP (17,5% retido desde 2026). Fica de fora: o que
     // pagou antes do início do caixa e o que ainda vai pagar.
     income(
         &me,
@@ -258,8 +258,8 @@ async fn cash_comes_from_income_and_sales_and_goes_out_with_contributions(
     assert_eq!(sale.status, StatusCode::CREATED, "{}", sale.text);
 
     let state = cash(&me).await;
-    assert_eq!(state["balance"], 327.0, "{state}");
-    assert_eq!(state["income"], json!({ "amount": 28.5, "count": 2 }));
+    assert_eq!(state["balance"], 326.75, "{state}");
+    assert_eq!(state["income"], json!({ "amount": 28.25, "count": 2 }));
     assert_eq!(state["sales"], json!({ "amount": 298.5, "count": 1 }));
     assert_eq!(state["used"], 0.0);
     assert_eq!(state["adjustment"], 0.0);
@@ -277,7 +277,7 @@ async fn cash_comes_from_income_and_sales_and_goes_out_with_contributions(
     assert_eq!(partial.status, StatusCode::CREATED, "{}", partial.text);
     assert_eq!(partial.body["cash_used"], 100.0);
     let after = cash(&me).await;
-    assert_eq!(after["balance"], 227.0);
+    assert_eq!(after["balance"], 226.75);
     assert_eq!(after["used"], 100.0);
     // O aporte aparece no detalhe como saída, depois do que entrou no dia.
     assert_eq!(after["recent"][0]["kind"], "sale");
@@ -288,7 +288,7 @@ async fn cash_comes_from_income_and_sales_and_goes_out_with_contributions(
         .any(|m| m["kind"] == "contribution" && m["amount"] == 100.0));
 
     // Usa o resto: zera.
-    let rest = contribute(&me, &knri, 227.0, Some(227.0)).await;
+    let rest = contribute(&me, &knri, 226.75, Some(226.75)).await;
     assert_eq!(rest.status, StatusCode::CREATED, "{}", rest.text);
     assert_eq!(cash(&me).await["balance"], 0.0);
 
@@ -302,7 +302,7 @@ async fn cash_comes_from_income_and_sales_and_goes_out_with_contributions(
         .map(|c| c["cash_used"].as_f64().unwrap())
         .collect();
     assert_eq!(used.len(), 2);
-    assert!(used.contains(&100.0) && used.contains(&227.0));
+    assert!(used.contains(&100.0) && used.contains(&226.75));
 
     // Outra pessoa não vê o que não é dela.
     let other = person(env, "cx-fluxo-outra@prumo.test", dir);
