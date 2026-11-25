@@ -74,6 +74,16 @@ export type Asset = {
   sector: string | null;
   subsector: string | null;
   segment: string | null;
+  /**
+   * Do livro de lançamentos, em reais. `null` = desconhecido (saldo inicial
+   * sem preço), diferente de zero. Renda fixa por valor não tem preço médio.
+   */
+  average_price: number | null;
+  cost_basis: number | null;
+  unrealized_gain: number | null;
+  realized_gain: number | null;
+  /** `unrealized_gain / cost_basis`, de 0 a 100 (pode passar de 100 ou ser negativo). */
+  return_percent: number | null;
 };
 
 export type ChecklistQuestion = {
@@ -95,7 +105,16 @@ export type Portfolio = {
 /** Um ativo no evento `prices` do stream: só o que muda com o preço. */
 export type LiveAsset = Pick<
   Asset,
-  "id" | "unit_price" | "currency" | "price_source" | "quote_updated_at" | "current_value" | "class_percent" | "ideal_class_percent"
+  | "id"
+  | "unit_price"
+  | "currency"
+  | "price_source"
+  | "quote_updated_at"
+  | "current_value"
+  | "class_percent"
+  | "unrealized_gain"
+  | "return_percent"
+  | "ideal_class_percent"
 >;
 
 /** Evento `prices` de `GET /portfolio/stream` (docs/api.md § Carteira ao vivo). */
@@ -123,6 +142,10 @@ export type CreateAssetRequest = {
   /** Título do Tesouro Direto: `symbol` é a chave que `GET /symbols` devolve. */
   treasury?: boolean;
   max_price?: number | null;
+  /** Preço médio de entrada, em reais (por unidade). Sem ele, custo desconhecido. */
+  average_price?: number;
+  /** Renda fixa por valor: quanto foi aplicado. */
+  invested?: number;
 };
 
 export type UpdateAssetRequest = {

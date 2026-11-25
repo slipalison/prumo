@@ -11,6 +11,7 @@ import { ScoreBadge } from "../../components/ScoreBadge";
 import { ScoreSlider } from "../../components/ScoreSlider";
 import { Sheet } from "../../components/Sheet";
 import { useToast } from "../../components/toastContext";
+import { TransactionsSection } from "../ledger/TransactionsSection";
 import { acceptsB3Listing, CLASS_META, unitOf } from "../../lib/assetClasses";
 import { formatDay, formatRelative } from "../../lib/format";
 import { useMoney } from "../../lib/privacy";
@@ -91,6 +92,14 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
   const b3Editable = acceptsB3Listing(asset.asset_class) && meta.unit !== "value";
 
   const [quantity, setQuantity] = useState(asset.quantity);
+  // A quantidade é a soma do livro: um lançamento salvo aqui embaixo muda a
+  // do servidor, e o campo acompanha — senão "Salvar" gravaria um ajuste
+  // desfazendo o lançamento.
+  const [serverQuantity, setServerQuantity] = useState(asset.quantity);
+  if (serverQuantity !== asset.quantity) {
+    setServerQuantity(asset.quantity);
+    setQuantity(asset.quantity);
+  }
   const [useManualPrice, setUseManualPrice] = useState(asset.manual_price !== null);
   const [manualPrice, setManualPrice] = useState(asset.manual_price ?? asset.unit_price ?? 0);
   const [useManualScore, setUseManualScore] = useState(asset.score_override !== null);
@@ -189,7 +198,10 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
     <>
       {b3Block}
       {valueBased ? (
-        <MoneyInput id={ids.amount} label="Valor atual" value={quantity} onChange={setQuantity} />
+        <>
+          <MoneyInput id={ids.amount} label="Valor atual" value={quantity} onChange={setQuantity} />
+          <p className="field__hint">Mudar o valor aqui grava uma atualização do saldo em Lançamentos.</p>
+        </>
       ) : (
         <QuantityInput
           id={ids.quantity}
@@ -197,7 +209,11 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
           value={quantity}
           onChange={setQuantity}
           fractional={unit === "fraction"}
-          {...(asset.treasury ? { hint: "Pode ser fração, como 0,35." } : {})}
+          hint={
+            asset.treasury
+              ? "Pode ser fração, como 0,35. Mudar aqui grava um ajuste em Lançamentos; compra e venda, lance lá, com data e preço."
+              : "Mudar aqui grava um ajuste em Lançamentos. Compra e venda, lance lá, com data e preço."
+          }
         />
       )}
     </>
@@ -330,12 +346,14 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
           {amountBlock}
           {priceBlock}
           {ceilingBlock}
+          <TransactionsSection asset={asset} />
         </>
       ) : (
         <>
           {amountBlock}
           {priceBlock}
           {ceilingBlock}
+          <TransactionsSection asset={asset} />
           {scoreBlock}
         </>
       )}

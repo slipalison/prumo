@@ -37,13 +37,26 @@ function cleanSymbol(text: string): string {
  * a nota, e o aporte já o considera na divisão da classe.
  */
 export function AssetForm({ initialClass, submitLabel = "Adicionar à carteira", onCreated }: AssetFormProps) {
-  const ids = { symbol: useId(), quantity: useId(), name: useId(), amount: useId(), score: useId(), b3: useId() };
+  const ids = {
+    symbol: useId(),
+    quantity: useId(),
+    name: useId(),
+    amount: useId(),
+    score: useId(),
+    b3: useId(),
+    averagePrice: useId(),
+    invested: useId(),
+  };
   const [assetClass, setAssetClass] = useState<AssetClass>(initialClass ?? "br_stocks");
   const [classTouched, setClassTouched] = useState(Boolean(initialClass));
   const [symbol, setSymbol] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [quantity, setQuantity] = useState(0);
   const [amount, setAmount] = useState(0);
+  // Custo de entrada, opcional: sem ele o saldo inicial fica de custo
+  // desconhecido e a rentabilidade não aparece até a pessoa informar.
+  const [averagePrice, setAveragePrice] = useState(0);
+  const [invested, setInvested] = useState(0);
   const [score, setScore] = useState(5);
   // "Negociado na B3": segue o formato do ticker até a pessoa mexer na chave.
   const [listedOnB3, setListedOnB3] = useState(false);
@@ -111,9 +124,22 @@ export function AssetForm({ initialClass, submitLabel = "Adicionar à carteira",
     event.preventDefault();
     if (!valid || create.isPending) return;
     const body: CreateAssetRequest = valueBased
-      ? { asset_class: assetClass, display_name: displayName.trim(), amount, score_override: score }
+      ? {
+          asset_class: assetClass,
+          display_name: displayName.trim(),
+          amount,
+          score_override: score,
+          ...(amount > 0 && invested > 0 ? { invested } : {}),
+        }
       : treasury && treasuryKey
-        ? { asset_class: assetClass, symbol: treasuryKey, treasury: true, quantity: units, score_override: score }
+        ? {
+            asset_class: assetClass,
+            symbol: treasuryKey,
+            treasury: true,
+            quantity: units,
+            score_override: score,
+            ...(units > 0 && averagePrice > 0 ? { average_price: averagePrice } : {}),
+          }
         : {
             asset_class: assetClass,
             symbol: cleanSymbol(symbol),
@@ -121,6 +147,7 @@ export function AssetForm({ initialClass, submitLabel = "Adicionar à carteira",
             ...(displayName ? { display_name: displayName } : {}),
             ...(needsManualScore ? { score_override: score } : {}),
             ...(b3Choice && onB3 ? { listed_on_b3: true } : {}),
+            ...(units > 0 && averagePrice > 0 ? { average_price: averagePrice } : {}),
           };
     create.mutate(body, { onSuccess: onCreated });
   };
@@ -211,6 +238,12 @@ export function AssetForm({ initialClass, submitLabel = "Adicionar à carteira",
           </div>
           <MoneyInput id={ids.amount} label="Quanto você tem hoje" value={amount} onChange={setAmount} />
           <p className="field__hint">Ainda não aplicou? Deixe zero: ele entra na divisão do aporte pela nota.</p>
+          {amount > 0 && (
+            <>
+              <MoneyInput id={ids.invested} label="Quanto você aplicou (opcional)" value={invested} onChange={setInvested} />
+              <p className="field__hint">Com ele, o Prumo mostra o rendimento. Dá para informar depois, em Lançamentos.</p>
+            </>
+          )}
         </>
       ) : (
         <>
@@ -240,6 +273,12 @@ export function AssetForm({ initialClass, submitLabel = "Adicionar à carteira",
                 : "Ainda não comprou? Deixe 0: ele entra na divisão do aporte pela nota."
             }
           />
+          {units > 0 && (
+            <>
+              <MoneyInput id={ids.averagePrice} label="Preço médio (opcional)" value={averagePrice} onChange={setAveragePrice} />
+              <p className="field__hint">Em reais, por unidade. Sem ele, a rentabilidade aparece quando você informar.</p>
+            </>
+          )}
         </>
       )}
 

@@ -1,0 +1,174 @@
+/* Livro de lançamentos: a parte "Lançamentos" da folha do ativo e a
+   rentabilidade na linha da Carteira (docs/design.md § Carteira). */
+
+.ledger {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ledger__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* Preço médio, custo, resultado e lucro realizado: rótulo pequeno em cima,
+   número tabular embaixo. Duas colunas no celular, quatro no desktop. */
+.ledger__summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+}
+
+.ledger__summary dt {
+  color: var(--text-subtle);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.ledger__summary dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+@media (min-width: 720px) {
+  .ledger__summary {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.ledger__missing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.ledger__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ledger-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 4px 12px;
+  min-height: 52px;
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ledger-row:last-child {
+  border-bottom: 0;
+}
+
+.ledger-row__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ledger-row__kind {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 650;
+}
+
+.ledger-row__tag {
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.ledger-row__detail {
+  overflow: hidden;
+  color: var(--text-subtle);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+}
+
+.ledger-row__date {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ledger-row__actions,
+.ledger-row__confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Confirmar apagar ocupa a linha inteira no celular, sem espremer o texto. */
+.ledger-row__confirm {
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+}
+
+.ledger-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent);
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+}
+
+.ledger-form__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.ledger-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Linha da Carteira: rentabilidade e % da classe lado a lado, embaixo do
+   valor. Fica espaço para o "abaixo do ideal" entrar no mesmo lugar. */
+.asset-row__meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 0 8px;
+}
+
+.asset-row__return {
+  font-size: 0.75rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.asset-row__return--up {
+  color: var(--success);
+}
+
+.asset-row__return--down {
+  color: var(--danger);
+}

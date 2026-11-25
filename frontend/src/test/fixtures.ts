@@ -1,3 +1,4 @@
+import type { Transaction } from "../api/ledgerTypes";
 import { ASSET_CLASSES, type Asset, type AssetClass, type Checklists, type GoalTargets, type Plan, type Portfolio } from "../api/types";
 import type { HealthRule, HealthWarning, SectorSourceInfo } from "../api/healthTypes";
 import { checklistScore } from "../lib/score";
@@ -26,6 +27,9 @@ export type StoredAsset = {
   segment?: string;
   /** Teto de preço; ausente = sem teto. */
   max_price?: number | null;
+  /** Custo do livro, em reais. Ausente ou `null` = desconhecido (com quantidade). */
+  cost_basis?: number | null;
+  realized_gain?: number | null;
 };
 
 const nativeB3 = (assetClass: AssetClass) => assetClass === "br_stocks" || assetClass === "br_reits";
@@ -86,8 +90,9 @@ export function defaultAssets(): StoredAsset[] {
       sector: "Financeiro",
       subsector: "Holdings Diversificadas",
       segment: "Holdings Diversificadas",
+      cost_basis: 25000,
     },
-    { ...fii("a-knri", "KNRI11", "Kinea Renda Imobiliária", 10, 142, allYes), sector: "Tijolo", segment: "Multicategoria" },
+    { ...fii("a-knri", "KNRI11", "Kinea Renda Imobiliária", 10, 142, allYes), sector: "Tijolo", segment: "Multicategoria", cost_basis: 1300 },
     { ...fii("a-hglg", "HGLG11", "Pátria Log", 12, 140.8, allYes), sector: "Tijolo", segment: "Multicategoria" },
     { ...fii("a-btlg", "BTLG11", "BTG Pactual Logística", 15, 94.55, { ...allYes, r6: false }), sector: "Tijolo", segment: "Multicategoria" },
     // Fora da referência (fundo sem informe): fica "sem setor".
@@ -126,6 +131,29 @@ export function defaultGoals(): GoalTargets {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+/**
+ * O livro FICTÍCIO que bate com a carteira acima: Itaúsa e KNRI11 com custo,
+ * HGLG11 com o saldo inicial sem preço (o "informe o preço médio").
+ */
+export function defaultTransactions(): Transaction[] {
+  const base = {
+    symbol: null,
+    display_name: "",
+    fees: 0,
+    currency: "BRL",
+    fx_rate: null,
+    external_ref: null,
+    contribution_id: null,
+    created_at: "2026-01-01T12:00:00Z",
+  } as const;
+  return [
+    { ...base, id: "t-itsa-1", asset_id: "a-itsa", asset_class: "br_stocks", symbol: "ITSA4", kind: "opening", trade_date: "2025-06-10", quantity: 2500, unit_price: 10, source: "migration" },
+    { ...base, id: "t-knri-1", asset_id: "a-knri", asset_class: "br_reits", symbol: "KNRI11", kind: "opening", trade_date: "2025-03-03", quantity: 8, unit_price: 125, source: "manual" },
+    { ...base, id: "t-knri-2", asset_id: "a-knri", asset_class: "br_reits", symbol: "KNRI11", kind: "buy", trade_date: "2026-02-10", quantity: 2, unit_price: 150, fees: 0, source: "plan", contribution_id: "c-0" },
+    { ...base, id: "t-hglg-1", asset_id: "a-hglg", asset_class: "br_reits", symbol: "HGLG11", kind: "opening", trade_date: "2025-01-15", quantity: 12, unit_price: null, source: "migration" },
+  ];
+}
+
 function checklistKind(assetClass: AssetClass): "real_estate" | "stocks" | null {
   if (assetClass === "br_reits" || assetClass === "us_reits") return "real_estate";
   if (assetClass === "br_stocks" || assetClass === "intl_stocks") return "stocks";
@@ -159,6 +187,12 @@ export function toAsset(stored: StoredAsset, checklists: Checklists, classTotal:
   const price = stored.manual_price ?? stored.quote_price;
   const value = price === null ? 0 : stored.quantity * price;
   const kind = checklistKind(stored.asset_class);
+  const cost = stored.quantity === 0 ? 0 : (stored.cost_basis ?? null);
+  const valueBased =
+    (stored.asset_class === "fixed_income" || stored.asset_class === "intl_fixed_income") &&
+    !stored.listed_on_b3 &&
+    !stored.treasury;
+  const unrealized = cost === null || price === null ? null : round2(value - cost);
   const scoreSource = stored.score_override !== null ? "manual" : kind ? "checklist" : "none";
   const score = scoreOf(stored, checklists);
   return {
@@ -185,6 +219,11 @@ export function toAsset(stored: StoredAsset, checklists: Checklists, classTotal:
     sector: stored.sector ?? null,
     subsector: stored.subsector ?? null,
     segment: stored.segment ?? null,
+    average_price: cost === null || stored.quantity === 0 || valueBased ? null : cost / stored.quantity,
+    cost_basis: cost,
+    unrealized_gain: unrealized,
+    realized_gain: stored.realized_gain === undefined ? 0 : stored.realized_gain,
+    return_percent: unrealized === null || cost === null || cost <= 0 ? null : round2((unrealized / cost) * 100),
   };
 }
 

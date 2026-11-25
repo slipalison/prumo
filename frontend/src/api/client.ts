@@ -31,6 +31,8 @@ const FRIENDLY: Partial<Record<string, string>> = {
   quote_provider_unavailable: "A busca de cotações não respondeu agora. Tente de novo em instantes.",
   unreadable_file: "Não consegui ler um dos arquivos. Tire-o da lista (ou baixe de novo na Área do Investidor) e tente outra vez.",
   payload_too_large: "Os arquivos passam de 10 MB juntos. Envie menos arquivos ou um período menor.",
+  exceeds_position:
+    "Esse lançamento deixaria a posição negativa em alguma data. Confira a quantidade, a data e os lançamentos depois dele.",
   internal: INTERNAL,
   network: NETWORK,
 };

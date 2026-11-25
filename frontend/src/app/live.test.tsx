@@ -32,7 +32,7 @@ function pricesNow(change?: (portfolio: Portfolio) => void): LivePrices {
     quotes_updated_at: portfolio.quotes_updated_at,
     classes: portfolio.classes,
     assets: portfolio.assets.map(
-      ({ id, unit_price, currency, price_source, quote_updated_at, current_value, class_percent, ideal_class_percent }) => ({
+      ({
         id,
         unit_price,
         currency,
@@ -41,6 +41,19 @@ function pricesNow(change?: (portfolio: Portfolio) => void): LivePrices {
         current_value,
         class_percent,
         ideal_class_percent,
+        unrealized_gain,
+        return_percent,
+      }) => ({
+        id,
+        unit_price,
+        currency,
+        price_source,
+        quote_updated_at,
+        current_value,
+        class_percent,
+        ideal_class_percent,
+        unrealized_gain,
+        return_percent,
       }),
     ),
   };
@@ -182,11 +195,14 @@ describe("Carteira ao vivo", () => {
     const knri = within(fiis).getByRole("button", { name: /KNRI11/ });
     expect(within(knri).getByText(/R\$\s1\.500,00/)).toBeInTheDocument();
     expect(within(knri).getByText(/10 cotas · R\$\s150,00/)).toBeInTheDocument();
+    // A rentabilidade anda com o preço: 1.500 sobre o custo de 1.300.
+    expect(within(knri).getByText("+15,4%")).toBeInTheDocument();
     expect(within(knri).getByText("▲")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Patrimônio" })).toHaveTextContent("▲");
 
     act(() => FakeEventSource.latest().emit("prices", knriAt(140)));
     expect(await within(knri).findByText(/R\$\s1\.400,00/)).toBeInTheDocument();
+    expect(within(knri).getByText("+7,7%")).toBeInTheDocument();
     expect(within(knri).getByText("▼")).toBeInTheDocument();
     expect(getLiveStatus()).toBe("live");
   });

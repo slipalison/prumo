@@ -15,6 +15,7 @@ import type {
 import { ASSET_CLASSES } from "../api/types";
 import type { AllocationSettings } from "../api/allocationTypes";
 import type { HealthRule, HealthWarning, RuleId, RulesRequest, SectorSourceInfo } from "../api/healthTypes";
+import type { CreateTransactionRequest, Transaction, UpdateTransactionRequest } from "../api/ledgerTypes";
 import {
   defaultAssets,
   defaultChecklists,
@@ -22,6 +23,7 @@ import {
   defaultHealthRules,
   defaultSectorSources,
   defaultWarnings,
+  defaultTransactions,
   samplePlan,
   toPortfolio,
   TREASURY_AT,
@@ -36,6 +38,7 @@ export type FakeDb = {
   goals: GoalTargets;
   checklists: Checklists;
   contributions: Contribution[];
+  transactions: Transaction[];
   requests: Array<{ method: string; path: string; body: unknown }>;
   nextId: number;
   /** Regras de saúde como a pessoa as deixou e os avisos que o servidor acha deles. */
@@ -52,6 +55,7 @@ function createDb(): FakeDb {
     goals: defaultGoals(),
     checklists: defaultChecklists(),
     contributions: [],
+    transactions: defaultTransactions(),
     requests: [],
     nextId: 1,
     healthRules: defaultHealthRules(),
@@ -120,6 +124,70 @@ async function record(request: Request) {
 }
 
 const isValueClass = (c: AssetClass) => c === "fixed_income" || c === "intl_fixed_income";
+
+/**
+ * O livro de um ativo, refeito como o servidor faz (docs/api.md § Lançamentos):
+ * custo médio, venda pelo custo médio, eventos que preservam o custo. Devolve
+ * `null` se alguma data ficaria com posição negativa.
+ */
+function replay(list: Transaction[]): { quantity: number; cost: number | null; realized: number | null } | null {
+  const sorted = [...list].sort((a, b) => (a.trade_date === b.trade_date ? 0 : a.trade_date < b.trade_date ? -1 : 1));
+  let quantity = 0;
+  let cost: number | null = 0;
+  let realized: number | null = 0;
+  for (const t of sorted) {
+    const fx = t.fx_rate ?? 1;
+    const gross = t.quantity * (t.unit_price ?? 0) * fx;
+    switch (t.kind) {
+      case "opening":
+      case "buy":
+      case "bonus":
+        quantity += t.quantity;
+        cost = cost === null || (t.kind === "opening" && t.unit_price === null) ? null : cost + gross + t.fees * fx;
+        break;
+      case "split":
+        quantity += t.quantity;
+        break;
+      case "reverse_split":
+        if (t.quantity >= quantity) return null;
+        quantity -= t.quantity;
+        break;
+      case "sell":
+      case "redemption": {
+        if (t.quantity > quantity) return null;
+        const removed: number | null = cost === null ? null : (cost * t.quantity) / quantity;
+        realized = realized === null || removed === null ? null : realized + gross - t.fees * fx - removed;
+        quantity -= t.quantity;
+        cost = quantity === 0 ? 0 : cost === null || removed === null ? null : cost - removed;
+        break;
+      }
+      case "amortization":
+        if (t.quantity > quantity) return null;
+        cost = cost === null ? null : Math.max(0, cost - gross);
+        break;
+      case "adjustment":
+        if (quantity + t.quantity < 0) return null;
+        quantity += t.quantity;
+        if (quantity === 0) cost = 0;
+        break;
+    }
+  }
+  return { quantity, cost, realized };
+}
+
+/** Grava o livro do ativo se ele fecha; senão, nada muda e responde 422. */
+function commitLedger(assetId: string, next: Transaction[]) {
+  const stored = db.assets.find((a) => a.id === assetId);
+  const position = replay(next.filter((t) => t.asset_id === assetId));
+  if (!stored || !position) {
+    return problem(422, "exceeds_position", "O lancamento passa da posicao", "A venda passa da posicao naquela data.");
+  }
+  db.transactions = next;
+  stored.quantity = position.quantity;
+  stored.cost_basis = position.cost;
+  stored.realized_gain = position.realized;
+  return null;
+}
 const isNativeB3 = (c: AssetClass) => c === "br_stocks" || c === "br_reits";
 
 export const handlers = [
@@ -265,6 +333,62 @@ export const handlers = [
   }),
 
   http.get("/api/v1/contributions", () => HttpResponse.json(db.contributions)),
+
+  http.get("/api/v1/transactions", ({ request }) => {
+    const assetId = new URL(request.url).searchParams.get("asset_id");
+    const list = db.transactions
+      .filter((t) => !assetId || t.asset_id === assetId)
+      .sort((a, b) => (a.trade_date === b.trade_date ? 0 : a.trade_date < b.trade_date ? 1 : -1));
+    return HttpResponse.json(list);
+  }),
+
+  http.post("/api/v1/transactions", async ({ request }) => {
+    const body = (await request.json()) as CreateTransactionRequest;
+    const asset = db.assets.find((a) => a.id === body.asset_id);
+    if (!asset) return problem(404, "not_found", "Não encontrado");
+    const transaction: Transaction = {
+      id: `t-${db.nextId++}`,
+      asset_id: asset.id,
+      symbol: asset.symbol,
+      display_name: asset.display_name,
+      asset_class: asset.asset_class,
+      kind: body.kind,
+      trade_date: body.trade_date,
+      quantity: body.quantity,
+      unit_price: body.unit_price ?? (isValueClass(asset.asset_class) && body.kind !== "opening" ? 1 : null),
+      fees: body.fees ?? 0,
+      currency: body.currency ?? "BRL",
+      fx_rate: body.fx_rate ?? null,
+      source: "manual",
+      external_ref: null,
+      contribution_id: null,
+      created_at: "2026-11-25T12:00:00Z",
+    };
+    const refused = commitLedger(asset.id, [...db.transactions, transaction]);
+    return refused ?? HttpResponse.json(transaction, { status: 201 });
+  }),
+
+  http.patch("/api/v1/transactions/:id", async ({ request, params }) => {
+    const current = db.transactions.find((t) => t.id === params.id);
+    if (!current?.asset_id) return problem(404, "not_found", "Não encontrado");
+    const body = (await request.json()) as UpdateTransactionRequest;
+    const updated: Transaction = { ...current, ...body };
+    const refused = commitLedger(
+      current.asset_id,
+      db.transactions.map((t) => (t.id === current.id ? updated : t)),
+    );
+    return refused ?? HttpResponse.json(updated);
+  }),
+
+  http.delete("/api/v1/transactions/:id", ({ params }) => {
+    const current = db.transactions.find((t) => t.id === params.id);
+    if (!current?.asset_id) return problem(404, "not_found", "Não encontrado");
+    const refused = commitLedger(
+      current.asset_id,
+      db.transactions.filter((t) => t.id !== current.id),
+    );
+    return refused ?? new HttpResponse(null, { status: 204 });
+  }),
 
   http.get("/api/v1/symbols", ({ request }) => {
     const query = (new URL(request.url).searchParams.get("query") ?? "").toUpperCase();

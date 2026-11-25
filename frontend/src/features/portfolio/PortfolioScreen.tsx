@@ -20,6 +20,8 @@ import { useLiveStatus } from "../../lib/liveStatus";
 import { useMoney } from "../../lib/privacy";
 import { assetName, isAboveCeiling, needsRating, ratingIntro } from "../../lib/rating";
 import { HealthSummary } from "../health/HealthSummary";
+import { formatSignedPercent } from "../ledger/format";
+import "../ledger/ledger.css";
 import { AddAssetSheet } from "./AddAssetSheet";
 import { ContributionHistory } from "./ContributionHistory";
 import { EditAssetSheet } from "./EditAssetSheet";
@@ -264,7 +266,7 @@ function AssetRow({ asset, classAssets, onClick }: { asset: Asset; classAssets: 
             unit === "fraction" && !asset.treasury
               ? (asset.symbol ?? "")
               : plural(asset.quantity, nounOf(asset.asset_class, asset.listed_on_b3, asset.treasury))
-          } · ${price}`;
+          } · ${price}${asset.average_price === null ? "" : ` · PM ${money.brl(asset.average_price)}`}`;
   const b3Tag = asset.listed_on_b3 && acceptsB3Listing(asset.asset_class);
 
   return (
@@ -285,7 +287,12 @@ function AssetRow({ asset, classAssets, onClick }: { asset: Asset; classAssets: 
       <span className="asset-row__qty">{asset.symbol ? quantityLine : ""}</span>
       <span className="asset-row__value">
         <PriceFlash value={asset.current_value}>{money.brl(asset.current_value)}</PriceFlash>
-        {!ideal.counts && <span className="asset-row__share">{formatPercent(asset.class_percent)} da classe</span>}
+        {(asset.return_percent !== null || !ideal.counts) && (
+          <span className="asset-row__meta">
+            {asset.return_percent !== null && <ReturnMark percent={asset.return_percent} />}
+            {!ideal.counts && <span className="asset-row__share">{formatPercent(asset.class_percent)} da classe</span>}
+          </span>
+        )}
       </span>
       <span className="asset-row__score">
         {(missingPrice || asset.score === 0) && (
@@ -334,6 +341,22 @@ function IdealLine({ reading, aboveCeiling }: { reading: IdealReading; aboveCeil
           <IconAlert width={12} height={12} /> acima do teto
         </span>
       )}
+    </span>
+  );
+}
+
+/**
+ * Rentabilidade da posição sobre o preço médio. O sinal escrito diz o sentido
+ * sem depender da cor (a seta ▲/▼ é do preço que acabou de andar, não disto);
+ * o leitor de tela ouve "rentabilidade +12,0%". Percentual não revela
+ * patrimônio: fica visível com o olho fechado, como o % da classe.
+ */
+function ReturnMark({ percent }: { percent: number }) {
+  const direction = percent > 0 ? "up" : percent < 0 ? "down" : "flat";
+  return (
+    <span className={cx("asset-row__return", `asset-row__return--${direction}`)} title="Rentabilidade sobre o preço médio">
+      <span className="sr-only">rentabilidade </span>
+      {formatSignedPercent(percent)}
     </span>
   );
 }

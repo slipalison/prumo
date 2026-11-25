@@ -24,7 +24,7 @@ function pricesNow(): LivePrices {
     quotes_updated_at: portfolio.quotes_updated_at,
     classes: portfolio.classes,
     assets: portfolio.assets.map(
-      ({ id, unit_price, currency, price_source, quote_updated_at, current_value, class_percent, ideal_class_percent }) => ({
+      ({
         id,
         unit_price,
         currency,
@@ -33,6 +33,19 @@ function pricesNow(): LivePrices {
         current_value,
         class_percent,
         ideal_class_percent,
+        unrealized_gain,
+        return_percent,
+      }) => ({
+        id,
+        unit_price,
+        currency,
+        price_source,
+        quote_updated_at,
+        current_value,
+        class_percent,
+        ideal_class_percent,
+        unrealized_gain,
+        return_percent,
       }),
     ),
   };
