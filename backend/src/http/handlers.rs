@@ -13,7 +13,7 @@ use uuid::Uuid;
 use super::dto::*;
 use super::{ApiJson, ApiPath, ApiQuery, AppState, CurrentUser};
 use crate::domain::allocation::{Targets, FULL_BP};
-use crate::domain::asset_class::{normalize_symbol, AssetClass, Checklist, UnitKind};
+use crate::domain::asset_class::{normalize_symbol, AssetClass, Checklist, Market, UnitKind};
 use crate::error::{ApiError, ApiResult};
 use crate::service;
 use crate::store::{AssetPatch, NewAsset, NewContributionItem, StoreError};
@@ -70,6 +70,23 @@ fn text(name: &str, value: &str, max: usize) -> ApiResult<String> {
     }
     Ok(trimmed.to_owned())
 }
+
+/// A marca "negociado na B3" como fica gravada. Ações Nacionais e FIIs são
+/// sempre da B3; nas outras classes ela é a escolha da pessoa (ETF, BDR).
+fn b3_listing(class: AssetClass, requested: Option<bool>) -> ApiResult<bool> {
+    if class.accepts_b3_listing() {
+        return Ok(requested.unwrap_or(false));
+    }
+    match requested {
+        Some(false) => Err(ApiError::validation(format!(
+            "{} sao sempre da B3.",
+            class.label()
+        ))),
+        _ => Ok(true),
+    }
+}
+
+const WHOLE_ONLY: &str = "Esse ativo so aceita quantidade inteira.";
 
 fn checklist(value: &str) -> ApiResult<Checklist> {
     Checklist::parse(value).ok_or_else(ApiError::not_found)
@@ -144,7 +161,9 @@ pub async fn create_asset(
 ) -> ApiResult<impl IntoResponse> {
     let class = body.asset_class;
     let score_override = body.score_override.map(score_value).transpose()?;
-    let new = match class.unit_kind() {
+    let listed_on_b3 = b3_listing(class, body.listed_on_b3)?;
+    let market = class.market(listed_on_b3);
+    let new = match market.unit_kind() {
         UnitKind::Value => {
             let display_name = text(
                 "O nome",
@@ -165,6 +184,7 @@ pub async fn create_asset(
                 quantity: amount,
                 manual_price: None,
                 score_override,
+                listed_on_b3,
             }
         }
         UnitKind::Whole | UnitKind::Fractional => {
@@ -174,16 +194,14 @@ pub async fn create_asset(
                 .and_then(normalize_symbol)
                 .ok_or_else(|| ApiError::validation("Informe um simbolo valido, como KNRI11."))?;
             let quantity = non_negative("A quantidade", body.quantity.unwrap_or_default())?;
-            if class.unit_kind() == UnitKind::Whole && quantity.fract() != Decimal::ZERO {
-                return Err(ApiError::validation(
-                    "Essa classe so aceita quantidade inteira.",
-                ));
+            if market.unit_kind() == UnitKind::Whole && quantity.fract() != Decimal::ZERO {
+                return Err(ApiError::validation(WHOLE_ONLY));
             }
             let manual_price = body
                 .manual_price
                 .map(|p| positive("O preco manual", p))
                 .transpose()?;
-            let quote = state.quotes.quote_now(class, &symbol).await;
+            let quote = state.quotes.quote_now(market, &symbol).await;
             let display_name = match body
                 .display_name
                 .as_deref()
@@ -205,6 +223,7 @@ pub async fn create_asset(
                 quantity,
                 manual_price,
                 score_override,
+                listed_on_b3,
             }
         }
     };
@@ -224,7 +243,19 @@ pub async fn update_asset(
         .asset(user.id, id)
         .await?
         .ok_or_else(ApiError::not_found)?;
-    let kind = asset.asset_class.unit_kind();
+    let listed_on_b3 = match body.listed_on_b3 {
+        None => asset.listed_on_b3,
+        requested => b3_listing(asset.asset_class, requested)?,
+    };
+    let market = asset.asset_class.market(listed_on_b3);
+    let kind = market.unit_kind();
+    // Renda fixa por valor não tem ticker, e com ticker não tem valor
+    // informado: trocar um pelo outro é outro ativo, não uma edição.
+    if (kind == UnitKind::Value) != (asset.market().unit_kind() == UnitKind::Value) {
+        return Err(ApiError::validation(
+            "Renda fixa com ticker e renda fixa por valor sao cadastros diferentes: remova o ativo e adicione de novo.",
+        ));
+    }
     let quantity = match (kind, body.quantity, body.amount) {
         (UnitKind::Value, q, a) => a.or(q).map(|v| non_negative("O valor", v)).transpose()?,
         (_, Some(_), Some(_)) | (_, None, Some(_)) => {
@@ -234,10 +265,10 @@ pub async fn update_asset(
         }
         (_, q, None) => q.map(|v| non_negative("A quantidade", v)).transpose()?,
     };
-    if kind == UnitKind::Whole && quantity.is_some_and(|q| q.fract() != Decimal::ZERO) {
-        return Err(ApiError::validation(
-            "Essa classe so aceita quantidade inteira.",
-        ));
+    // Vale para a quantidade que fica: ligar a B3 num cripto com 0,5 unidade
+    // pede a quantidade inteira junto.
+    if kind == UnitKind::Whole && quantity.unwrap_or(asset.quantity).fract() != Decimal::ZERO {
+        return Err(ApiError::validation(WHOLE_ONLY));
     }
     if kind == UnitKind::Value && body.manual_price.is_some_and(|p| p.is_some()) {
         return Err(ApiError::validation(
@@ -245,6 +276,7 @@ pub async fn update_asset(
         ));
     }
     let patch = AssetPatch {
+        listed_on_b3: body.listed_on_b3.map(|_| listed_on_b3),
         quantity,
         display_name: body
             .display_name
@@ -268,6 +300,13 @@ pub async fn update_asset(
     if let Some(answers) = body.answers {
         let answers: Vec<(Uuid, Option<bool>)> = answers.into_iter().collect();
         state.store.set_answers(user.id, &asset, &answers).await?;
+    }
+    // Mercado novo, símbolo novo no provedor: cota já, para a resposta vir com
+    // preço em vez de esperar a próxima rodada.
+    if market != asset.market() {
+        if let Some(symbol) = asset.symbol.as_deref() {
+            state.quotes.quote_now(market, symbol).await;
+        }
     }
     Ok(Json(asset_response(&state, user.id, id).await?))
 }
@@ -417,6 +456,7 @@ pub async fn symbols(
                 display_name: m.display_name,
                 exchange: m.exchange,
                 suggested_class: m.suggested_class,
+                listed_on_b3: m.listed_on_b3,
             })
             .collect(),
     ))
@@ -432,12 +472,15 @@ pub async fn refresh_quotes(
             failed: Vec::new(),
         }));
     }
-    let targets: Vec<(AssetClass, String)> = state
+    let targets: Vec<(Market, String)> = state
         .store
         .assets(user.id)
         .await?
         .into_iter()
-        .filter_map(|a| a.symbol.map(|s| (a.asset_class, s)))
+        .filter_map(|a| {
+            let market = a.market();
+            a.symbol.map(|s| (market, s))
+        })
         .collect();
     let report = state.quotes.refresh(&targets).await;
     Ok(Json(RefreshDto {

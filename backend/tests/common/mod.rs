@@ -68,6 +68,9 @@ impl FakeQuotes {
                 ("TRXF11.SA", "53.81", "BRL", "TRX Real Estate"),
                 ("MXRF11.SA", "8.37", "BRL", "Maxi Renda"),
                 ("WEGE3.SA", "50.00", "BRL", "WEG"),
+                ("QBTC11.SA", "52.00", "BRL", "QR Bitcoin"),
+                ("HASH11.SA", "60.00", "BRL", "Hashdex Nasdaq Crypto Index"),
+                ("IMAB11.SA", "100.00", "BRL", "It Now IMA-B"),
                 ("BTC-USD", "60000", "USD", "Bitcoin USD"),
                 ("AAPL", "200", "USD", "Apple Inc."),
                 ("USDBRL=X", "5.50", "BRL", "USD/BRL"),
@@ -105,6 +108,7 @@ impl QuoteProvider for FakeQuotes {
             display_name: format!("Resultado para {query}"),
             exchange: "SAO".into(),
             suggested_class: AssetClass::BrReits,
+            listed_on_b3: true,
         }])
     }
 }

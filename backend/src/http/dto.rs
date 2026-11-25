@@ -106,6 +106,8 @@ pub struct CreateAssetRequest {
     pub manual_price: Option<Decimal>,
     #[serde(default)]
     pub score_override: Option<i64>,
+    #[serde(default)]
+    pub listed_on_b3: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -123,6 +125,8 @@ pub struct UpdateAssetRequest {
     pub score_override: Option<Option<i64>>,
     #[serde(default)]
     pub answers: Option<HashMap<Uuid, Option<bool>>>,
+    #[serde(default)]
+    pub listed_on_b3: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -223,6 +227,7 @@ pub struct AssetDto {
     pub asset_class: AssetClass,
     pub symbol: Option<String>,
     pub display_name: String,
+    pub listed_on_b3: bool,
     #[serde(with = "decimal_out")]
     pub quantity: Decimal,
     #[serde(with = "decimal_out::option")]
@@ -250,6 +255,7 @@ impl From<&AssetView> for AssetDto {
             asset_class: a.asset.asset_class,
             symbol: a.asset.symbol.clone(),
             display_name: a.asset.display_name.clone(),
+            listed_on_b3: a.asset.listed_on_b3,
             quantity: a.asset.quantity,
             unit_price: a.unit_price,
             manual_price: a.asset.manual_price,
@@ -322,6 +328,7 @@ pub struct PlanItemDto {
     pub asset_class: AssetClass,
     pub symbol: Option<String>,
     pub display_name: String,
+    pub listed_on_b3: bool,
     #[serde(with = "decimal_out")]
     pub quantity: Decimal,
     #[serde(with = "decimal_out")]
@@ -367,6 +374,7 @@ pub enum NoticeDto {
         asset_class: AssetClass,
         #[serde(with = "decimal_out")]
         amount: Decimal,
+        reason: &'static str,
     },
     AssetsWithoutPrice {
         symbols: Vec<String>,
@@ -383,9 +391,11 @@ impl From<&Notice> for NoticeDto {
             Notice::ClassBlocked {
                 asset_class,
                 amount,
+                reason,
             } => NoticeDto::ClassBlocked {
                 asset_class: *asset_class,
                 amount: *amount,
+                reason: reason.as_str(),
             },
             Notice::AssetsWithoutPrice { labels } => NoticeDto::AssetsWithoutPrice {
                 symbols: labels.clone(),
@@ -429,6 +439,7 @@ impl PlanDto {
                     asset_class: item.asset_class,
                     symbol: asset.and_then(|a| a.symbol.clone()),
                     display_name: asset.map(|a| a.display_name.clone()).unwrap_or_default(),
+                    listed_on_b3: asset.is_some_and(|a| a.listed_on_b3),
                     quantity: item.quantity,
                     unit_price: item.unit_price,
                     value: item.value,
@@ -508,6 +519,7 @@ pub struct SymbolDto {
     pub display_name: String,
     pub exchange: String,
     pub suggested_class: AssetClass,
+    pub listed_on_b3: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -556,9 +568,11 @@ mod tests {
         let json = serde_json::to_value(NoticeDto::from(&Notice::ClassBlocked {
             asset_class: AssetClass::IntlStocks,
             amount: dec!(145921.30),
+            reason: crate::domain::allocation::BlockReason::NoAssets,
         }))
         .unwrap();
         assert_eq!(json["code"], "class_blocked");
+        assert_eq!(json["reason"], "no_assets");
         assert_eq!(json["asset_class"], "intl_stocks");
         assert_eq!(json["amount"], 145921.3);
         let json = serde_json::to_value(NoticeDto::from(&Notice::NoTargets)).unwrap();

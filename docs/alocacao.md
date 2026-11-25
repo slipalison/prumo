@@ -25,7 +25,17 @@ para a meta de amanhã.
 ### 2. Quem pode receber
 
 Uma classe é **elegível** quando tem pelo menos um ativo com nota > 0 e preço
-conhecido. Classe abaixo da meta e sem ativo elegível fica **bloqueada**.
+conhecido. Classe abaixo da meta e sem ativo elegível fica **bloqueada**, e o
+aviso diz o motivo (`reason`): nenhum ativo (`no_assets`), nenhum com nota
+(`unrated`) ou os com nota sem preço (`unpriced`).
+
+O ativo não precisa existir na carteira para ser elegível: cadastrado com
+quantidade 0, ele vale 0 hoje, tem nota e preço, e recebe a fatia dele. É assim
+que a pessoa monta a lista do que quer ter numa classe ainda vazia — sem isso,
+uma carteira concentrada numa classe acima da meta não teria para onde mandar
+o aporte, e ele inteiro voltaria como `unallocated`. O motor nunca manda o
+dinheiro para a classe que já passou da meta para "não sobrar": isso desfaria
+a diversificação que ele existe para manter.
 
 ### 3. Entre classes: proporcional ao que falta, com teto no que falta
 
@@ -60,11 +70,18 @@ quem está abaixo da própria fatia, na proporção do que falta a cada um.
 
 ### 5. Unidades compráveis
 
-| Classe | Unidade |
+A unidade vem do **mercado** do ativo, não da classe:
+
+| Mercado | Unidade |
 |---|---|
-| Ações, FIIs, REITs | inteira, arredondada para baixo |
+| B3 (ações, FIIs, ETFs, BDRs) e bolsa americana | inteira, arredondada para baixo |
 | Cripto | até 8 casas |
-| Renda fixa | centavos |
+| Renda fixa por valor | centavos |
+
+Quase sempre o mercado é o natural da classe. A exceção é o ativo marcado como
+negociado na B3 (`listed_on_b3`) fora de Ações Nacionais e FIIs: um ETF de
+bitcoin da B3 conta em Criptomoedas — a meta e a fatia são de cripto —, mas sai
+em cota inteira e cotado em reais.
 
 ### 6. O troco
 

@@ -12,6 +12,8 @@ type QuantityInputProps = {
   fractional?: boolean;
   min?: number;
   focusOnMount?: boolean;
+  /** Uma linha de ajuda sob o campo, lida junto pelo leitor de tela. */
+  hint?: string;
 };
 
 /**
@@ -27,7 +29,9 @@ export function QuantityInput({
   fractional = false,
   min = 0,
   focusOnMount,
+  hint,
 }: QuantityInputProps) {
+  const hintId = `${id}-hint`;
   const inputRef = useFocusOnMount<HTMLInputElement>(focusOnMount);
   const [text, setText] = useState(() => formatQuantity(value, fractional));
 
@@ -69,6 +73,7 @@ export function QuantityInput({
           autoComplete="off"
           ref={inputRef}
           data-autofocus={focusOnMount ? "" : undefined}
+          aria-describedby={hint ? hintId : undefined}
           value={text}
           onChange={(event) => {
             setText(event.target.value);
@@ -88,6 +93,11 @@ export function QuantityInput({
           </button>
         )}
       </div>
+      {hint && (
+        <p id={hintId} className="field__hint">
+          {hint}
+        </p>
+      )}
     </div>
   );
 }

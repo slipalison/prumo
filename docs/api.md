@@ -36,6 +36,28 @@ Sempre as sete, sempre nesta ordem:
 Classes **por valor** não têm símbolo nem cotação: a pessoa informa quanto tem
 (`amount`) e o sistema guarda como `quantity = amount`, `unit_price = 1`.
 
+### Negociado na B3 (`listed_on_b3`)
+
+A classe diz o que o ativo **é** para a carteira; `listed_on_b3`, onde ele é
+**negociado**. Um ETF de bitcoin da B3 é cripto na carteira e ação na bolsa:
+`{ "asset_class": "crypto", "symbol": "QBTC11", "listed_on_b3": true }`. Com a
+marca, o ativo é cotado como papel da B3 — Yahoo `<SYMBOL>.SA`, em reais, cota
+**inteira** —, seja qual for a classe. Serve para ETF de cripto, ETF de S&P 500
+e BDR em Ações Internacionais, ETF de REITs, ETF de IMA-B em Renda Fixa.
+
+- Em `br_stocks` e `br_reits` é sempre `true` (o mercado delas é a B3);
+  mandar `false` nelas é `422`.
+- Nas outras classes o padrão é `false`.
+- Renda fixa com a marca tem ticker e cota; sem ela, nome e valor. Trocar de
+  um para o outro no `PATCH` é `422`: é outro cadastro.
+
+### Ativo que a pessoa ainda não comprou
+
+`quantity: 0` (ou `amount: 0`) é válido e é o jeito de montar a lista de
+ativos que a pessoa quer ter. Com nota e preço, o ativo entra na divisão do
+aporte como qualquer outro — é assim que uma classe ainda vazia passa a
+receber.
+
 ## Nota (`score`)
 
 - Com `score_override` (0 a 10), a nota é ele (`score_source: "manual"`).
@@ -107,6 +129,7 @@ A tela inteira numa chamada.
       "asset_class": "br_reits",
       "symbol": "KNRI11",
       "display_name": "Kinea Renda Imobiliária",
+      "listed_on_b3": true,
       "quantity": 10,
       "unit_price": 142.0,
       "manual_price": null,
@@ -158,8 +181,16 @@ Por valor:
 { "asset_class": "fixed_income", "display_name": "Tesouro IPCA+ 2035", "amount": 50000, "score_override": 7 }
 ```
 
+Negociado na B3 numa classe de fora dela:
+
+```json
+{ "asset_class": "crypto", "symbol": "QBTC11", "quantity": 0, "listed_on_b3": true, "score_override": 7 }
+```
+
 Opcionais em ambos: `display_name`, `manual_price` (só por unidade),
-`score_override`. O símbolo é normalizado para maiúsculas, sem `.SA`. Responde
+`score_override`, `listed_on_b3`. `quantity`/`amount` ausente vale 0. Na B3 e
+nas ações americanas a quantidade é inteira. O símbolo é normalizado para
+maiúsculas, sem `.SA`. Responde
 `201` com o ativo no mesmo formato de `portfolio.assets[]`. Mesmo símbolo na
 mesma classe: `409 asset_already_exists`.
 
@@ -174,12 +205,15 @@ Qualquer subconjunto de:
   "display_name": "Kinea Renda",
   "manual_price": null,
   "score_override": null,
-  "answers": { "4c1e…": true, "9a77…": null }
+  "answers": { "4c1e…": true, "9a77…": null },
+  "listed_on_b3": true
 }
 ```
 
 `null` em `manual_price`/`score_override` limpa o campo. Em `answers`, `true`/
-`false` grava e `null` apaga a resposta. Responde `200` com o ativo.
+`false` grava e `null` apaga a resposta. Trocar `listed_on_b3` cota o ativo no
+mercado novo na hora; se a unidade passa a ser inteira, a quantidade que fica
+(a enviada ou a atual) tem de ser inteira. Responde `200` com o ativo.
 
 ### `DELETE /api/v1/assets/{id}`
 
@@ -218,6 +252,7 @@ Calcula, não grava.
       "asset_class": "crypto",
       "symbol": "BTC",
       "display_name": "Bitcoin",
+      "listed_on_b3": false,
       "quantity": 0.01214582,
       "unit_price": 345000.0,
       "value": 4190.31,
@@ -236,7 +271,7 @@ Calcula, não grava.
     }
   ],
   "notices": [
-    { "code": "class_blocked", "asset_class": "intl_stocks", "amount": 37800.0 }
+    { "code": "class_blocked", "asset_class": "intl_stocks", "amount": 37800.0, "reason": "no_assets" }
   ]
 }
 ```
@@ -248,8 +283,11 @@ Calcula, não grava.
 - `status`: `receiving` (recebe neste aporte), `below_target` (abaixo da meta,
   mas o valor não chegou a comprar uma unidade), `on_target`, `above_target`,
   `blocked` (abaixo da meta sem ativo elegível) ou `no_target` (meta 0).
-- `notices[].code`: `class_blocked` (com `asset_class` e `amount` = quanto
-  falta na classe), `assets_without_price` (com `symbols`),
+- `divisible`: o item aceita fração (cripto fora da B3, renda fixa por valor).
+- `notices[].code`: `class_blocked` (com `asset_class`, `amount` = quanto
+  falta na classe e `reason`: `no_assets` — nenhum ativo cadastrado —,
+  `unrated` — há ativos, nenhum com nota — ou `unpriced` — há ativo com nota,
+  mas sem preço), `assets_without_price` (com `symbols`),
   `assets_without_score` (com `symbols`) e `no_targets` (nenhuma meta
   definida — nada é comprado).
 
@@ -282,12 +320,17 @@ Busca no provedor de cotações, para o autocompletar.
 
 ```json
 [
-  { "symbol": "KNRI11", "display_name": "Kinea Renda Imobiliária", "exchange": "SAO", "suggested_class": "br_reits" }
+  { "symbol": "KNRI11", "display_name": "Kinea Renda Imobiliária", "exchange": "SAO", "suggested_class": "br_reits", "listed_on_b3": true }
 ]
 ```
 
-`suggested_class` é palpite (B3 terminando em `11` → `br_reits`, outros da B3 →
-`br_stocks`, cripto → `crypto`, EUA → `intl_stocks`); a pessoa confirma.
+`suggested_class` é palpite; a pessoa confirma. Na B3 o nome separa o que o
+Yahoo marca igual (`EQUITY`): ETF de índice ("fundo de índice") de bitcoin/
+cripto → `crypto`, de IMA-B/Tesouro → `fixed_income`, de REITs → `us_reits`,
+de IFIX → `br_reits`, de S&P 500/Nasdaq/MSCI → `intl_stocks`, o resto →
+`br_stocks`; BDR (código `31`–`35`/`39`, nome curto `DRN`…) → `intl_stocks`
+ou `us_reits`; FII e ação como antes. Fora da B3: cripto → `crypto`, EUA →
+`intl_stocks` ou `us_reits`. `listed_on_b3` é `true` em todo resultado da B3.
 
 ### `POST /api/v1/quotes/refresh`
 

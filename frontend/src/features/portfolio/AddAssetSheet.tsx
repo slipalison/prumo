@@ -13,7 +13,7 @@ type AddAssetSheetProps = {
 export function AddAssetSheet({ open, initialClass, onClose, onCreated }: AddAssetSheetProps) {
   const toast = useToast();
   return (
-    <Sheet open={open} onClose={onClose} title="Novo ativo" description="Digite o ticker e a quantidade. O resto eu busco.">
+    <Sheet open={open} onClose={onClose} title="Novo ativo" description="Digite o ticker. Pode ser um ativo que você ainda não comprou: com a nota, ele já entra no aporte.">
       <AssetForm
         key={initialClass ?? "any"}
         initialClass={initialClass}

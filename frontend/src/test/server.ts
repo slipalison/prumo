@@ -56,11 +56,12 @@ export function resetDb(overrides: Partial<FakeDb> = {}): FakeDb {
 }
 
 const SYMBOLS: SymbolSuggestion[] = [
-  { symbol: "KNRI11", display_name: "Kinea Renda Imobiliária", exchange: "SAO", suggested_class: "br_reits" },
-  { symbol: "KNCR11", display_name: "Kinea Rendimentos Imobiliários", exchange: "SAO", suggested_class: "br_reits" },
-  { symbol: "ITSA4", display_name: "Itaúsa", exchange: "SAO", suggested_class: "br_stocks" },
-  { symbol: "VOO", display_name: "Vanguard S&P 500 ETF", exchange: "PCX", suggested_class: "intl_stocks" },
-  { symbol: "ETH", display_name: "Ethereum", exchange: "CCC", suggested_class: "crypto" },
+  { symbol: "KNRI11", display_name: "Kinea Renda Imobiliária", exchange: "SAO", suggested_class: "br_reits", listed_on_b3: true },
+  { symbol: "KNCR11", display_name: "Kinea Rendimentos Imobiliários", exchange: "SAO", suggested_class: "br_reits", listed_on_b3: true },
+  { symbol: "ITSA4", display_name: "Itaúsa", exchange: "SAO", suggested_class: "br_stocks", listed_on_b3: true },
+  { symbol: "VOO", display_name: "Vanguard S&P 500 ETF", exchange: "PCX", suggested_class: "intl_stocks", listed_on_b3: false },
+  { symbol: "ETH", display_name: "Ethereum", exchange: "CCC", suggested_class: "crypto", listed_on_b3: false },
+  { symbol: "QBTC11", display_name: "QR CME CF Bitcoin Reference Rate", exchange: "SAO", suggested_class: "crypto", listed_on_b3: true },
 ];
 
 const problem = (status: number, code: string, title: string, detail?: string) =>
@@ -88,6 +89,7 @@ async function record(request: Request) {
 }
 
 const isValueClass = (c: AssetClass) => c === "fixed_income" || c === "intl_fixed_income";
+const isNativeB3 = (c: AssetClass) => c === "br_stocks" || c === "br_reits";
 
 export const handlers = [
   http.all("/api/v1/*", async ({ request }) => {
@@ -115,7 +117,8 @@ export const handlers = [
     if (symbol && db.assets.some((a) => a.asset_class === body.asset_class && a.symbol === symbol)) {
       return problem(409, "asset_already_exists", "Ativo já existe");
     }
-    const valueBased = isValueClass(body.asset_class);
+    const listed = isNativeB3(body.asset_class) || body.listed_on_b3 === true;
+    const valueBased = isValueClass(body.asset_class) && !listed;
     const stored: StoredAsset = {
       id: `new-${db.nextId++}`,
       asset_class: body.asset_class,
@@ -127,6 +130,7 @@ export const handlers = [
       currency: "BRL",
       score_override: body.score_override ?? null,
       answers: {},
+      listed_on_b3: listed,
     };
     db.assets.push(stored);
     return HttpResponse.json(toAsset(stored, db.checklists, classTotal(stored.asset_class)), { status: 201 });
@@ -141,6 +145,11 @@ export const handlers = [
     if (body.display_name !== undefined) stored.display_name = body.display_name;
     if (body.manual_price !== undefined) stored.manual_price = body.manual_price;
     if (body.score_override !== undefined) stored.score_override = body.score_override;
+    if (body.listed_on_b3 !== undefined) {
+      stored.listed_on_b3 = body.listed_on_b3;
+      // Na B3 o ativo tem cotação; fora dela, um ticker da B3 fica sem preço.
+      stored.quote_price = body.listed_on_b3 ? 52 : null;
+    }
     if (body.answers) {
       for (const [id, answer] of Object.entries(body.answers)) {
         if (answer === null) delete stored.answers[id];

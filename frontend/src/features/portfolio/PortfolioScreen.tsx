@@ -10,7 +10,7 @@ import { GlassCard } from "../../components/GlassCard";
 import { IconAlert, IconPlus, IconRefresh } from "../../components/icons";
 import { ScoreBadge } from "../../components/ScoreBadge";
 import { useToast } from "../../components/toastContext";
-import { CLASS_META, classColor } from "../../lib/assetClasses";
+import { acceptsB3Listing, CLASS_META, classColor, nounOf, unitOf } from "../../lib/assetClasses";
 import { cx } from "../../lib/cx";
 import { formatBRL, formatPercent, formatQuantity, formatRelative, plural } from "../../lib/format";
 import { needsRating, ratingIntro } from "../../lib/rating";
@@ -199,7 +199,9 @@ function ClassSection({ index, summary, assets, onEdit, onAdd }: ClassSectionPro
         {assets.length === 0 ? (
           <div className="class-card__empty">
             <span className="field__hint">
-              {summary.target_percent > 0 ? "Tem meta, mas nenhum ativo — ela não recebe aporte assim." : "Nenhum ativo."}
+              {summary.target_percent > 0
+                ? "Tem meta e nenhum ativo. Cadastre os que você quer ter, mesmo sem ter comprado, e o aporte chega aqui."
+                : "Nenhum ativo."}
             </span>
             <button type="button" className="link-btn" onClick={onAdd}>
               <IconPlus width={16} height={16} /> Adicionar
@@ -220,19 +222,34 @@ function ClassSection({ index, summary, assets, onEdit, onAdd }: ClassSectionPro
 }
 
 function AssetRow({ asset, onClick }: { asset: Asset; onClick: () => void }) {
-  const meta = CLASS_META[asset.asset_class];
+  const unit = unitOf(asset.asset_class, asset.listed_on_b3);
   const missingPrice = asset.price_source === "missing";
+  const price = missingPrice || asset.unit_price === null ? "sem preço" : formatBRL(asset.unit_price);
+  // Quantidade 0 é ativo da lista, ainda não comprado: recebe aporte pela nota.
+  const notOwned = asset.quantity === 0;
   const quantityLine =
-    meta.unit === "value"
-      ? "Valor informado"
-      : `${formatQuantity(asset.quantity, meta.unit === "fraction")} ${
-          meta.unit === "fraction" ? (asset.symbol ?? "") : plural(asset.quantity, meta.noun)
-        } · ${missingPrice || asset.unit_price === null ? "sem preço" : formatBRL(asset.unit_price)}`;
+    unit === "value"
+      ? notOwned
+        ? "Ainda não tem"
+        : "Valor informado"
+      : notOwned
+        ? `Ainda não tem · ${price}`
+        : `${formatQuantity(asset.quantity, unit === "fraction")} ${
+            unit === "fraction" ? (asset.symbol ?? "") : plural(asset.quantity, nounOf(asset.asset_class, asset.listed_on_b3))
+          } · ${price}`;
+  const b3Tag = asset.listed_on_b3 && acceptsB3Listing(asset.asset_class);
 
   return (
-    <button type="button" className="asset-row" onClick={onClick}>
+    <button type="button" className={cx("asset-row", notOwned && "asset-row--wish")} onClick={onClick}>
       <span className="asset-row__id">
-        <span className="asset-row__symbol">{asset.symbol ?? asset.display_name}</span>
+        <span className="asset-row__symbol">
+          {asset.symbol ?? asset.display_name}
+          {b3Tag && (
+            <span className="asset-row__tag" title="Negociado na B3">
+              B3
+            </span>
+          )}
+        </span>
         <span className="asset-row__name">{asset.symbol ? asset.display_name : quantityLine}</span>
       </span>
       <span className="asset-row__qty">{asset.symbol ? quantityLine : ""}</span>

@@ -10,7 +10,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::domain::allocation::{self, class_index, percent, round_cents, Holding, Plan, Targets};
-use crate::domain::asset_class::{AssetClass, UnitKind};
+use crate::domain::asset_class::{AssetClass, Market, UnitKind};
 use crate::domain::scoring::{self, ScoreSource};
 use crate::quotes::{fx_symbol, Quote, QuoteError, QuoteProvider};
 use crate::store::{unit_value, Asset, Question, Store, StoreError, StoredQuote};
@@ -77,7 +77,7 @@ fn resolve_price(
     asset: &Asset,
     quotes: &HashMap<String, StoredQuote>,
 ) -> (Option<Decimal>, String, PriceSource, Option<OffsetDateTime>) {
-    if asset.asset_class.unit_kind() == UnitKind::Value {
+    if asset.market().unit_kind() == UnitKind::Value {
         return (Some(Decimal::ONE), "BRL".into(), PriceSource::Manual, None);
     }
     if let Some(price) = asset.manual_price {
@@ -86,7 +86,7 @@ fn resolve_price(
     let quote = asset
         .symbol
         .as_deref()
-        .and_then(|s| asset.asset_class.quote_symbol(s))
+        .and_then(|s| asset.market().quote_symbol(s))
         .and_then(|s| quotes.get(&s));
     let Some(quote) = quote else {
         return (None, "BRL".into(), PriceSource::Missing, None);
@@ -124,11 +124,7 @@ pub async fn portfolio(store: &Store, user: Uuid) -> Result<PortfolioView, Store
 
     let symbols: Vec<String> = assets
         .iter()
-        .filter_map(|a| {
-            a.symbol
-                .as_deref()
-                .and_then(|s| a.asset_class.quote_symbol(s))
-        })
+        .filter_map(|a| a.symbol.as_deref().and_then(|s| a.market().quote_symbol(s)))
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
@@ -169,7 +165,7 @@ pub async fn portfolio(store: &Store, user: Uuid) -> Result<PortfolioView, Store
             );
             let current_value = round_cents(
                 unit_price
-                    .map(|p| unit_value(asset.asset_class, asset.quantity, p))
+                    .map(|p| unit_value(asset.market().unit_kind(), asset.quantity, p))
                     .unwrap_or(Decimal::ZERO),
             );
             AssetView {
@@ -250,6 +246,7 @@ pub async fn plan(
                 .unwrap_or_else(|| a.asset.display_name.clone()),
             value: a.current_value,
             unit_price: a.unit_price,
+            unit: a.asset.market().unit_kind(),
             score: a.score,
         })
         .collect();
@@ -280,12 +277,12 @@ impl QuoteService {
 
     /// Cota um ativo agora, para ele já aparecer com preço. Falha não é erro
     /// para quem chama: o ativo fica sem preço até a próxima rodada.
-    pub async fn quote_now(&self, asset_class: AssetClass, symbol: &str) -> Option<Quote> {
-        let report = self.refresh(&[(asset_class, symbol.to_owned())]).await;
+    pub async fn quote_now(&self, market: Market, symbol: &str) -> Option<Quote> {
+        let report = self.refresh(&[(market, symbol.to_owned())]).await;
         if report.refreshed == 0 {
             return None;
         }
-        let provider_symbol = asset_class.quote_symbol(symbol)?;
+        let provider_symbol = market.quote_symbol(symbol)?;
         let stored = self.store.quotes(&[provider_symbol]).await.ok()?;
         stored.into_values().next().map(|q| Quote {
             symbol: q.symbol,
@@ -296,11 +293,11 @@ impl QuoteService {
     }
 
     /// Atualiza os símbolos dados e o câmbio das moedas que aparecerem.
-    pub async fn refresh(&self, targets: &[(AssetClass, String)]) -> RefreshReport {
+    pub async fn refresh(&self, targets: &[(Market, String)]) -> RefreshReport {
         let mut report = RefreshReport::default();
         let mut currencies = BTreeSet::new();
-        for (asset_class, symbol) in targets {
-            let Some(provider_symbol) = asset_class.quote_symbol(symbol) else {
+        for (market, symbol) in targets {
+            let Some(provider_symbol) = market.quote_symbol(symbol) else {
                 continue;
             };
             match self.fetch_and_store(&provider_symbol).await {
@@ -378,6 +375,7 @@ mod tests {
             quantity: dec!(1),
             manual_price: manual,
             score_override: None,
+            listed_on_b3: class.native_market() == Market::B3,
         }
     }
 
@@ -398,6 +396,7 @@ mod tests {
     fn price_comes_from_the_right_place() {
         let quotes: HashMap<String, StoredQuote> = [
             stored("KNRI11.SA", dec!(142), "BRL"),
+            stored("QBTC11.SA", dec!(52), "BRL"),
             stored("AAPL", dec!(200), "USD"),
             stored("USDBRL=X", dec!(5.5), "BRL"),
             stored("ETH-USD", dec!(3000), "USD"),
@@ -434,6 +433,21 @@ mod tests {
         let (price, _, source, _) =
             resolve_price(&asset(AssetClass::Crypto, Some("ETH"), None), &quotes);
         assert_eq!((price, source), (Some(dec!(16500)), PriceSource::Quote));
+
+        // ETF de bitcoin da B3 dentro de Criptomoedas: cota em reais, sem câmbio.
+        // Sem a marca, o mesmo símbolo vira `QBTC11-USD` e fica sem preço.
+        let etf = Asset {
+            listed_on_b3: true,
+            ..asset(AssetClass::Crypto, Some("QBTC11"), None)
+        };
+        let (price, currency, source, _) = resolve_price(&etf, &quotes);
+        assert_eq!(
+            (price, currency.as_str(), source),
+            (Some(dec!(52)), "BRL", PriceSource::Quote)
+        );
+        let (price, _, source, _) =
+            resolve_price(&asset(AssetClass::Crypto, Some("QBTC11"), None), &quotes);
+        assert_eq!((price, source), (None, PriceSource::Missing));
 
         let (price, _, source, _) =
             resolve_price(&asset(AssetClass::IntlStocks, Some("VOD.L"), None), &quotes);

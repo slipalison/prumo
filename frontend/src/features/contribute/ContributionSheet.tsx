@@ -6,7 +6,7 @@ import { MagneticButton } from "../../components/MagneticButton";
 import { MoneyInput } from "../../components/MoneyInput";
 import { QuantityInput } from "../../components/QuantityInput";
 import { Sheet } from "../../components/Sheet";
-import { CLASS_META } from "../../lib/assetClasses";
+import { nounOf, unitOf } from "../../lib/assetClasses";
 import { celebrate, originFrom } from "../../lib/celebrate";
 import { formatBRL } from "../../lib/format";
 
@@ -69,7 +69,8 @@ function ContributionForm({ plan, onRegistered }: { plan: Plan; onRegistered: (c
     <div className="contribution-form">
       <ul className="contribution-form__list">
         {plan.items.map((item, index) => {
-          const meta = CLASS_META[item.asset_class];
+          const unit = unitOf(item.asset_class, item.listed_on_b3);
+          const noun = nounOf(item.asset_class, item.listed_on_b3);
           const id = `${baseId}-${index}`;
           const set = (value: number) => setQuantities((current) => ({ ...current, [item.asset_id]: value }));
           return (
@@ -78,15 +79,15 @@ function ContributionForm({ plan, onRegistered }: { plan: Plan; onRegistered: (c
                 <strong>{item.symbol ?? item.display_name}</strong>
                 <span className="field__hint">{formatBRL(valueOf(item))}</span>
               </div>
-              {meta.unit === "value" ? (
+              {unit === "value" ? (
                 <MoneyInput id={id} label="Valor aplicado" value={quantities[item.asset_id] ?? 0} onChange={set} />
               ) : (
                 <QuantityInput
                   id={id}
-                  label={meta.unit === "fraction" ? "Quantidade" : meta.noun[1].replace(/^./, (c) => c.toUpperCase())}
+                  label={unit === "fraction" ? "Quantidade" : noun[1].replace(/^./, (c) => c.toUpperCase())}
                   value={quantities[item.asset_id] ?? 0}
                   onChange={set}
-                  fractional={meta.unit === "fraction"}
+                  fractional={unit === "fraction"}
                 />
               )}
             </li>

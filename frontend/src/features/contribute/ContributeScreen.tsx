@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { errorMessage } from "../../api/client";
 import { useContributions, usePlan } from "../../api/queries";
-import type { Plan, Portfolio } from "../../api/types";
+import type { AssetClass, Plan, Portfolio } from "../../api/types";
 import { GlassCard } from "../../components/GlassCard";
 import { IconArrowRight, IconSparkle } from "../../components/icons";
 import { MagneticButton } from "../../components/MagneticButton";
@@ -12,8 +12,9 @@ import { useToast } from "../../components/toastContext";
 import { cx } from "../../lib/cx";
 import { formatBRL } from "../../lib/format";
 import { sumTargets, targetsFromClasses } from "../../lib/goals";
-import { ratingIntro } from "../../lib/rating";
+import { needsRating, ratingIntro } from "../../lib/rating";
 import { Onboarding } from "../onboarding/Onboarding";
+import { AddAssetSheet } from "../portfolio/AddAssetSheet";
 import { RateAssetSheet, type RatingTarget } from "../portfolio/RateAssetSheet";
 import { ContributionSheet } from "./ContributionSheet";
 import { PlanResult } from "./PlanResult";
@@ -70,6 +71,7 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
   const [confirming, setConfirming] = useState(false);
   const [registered, setRegistered] = useState(false);
   const [rating, setRating] = useState<RatingTarget>(null);
+  const [adding, setAdding] = useState<AssetClass | null>(null);
   const planMutation = usePlan();
   const contributions = useContributions();
   const toast = useToast();
@@ -176,6 +178,8 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
               assets={portfolio.assets}
               onConfirm={() => setConfirming(true)}
               onRateAsset={(asset) => setRating({ asset, intro: ratingIntro(asset) })}
+              onEditAsset={(asset) => setRating({ asset })}
+              onAddAsset={setAdding}
             />
           </motion.div>
         )}
@@ -188,6 +192,19 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
         // Com nota nova, o plano na tela ficou velho: refaz com o mesmo valor.
         onSaved={() => {
           if (plan) calculate(plan.amount);
+        }}
+      />
+
+      {/* O aviso "classe sem ativo" cadastra aqui mesmo: quem nasce sem nota
+          segue para o checklist; quem já tem nota refaz o plano na hora. */}
+      <AddAssetSheet
+        open={adding !== null}
+        initialClass={adding ?? undefined}
+        onClose={() => setAdding(null)}
+        onCreated={(asset) => {
+          setAdding(null);
+          if (needsRating(asset)) setRating({ asset, intro: ratingIntro(asset) });
+          else if (plan) calculate(plan.amount);
         }}
       />
 

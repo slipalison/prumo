@@ -1,7 +1,16 @@
 import confetti from "canvas-confetti";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { samplePlan } from "../test/fixtures";
-import { CLASS_META, classColor, guessClassFromSymbol, isValueBased } from "./assetClasses";
+import { defaultAssets, defaultChecklists, samplePlan, toAsset } from "../test/fixtures";
+import {
+  acceptsB3Listing,
+  CLASS_META,
+  classColor,
+  guessClassFromSymbol,
+  isValueBased,
+  looksLikeB3Ticker,
+  nounOf,
+  unitOf,
+} from "./assetClasses";
 import { celebrate, originFrom, prefersReducedMotion } from "./celebrate";
 import { cx } from "./cx";
 import {
@@ -16,7 +25,7 @@ import {
 } from "./format";
 import { balanceTargets, isComplete, PRESETS, sameTargets, sumTargets, targetsFromClasses } from "./goals";
 import { centsFromInput, formatMoneyInput, reaisFromInput } from "./moneyMask";
-import { noticeText, unitLine } from "./planText";
+import { looksMissingB3Flag, noticeText, unitLine } from "./planText";
 import { navigate, parseRoute } from "./route";
 import { answeredCount, answersDiff, checklistScore } from "./score";
 import { applyTheme, readThemePreference, saveThemePreference, THEME_KEY } from "./theme";
@@ -208,16 +217,68 @@ describe("assetClasses", () => {
     expect(classColor("crypto")).toBe("var(--c-crypto)");
     expect(CLASS_META.br_reits.noun).toEqual(["cota", "cotas"]);
   });
+
+  it("um ativo da B3 é cota inteira em qualquer classe", () => {
+    expect(acceptsB3Listing("br_stocks")).toBe(false);
+    expect(acceptsB3Listing("br_reits")).toBe(false);
+    expect(acceptsB3Listing("crypto")).toBe(true);
+    expect(acceptsB3Listing("fixed_income")).toBe(true);
+    expect(unitOf("crypto", false)).toBe("fraction");
+    expect(unitOf("crypto", true)).toBe("unit");
+    expect(unitOf("fixed_income", false)).toBe("value");
+    expect(unitOf("fixed_income", true)).toBe("unit");
+    expect(nounOf("crypto", true)).toEqual(["cota", "cotas"]);
+    expect(nounOf("crypto", false)).toEqual(["unidade", "unidades"]);
+    expect(nounOf("br_stocks", true)).toEqual(["ação", "ações"]);
+  });
+
+  it("reconhece o formato de ticker da B3", () => {
+    expect(looksLikeB3Ticker("qbtc11")).toBe(true);
+    expect(looksLikeB3Ticker("AAPL34")).toBe(true);
+    expect(looksLikeB3Ticker("IVVB11.SA")).toBe(true);
+    expect(looksLikeB3Ticker("PETR4")).toBe(true);
+    expect(looksLikeB3Ticker("BTC")).toBe(false);
+    expect(looksLikeB3Ticker("VOO")).toBe(false);
+    expect(looksLikeB3Ticker("AAPL")).toBe(false);
+  });
 });
 
 describe("planText", () => {
   it("escreve cada aviso numa frase que diz o que fazer", () => {
-    expect(nbsp(noticeText({ code: "class_blocked", asset_class: "intl_stocks", amount: 25226.45 }))).toContain(
+    expect(nbsp(noticeText({ code: "class_blocked", asset_class: "intl_stocks", amount: 25226.45, reason: "no_assets" }))).toContain(
       "Ações Internacionais precisa de R$ 25,2 mil",
     );
     expect(noticeText({ code: "assets_without_price", symbols: ["XYZW11"] })).toContain("XYZW11");
     expect(noticeText({ code: "assets_without_score", symbols: ["MXRF11", "ITSA4"] })).toContain("MXRF11, ITSA4");
     expect(noticeText({ code: "no_targets" })).toContain("metas");
+  });
+
+  it("a classe bloqueada diz o que falta nela", () => {
+    const blocked = (reason: "no_assets" | "unrated" | "unpriced") =>
+      noticeText({ code: "class_blocked", asset_class: "br_reits", amount: 499600, reason });
+    expect(blocked("no_assets")).toContain("ainda não tem nenhum ativo");
+    expect(blocked("unrated")).toContain("nenhum ativo dela tem nota");
+    expect(blocked("unpriced")).toContain("sem cotação");
+  });
+
+  it("ticker da B3 sem cotação numa classe de fora sugere ligar a B3", () => {
+    const etf = {
+      asset_class: "crypto" as const,
+      symbol: "QBTC11",
+      display_name: "QR Bitcoin",
+      listed_on_b3: false,
+    };
+    expect(looksMissingB3Flag(etf)).toBe(true);
+    expect(looksMissingB3Flag({ ...etf, listed_on_b3: true })).toBe(false);
+    expect(looksMissingB3Flag({ ...etf, symbol: "BTC" })).toBe(false);
+    expect(looksMissingB3Flag({ ...etf, asset_class: "br_stocks" })).toBe(false);
+    const asset = { ...toAsset(must(defaultAssets()[0]), defaultChecklists(), 0), ...etf };
+    const one = noticeText({ code: "assets_without_price", symbols: ["QBTC11"] }, [asset]);
+    expect(one).toContain("Fica fora da conta");
+    expect(one).toContain("Negociado na B3");
+    const many = noticeText({ code: "assets_without_price", symbols: ["SUMIU3", "XYZW11"] }, [asset]);
+    expect(many).toContain("Ficam fora da conta");
+    expect(many).not.toContain("Negociado na B3");
   });
 
   it("descreve a compra de cada item", () => {
@@ -227,8 +288,12 @@ describe("planText", () => {
     expect(nbsp(unitLine(btlg))).toBe("8 cotas × R$ 94,55");
     expect(nbsp(unitLine(btc))).toBe("0,0045 BTC × R$ 345.588,05");
     expect(
-      unitLine({ ...btlg, asset_class: "fixed_income", symbol: null, quantity: 100, unit_price: 1, value: 100 }),
+      unitLine({ ...btlg, asset_class: "fixed_income", listed_on_b3: false, symbol: null, quantity: 100, unit_price: 1, value: 100 }),
     ).toBe("Aplicar este valor");
+    // ETF de bitcoin da B3 dentro de Cripto: cota inteira, não fração de BTC.
+    expect(nbsp(unitLine({ ...btc, symbol: "QBTC11", listed_on_b3: true, quantity: 5, unit_price: 52 }))).toBe(
+      "5 cotas × R$ 52,00",
+    );
   });
 });
 

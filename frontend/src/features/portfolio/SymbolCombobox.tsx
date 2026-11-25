@@ -2,7 +2,7 @@ import { useId, useState, type KeyboardEvent } from "react";
 import { useSymbolSearch } from "../../api/queries";
 import type { SymbolSuggestion } from "../../api/types";
 import { IconSearch } from "../../components/icons";
-import { CLASS_META } from "../../lib/assetClasses";
+import { acceptsB3Listing, CLASS_META } from "../../lib/assetClasses";
 import { cx } from "../../lib/cx";
 import { useFocusOnMount } from "../../lib/useFocusOnMount";
 
@@ -109,7 +109,10 @@ export function SymbolCombobox({ id, value, onChange, onSelect, focusOnMount }: 
             >
               <span className="combo__symbol">{suggestion.symbol}</span>
               <span className="combo__name">{suggestion.display_name}</span>
-              <span className="combo__class">{CLASS_META[suggestion.suggested_class].shortLabel}</span>
+              <span className="combo__class">
+                {CLASS_META[suggestion.suggested_class].shortLabel}
+                {suggestion.listed_on_b3 && acceptsB3Listing(suggestion.suggested_class) && " · B3"}
+              </span>
             </li>
           ))}
         </ul>

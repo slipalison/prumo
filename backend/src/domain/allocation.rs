@@ -45,8 +45,11 @@ pub struct Holding {
     pub label: String,
     /// Valor atual em reais.
     pub value: Decimal,
-    /// Preço de uma unidade em reais. Classes por valor usam 1.
+    /// Preço de uma unidade em reais. Ativos por valor usam 1.
     pub unit_price: Option<Decimal>,
+    /// Como se compra: vem do mercado do ativo, não da classe (um ETF de
+    /// bitcoin da B3 é cota inteira dentro de Criptomoedas).
+    pub unit: UnitKind,
     pub score: u8,
 }
 
@@ -105,6 +108,27 @@ impl ClassStatus {
     }
 }
 
+/// Por que uma classe abaixo da meta não recebe nada.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlockReason {
+    /// Nenhum ativo cadastrado na classe.
+    NoAssets,
+    /// Há ativos, mas nenhum com nota.
+    Unrated,
+    /// Há ativo com nota, mas sem preço (cotação falhou ou símbolo errado).
+    Unpriced,
+}
+
+impl BlockReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            BlockReason::NoAssets => "no_assets",
+            BlockReason::Unrated => "unrated",
+            BlockReason::Unpriced => "unpriced",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Notice {
     /// A classe está abaixo da meta e não tem ativo elegível; `amount` é quanto
@@ -112,6 +136,7 @@ pub enum Notice {
     ClassBlocked {
         asset_class: AssetClass,
         amount: Decimal,
+        reason: BlockReason,
     },
     AssetsWithoutPrice {
         labels: Vec<String>,
@@ -261,7 +286,7 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding]) -> Plan {
         if desired[i] <= Decimal::ZERO || !holding.is_eligible() {
             continue;
         }
-        let (qty, value) = purchasable(holding.asset_class.unit_kind(), desired[i], price);
+        let (qty, value) = purchasable(holding.unit, desired[i], price);
         planned_qty[i] = qty;
         planned_value[i] = value;
     }
@@ -288,9 +313,7 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding]) -> Plan {
         let deficit = |i: usize| ideal[i] - holdings[i].value - planned_value[i];
         // Primeiro uma unidade inteira, se ela aproxima o ativo da meta.
         let whole = (0..holdings.len())
-            .filter(|&i| {
-                holdings[i].is_eligible() && holdings[i].asset_class.unit_kind() == UnitKind::Whole
-            })
+            .filter(|&i| holdings[i].is_eligible() && holdings[i].unit == UnitKind::Whole)
             .filter_map(|i| holdings[i].price().map(|p| (i, p)))
             .filter(|&(i, price)| price <= pool && deficit(i) * Decimal::TWO > price)
             .max_by(|a, b| deficit(a.0).cmp(&deficit(b.0)));
@@ -302,9 +325,7 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding]) -> Plan {
         }
         // Senão, o que cabe no fracionável mais atrasado.
         let fractional = (0..holdings.len())
-            .filter(|&i| {
-                holdings[i].is_eligible() && holdings[i].asset_class.unit_kind() != UnitKind::Whole
-            })
+            .filter(|&i| holdings[i].is_eligible() && holdings[i].unit != UnitKind::Whole)
             .filter(|&i| deficit(i) >= CENT)
             .max_by(|&a, &b| deficit(a).cmp(&deficit(b)));
         let Some(i) = fractional else { break };
@@ -312,7 +333,7 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding]) -> Plan {
             break;
         };
         let budget = pool.min(deficit(i));
-        let (qty, value) = purchasable(holdings[i].asset_class.unit_kind(), budget, price);
+        let (qty, value) = purchasable(holdings[i].unit, budget, price);
         if value <= Decimal::ZERO {
             break;
         }
@@ -344,7 +365,7 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding]) -> Plan {
                 quantity: planned_qty[i].normalize(),
                 unit_price: price,
                 value: round_cents(planned_value[i]),
-                divisible: holding.asset_class.unit_kind() != UnitKind::Whole,
+                divisible: holding.unit != UnitKind::Whole,
                 class_percent_after: percent(holding.value + planned_value[i], class_after),
             })
         })
@@ -403,9 +424,22 @@ fn notices(targets: Targets, classes: &[ClassState; 7], holdings: &[Holding]) ->
     for class in AssetClass::ALL {
         let state = classes[class_index(class)];
         if targets.get(class) > 0 && !state.eligible && state.gap >= CENT {
+            let mut members = holdings
+                .iter()
+                .filter(|h| h.asset_class == class)
+                .peekable();
+            let reason = if members.peek().is_none() {
+                BlockReason::NoAssets
+            } else if members.any(|h| h.score > 0) {
+                // Tem nota e a classe segue bloqueada: falta o preço.
+                BlockReason::Unpriced
+            } else {
+                BlockReason::Unrated
+            };
             out.push(Notice::ClassBlocked {
                 asset_class: class,
                 amount: round_cents(state.gap),
+                reason,
             });
         }
     }
@@ -484,7 +518,16 @@ mod tests {
             label: label.to_owned(),
             value,
             unit_price: price,
+            unit: class.native_market().unit_kind(),
             score,
+        }
+    }
+
+    /// O mesmo ativo, negociado na B3 (ETF ou BDR): cota inteira.
+    fn on_b3(holding: Holding) -> Holding {
+        Holding {
+            unit: holding.asset_class.market(true).unit_kind(),
+            ..holding
         }
     }
 
@@ -613,7 +656,8 @@ mod tests {
         assert_eq!(plan.unallocated, dec!(95994.15));
         assert!(plan.notices.iter().any(|n| matches!(
             n,
-            Notice::ClassBlocked { asset_class: AssetClass::IntlStocks, amount } if *amount == dec!(96000)
+            Notice::ClassBlocked { asset_class: AssetClass::IntlStocks, amount, reason: BlockReason::NoAssets }
+                if *amount == dec!(96000)
         )));
     }
 
@@ -710,6 +754,106 @@ mod tests {
         assert_eq!(class(&plan, BrStocks).percent_before, Decimal::ZERO);
     }
 
+    /// O cenário que motivou a lista de ativos sem posição: tudo em Ações
+    /// Nacionais, acima da meta, e as outras classes vazias. Sem ativo nelas, o
+    /// aporte inteiro fica sem destino; com ativos cadastrados e quantidade 0
+    /// (só a nota), ele se divide pelas classes que faltam, e Ações Nacionais
+    /// não recebe nada.
+    #[test]
+    fn assets_not_bought_yet_take_the_contribution_by_score() {
+        use AssetClass::*;
+        let mut targets = Targets::default();
+        targets.set(BrStocks, 3500);
+        targets.set(BrReits, 1000);
+        targets.set(IntlStocks, 2500);
+        targets.set(UsReits, 500);
+        targets.set(Crypto, 500);
+        targets.set(FixedIncome, 2000);
+        let concentrated = vec![holding(BrStocks, "WEGE3", dec!(100000), Some(dec!(50)), 8)];
+
+        let blocked = plan(dec!(5000), targets, &concentrated);
+        assert!(blocked.items.is_empty());
+        assert_eq!(blocked.unallocated, dec!(5000));
+        assert!(blocked.notices.contains(&Notice::ClassBlocked {
+            asset_class: Crypto,
+            amount: dec!(5250),
+            reason: BlockReason::NoAssets,
+        }));
+
+        let mut listed = concentrated;
+        listed.extend([
+            holding(BrReits, "KNRI11", Decimal::ZERO, Some(dec!(140)), 6),
+            holding(BrReits, "MXRF11", Decimal::ZERO, Some(dec!(9)), 2),
+            holding(IntlStocks, "VOO", Decimal::ZERO, Some(dec!(2900)), 7),
+            on_b3(holding(
+                IntlStocks,
+                "IVVB11",
+                Decimal::ZERO,
+                Some(dec!(380)),
+                7,
+            )),
+            holding(UsReits, "O", Decimal::ZERO, Some(dec!(310)), 5),
+            on_b3(holding(Crypto, "QBTC11", Decimal::ZERO, Some(dec!(50)), 6)),
+            holding(
+                FixedIncome,
+                "Tesouro Selic",
+                Decimal::ZERO,
+                Some(Decimal::ONE),
+                5,
+            ),
+        ]);
+        let plan = plan(dec!(5000), targets, &listed);
+        assert_money_adds_up(&plan);
+        assert_eq!(plan.unallocated, Decimal::ZERO);
+        assert!(plan.change < dec!(50), "troco {}", plan.change);
+        assert_eq!(class(&plan, BrStocks).allocated, Decimal::ZERO);
+        assert_eq!(class(&plan, BrStocks).status, ClassStatus::AboveTarget);
+        assert!(!plan
+            .notices
+            .iter()
+            .any(|n| matches!(n, Notice::ClassBlocked { .. })));
+        // O ETF de bitcoin da B3 sai em cota inteira, mesmo dentro de Criptomoedas.
+        let etf = item(&plan, &listed, "QBTC11").expect("cripto recebe pelo ETF");
+        assert!(!etf.divisible);
+        assert_eq!(etf.quantity.fract(), Decimal::ZERO);
+        // Dentro de FIIs, a nota 6 pesa três vezes a nota 2.
+        let knri = item(&plan, &listed, "KNRI11").map_or(Decimal::ZERO, |i| i.value);
+        let mxrf = item(&plan, &listed, "MXRF11").map_or(Decimal::ZERO, |i| i.value);
+        assert!(knri > mxrf, "KNRI11 {knri} x MXRF11 {mxrf}");
+    }
+
+    #[test]
+    fn a_blocked_class_says_what_is_missing() {
+        use AssetClass::*;
+        let mut targets = Targets::default();
+        targets.set(BrReits, 2500);
+        targets.set(IntlStocks, 2500);
+        targets.set(Crypto, 2500);
+        targets.set(UsReits, 2500);
+        let holdings = vec![
+            holding(BrReits, "SEMNOTA11", Decimal::ZERO, Some(dec!(100)), 0),
+            holding(Crypto, "QBTC11", Decimal::ZERO, None, 6),
+            holding(Crypto, "ZERO", Decimal::ZERO, Some(dec!(10)), 0),
+        ];
+        let plan = plan(dec!(1000), targets, &holdings);
+        let reason = |class: AssetClass| {
+            plan.notices.iter().find_map(|n| match n {
+                Notice::ClassBlocked {
+                    asset_class,
+                    reason,
+                    ..
+                } if *asset_class == class => Some(*reason),
+                _ => None,
+            })
+        };
+        assert_eq!(reason(BrReits), Some(BlockReason::Unrated));
+        assert_eq!(reason(Crypto), Some(BlockReason::Unpriced));
+        assert_eq!(reason(IntlStocks), Some(BlockReason::NoAssets));
+        assert_eq!(BlockReason::NoAssets.as_str(), "no_assets");
+        assert_eq!(BlockReason::Unrated.as_str(), "unrated");
+        assert_eq!(BlockReason::Unpriced.as_str(), "unpriced");
+    }
+
     #[test]
     fn percent_handles_zero_whole() {
         assert_eq!(percent(dec!(5), Decimal::ZERO), Decimal::ZERO);
@@ -732,20 +876,25 @@ mod tests {
                 0u32..500_000,
                 prop::option::weighted(0.9, 1u32..200_000),
                 0u8..11,
+                prop::bool::weighted(0.2),
             )
-                .prop_map(|(class, value_cents, price_cents, score)| {
+                .prop_map(|(class, value_cents, price_cents, score, listed_on_b3)| {
                     let class = AssetClass::ALL[class];
-                    let price = match class.unit_kind() {
+                    let unit = class.market(listed_on_b3).unit_kind();
+                    let price = match unit {
                         UnitKind::Value => Some(Decimal::ONE),
                         _ => price_cents.map(|c| Decimal::new(i64::from(c), 2)),
                     };
-                    holding(
-                        class,
-                        "X",
-                        Decimal::new(i64::from(value_cents), 2),
-                        price,
-                        score,
-                    )
+                    Holding {
+                        unit,
+                        ..holding(
+                            class,
+                            "X",
+                            Decimal::new(i64::from(value_cents), 2),
+                            price,
+                            score,
+                        )
+                    }
                 })
         }
 

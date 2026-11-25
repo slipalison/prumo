@@ -1,5 +1,11 @@
-//! As sete classes de ativo e o que cada uma decide: checklist, unidade e
-//! símbolo no provedor de cotações.
+//! As sete classes de ativo e o que cada uma decide: checklist e mercado. O
+//! mercado (B3, EUA, cripto ou valor informado) decide a unidade e o símbolo no
+//! provedor de cotações.
+//!
+//! A classe diz o que o ativo **é** para a carteira; o mercado, onde ele é
+//! **negociado**. Quase sempre andam juntos, mas um ETF de bitcoin da B3 é
+//! cripto na carteira e ação na bolsa — por isso as classes que não são da B3
+//! aceitam um ativo marcado como negociado lá (ETF, BDR).
 
 use serde::{Deserialize, Serialize};
 
@@ -24,7 +30,20 @@ pub enum Checklist {
     RealEstate,
 }
 
-/// Como a classe é comprada.
+/// Onde o ativo é negociado.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Market {
+    /// B3, em reais: ação, FII, ETF e BDR.
+    B3,
+    /// Bolsa americana, em dólar.
+    Us,
+    /// Cripto, cotada em dólar.
+    Crypto,
+    /// Sem cotação: a pessoa informa o valor (renda fixa).
+    Manual,
+}
+
+/// Como o ativo é comprado.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnitKind {
     /// Cota ou ação inteira.
@@ -83,23 +102,51 @@ impl AssetClass {
         }
     }
 
-    pub fn unit_kind(self) -> UnitKind {
+    /// O mercado de um ativo da classe quando nada diz o contrário.
+    pub fn native_market(self) -> Market {
         match self {
-            AssetClass::Crypto => UnitKind::Fractional,
-            AssetClass::FixedIncome | AssetClass::IntlFixedIncome => UnitKind::Value,
-            _ => UnitKind::Whole,
+            AssetClass::BrStocks | AssetClass::BrReits => Market::B3,
+            AssetClass::IntlStocks | AssetClass::UsReits => Market::Us,
+            AssetClass::Crypto => Market::Crypto,
+            AssetClass::FixedIncome | AssetClass::IntlFixedIncome => Market::Manual,
         }
     }
 
-    /// Símbolo no provedor de cotações. `None` para classes por valor.
+    /// Se a classe aceita um ativo negociado na B3 fora do seu mercado natural
+    /// (ETF de bitcoin em Criptomoedas, BDR em Ações Internacionais, ETF de
+    /// IMA-B em Renda Fixa). Ações Nacionais e FIIs já são da B3.
+    pub fn accepts_b3_listing(self) -> bool {
+        self.native_market() != Market::B3
+    }
+
+    /// O mercado de um ativo da classe, com a marca "negociado na B3".
+    pub fn market(self, listed_on_b3: bool) -> Market {
+        if listed_on_b3 {
+            Market::B3
+        } else {
+            self.native_market()
+        }
+    }
+}
+
+impl Market {
+    pub fn unit_kind(self) -> UnitKind {
+        match self {
+            Market::B3 | Market::Us => UnitKind::Whole,
+            Market::Crypto => UnitKind::Fractional,
+            Market::Manual => UnitKind::Value,
+        }
+    }
+
+    /// Símbolo no provedor de cotações. `None` para o que não tem cotação.
     pub fn quote_symbol(self, symbol: &str) -> Option<String> {
         match self {
-            AssetClass::BrStocks | AssetClass::BrReits => Some(format!("{symbol}.SA")),
-            AssetClass::IntlStocks | AssetClass::UsReits => Some(symbol.to_owned()),
+            Market::B3 => Some(format!("{symbol}.SA")),
+            Market::Us => Some(symbol.to_owned()),
             // O Yahoo nao cota cripto em reais (`BTC-BRL` responde 404, medido em
             // 25/11/2026): vem em dolar e o cambio `USDBRL=X` converte.
-            AssetClass::Crypto => Some(format!("{symbol}-USD")),
-            AssetClass::FixedIncome | AssetClass::IntlFixedIncome => None,
+            Market::Crypto => Some(format!("{symbol}-USD")),
+            Market::Manual => None,
         }
     }
 }
@@ -161,28 +208,51 @@ mod tests {
     }
 
     #[test]
-    fn classes_pick_the_right_checklist_and_unit() {
+    fn classes_pick_the_right_checklist_and_market() {
         assert_eq!(AssetClass::BrReits.checklist(), Some(Checklist::RealEstate));
         assert_eq!(AssetClass::UsReits.checklist(), Some(Checklist::RealEstate));
         assert_eq!(AssetClass::IntlStocks.checklist(), Some(Checklist::Stocks));
         assert_eq!(AssetClass::Crypto.checklist(), None);
-        assert_eq!(AssetClass::BrStocks.unit_kind(), UnitKind::Whole);
-        assert_eq!(AssetClass::Crypto.unit_kind(), UnitKind::Fractional);
-        assert_eq!(AssetClass::FixedIncome.unit_kind(), UnitKind::Value);
+        assert_eq!(AssetClass::BrStocks.native_market(), Market::B3);
+        assert_eq!(AssetClass::Crypto.native_market(), Market::Crypto);
+        assert_eq!(AssetClass::FixedIncome.native_market(), Market::Manual);
+        assert_eq!(AssetClass::IntlFixedIncome.native_market(), Market::Manual);
+        assert_eq!(Market::B3.unit_kind(), UnitKind::Whole);
+        assert_eq!(Market::Us.unit_kind(), UnitKind::Whole);
+        assert_eq!(Market::Crypto.unit_kind(), UnitKind::Fractional);
+        assert_eq!(Market::Manual.unit_kind(), UnitKind::Value);
+    }
+
+    #[test]
+    fn only_classes_outside_b3_take_the_b3_listing() {
+        for class in AssetClass::ALL {
+            let native_b3 = matches!(class, AssetClass::BrStocks | AssetClass::BrReits);
+            assert_eq!(class.accepts_b3_listing(), !native_b3, "{class:?}");
+            assert_eq!(class.market(true), Market::B3);
+            assert_eq!(class.market(false), class.native_market());
+        }
     }
 
     #[test]
     fn quote_symbols_follow_the_provider_convention() {
         assert_eq!(
-            AssetClass::BrReits.quote_symbol("KNRI11").as_deref(),
+            Market::B3.quote_symbol("KNRI11").as_deref(),
             Some("KNRI11.SA")
         );
         assert_eq!(
-            AssetClass::Crypto.quote_symbol("BTC").as_deref(),
+            Market::Crypto.quote_symbol("BTC").as_deref(),
             Some("BTC-USD")
         );
-        assert_eq!(AssetClass::UsReits.quote_symbol("O").as_deref(), Some("O"));
-        assert_eq!(AssetClass::FixedIncome.quote_symbol("X"), None);
+        assert_eq!(Market::Us.quote_symbol("O").as_deref(), Some("O"));
+        assert_eq!(Market::Manual.quote_symbol("X"), None);
+        // Um ETF de bitcoin da B3 é cripto na carteira e `.SA` no provedor.
+        assert_eq!(
+            AssetClass::Crypto
+                .market(true)
+                .quote_symbol("QBTC11")
+                .as_deref(),
+            Some("QBTC11.SA")
+        );
     }
 
     #[test]

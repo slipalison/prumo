@@ -30,6 +30,37 @@ export const CLASS_META: Record<AssetClass, ClassMeta> = {
   },
 };
 
+/** Ações Nacionais e FIIs: o mercado delas já é a B3. */
+export function isNativeB3(assetClass: AssetClass): boolean {
+  return assetClass === "br_stocks" || assetClass === "br_reits";
+}
+
+/**
+ * Se a classe aceita um ativo negociado na B3 fora do seu mercado natural —
+ * ETF de bitcoin em Cripto, BDR em Ações EUA, ETF de IMA-B em Renda Fixa.
+ */
+export function acceptsB3Listing(assetClass: AssetClass): boolean {
+  return !isNativeB3(assetClass);
+}
+
+/** A unidade de um ativo: na B3 é cota inteira, seja qual for a classe. */
+export function unitOf(assetClass: AssetClass, listedOnB3: boolean): UnitKind {
+  return listedOnB3 ? "unit" : CLASS_META[assetClass].unit;
+}
+
+/** O substantivo da unidade: ETF e BDR da B3 fora de Ações BR e FIIs são "cotas". */
+export function nounOf(assetClass: AssetClass, listedOnB3: boolean): [string, string] {
+  return listedOnB3 && acceptsB3Listing(assetClass) ? ["cota", "cotas"] : CLASS_META[assetClass].noun;
+}
+
+/**
+ * Formato de ticker da B3 (4 letras e 1–2 dígitos: PETR4, IVVB11, AAPL34).
+ * Cripto (BTC) e bolsa americana (VOO, AAPL) não têm dígito no fim.
+ */
+export function looksLikeB3Ticker(raw: string): boolean {
+  return /^[A-Z0-9]{4}\d{1,2}F?$/.test(raw.trim().toUpperCase().replace(/\.SA$/, ""));
+}
+
 /** Cor da classe como variável CSS — a mesma nos dois temas, com tons próprios. */
 export function classColor(assetClass: AssetClass): string {
   return `var(--c-${assetClass})`;

@@ -494,9 +494,30 @@
 }
 
 .asset-row__symbol {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 1.05rem;
+}
+
+/* ETF ou BDR da B3 dentro de outra classe: a etiqueta explica a cota inteira. */
+.asset-row__tag {
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--class-color, var(--gold)) 55%, transparent);
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+/* Ativo da lista, ainda não comprado: presente, mas um passo atrás. */
+.asset-row--wish .asset-row__symbol,
+.asset-row--wish .asset-row__value {
+  opacity: 0.72;
 }
 
 .asset-row__name,

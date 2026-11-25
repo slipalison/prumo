@@ -21,7 +21,7 @@ describe("Carteira", () => {
     expect(within(fiis).getAllByRole("button")).toHaveLength(5);
     expect(within(fiis).getByText(/15 cotas · R\$\s94,55/)).toBeInTheDocument();
     const intl = screen.getByRole("region", { name: "Ações Internacionais" });
-    expect(within(intl).getByText(/Tem meta, mas nenhum ativo/)).toBeInTheDocument();
+    expect(within(intl).getByText(/Tem meta e nenhum ativo/)).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Outras classes" })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /Carteira por classe: Ações Nacionais/ })).toBeInTheDocument();
     expect(screen.getByText("Nenhum aporte registrado ainda.", { exact: false })).toBeInTheDocument();
@@ -130,6 +130,97 @@ describe("Carteira", () => {
     );
     // Cripto já nasce com nota (a manual): nenhuma folha de checklist abre.
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull(), { timeout: 3000 });
+  });
+
+  it("cadastra um ativo que ainda não comprou: quantidade 0 e a linha diz isso", async () => {
+    const { user } = await openPortfolio();
+    await user.click(screen.getByRole("button", { name: "Adicionar ativo" }));
+    const dialog = await screen.findByRole("dialog", { name: "Novo ativo" });
+    expect(within(dialog).getByText(/Ainda não comprou\? Deixe 0/)).toBeInTheDocument();
+    await user.type(within(dialog).getByRole("combobox", { name: "Ticker ou nome" }), "kncr");
+    await user.click(await within(dialog).findByRole("option", { name: /KNCR11/ }));
+    await user.click(within(dialog).getByRole("button", { name: "Adicionar à carteira" }));
+    await waitFor(() =>
+      expect(lastRequest("POST", "/api/v1/assets")?.body).toEqual({
+        asset_class: "br_reits",
+        symbol: "KNCR11",
+        quantity: 0,
+        display_name: "Kinea Rendimentos Imobiliários",
+      }),
+    );
+    const edit = await screen.findByRole("dialog", { name: "KNCR11" });
+    await user.click(within(edit).getByRole("button", { name: "Fechar" }));
+    const fiis = screen.getByRole("region", { name: "Fundos Imobiliários" });
+    expect(await within(fiis).findByText(/Ainda não tem · R\$\s100,00/)).toBeInTheDocument();
+  });
+
+  it("ticker da B3 em Cripto liga a chave sozinho; desligar volta a ser cripto", async () => {
+    server.use(http.get("/api/v1/symbols", () => HttpResponse.json([])));
+    const { user } = await openPortfolio();
+    await user.click(screen.getByRole("button", { name: "Adicionar ativo" }));
+    const dialog = await screen.findByRole("dialog", { name: "Novo ativo" });
+    // Ações BR e FIIs já são da B3: não há chave.
+    expect(within(dialog).queryByRole("switch", { name: /Negociado na B3/ })).toBeNull();
+    await user.click(within(dialog).getByRole("radio", { name: /Cripto/ }));
+    await user.type(within(dialog).getByRole("combobox", { name: "Ticker ou nome" }), "hash11");
+    const b3 = within(dialog).getByRole("switch", { name: /Negociado na B3/ });
+    expect(b3).toBeChecked();
+    await user.click(within(dialog).getByRole("button", { name: "Aumentar quantidade" }));
+    await user.click(within(dialog).getByRole("button", { name: "Adicionar à carteira" }));
+    await waitFor(() =>
+      expect(lastRequest("POST", "/api/v1/assets")?.body).toEqual({
+        asset_class: "crypto",
+        symbol: "HASH11",
+        quantity: 1,
+        score_override: 5,
+        listed_on_b3: true,
+      }),
+    );
+    const crypto = screen.getByRole("region", { name: "Criptomoedas" });
+    expect(await within(crypto).findByTitle("Negociado na B3")).toHaveTextContent("B3");
+    expect(within(crypto).getByText(/1 cota · R\$\s100,00/)).toBeInTheDocument();
+
+    // Desligada a chave, o mesmo ticker volta a ser cripto: fração, sem − e +.
+    await user.click(screen.getByRole("button", { name: "Adicionar ativo" }));
+    const second = await screen.findByRole("dialog", { name: "Novo ativo" });
+    await user.click(within(second).getByRole("radio", { name: /Cripto/ }));
+    await user.type(within(second).getByRole("combobox", { name: "Ticker ou nome" }), "bith11");
+    const toggle = within(second).getByRole("switch", { name: /Negociado na B3/ });
+    expect(toggle).toBeChecked();
+    await user.click(toggle);
+    expect(within(second).queryByRole("button", { name: "Aumentar quantidade" })).toBeNull();
+  });
+
+  it("liga a B3 num ativo de Cripto já cadastrado", async () => {
+    getDb().assets.push({
+      id: "a-qbtc",
+      asset_class: "crypto",
+      symbol: "QBTC11",
+      display_name: "QR Bitcoin",
+      quantity: 3,
+      quote_price: null,
+      manual_price: null,
+      currency: "BRL",
+      score_override: 6,
+      answers: {},
+      listed_on_b3: false,
+    });
+    const { user } = await openPortfolio();
+    const crypto = screen.getByRole("region", { name: "Criptomoedas" });
+    await user.click(within(crypto).getByRole("button", { name: /QBTC11/ }));
+    const dialog = await screen.findByRole("dialog", { name: "QBTC11" });
+    await user.click(within(dialog).getByRole("switch", { name: /Negociado na B3/ }));
+    await user.click(within(dialog).getByRole("button", { name: "Salvar" }));
+    await waitFor(() => expect(lastRequest("PATCH", "/api/v1/assets/a-qbtc")?.body).toEqual({ listed_on_b3: true }));
+    expect(await within(crypto).findByText(/3 cotas · R\$\s52,00/)).toBeInTheDocument();
+  });
+
+  it("renda fixa não troca de mercado na edição: ticker e valor são cadastros diferentes", async () => {
+    const { user } = await openPortfolio();
+    const rf = screen.getByRole("region", { name: "Renda Fixa" });
+    await user.click(within(rf).getByRole("button", { name: /Tesouro IPCA\+ 2035/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Tesouro IPCA+ 2035" });
+    expect(within(dialog).queryByRole("switch", { name: /Negociado na B3/ })).toBeNull();
   });
 
   it("adicionar a partir da classe vazia já vem com a classe escolhida", async () => {

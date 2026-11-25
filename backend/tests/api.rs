@@ -67,6 +67,7 @@ async fn api_contract() {
     first_access_creates_an_empty_portfolio_with_default_checklists(&db, &dir).await;
     goals_must_sum_one_hundred(&db, &dir).await;
     assets_are_created_priced_and_validated(&db, &dir).await;
+    b3_listings_and_assets_not_bought_yet(&db, &dir).await;
     checklist_answers_drive_the_score(&db, &dir).await;
     plan_and_contribution_round_trip(&db, &dir).await;
     checklist_questions_can_be_edited_and_reset(&db, &dir).await;
@@ -394,6 +395,161 @@ async fn assets_are_created_priced_and_validated(db: &Database, dir: &tempfile_d
     )
     .await;
     assert_eq!(again.status, StatusCode::NOT_FOUND);
+}
+
+fn class_blocked<'a>(plan: &'a Value, class: &str) -> Option<&'a Value> {
+    plan["notices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| n["code"] == "class_blocked" && n["asset_class"] == class)
+}
+
+/// Ativo negociado na B3 dentro de outra classe (ETF de bitcoin em Cripto) e
+/// ativo cadastrado sem posição, só com a nota — os dois juntos destravam o
+/// aporte de quem ainda não tem nada nas classes abaixo da meta.
+async fn b3_listings_and_assets_not_bought_yet(db: &Database, dir: &tempfile_dir::Dir) {
+    let app = app(
+        &db.store,
+        "b3@prumo.test",
+        FakeQuotes::with_market(),
+        &dir.path(),
+    );
+    put(
+        &app.router,
+        "/api/v1/goals",
+        json!({ "targets": { "br_reits": 40, "crypto": 30, "intl_stocks": 10, "fixed_income": 20 } }),
+    )
+    .await;
+
+    // Sem a marca, o ETF é procurado como cripto (`QBTC11-USD`) e fica sem preço.
+    let etf = post(
+        &app.router,
+        "/api/v1/assets",
+        json!({ "asset_class": "crypto", "symbol": "QBTC11", "quantity": 0, "score_override": 7 }),
+    )
+    .await;
+    assert_eq!(etf.status, StatusCode::CREATED, "{}", etf.text);
+    assert_eq!(etf.body["listed_on_b3"], false);
+    assert_eq!(etf.body["price_source"], "missing");
+    let etf_id = etf.body["id"].as_str().unwrap().to_owned();
+
+    let blocked = post(&app.router, "/api/v1/plans", json!({ "amount": 1000 })).await;
+    assert_eq!(
+        class_blocked(&blocked.body, "crypto").map(|n| n["reason"].clone()),
+        Some(json!("unpriced"))
+    );
+    assert_eq!(
+        class_blocked(&blocked.body, "br_reits").map(|n| n["reason"].clone()),
+        Some(json!("no_assets"))
+    );
+
+    // Ligada a marca, a cotação vem na hora, em reais.
+    let listed = patch(
+        &app.router,
+        &format!("/api/v1/assets/{etf_id}"),
+        json!({ "listed_on_b3": true }),
+    )
+    .await;
+    assert_eq!(listed.status, StatusCode::OK, "{}", listed.text);
+    assert_eq!(listed.body["listed_on_b3"], true);
+    assert_eq!(listed.body["unit_price"], 52.0);
+    assert_eq!(listed.body["currency"], "BRL");
+    assert_eq!(listed.body["price_source"], "quote");
+    assert_eq!(listed.body["asset_class"], "crypto");
+
+    // Na B3 a cota é inteira, inclusive dentro de Cripto.
+    let fraction = post(
+        &app.router,
+        "/api/v1/assets",
+        json!({ "asset_class": "crypto", "symbol": "HASH11", "quantity": 0.5, "listed_on_b3": true, "score_override": 5 }),
+    )
+    .await;
+    assert_eq!(fraction.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let btc = post(
+        &app.router,
+        "/api/v1/assets",
+        json!({ "asset_class": "crypto", "symbol": "BTC", "quantity": 0.5, "score_override": 5 }),
+    )
+    .await;
+    let btc_id = btc.body["id"].as_str().unwrap().to_owned();
+    let half_on_b3 = patch(
+        &app.router,
+        &format!("/api/v1/assets/{btc_id}"),
+        json!({ "listed_on_b3": true }),
+    )
+    .await;
+    assert_eq!(half_on_b3.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        delete(&app.router, &format!("/api/v1/assets/{btc_id}"))
+            .await
+            .status,
+        StatusCode::NO_CONTENT
+    );
+
+    // Ações Nacionais e FIIs são da B3 por definição.
+    let not_b3 = post(
+        &app.router,
+        "/api/v1/assets",
+        json!({ "asset_class": "br_reits", "symbol": "KNRI11", "quantity": 0, "listed_on_b3": false }),
+    )
+    .await;
+    assert_eq!(not_b3.status, StatusCode::UNPROCESSABLE_ENTITY);
+    // Sem comprar ainda: quantidade 0, nota dada, e ele já entra na divisão.
+    for (symbol, score) in [("KNRI11", 6), ("MXRF11", 2)] {
+        let reit = post(
+            &app.router,
+            "/api/v1/assets",
+            json!({ "asset_class": "br_reits", "symbol": symbol, "quantity": 0, "score_override": score }),
+        )
+        .await;
+        assert_eq!(reit.status, StatusCode::CREATED, "{}", reit.text);
+        assert_eq!(reit.body["listed_on_b3"], true);
+        assert_eq!(reit.body["current_value"], 0.0);
+    }
+
+    // Renda fixa negociada na B3 (ETF de IMA-B) tem ticker e cota; virar
+    // renda fixa por valor é outro cadastro.
+    let ima_b = post(
+        &app.router,
+        "/api/v1/assets",
+        json!({ "asset_class": "fixed_income", "symbol": "IMAB11", "quantity": 0, "listed_on_b3": true, "score_override": 6 }),
+    )
+    .await;
+    assert_eq!(ima_b.status, StatusCode::CREATED, "{}", ima_b.text);
+    assert_eq!(ima_b.body["unit_price"], 100.0);
+    let ima_b_id = ima_b.body["id"].as_str().unwrap().to_owned();
+    let swap = patch(
+        &app.router,
+        &format!("/api/v1/assets/{ima_b_id}"),
+        json!({ "listed_on_b3": false }),
+    )
+    .await;
+    assert_eq!(swap.status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    let plan = post(&app.router, "/api/v1/plans", json!({ "amount": 1000 })).await;
+    assert_eq!(plan.status, StatusCode::OK, "{}", plan.text);
+    let qbtc = find(&plan.body["items"], "symbol", "QBTC11");
+    assert_eq!(qbtc["listed_on_b3"], true);
+    assert_eq!(qbtc["divisible"], false);
+    assert_eq!(qbtc["asset_class"], "crypto");
+    find(&plan.body["items"], "symbol", "KNRI11");
+    find(&plan.body["items"], "symbol", "IMAB11");
+    // Só Ações Internacionais segue sem ativo — e o aviso diz isso.
+    let blocked: Vec<&Value> = plan.body["notices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|n| n["code"] == "class_blocked")
+        .collect();
+    assert_eq!(blocked.len(), 1, "{}", plan.text);
+    assert_eq!(blocked[0]["asset_class"], "intl_stocks");
+    assert_eq!(blocked[0]["reason"], "no_assets");
+
+    // A rodada de cotações acompanha o mercado de cada ativo.
+    let refreshed = post(&app.router, "/api/v1/quotes/refresh", json!({})).await;
+    assert_eq!(refreshed.body["refreshed"], 4, "{}", refreshed.text);
+    assert_eq!(refreshed.body["failed"], json!([]));
 }
 
 async fn checklist_answers_drive_the_score(db: &Database, dir: &tempfile_dir::Dir) {
@@ -736,6 +892,7 @@ async fn symbols_and_quote_refresh(db: &Database, dir: &tempfile_dir::Dir) {
     assert_eq!(found.status, StatusCode::OK);
     assert_eq!(found.body[0]["symbol"], "KNRI");
     assert_eq!(found.body[0]["suggested_class"], "br_reits");
+    assert_eq!(found.body[0]["listed_on_b3"], true);
     assert_eq!(
         get(&app.router, "/api/v1/symbols?query=").await.status,
         StatusCode::UNPROCESSABLE_ENTITY

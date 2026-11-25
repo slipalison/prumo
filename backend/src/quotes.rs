@@ -27,6 +27,8 @@ pub struct SymbolMatch {
     pub display_name: String,
     pub exchange: String,
     pub suggested_class: AssetClass,
+    /// Negociado na B3 (símbolo `.SA` no provedor), seja qual for a classe.
+    pub listed_on_b3: bool,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -225,20 +227,9 @@ fn classify(quote: &SearchQuote) -> Option<SymbolMatch> {
     } else if !matches!(kind, "EQUITY" | "ETF") {
         return None;
     } else if let Some(base) = quote.symbol.strip_suffix(".SA") {
-        let looks_like_reit = upper_name.contains("IMOBILI")
-            || upper_name.contains("IMOB")
-            || short.starts_with("FII")
-            || (base.ends_with("11")
-                && kind != "ETF"
-                && !short.contains("UNT")
-                && !short.contains("UNIT"));
         (
             base.to_owned(),
-            if looks_like_reit {
-                AssetClass::BrReits
-            } else {
-                AssetClass::BrStocks
-            },
+            classify_b3(base, kind, &upper_name, &short),
         )
     } else {
         let looks_like_reit = upper_name.contains("REIT") || upper_name.contains("REALTY");
@@ -260,9 +251,92 @@ fn classify(quote: &SearchQuote) -> Option<SymbolMatch> {
     Some(SymbolMatch {
         symbol,
         display_name,
+        listed_on_b3: quote.symbol.ends_with(".SA"),
         exchange,
         suggested_class: class,
     })
+}
+
+/// Classe de um papel da B3. Além de ação e FII, a B3 lista ETFs e BDRs que,
+/// para a carteira, são outra coisa: o ETF de bitcoin é cripto, o de S&P 500 e
+/// o BDR são ações internacionais, o de IMA-B é renda fixa. O Yahoo marca todos
+/// como `EQUITY`; o que separa é o nome.
+fn classify_b3(base: &str, kind: &str, upper_name: &str, short: &str) -> AssetClass {
+    let named = |words: &[&str]| {
+        words
+            .iter()
+            .any(|w| upper_name.contains(w) || short.contains(w))
+    };
+    let looks_like_us_reit = named(&["REIT", "REALTY"]);
+
+    // BDR: o nome curto termina em DRN/DR1/DR2/DR3/DRE, e o código em 31–35 ou
+    // 39 (ação brasileira nunca tem dois dígitos no fim, salvo o 11).
+    let bdr_suffix = short
+        .split_whitespace()
+        .any(|w| matches!(w, "DRN" | "DR1" | "DR2" | "DR3" | "DRE"));
+    let bdr_code = base.len() == 6
+        && base[..4].chars().all(|c| c.is_ascii_alphabetic())
+        && matches!(&base[4..], "31" | "32" | "33" | "34" | "35" | "39");
+    if bdr_suffix || bdr_code {
+        return if looks_like_us_reit {
+            AssetClass::UsReits
+        } else {
+            AssetClass::IntlStocks
+        };
+    }
+
+    let index_fund = kind == "ETF"
+        || named(&[
+            "FUNDO DE ÍNDICE",
+            "FUNDO DE INDICE",
+            "CLASSE DE ÍNDICE",
+            "CLASSE DE INDICE",
+        ]);
+    if index_fund {
+        return if named(&[
+            "BITCOIN",
+            "CRYPTO",
+            "CRIPTO",
+            "ETHEREUM",
+            "BLOCKCHAIN",
+            "SOLANA",
+        ]) {
+            AssetClass::Crypto
+        } else if named(&[
+            "IMA-B",
+            "IMA,B",
+            "IMAB",
+            "IRF-M",
+            "IRFM",
+            "TESOURO",
+            "RENDA FIXA",
+            "SELIC",
+            "DEBENTURE",
+            "DEBÊNTURE",
+        ]) {
+            AssetClass::FixedIncome
+        } else if looks_like_us_reit {
+            AssetClass::UsReits
+        } else if named(&["IFIX", "IMOBILI"]) {
+            AssetClass::BrReits
+        } else if named(&[
+            "S&P", "SP500", "NASDAQ", "MSCI", "EXTERIOR", "GLOBAL", "EUROPE", "EUROPA", "CHINA",
+        ]) {
+            AssetClass::IntlStocks
+        } else {
+            AssetClass::BrStocks
+        };
+    }
+
+    let looks_like_reit = upper_name.contains("IMOBILI")
+        || upper_name.contains("IMOB")
+        || short.starts_with("FII")
+        || (base.ends_with("11") && !short.contains("UNT") && !short.contains("UNIT"));
+    if looks_like_reit {
+        AssetClass::BrReits
+    } else {
+        AssetClass::BrStocks
+    }
 }
 
 #[cfg(test)]
@@ -298,6 +372,7 @@ mod tests {
         assert_eq!(reit.symbol, "KNRI11");
         assert_eq!(reit.suggested_class, AssetClass::BrReits);
         assert_eq!(reit.exchange, "SAO");
+        assert!(reit.listed_on_b3);
 
         let stock = classify(&search_quote(
             "WEGE3.SA",
@@ -330,6 +405,62 @@ mod tests {
         assert_eq!(etf.suggested_class, AssetClass::BrStocks);
     }
 
+    /// Nomes como o Yahoo devolve (medido em 25/11/2026): todos `EQUITY` na
+    /// `SAO`, e o fim `11` que antes virava FII.
+    #[test]
+    fn classifies_b3_etfs_and_bdrs_by_what_they_hold() {
+        let b3 = |symbol: &str, short: &str, long: &str| {
+            classify(&search_quote(symbol, short, Some(long), "SAO", "EQUITY")).unwrap()
+        };
+        let bitcoin = b3(
+            "QBTC11.SA",
+            "QR BITCOIN  CI",
+            "QR CME CF BITCOIN REFERENCE RATE FUNDO DE ÍNDICE - INVESTIMENTO NO EXTERIOR",
+        );
+        assert_eq!(bitcoin.symbol, "QBTC11");
+        assert_eq!(bitcoin.suggested_class, AssetClass::Crypto);
+        assert!(bitcoin.listed_on_b3);
+        let crypto_index = b3(
+            "HASH11.SA",
+            "HASHDEX NCI CI",
+            "HASHDEX NASDAQ CME CRYPTO INDEX FUNDO DE ÍNDICE - RESPONSABILIDADE LIMITADA",
+        );
+        assert_eq!(crypto_index.suggested_class, AssetClass::Crypto);
+        let sp500 = b3(
+            "IVVB11.SA",
+            "ISHARE SP500CI",
+            "ISHARES S&P 500 CLASSE DE ÍNDICE EM COTAS DE CLASSES DE ÍNDICE IE - RESPONSABILIDADE LIMITADA",
+        );
+        assert_eq!(sp500.suggested_class, AssetClass::IntlStocks);
+        let ima_b = b3(
+            "IMAB11.SA",
+            "IT NOW IMA,BF11",
+            "IT NOW ID ETF IMA-B FUNDO DE ÍNDICE RESPONSABILIDADE LIMITADA",
+        );
+        assert_eq!(ima_b.suggested_class, AssetClass::FixedIncome);
+        let bdr = b3("AAPL34.SA", "APPLE       DRN", "Apple Inc.");
+        assert_eq!(bdr.suggested_class, AssetClass::IntlStocks);
+        assert!(bdr.listed_on_b3);
+        let reit_bdr = b3(
+            "O1IN34.SA",
+            "REALTY INCOME DRN",
+            "Realty Income Corporation",
+        );
+        assert_eq!(reit_bdr.suggested_class, AssetClass::UsReits);
+        let etf_bdr = b3("BIVB39.SA", "ISHARES IVV  DR", "iShares Core S&P 500 ETF");
+        assert_eq!(etf_bdr.suggested_class, AssetClass::IntlStocks);
+        let reit_etf = b3("XREI11.SA", "XP REIT CI", "XP US REITS FUNDO DE ÍNDICE");
+        assert_eq!(reit_etf.suggested_class, AssetClass::UsReits);
+        let small_caps = b3(
+            "SMAL11.SA",
+            "ISHARES SMALCI",
+            "ISHARES BM&FBOVESPA SMALL CAP FUNDO DE ÍNDICE",
+        );
+        assert_eq!(small_caps.suggested_class, AssetClass::BrStocks);
+        let ifix = b3("XFIX11.SA", "TREND IFIX CI", "TREND IFIX FUNDO DE ÍNDICE");
+        assert_eq!(ifix.suggested_class, AssetClass::BrReits);
+    }
+
     #[test]
     fn classifies_crypto_and_us_listings() {
         let btc = classify(&search_quote(
@@ -343,6 +474,7 @@ mod tests {
         assert_eq!(btc.symbol, "BTC");
         assert_eq!(btc.display_name, "Bitcoin");
         assert_eq!(btc.suggested_class, AssetClass::Crypto);
+        assert!(!btc.listed_on_b3);
 
         let reit = classify(&search_quote(
             "O",
@@ -363,6 +495,7 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(stock.suggested_class, AssetClass::IntlStocks);
+        assert!(!stock.listed_on_b3);
 
         assert!(classify(&search_quote(
             "BTC=F",

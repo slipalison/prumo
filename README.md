@@ -11,6 +11,10 @@ comprar para a carteira ficar o mais perto possível das suas metas.
 - **O aporte** — proporcional ao que falta em cada classe, nunca além da meta,
   em cotas inteiras, com o troco reaproveitado. O que não tem destino aparece
   com o motivo. Detalhes em [`docs/alocacao.md`](docs/alocacao.md).
+- **A lista do que você quer ter** — ativo cadastrado com quantidade 0 já
+  entra na divisão pela nota: é assim que uma classe vazia passa a receber.
+- **Negociado na B3** — um ETF de bitcoin conta em Cripto, um BDR ou ETF de
+  S&P 500 em Ações Internacionais, cotados na B3 em cota inteira.
 - **Cotações automáticas** (B3, EUA e cripto, convertidas para reais).
 
 No ar em <https://prumo.alisonamorim.com>, atrás do Cloudflare Access.
@@ -19,7 +23,7 @@ No ar em <https://prumo.alisonamorim.com>, atrás do Cloudflare Access.
 
 | | |
 |---|---|
-| Backend | Rust 1.98, Axum 0.8, sqlx 0.8, Postgres 17 |
+| Backend | Rust 1.98, Axum 0.8, sqlx 0.9, Postgres 17 |
 | Frontend | React 19, Vite, TypeScript, Motion |
 | Imagem | uma só: o binário serve a API e o PWA (`Dockerfile`) |
 | Esteira | [`slipalison/github-workflows`](https://github.com/slipalison/github-workflows) (`.github/workflows/ci.yml`) |

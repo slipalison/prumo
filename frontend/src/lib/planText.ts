@@ -1,16 +1,44 @@
-import type { PlanItem, PlanNotice } from "../api/types";
-import { CLASS_META } from "./assetClasses";
+import type { Asset, PlanItem, PlanNotice } from "../api/types";
+import { acceptsB3Listing, CLASS_META, looksLikeB3Ticker, nounOf, unitOf } from "./assetClasses";
 import { formatBRL, formatCompactBRL, formatQuantity, plural } from "./format";
+import { findAssetByLabel } from "./rating";
+
+/**
+ * Ativo sem cotação que parece um ETF ou BDR da B3 cadastrado sem a marca —
+ * o caso de um ETF de bitcoin em Cripto procurado como se fosse cripto.
+ */
+export function looksMissingB3Flag(asset: Pick<Asset, "asset_class" | "symbol" | "listed_on_b3">): boolean {
+  return acceptsB3Listing(asset.asset_class) && !asset.listed_on_b3 && looksLikeB3Ticker(asset.symbol ?? "");
+}
+
+function blockedText(notice: Extract<PlanNotice, { code: "class_blocked" }>): string {
+  const lead = `${CLASS_META[notice.asset_class].label} precisa de ${formatCompactBRL(notice.amount)} para chegar na meta`;
+  switch (notice.reason) {
+    case "no_assets":
+      return `${lead} e ainda não tem nenhum ativo.`;
+    case "unrated":
+      return `${lead}, mas nenhum ativo dela tem nota. Dê nota a eles e o aporte chega lá.`;
+    case "unpriced":
+      return `${lead}, mas os ativos com nota estão sem cotação.`;
+  }
+}
 
 /** O aviso do plano em uma frase que diz o que fazer. */
-export function noticeText(notice: PlanNotice): string {
+export function noticeText(notice: PlanNotice, assets: Asset[] = []): string {
   switch (notice.code) {
     case "class_blocked":
-      return `${CLASS_META[notice.asset_class].label} precisa de ${formatCompactBRL(notice.amount)} para chegar na meta, mas não tem nenhum ativo com nota. Adicione um ativo lá na Carteira.`;
-    case "assets_without_price":
-      return `Sem cotação agora: ${notice.symbols.join(", ")}. Eles ficam fora da conta até ter preço.`;
+      return blockedText(notice);
+    case "assets_without_price": {
+      const one = notice.symbols.length === 1;
+      const b3Hint = notice.symbols
+        .map((label) => findAssetByLabel(assets, label))
+        .some((asset) => asset !== undefined && looksMissingB3Flag(asset));
+      return `Sem cotação agora: ${notice.symbols.join(", ")}. ${one ? "Fica" : "Ficam"} fora da conta até ter preço.${
+        b3Hint ? " Se for ETF ou BDR da B3, ligue “Negociado na B3” no ativo." : ""
+      }`;
+    }
     case "assets_without_score":
-      return `Sem nota: ${notice.symbols.join(", ")}. Responda o checklist deles para receberem aporte.`;
+      return `Sem nota: ${notice.symbols.join(", ")}. Responda o checklist ${notice.symbols.length === 1 ? "dele" : "deles"} para receber aporte.`;
     case "no_targets":
       return "Você ainda não definiu metas. Sem elas eu não sei para onde levar a carteira.";
   }
@@ -18,10 +46,10 @@ export function noticeText(notice: PlanNotice): string {
 
 /** "17 cotas × R$ 53,81", "0,0045 BTC × R$ …" ou "Aplicar este valor". */
 export function unitLine(item: PlanItem): string {
-  const meta = CLASS_META[item.asset_class];
-  if (meta.unit === "value") return "Aplicar este valor";
-  if (meta.unit === "fraction") {
+  const unit = unitOf(item.asset_class, item.listed_on_b3);
+  if (unit === "value") return "Aplicar este valor";
+  if (unit === "fraction") {
     return `${formatQuantity(item.quantity, true)} ${item.symbol ?? ""} × ${formatBRL(item.unit_price)}`;
   }
-  return `${formatQuantity(item.quantity, false)} ${plural(item.quantity, meta.noun)} × ${formatBRL(item.unit_price)}`;
+  return `${formatQuantity(item.quantity, false)} ${plural(item.quantity, nounOf(item.asset_class, item.listed_on_b3))} × ${formatBRL(item.unit_price)}`;
 }

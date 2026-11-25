@@ -1,11 +1,11 @@
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useState } from "react";
-import type { Asset, Plan, PlanNotice } from "../../api/types";
+import type { Asset, AssetClass, Plan, PlanNotice } from "../../api/types";
 import { ClassBar } from "../../components/ClassBar";
 import { CountUp } from "../../components/CountUp";
 import { Donut } from "../../components/Donut";
 import { GlassCard } from "../../components/GlassCard";
-import { IconAlert, IconArrowRight, IconCheck } from "../../components/icons";
+import { IconAlert, IconArrowRight, IconCheck, IconPlus } from "../../components/icons";
 import { MagneticButton } from "../../components/MagneticButton";
 import { CLASS_META, classColor } from "../../lib/assetClasses";
 import { cx } from "../../lib/cx";
@@ -13,32 +13,73 @@ import { formatBRL, formatCompactBRL, formatPercent, plural } from "../../lib/fo
 import { noticeText, unitLine } from "../../lib/planText";
 import { assetName, findAssetByLabel } from "../../lib/rating";
 
-type PlanResultProps = {
-  plan: Plan;
-  /** Os ativos da carteira, para o aviso "sem nota" achar quem abrir. */
-  assets: Asset[];
-  onConfirm: () => void;
+type AssetActions = {
+  /** Abre a folha do ativo no checklist, para dar nota. */
   onRateAsset: (asset: Asset) => void;
+  /** Abre a folha do ativo como ela é (quantidade, preço, B3). */
+  onEditAsset: (asset: Asset) => void;
+  /** Abre o cadastro de ativo já na classe. */
+  onAddAsset: (assetClass: AssetClass) => void;
 };
 
+type PlanResultProps = AssetActions & {
+  plan: Plan;
+  /** Os ativos da carteira, para cada aviso achar quem abrir. */
+  assets: Asset[];
+  onConfirm: () => void;
+};
+
+function single(list: Array<Asset | undefined>): Asset | undefined {
+  const found = list.filter((a): a is Asset => a !== undefined);
+  return found.length === 1 ? found[0] : undefined;
+}
+
 /** A ação de cada aviso: abre o que resolve, sem a pessoa procurar. */
-function NoticeAction({ notice, assets, onRateAsset }: { notice: PlanNotice; assets: Asset[]; onRateAsset: (asset: Asset) => void }) {
+function NoticeAction({ notice, assets, onRateAsset, onEditAsset, onAddAsset }: AssetActions & { notice: PlanNotice; assets: Asset[] }) {
+  const arrow = <IconArrowRight width={16} height={16} />;
+  const rate = (asset: Asset | undefined) =>
+    asset && (
+      <button type="button" className="link-btn" onClick={() => onRateAsset(asset)}>
+        Dar nota ao {assetName(asset)} {arrow}
+      </button>
+    );
+  const open = (asset: Asset | undefined) =>
+    asset && (
+      <button type="button" className="link-btn" onClick={() => onEditAsset(asset)}>
+        Abrir {assetName(asset)} {arrow}
+      </button>
+    );
+  const bySymbol = (symbols: string[]) => single(symbols.map((s) => findAssetByLabel(assets, s)));
+
   if (notice.code === "no_targets") {
     return (
       <a className="link-btn" href="#/metas">
-        Ir para Metas <IconArrowRight width={16} height={16} />
+        Ir para Metas {arrow}
       </a>
     );
   }
-  if (notice.code === "assets_without_score") {
-    const only = notice.symbols.length === 1 ? findAssetByLabel(assets, notice.symbols[0] ?? "") : undefined;
-    if (only) {
+  if (notice.code === "class_blocked") {
+    if (notice.reason === "no_assets") {
       return (
-        <button type="button" className="link-btn" onClick={() => onRateAsset(only)}>
-          Dar nota ao {assetName(only)} <IconArrowRight width={16} height={16} />
+        <button type="button" className="link-btn" onClick={() => onAddAsset(notice.asset_class)}>
+          <IconPlus width={16} height={16} /> Adicionar em {CLASS_META[notice.asset_class].shortLabel}
         </button>
       );
     }
+    const members = assets.filter((a) => a.asset_class === notice.asset_class);
+    const action =
+      notice.reason === "unrated"
+        ? rate(single(members.filter((a) => a.score <= 0)))
+        : open(single(members.filter((a) => a.score > 0 && a.price_source === "missing")));
+    if (action) return action;
+  }
+  if (notice.code === "assets_without_score") {
+    const action = rate(bySymbol(notice.symbols));
+    if (action) return action;
+  }
+  if (notice.code === "assets_without_price") {
+    const action = open(bySymbol(notice.symbols));
+    if (action) return action;
   }
   return (
     <a className="link-btn" href="#/carteira">
@@ -57,7 +98,7 @@ const card = {
   show: { opacity: 1, y: 0, scale: 1, filter: "blur(0px)", transition: { type: "spring" as const, stiffness: 260, damping: 24 } },
 };
 
-export function PlanResult({ plan, assets, onConfirm, onRateAsset }: PlanResultProps) {
+export function PlanResult({ plan, assets, onConfirm, ...actions }: PlanResultProps) {
   const reduce = useReducedMotion();
   const [view, setView] = useState<"before" | "after">(reduce ? "after" : "before");
 
@@ -71,6 +112,7 @@ export function PlanResult({ plan, assets, onConfirm, onRateAsset }: PlanResultP
   const count = plan.items.length;
   const shownClasses = plan.classes.filter((c) => c.target_percent > 0 || c.percent_before > 0);
   const noTargets = plan.notices.some((n) => n.code === "no_targets");
+  const missingAssets = plan.notices.some((n) => n.code === "class_blocked");
 
   return (
     <section className="plan" aria-label="Resultado do aporte">
@@ -87,11 +129,19 @@ export function PlanResult({ plan, assets, onConfirm, onRateAsset }: PlanResultP
           </>
         ) : (
           <>
-            <h2 className="plan__title">{noTargets ? "Defina suas metas primeiro" : "Nada a comprar agora"}</h2>
+            <h2 className="plan__title">
+              {noTargets
+                ? "Defina suas metas primeiro"
+                : missingAssets
+                  ? "Faltam ativos onde o aporte precisa ir"
+                  : "Nada a comprar agora"}
+            </h2>
             <p className="plan__subtitle muted">
               {noTargets
                 ? "As metas dizem quanto você quer em cada classe."
-                : "Nenhum ativo com nota está abaixo da meta — ou o valor não compra uma unidade."}
+                : missingAssets
+                  ? "As classes abaixo da meta não têm ativo pronto para receber. Cadastre o que você quer ter — mesmo sem ter comprado — e eu divido pelas notas."
+                  : "Nenhum ativo com nota está abaixo da meta — ou o valor não compra uma unidade."}
             </p>
           </>
         )}
@@ -139,8 +189,8 @@ export function PlanResult({ plan, assets, onConfirm, onRateAsset }: PlanResultP
               transition={{ delay: 0.2 + index * 0.05 }}
             >
               <IconAlert className="notice__icon" />
-              <span>{noticeText(notice)}</span>
-              <NoticeAction notice={notice} assets={assets} onRateAsset={onRateAsset} />
+              <span>{noticeText(notice, assets)}</span>
+              <NoticeAction notice={notice} assets={assets} {...actions} />
             </motion.li>
           ))}
         </ul>

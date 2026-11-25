@@ -11,7 +11,7 @@ import { ScoreBadge } from "../../components/ScoreBadge";
 import { ScoreSlider } from "../../components/ScoreSlider";
 import { Sheet } from "../../components/Sheet";
 import { useToast } from "../../components/toastContext";
-import { CLASS_META } from "../../lib/assetClasses";
+import { acceptsB3Listing, CLASS_META, unitOf } from "../../lib/assetClasses";
 import { formatBRL, formatRelative } from "../../lib/format";
 import { assetName } from "../../lib/rating";
 import { answeredCount, answersDiff, checklistScore, type Answer } from "../../lib/score";
@@ -35,13 +35,18 @@ export function EditAssetSheet({ asset, portfolio, onClose, intro, onSaved }: Ed
       open={asset !== null}
       onClose={onClose}
       title={asset ? assetName(asset) : ""}
-      description={asset ? `${asset.display_name} · ${CLASS_META[asset.asset_class].label}` : undefined}
+      description={asset ? sheetDescription(asset) : undefined}
     >
       {asset && (
         <EditAssetForm key={asset.id} asset={asset} portfolio={portfolio} intro={intro} onDone={onClose} onSaved={onSaved} />
       )}
     </Sheet>
   );
+}
+
+function sheetDescription(asset: Asset): string {
+  const listed = asset.listed_on_b3 && acceptsB3Listing(asset.asset_class) ? " · B3" : "";
+  return `${asset.display_name} · ${CLASS_META[asset.asset_class].label}${listed}`;
 }
 
 function priceCaption(asset: Asset): string {
@@ -59,10 +64,24 @@ type EditAssetFormProps = {
 };
 
 function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFormProps) {
-  const ids = { quantity: useId(), amount: useId(), price: useId(), score: useId(), manualToggle: useId(), priceToggle: useId() };
+  const ids = {
+    quantity: useId(),
+    amount: useId(),
+    price: useId(),
+    score: useId(),
+    manualToggle: useId(),
+    priceToggle: useId(),
+    b3Toggle: useId(),
+  };
   const meta = CLASS_META[asset.asset_class];
-  const valueBased = meta.unit === "value";
   const questions = meta.checklist ? portfolio.checklists[meta.checklist] : [];
+
+  const [listedOnB3, setListedOnB3] = useState(asset.listed_on_b3);
+  const unit = unitOf(asset.asset_class, listedOnB3);
+  const valueBased = unit === "value";
+  // Renda fixa por valor e renda fixa com ticker são cadastros diferentes: a
+  // chave só aparece onde trocar de mercado mantém o ativo com ticker.
+  const b3Editable = acceptsB3Listing(asset.asset_class) && meta.unit !== "value";
 
   const [quantity, setQuantity] = useState(asset.quantity);
   const [useManualPrice, setUseManualPrice] = useState(asset.manual_price !== null);
@@ -82,9 +101,12 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
 
   const buildBody = (): UpdateAssetRequest => {
     const body: UpdateAssetRequest = {};
-    if (quantity !== asset.quantity) {
-      if (valueBased) body.amount = quantity;
-      else body.quantity = quantity;
+    if (listedOnB3 !== asset.listed_on_b3) body.listed_on_b3 = listedOnB3;
+    // O campo de cota inteira mostra o número arredondado; é ele que vai.
+    const units = unit === "unit" ? Math.round(quantity) : quantity;
+    if (units !== asset.quantity) {
+      if (valueBased) body.amount = units;
+      else body.quantity = units;
     }
     if (!valueBased) {
       if (useManualPrice && manualPrice !== asset.manual_price) {
@@ -132,10 +154,32 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
     });
   };
 
-  const amountBlock = valueBased ? (
-    <MoneyInput id={ids.amount} label="Valor atual" value={quantity} onChange={setQuantity} />
-  ) : (
-    <QuantityInput id={ids.quantity} label="Quantidade" value={quantity} onChange={setQuantity} fractional={meta.unit === "fraction"} />
+  const b3Block = b3Editable && (
+    <div className="switch-row">
+      <label htmlFor={ids.b3Toggle} className="switch-row__label">
+        Negociado na B3
+        <span className="field__hint">ETF ou BDR da B3: cotado em reais pelo ticker, cota inteira.</span>
+      </label>
+      <input
+        id={ids.b3Toggle}
+        type="checkbox"
+        role="switch"
+        className="switch"
+        checked={listedOnB3}
+        onChange={(event) => setListedOnB3(event.target.checked)}
+      />
+    </div>
+  );
+
+  const amountBlock = (
+    <>
+      {b3Block}
+      {valueBased ? (
+        <MoneyInput id={ids.amount} label="Valor atual" value={quantity} onChange={setQuantity} />
+      ) : (
+        <QuantityInput id={ids.quantity} label="Quantidade" value={quantity} onChange={setQuantity} fractional={unit === "fraction"} />
+      )}
+    </>
   );
 
   const priceBlock = !valueBased && (

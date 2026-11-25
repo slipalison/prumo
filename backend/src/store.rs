@@ -1,7 +1,7 @@
 //! Acesso ao Postgres. Toda consulta filtra pelo dono: um id de outra pessoa
 //! se comporta como id inexistente.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use rust_decimal::Decimal;
 use sqlx::postgres::{PgPool, PgPoolOptions};
@@ -10,7 +10,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::domain::allocation::{round_cents, Targets};
-use crate::domain::asset_class::{AssetClass, Checklist, UnitKind};
+use crate::domain::asset_class::{AssetClass, Checklist, Market, UnitKind};
 use crate::domain::defaults;
 use crate::quotes::Quote;
 
@@ -37,6 +37,15 @@ pub struct Asset {
     pub quantity: Decimal,
     pub manual_price: Option<Decimal>,
     pub score_override: Option<u8>,
+    /// Negociado na B3 (ETF, BDR) mesmo numa classe de fora dela. Sempre
+    /// verdadeiro em Ações Nacionais e FIIs.
+    pub listed_on_b3: bool,
+}
+
+impl Asset {
+    pub fn market(&self) -> Market {
+        self.asset_class.market(self.listed_on_b3)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -47,11 +56,13 @@ pub struct NewAsset {
     pub quantity: Decimal,
     pub manual_price: Option<Decimal>,
     pub score_override: Option<u8>,
+    pub listed_on_b3: bool,
 }
 
 /// Campos ausentes ficam como estão; `Some(None)` limpa.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct AssetPatch {
+    pub listed_on_b3: Option<bool>,
     pub quantity: Option<Decimal>,
     pub display_name: Option<String>,
     pub manual_price: Option<Option<Decimal>>,
@@ -116,6 +127,7 @@ struct AssetRow {
     quantity: Decimal,
     manual_price: Option<Decimal>,
     score_override: Option<i16>,
+    listed_on_b3: bool,
 }
 
 #[derive(FromRow)]
@@ -157,7 +169,7 @@ struct ContributionItemRow {
 /// aceita SQL estático (`&'static str`), e a lista é a única parte repetida.
 macro_rules! asset_columns {
     () => {
-        "id, asset_class, symbol, display_name, quantity, manual_price, score_override"
+        "id, asset_class, symbol, display_name, quantity, manual_price, score_override, listed_on_b3"
     };
 }
 
@@ -178,6 +190,7 @@ impl TryFrom<AssetRow> for Asset {
             quantity: row.quantity.normalize(),
             manual_price: row.manual_price.map(|p| p.normalize()),
             score_override: row.score_override.and_then(|s| u8::try_from(s).ok()),
+            listed_on_b3: row.listed_on_b3,
         })
     }
 }
@@ -200,10 +213,10 @@ fn is_unique_violation(error: &sqlx::Error) -> bool {
     matches!(error, sqlx::Error::Database(db) if db.code().as_deref() == Some("23505"))
 }
 
-/// O que um ativo vale em reais: classes por valor guardam o próprio valor em
-/// `quantity`; as outras, quantidade × preço.
-pub fn unit_value(asset_class: AssetClass, quantity: Decimal, unit_price: Decimal) -> Decimal {
-    match asset_class.unit_kind() {
+/// O que um ativo vale em reais: ativos por valor guardam o próprio valor em
+/// `quantity`; os outros, quantidade × preço.
+pub fn unit_value(unit: UnitKind, quantity: Decimal, unit_price: Decimal) -> Decimal {
+    match unit {
         UnitKind::Value => quantity,
         UnitKind::Whole | UnitKind::Fractional => quantity * unit_price,
     }
@@ -329,8 +342,8 @@ impl Store {
     }
 
     pub async fn insert_asset(&self, user: Uuid, new: &NewAsset) -> Result<Asset, StoreError> {
-        let result: Result<AssetRow, sqlx::Error> = sqlx::query_as(concat!("insert into assets (id, user_id, asset_class, symbol, display_name, quantity, manual_price, score_override)
-             values ($1, $2, $3, $4, $5, $6, $7, $8) returning ", asset_columns!(), ""))
+        let result: Result<AssetRow, sqlx::Error> = sqlx::query_as(concat!("insert into assets (id, user_id, asset_class, symbol, display_name, quantity, manual_price, score_override, listed_on_b3)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning ", asset_columns!(), ""))
         .bind(Uuid::new_v4())
         .bind(user)
         .bind(new.asset_class.as_str())
@@ -339,6 +352,7 @@ impl Store {
         .bind(new.quantity)
         .bind(new.manual_price)
         .bind(new.score_override.map(i16::from))
+        .bind(new.listed_on_b3)
         .fetch_one(&self.pool)
         .await;
         match result {
@@ -360,6 +374,7 @@ impl Store {
                 display_name = coalesce($4, display_name),
                 manual_price = case when $5 then $6 else manual_price end,
                 score_override = case when $7 then $8 else score_override end,
+                listed_on_b3 = coalesce($9, listed_on_b3),
                 updated_at = now()
              where user_id = $1 and id = $2
              returning ",
@@ -374,6 +389,7 @@ impl Store {
         .bind(patch.manual_price.flatten())
         .bind(patch.score_override.is_some())
         .bind(patch.score_override.flatten().map(i16::from))
+        .bind(patch.listed_on_b3)
         .fetch_optional(&self.pool)
         .await?;
         Ok(row.map(Asset::try_from).transpose()?)
@@ -598,17 +614,20 @@ impl Store {
         Ok(())
     }
 
-    /// Classe e símbolo de todos os ativos cotáveis, de todas as carteiras.
-    pub async fn tracked_symbols(&self) -> Result<Vec<(AssetClass, String)>, StoreError> {
-        let rows: Vec<(String, String)> = sqlx::query_as(
-            "select distinct asset_class, symbol from assets where symbol is not null",
+    /// Mercado e símbolo de todos os ativos cotáveis, de todas as carteiras.
+    pub async fn tracked_symbols(&self) -> Result<Vec<(Market, String)>, StoreError> {
+        let rows: Vec<(String, bool, String)> = sqlx::query_as(
+            "select distinct asset_class, listed_on_b3, symbol from assets where symbol is not null",
         )
         .fetch_all(&self.pool)
         .await?;
-        Ok(rows
+        let tracked: BTreeSet<(Market, String)> = rows
             .into_iter()
-            .filter_map(|(class, symbol)| AssetClass::parse(&class).map(|c| (c, symbol)))
-            .collect())
+            .filter_map(|(class, listed_on_b3, symbol)| {
+                AssetClass::parse(&class).map(|c| (c.market(listed_on_b3), symbol))
+            })
+            .collect();
+        Ok(tracked.into_iter().collect())
     }
 
     /// Registra o aporte e soma o que foi comprado em cada ativo, numa transação.
@@ -648,7 +667,7 @@ impl Store {
                     "quantidade e preco precisam ser positivos".into(),
                 ));
             }
-            let added = match asset.asset_class.unit_kind() {
+            let added = match asset.market().unit_kind() {
                 UnitKind::Value => value,
                 UnitKind::Whole | UnitKind::Fractional => item.quantity,
             };

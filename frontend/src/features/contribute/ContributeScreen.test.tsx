@@ -29,7 +29,7 @@ describe("Aportar", () => {
     expect(within(result).getByText(/17 cotas × R\$\s53,81/)).toBeInTheDocument();
     expect(within(result).getByText(/0,0045 BTC/)).toBeInTheDocument();
     expect(within(result).getByText(/Ações Internacionais precisa de/)).toBeInTheDocument();
-    expect(within(result).getByRole("link", { name: /Abrir Carteira/ })).toHaveAttribute("href", "#/carteira");
+    expect(within(result).getByRole("button", { name: /Adicionar em Ações EUA/ })).toBeInTheDocument();
 
     const plans = getDb().requests.filter((r) => r.path === "/api/v1/plans");
     expect(plans.at(-1)?.body).toEqual({ amount: 6000 });
@@ -176,6 +176,127 @@ describe("Aportar", () => {
 describe("avisos do plano", () => {
   const planWith = (symbols: string[]) =>
     HttpResponse.json({ ...samplePlan(), notices: [{ code: "assets_without_score", symbols }] });
+
+  /** Tudo numa classe acima da meta e as outras sem ativo: nada a comprar. */
+  const blockedPlan = (assetClass: "intl_stocks" | "crypto") => ({
+    ...samplePlan(5000),
+    invested: 0,
+    change: 0,
+    unallocated: 5000,
+    items: [],
+    notices: [{ code: "class_blocked", asset_class: assetClass, amount: 25226.45, reason: "no_assets" }],
+  });
+
+  const recordPlans = (body: object) => {
+    const amounts: unknown[] = [];
+    server.use(
+      http.post("/api/v1/plans", async ({ request }) => {
+        amounts.push(await request.json());
+        return HttpResponse.json(body);
+      }),
+    );
+    return amounts;
+  };
+
+  it("classe sem ativo: o título diz o que falta e o cadastro abre ali, já na classe", async () => {
+    const amounts = recordPlans(blockedPlan("intl_stocks"));
+    const { user, input } = await openCalculator();
+    await user.type(input, "500000");
+    await user.click(screen.getByRole("button", { name: /Calcular/ }));
+    const result = await screen.findByRole("region", { name: "Resultado do aporte" });
+    expect(within(result).getByRole("heading", { name: "Faltam ativos onde o aporte precisa ir" })).toBeInTheDocument();
+    expect(within(result).getByText(/Ações Internacionais precisa de .* ainda não tem nenhum ativo/)).toBeInTheDocument();
+    await user.click(within(result).getByRole("button", { name: /Adicionar em Ações EUA/ }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Novo ativo" });
+    expect(within(dialog).getByRole("radio", { name: /Ações EUA/ })).toHaveAttribute("aria-checked", "true");
+    await user.type(within(dialog).getByRole("combobox", { name: "Ticker ou nome" }), "voo");
+    await user.click(await within(dialog).findByRole("option", { name: /VOO/ }));
+    // Sem quantidade: ainda não comprou, e pode cadastrar mesmo assim.
+    await user.click(within(dialog).getByRole("button", { name: "Adicionar à carteira" }));
+    await waitFor(() =>
+      expect(getDb().requests.filter((r) => r.method === "POST" && r.path === "/api/v1/assets").at(-1)?.body).toEqual({
+        asset_class: "intl_stocks",
+        symbol: "VOO",
+        quantity: 0,
+        display_name: "Vanguard S&P 500 ETF",
+      }),
+    );
+
+    // Ação nasce sem nota: o checklist abre, e salvar refaz o plano.
+    const rating = await screen.findByRole("dialog", { name: "VOO" });
+    const question = within(rating).getByRole("group", { name: "Lucro líquido positivo em pelo menos 4 dos últimos 5 anos?" });
+    await user.click(within(question).getByRole("button", { name: "Sim" }));
+    await user.click(within(rating).getByRole("button", { name: "Salvar" }));
+    await waitFor(() => expect(amounts).toEqual([{ amount: 5000 }, { amount: 5000 }]));
+  });
+
+  it("ETF de bitcoin da B3 em Cripto: a chave vem ligada e o plano é refeito na hora", async () => {
+    const amounts = recordPlans(blockedPlan("crypto"));
+    const { user, input } = await openCalculator();
+    await user.type(input, "500000");
+    await user.click(screen.getByRole("button", { name: /Calcular/ }));
+    const result = await screen.findByRole("region", { name: "Resultado do aporte" });
+    await user.click(within(result).getByRole("button", { name: /Adicionar em Cripto/ }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Novo ativo" });
+    await user.type(within(dialog).getByRole("combobox", { name: "Ticker ou nome" }), "qbtc");
+    const option = await within(dialog).findByRole("option", { name: /QBTC11/ });
+    expect(option).toHaveTextContent("Cripto · B3");
+    await user.click(option);
+    expect(within(dialog).getByRole("switch", { name: /Negociado na B3/ })).toBeChecked();
+    // Na B3 é cota inteira: o campo tem − e +.
+    await user.click(within(dialog).getByRole("button", { name: "Aumentar quantidade" }));
+    await user.click(within(dialog).getByRole("button", { name: "Adicionar à carteira" }));
+    await waitFor(() =>
+      expect(getDb().requests.filter((r) => r.method === "POST" && r.path === "/api/v1/assets").at(-1)?.body).toEqual({
+        asset_class: "crypto",
+        symbol: "QBTC11",
+        quantity: 1,
+        display_name: "QR CME CF Bitcoin Reference Rate",
+        score_override: 5,
+        listed_on_b3: true,
+      }),
+    );
+    // Cripto já nasce com nota: nada de checklist, o plano refaz direto.
+    await waitFor(() => expect(amounts).toEqual([{ amount: 5000 }, { amount: 5000 }]));
+  });
+
+  it("ticker da B3 sem cotação em Cripto: o aviso sugere a B3 e abre o ativo", async () => {
+    resetDb();
+    getDb().assets.push({
+      id: "a-qbtc",
+      asset_class: "crypto",
+      symbol: "QBTC11",
+      display_name: "QR Bitcoin",
+      quantity: 3,
+      quote_price: null,
+      manual_price: null,
+      currency: "BRL",
+      score_override: 6,
+      answers: {},
+      listed_on_b3: false,
+    });
+    const amounts = recordPlans({ ...samplePlan(), notices: [{ code: "assets_without_price", symbols: ["QBTC11"] }] });
+    const { user, input } = await openCalculator();
+    await user.type(input, "600000");
+    await user.click(screen.getByRole("button", { name: /Calcular/ }));
+    const result = await screen.findByRole("region", { name: "Resultado do aporte" });
+    expect(within(result).getByText(/Fica fora da conta até ter preço\. Se for ETF ou BDR da B3/)).toBeInTheDocument();
+    await user.click(within(result).getByRole("button", { name: /Abrir QBTC11/ }));
+
+    const dialog = await screen.findByRole("dialog", { name: "QBTC11" });
+    const b3 = within(dialog).getByRole("switch", { name: /Negociado na B3/ });
+    expect(b3).not.toBeChecked();
+    await user.click(b3);
+    await user.click(within(dialog).getByRole("button", { name: "Salvar" }));
+    await waitFor(() =>
+      expect(getDb().requests.filter((r) => r.method === "PATCH" && r.path === "/api/v1/assets/a-qbtc").at(-1)?.body).toEqual({
+        listed_on_b3: true,
+      }),
+    );
+    await waitFor(() => expect(amounts).toEqual([{ amount: 6000 }, { amount: 6000 }]));
+  });
 
   it("sem nota, um ativo só: abre a folha dele no checklist e recalcula depois de salvar", async () => {
     const amounts: unknown[] = [];

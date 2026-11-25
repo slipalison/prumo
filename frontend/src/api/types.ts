@@ -32,6 +32,11 @@ export type Asset = {
   asset_class: AssetClass;
   symbol: string | null;
   display_name: string;
+  /**
+   * Negociado na B3 (ETF, BDR) — cotado em reais, cota inteira. Sempre `true`
+   * em Ações Nacionais e FIIs.
+   */
+  listed_on_b3: boolean;
   quantity: number;
   /** Preço efetivo em reais (cotação ou manual). */
   unit_price: number | null;
@@ -77,6 +82,7 @@ export type CreateAssetRequest = {
   amount?: number;
   manual_price?: number | null;
   score_override?: number | null;
+  listed_on_b3?: boolean;
 };
 
 export type UpdateAssetRequest = {
@@ -86,6 +92,7 @@ export type UpdateAssetRequest = {
   manual_price?: number | null;
   score_override?: number | null;
   answers?: Record<string, boolean | null>;
+  listed_on_b3?: boolean;
 };
 
 export type PlanItem = {
@@ -93,6 +100,7 @@ export type PlanItem = {
   asset_class: AssetClass;
   symbol: string | null;
   display_name: string;
+  listed_on_b3: boolean;
   quantity: number;
   unit_price: number;
   value: number;
@@ -117,8 +125,11 @@ export type PlanClass = {
   status: PlanClassStatus;
 };
 
+/** Por que a classe abaixo da meta não recebe: sem ativo, sem nota ou sem preço. */
+export type BlockReason = "no_assets" | "unrated" | "unpriced";
+
 export type PlanNotice =
-  | { code: "class_blocked"; asset_class: AssetClass; amount: number }
+  | { code: "class_blocked"; asset_class: AssetClass; amount: number; reason: BlockReason }
   | { code: "assets_without_price"; symbols: string[] }
   | { code: "assets_without_score"; symbols: string[] }
   | { code: "no_targets" };
@@ -168,6 +179,7 @@ export type SymbolSuggestion = {
   display_name: string;
   exchange: string;
   suggested_class: AssetClass;
+  listed_on_b3: boolean;
 };
 
 export type QuotesRefreshResult = {

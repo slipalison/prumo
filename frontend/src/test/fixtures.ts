@@ -13,7 +13,11 @@ export type StoredAsset = {
   currency: string;
   score_override: number | null;
   answers: Record<string, boolean>;
+  /** Ausente = o mercado natural da classe (B3 em Ações BR e FIIs). */
+  listed_on_b3?: boolean;
 };
+
+const nativeB3 = (assetClass: AssetClass) => assetClass === "br_stocks" || assetClass === "br_reits";
 
 export const QUOTES_AT = "2026-11-25T11:30:00Z";
 
@@ -121,6 +125,7 @@ export function toAsset(stored: StoredAsset, checklists: Checklists, classTotal:
     asset_class: stored.asset_class,
     symbol: stored.symbol,
     display_name: stored.display_name,
+    listed_on_b3: stored.listed_on_b3 ?? nativeB3(stored.asset_class),
     quantity: stored.quantity,
     unit_price: price,
     manual_price: stored.manual_price,
@@ -180,6 +185,7 @@ export function samplePlan(amount = 6000): Plan {
         asset_class: "br_stocks",
         symbol: "ITSA4",
         display_name: "Itaúsa",
+        listed_on_b3: true,
         quantity: 243,
         unit_price: 11.2,
         value: 2721.6,
@@ -191,6 +197,7 @@ export function samplePlan(amount = 6000): Plan {
         asset_class: "br_reits",
         symbol: "BTLG11",
         display_name: "BTG Pactual Logística",
+        listed_on_b3: true,
         quantity: 8,
         unit_price: 94.55,
         value: 756.4,
@@ -202,6 +209,7 @@ export function samplePlan(amount = 6000): Plan {
         asset_class: "br_reits",
         symbol: "TRXF11",
         display_name: "TRX Real Estate",
+        listed_on_b3: true,
         quantity: 17,
         unit_price: 53.81,
         value: 914.77,
@@ -213,6 +221,7 @@ export function samplePlan(amount = 6000): Plan {
         asset_class: "crypto",
         symbol: "BTC",
         display_name: "Bitcoin",
+        listed_on_b3: false,
         quantity: 0.0045,
         unit_price: 345588.05,
         value: 1555.15,
@@ -229,6 +238,6 @@ export function samplePlan(amount = 6000): Plan {
       { asset_class: "fixed_income", target_percent: 35, percent_before: 70.76, percent_after: 67.42, allocated: 0, status: "above_target" },
       { asset_class: "intl_fixed_income", target_percent: 0, percent_before: 0, percent_after: 0, allocated: 0, status: "no_target" },
     ],
-    notices: [{ code: "class_blocked", asset_class: "intl_stocks", amount: 25226.45 }],
+    notices: [{ code: "class_blocked", asset_class: "intl_stocks", amount: 25226.45, reason: "no_assets" }],
   };
 }
