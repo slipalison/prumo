@@ -88,8 +88,15 @@ impl AppState {
 
     /// Liga a estimativa de renda a um provedor de histórico de dividendos
     /// (sem ele, só vale o que já está no cache).
-    pub fn with_dividend_provider(mut self, provider: Arc<dyn DividendProvider>) -> Self {
-        self.income = Arc::new(IncomeService::new(self.store.clone(), provider));
+    pub fn with_dividend_provider(self, provider: Arc<dyn DividendProvider>) -> Self {
+        let income = Arc::new(IncomeService::new(self.store.clone(), provider));
+        self.with_income_service(income)
+    }
+
+    /// Usa um serviço de renda já montado (o `run` o guarda para a tarefa
+    /// periódica que enche o cache).
+    pub fn with_income_service(mut self, income: Arc<IncomeService>) -> Self {
+        self.income = income;
         self
     }
 

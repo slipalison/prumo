@@ -328,7 +328,7 @@ Responde "estou ganhando do CDI?". Método e limites em
 
 ### 5. Renda
 
-Aba entre Carteira e Metas. Responde "quanto minha carteira paga?" sem virar
+Aba entre Carteira e Ajustes (uma linha em `APP_ROUTES`). Responde "quanto minha carteira paga?" sem virar
 planilha: uma meta no topo, o resto por baixo.
 
 1. **Meta de renda mensal.** Número grande (média mensal dos 12 meses
@@ -362,7 +362,13 @@ Na tela **Aportar**:
   entrada.
 - No resultado, uma frase com o selo "estimativa": "Este aporte soma ~R$ 35/mês
   de renda: sua renda vai de R$ 410 para R$ 445 por mês". Cada cartão mostra a
-  renda mensal que ele soma.
+  renda mensal que ele soma. O plano não espera o provedor de dividendos: sem
+  histórico em cache ainda, a frase vira "Estimativa de renda indisponível por
+  enquanto".
+- Com o olho fechado (ver "Ocultar valores"), tudo isso sai mascarado — meta,
+  barras, tabelas, rosca, prévia do lançamento, a renda do plano e a sugestão
+  de caixa —, inclusive o que só o leitor de tela lê (`aria-label`,
+  `aria-valuetext`, tabelas `sr-only`). Só a proporção (percentual) continua.
 
 ### Histórico
 

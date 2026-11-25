@@ -9,6 +9,7 @@ mod common;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration as StdDuration, Instant};
 
 use async_trait::async_trait;
 use axum::http::StatusCode;
@@ -17,6 +18,7 @@ use prumo::auth::DevAuthenticator;
 use prumo::dividends::{DividendError, DividendEvent, DividendHistory, DividendProvider};
 use prumo::domain::income::{today_in_brazil, IncomeKind, IncomeSource};
 use prumo::http::{AppState, BuildInfo};
+use prumo::income::IncomeService;
 use prumo::live::LiveQuotes;
 use prumo::service::QuoteService;
 use prumo::store::{NewIncomeEvent, Store, StoreError};
@@ -39,6 +41,8 @@ struct FakeDividends {
     histories: Mutex<HashMap<String, DividendHistory>>,
     calls: Mutex<HashMap<String, usize>>,
     down: Mutex<bool>,
+    /// Quanto o provedor demora para responder (zero = na hora).
+    delay: Mutex<StdDuration>,
 }
 
 impl FakeDividends {
@@ -66,6 +70,10 @@ impl DividendProvider for FakeDividends {
             .unwrap()
             .entry(provider_symbol.to_owned())
             .or_default() += 1;
+        let delay = *self.delay.lock().unwrap();
+        if !delay.is_zero() {
+            tokio::time::sleep(delay).await;
+        }
         if *self.down.lock().unwrap() {
             return Err(DividendError::Unavailable("falso fora do ar".into()));
         }
@@ -106,6 +114,7 @@ async fn environment() -> Env {
 struct Person {
     router: axum::Router,
     dividends: Arc<FakeDividends>,
+    income: Arc<IncomeService>,
 }
 
 fn person(env: &Env, email: &str, dir: &tempfile_dir::Dir) -> Person {
@@ -128,6 +137,7 @@ fn person(env: &Env, email: &str, dir: &tempfile_dir::Dir) -> Person {
     )
     .with_dividend_provider(dividends.clone());
     Person {
+        income: state.income.clone(),
         router: prumo::http::public_router(state, &dir.path()),
         dividends,
     }
@@ -155,6 +165,36 @@ fn monthly_dividends(amount: Decimal, months: i64) -> Vec<DividendEvent> {
         .collect()
 }
 
+/// Esvazia o cache de dividendos (compartilhado entre os cenários).
+async fn reset_cache(env: &Env) {
+    sqlx::query("delete from dividend_history")
+        .execute(&env.pool)
+        .await
+        .unwrap();
+    sqlx::query("delete from dividend_fetches")
+        .execute(&env.pool)
+        .await
+        .unwrap();
+}
+
+/// Espera a tarefa em segundo plano gravar o histórico dos símbolos.
+async fn wait_cached(env: &Env, symbols: &[&str]) {
+    let wanted: Vec<String> = symbols.iter().map(|s| (*s).to_owned()).collect();
+    for _ in 0..100 {
+        let (count,): (i64,) =
+            sqlx::query_as("select count(*) from dividend_fetches where symbol = any($1)")
+                .bind(&wanted)
+                .fetch_one(&env.pool)
+                .await
+                .unwrap();
+        if usize::try_from(count).unwrap() == wanted.len() {
+            return;
+        }
+        tokio::time::sleep(StdDuration::from_millis(50)).await;
+    }
+    panic!("historico nao chegou ao cache: {symbols:?}");
+}
+
 async fn add_asset(p: &Person, body: Value) -> String {
     let reply = post(&p.router, "/api/v1/assets", body).await;
     assert_eq!(reply.status, StatusCode::CREATED, "{}", reply.text);
@@ -178,7 +218,9 @@ async fn income_contract() {
 
     manual_events_are_calculated_filtered_and_owned(&env, &dir).await;
     summary_sums_the_ledger(&env, &dir).await;
-    estimate_comes_from_the_provider_and_is_cached(&env, &dir).await;
+    estimate_never_waits_for_the_provider(&env, &dir).await;
+    estimate_comes_from_the_cache_the_background_fills(&env, &dir).await;
+    refresher_fills_the_cache_without_any_request(&env, &dir).await;
     estimate_in_other_currency_and_unavailable_provider(&env, &dir).await;
     income_goal_crud_and_progress(&env, &dir).await;
     plan_shows_the_income_it_adds(&env, &dir).await;
@@ -563,7 +605,8 @@ async fn summary_sums_the_ledger(env: &Env, dir: &tempfile_dir::Dir) {
     assert_eq!(next[0]["symbol"], "KNRI11");
 }
 
-async fn estimate_comes_from_the_provider_and_is_cached(env: &Env, dir: &tempfile_dir::Dir) {
+async fn estimate_comes_from_the_cache_the_background_fills(env: &Env, dir: &tempfile_dir::Dir) {
+    reset_cache(env).await;
     let me = person(env, "renda-estimativa@prumo.test", dir);
     // Um real por mês nos últimos 12 meses (mais dois meses fora da janela).
     me.dividends
@@ -573,6 +616,8 @@ async fn estimate_comes_from_the_provider_and_is_cached(env: &Env, dir: &tempfil
         json!({ "asset_class": "br_reits", "symbol": "KNRI11", "quantity": 10 }),
     )
     .await;
+    // Criar o ativo dispara a busca do histórico em segundo plano.
+    wait_cached(env, &["KNRI11.SA"]).await;
     // Cripto e renda fixa por valor não pagam provento: o provedor nem é chamado.
     add_asset(
         &me,
@@ -613,6 +658,7 @@ async fn estimate_comes_from_the_provider_and_is_cached(env: &Env, dir: &tempfil
         json!({ "asset_class": "br_reits", "symbol": "KNRI11", "quantity": 3 }),
     )
     .await;
+    tokio::time::sleep(StdDuration::from_millis(200)).await;
     let theirs = get(&neighbour.router, "/api/v1/income/summary").await;
     assert_eq!(theirs.body["estimate"]["monthly"], 3.0);
     assert_eq!(neighbour.dividends.calls("KNRI11.SA"), 0);
@@ -624,9 +670,15 @@ async fn estimate_comes_from_the_provider_and_is_cached(env: &Env, dir: &tempfil
         .unwrap();
     me.dividends
         .set("KNRI11.SA", "BRL", monthly_dividends(dec!(2), 12));
+    // A tela continua lendo o cache velho até a tarefa em segundo plano trocar.
+    let before = get(&me.router, "/api/v1/income/summary").await;
+    assert_eq!(before.body["estimate"]["monthly"], 10.0);
+    assert_eq!(fill(&me, "KNRI11.SA").await, 1);
     let refreshed = get(&me.router, "/api/v1/income/summary").await;
     assert_eq!(refreshed.body["estimate"]["monthly"], 20.0);
     assert_eq!(me.dividends.calls("KNRI11.SA"), 2);
+    // Vigente: a segunda rodada não vai ao provedor.
+    assert_eq!(fill(&me, "KNRI11.SA").await, 0);
 
     // Provedor fora do ar com o cache vencido: vale o que está guardado.
     sqlx::query("update dividend_fetches set fetched_at = now() - interval '2 days' where symbol = 'KNRI11.SA'")
@@ -634,16 +686,18 @@ async fn estimate_comes_from_the_provider_and_is_cached(env: &Env, dir: &tempfil
         .await
         .unwrap();
     *me.dividends.down.lock().unwrap() = true;
+    assert_eq!(fill(&me, "KNRI11.SA").await, 1);
     let stale = get(&me.router, "/api/v1/income/summary").await;
     assert_eq!(stale.status, StatusCode::OK);
     assert_eq!(stale.body["estimate"]["monthly"], 20.0);
-    // E descansa: a próxima tela não repete a tentativa.
+    // E descansa: a rodada seguinte não repete a tentativa.
     let calls = me.dividends.calls("KNRI11.SA");
-    get(&me.router, "/api/v1/income/summary").await;
+    assert_eq!(fill(&me, "KNRI11.SA").await, 0);
     assert_eq!(me.dividends.calls("KNRI11.SA"), calls);
 }
 
 async fn estimate_in_other_currency_and_unavailable_provider(env: &Env, dir: &tempfile_dir::Dir) {
+    reset_cache(env).await;
     let me = person(env, "renda-dolar@prumo.test", dir);
     // Quatro trimestres de US$ 0,25: US$ 1,00 por cota em 12 meses, a R$ 5,50.
     me.dividends.set(
@@ -667,6 +721,7 @@ async fn estimate_in_other_currency_and_unavailable_provider(env: &Env, dir: &te
         json!({ "asset_class": "br_stocks", "symbol": "WEGE3", "quantity": 100 }),
     )
     .await;
+    wait_cached(env, &["AAPL"]).await;
 
     let summary = get(&me.router, "/api/v1/income/summary").await;
     let estimate = &summary.body["estimate"];
@@ -692,6 +747,7 @@ async fn estimate_in_other_currency_and_unavailable_provider(env: &Env, dir: &te
 }
 
 async fn income_goal_crud_and_progress(env: &Env, dir: &tempfile_dir::Dir) {
+    reset_cache(env).await;
     let me = person(env, "renda-meta@prumo.test", dir);
     let other = person(env, "renda-meta-outra@prumo.test", dir);
     assert_eq!(
@@ -721,6 +777,7 @@ async fn income_goal_crud_and_progress(env: &Env, dir: &tempfile_dir::Dir) {
         json!({ "asset_class": "br_reits", "symbol": "KNRI11", "quantity": 10 }),
     )
     .await;
+    wait_cached(env, &["KNRI11.SA"]).await;
     let created = put(&me.router, "/api/v1/income/goal", json!({ "target": 20 })).await;
     assert_eq!(created.status, StatusCode::OK, "{}", created.text);
     assert_eq!(created.body["target"], 20.0);
@@ -786,6 +843,7 @@ async fn income_goal_crud_and_progress(env: &Env, dir: &tempfile_dir::Dir) {
 }
 
 async fn plan_shows_the_income_it_adds(env: &Env, dir: &tempfile_dir::Dir) {
+    reset_cache(env).await;
     let me = person(env, "renda-plano@prumo.test", dir);
     me.dividends
         .set("KNRI11.SA", "BRL", monthly_dividends(dec!(1), 12));
@@ -800,6 +858,7 @@ async fn plan_shows_the_income_it_adds(env: &Env, dir: &tempfile_dir::Dir) {
         json!({ "asset_class": "br_reits", "symbol": "KNRI11", "quantity": 10, "score_override": 8 }),
     )
     .await;
+    wait_cached(env, &["KNRI11.SA"]).await;
 
     let plan = post(&me.router, "/api/v1/plans", json!({ "amount": 1420 })).await;
     assert_eq!(plan.status, StatusCode::OK, "{}", plan.text);
@@ -809,33 +868,26 @@ async fn plan_shows_the_income_it_adds(env: &Env, dir: &tempfile_dir::Dir) {
     // R$ 1 por cota por mês.
     assert_eq!(item["estimated_monthly_income"], bought);
     let income = &plan.body["income"];
+    assert_eq!(income["available"], true);
+    assert_eq!(income["missing"], json!([]));
     assert_eq!(income["before_monthly"], 10.0);
     assert_eq!(income["added_monthly"], bought);
     assert_eq!(income["after_monthly"], 10.0 + bought);
 
-    // Sem histórico de ninguém: o plano segue sem o bloco de renda.
-    let bare = person(env, "renda-plano-vazio@prumo.test", dir);
+    // Carteira sem papel que pague provento (só renda fixa): não há o que estimar.
+    let bonds = person(env, "renda-plano-so-rf@prumo.test", dir);
     put(
-        &bare.router,
+        &bonds.router,
         "/api/v1/goals",
-        json!({ "targets": { "br_reits": 100 } }),
+        json!({ "targets": { "fixed_income": 100 } }),
     )
     .await;
     add_asset(
-        &bare,
-        json!({ "asset_class": "br_reits", "symbol": "KNRI11", "quantity": 10, "score_override": 8 }),
+        &bonds,
+        json!({ "asset_class": "fixed_income", "display_name": "CDB", "amount": 1000, "score_override": 7 }),
     )
     .await;
-    *bare.dividends.down.lock().unwrap() = true;
-    sqlx::query("delete from dividend_fetches")
-        .execute(&env.pool)
-        .await
-        .unwrap();
-    sqlx::query("delete from dividend_history")
-        .execute(&env.pool)
-        .await
-        .unwrap();
-    let plain = post(&bare.router, "/api/v1/plans", json!({ "amount": 1420 })).await;
+    let plain = post(&bonds.router, "/api/v1/plans", json!({ "amount": 500 })).await;
     assert_eq!(plain.status, StatusCode::OK);
     assert_eq!(plain.body["income"], Value::Null);
     assert_eq!(
@@ -924,6 +976,120 @@ async fn cash_suggestion_counts_since_the_last_contribution(env: &Env, dir: &tem
             .body["amount"],
         0.0
     );
+}
+
+/// Busca o histórico de um símbolo como a tarefa em segundo plano faria.
+async fn fill(p: &Person, symbol: &str) -> usize {
+    p.income
+        .fill(&[symbol.to_owned()], OffsetDateTime::now_utc())
+        .await
+}
+
+/// Provedor lento ou fora do ar: o plano e o resumo respondem na hora, sem
+/// estimativa, e a estimativa aparece quando o histórico chega ao cache.
+async fn estimate_never_waits_for_the_provider(env: &Env, dir: &tempfile_dir::Dir) {
+    reset_cache(env).await;
+    let me = person(env, "renda-lento@prumo.test", dir);
+    me.dividends
+        .set("KNRI11.SA", "BRL", monthly_dividends(dec!(1), 12));
+    *me.dividends.delay.lock().unwrap() = StdDuration::from_secs(30);
+    put(
+        &me.router,
+        "/api/v1/goals",
+        json!({ "targets": { "br_reits": 100 } }),
+    )
+    .await;
+
+    let started = Instant::now();
+    // Criar o ativo dispara a busca (que fica 30 s esperando) e não a espera.
+    add_asset(
+        &me,
+        json!({ "asset_class": "br_reits", "symbol": "KNRI11", "quantity": 10, "score_override": 8 }),
+    )
+    .await;
+    let summary = get(&me.router, "/api/v1/income/summary").await;
+    let plan = post(&me.router, "/api/v1/plans", json!({ "amount": 1420 })).await;
+    assert!(
+        started.elapsed() < StdDuration::from_secs(3),
+        "as rotas esperaram o provedor: {:?}",
+        started.elapsed()
+    );
+    assert_eq!(summary.status, StatusCode::OK);
+    assert_eq!(summary.body["estimate"]["monthly"], 0.0);
+    assert_eq!(summary.body["estimate"]["assets"], json!([]));
+    assert_eq!(summary.body["estimate"]["missing"], json!(["KNRI11"]));
+    assert_eq!(plan.status, StatusCode::OK, "{}", plan.text);
+    let income = &plan.body["income"];
+    assert_eq!(income["available"], false);
+    assert_eq!(income["missing"], json!(["KNRI11"]));
+    assert_eq!(income["added_monthly"], 0.0);
+    assert_eq!(
+        plan.body["items"][0]["estimated_monthly_income"],
+        Value::Null
+    );
+
+    // Fora do ar é igual: nada de erro, só sem estimativa.
+    *me.dividends.delay.lock().unwrap() = StdDuration::ZERO;
+    *me.dividends.down.lock().unwrap() = true;
+    assert_eq!(fill(&me, "KNRI11.SA").await, 1);
+    let down = post(&me.router, "/api/v1/plans", json!({ "amount": 1420 })).await;
+    assert_eq!(down.body["income"]["available"], false);
+
+    // O provedor volta e a tarefa seguinte enche o cache (o descanso de 10 min
+    // da falha vale por serviço; aqui um serviço novo faz o papel da réplica).
+    *me.dividends.down.lock().unwrap() = false;
+    let replica = IncomeService::new(env.store.clone(), me.dividends.clone());
+    assert_eq!(
+        replica
+            .fill(&["KNRI11.SA".to_owned()], OffsetDateTime::now_utc())
+            .await,
+        1
+    );
+    let ready = post(&me.router, "/api/v1/plans", json!({ "amount": 1420 })).await;
+    assert_eq!(ready.body["income"]["available"], true);
+    assert_eq!(ready.body["income"]["before_monthly"], 10.0);
+}
+
+/// A tarefa periódica enche o cache sozinha, não refaz o que está vigente, e
+/// duas réplicas gravando o mesmo símbolo ao mesmo tempo terminam no mesmo estado.
+async fn refresher_fills_the_cache_without_any_request(env: &Env, dir: &tempfile_dir::Dir) {
+    reset_cache(env).await;
+    let me = person(env, "renda-tarefa@prumo.test", dir);
+    // A busca do ativo novo falha: quem enche o cache é a tarefa periódica.
+    *me.dividends.down.lock().unwrap() = true;
+    add_asset(
+        &me,
+        json!({ "asset_class": "br_reits", "symbol": "VISC11", "quantity": 5 }),
+    )
+    .await;
+    let feed = Arc::new(FakeDividends::default());
+    feed.set("VISC11.SA", "BRL", monthly_dividends(dec!(0.5), 12));
+    let service = Arc::new(IncomeService::new(env.store.clone(), feed.clone()));
+    let task = Arc::clone(&service).spawn_refresher(StdDuration::from_millis(50));
+    wait_cached(env, &["VISC11.SA"]).await;
+    tokio::time::sleep(StdDuration::from_millis(250)).await;
+    task.abort();
+    assert_eq!(feed.calls("VISC11.SA"), 1, "vigente: nao busca de novo");
+    let summary = get(&me.router, "/api/v1/income/summary").await;
+    // R$ 6 por cota em 12 meses × 5 cotas / 12.
+    assert_eq!(summary.body["estimate"]["monthly"], 2.5);
+
+    reset_cache(env).await;
+    let (first, second) = (
+        IncomeService::new(env.store.clone(), feed.clone()),
+        IncomeService::new(env.store.clone(), feed.clone()),
+    );
+    let symbols = ["VISC11.SA".to_owned()];
+    let now = OffsetDateTime::now_utc();
+    let (a, b) = tokio::join!(first.fill(&symbols, now), second.fill(&symbols, now));
+    assert_eq!((a, b), (1, 1));
+    let (rows,): (i64,) =
+        sqlx::query_as("select count(*) from dividend_history where symbol = 'VISC11.SA'")
+            .fetch_one(&env.pool)
+            .await
+            .unwrap();
+    assert_eq!(rows, 12);
+    wait_cached(env, &["VISC11.SA"]).await;
 }
 
 async fn store_keeps_one_event_per_external_ref(env: &Env) {

@@ -272,6 +272,13 @@ pub struct CashSuggestionDto {
 /// A renda estimada que o aporte soma, no `POST /plans`.
 #[derive(Debug, Serialize)]
 pub struct PlanIncomeDto {
+    /// `false` quando nenhum ativo tem histórico em cache ainda: os três valores
+    /// vêm zerados e a tela diz "estimativa indisponível". O plano nunca espera
+    /// o provedor.
+    pub available: bool,
+    /// Ativos que pagam provento e ficaram sem estimativa (histórico ainda não
+    /// buscado ou provedor fora do ar).
+    pub missing: Vec<String>,
     /// O que os itens do plano rendem por mês, estimado.
     #[serde(with = "decimal_out")]
     pub added_monthly: Decimal,
@@ -283,10 +290,11 @@ pub struct PlanIncomeDto {
 }
 
 impl PlanDto {
-    /// Junta a renda estimada ao plano: a de cada item e a do topo. Sem
-    /// estimativa de nenhum ativo, o plano segue como estava.
+    /// Junta a renda estimada (do cache) ao plano: a de cada item e a do topo.
+    /// Sem ativo que pague provento não há o que estimar e o plano segue como
+    /// estava; com ativo e sem cache, `income.available` é `false`.
     pub fn with_income(mut self, income: &PortfolioIncome) -> Self {
-        if income.assets.is_empty() {
+        if income.payers == 0 {
             return self;
         }
         let mut added = Decimal::ZERO;
@@ -298,6 +306,8 @@ impl PlanDto {
             added += monthly.unwrap_or(Decimal::ZERO);
         }
         self.income = Some(PlanIncomeDto {
+            available: !income.assets.is_empty(),
+            missing: income.missing.clone(),
             added_monthly: added,
             before_monthly: income.monthly_total,
             after_monthly: income.monthly_total + added,
@@ -434,7 +444,7 @@ async fn goal_for(state: &AppState, user: Uuid, objective: Objective) -> ApiResu
         Decimal::ZERO
     } else {
         let view = service::portfolio(&state.store, user).await?;
-        state.income.estimate(&view, today, now).await.monthly_total
+        state.income.estimate(&view, today).await.monthly_total
     };
     goal_with_progress(
         state,
@@ -579,7 +589,7 @@ pub async fn summary(
     let (today, now) = today_and_now();
     let (summary, ledger) = summary_of(&state, user.id, today).await?;
     let view = service::portfolio(&state.store, user.id).await?;
-    let estimate = state.income.estimate(&view, today, now).await;
+    let estimate = state.income.estimate(&view, today).await;
 
     let goal = match state.store.income_goal(user.id).await? {
         Some(objective) => Some(

@@ -442,17 +442,25 @@ Calcula, não grava.
   "notices": [
     { "code": "class_blocked", "asset_class": "intl_stocks", "amount": 37800.0, "reason": "no_assets" }
   ],
-  "income": { "added_monthly": 35.4, "before_monthly": 410.5, "after_monthly": 445.9 }
+  "income": { "available": true, "missing": [], "added_monthly": 35.4, "before_monthly": 410.5, "after_monthly": 445.9 }
 }
 ```
 
 - `items[].estimated_monthly_income`: a renda mensal que o item soma,
   **estimada** (o que a cota pagou em 12 meses × a quantidade comprada ÷ 12,
-  em reais, bruto). `null` quando o ativo não tem histórico (renda fixa, cripto,
-  provedor fora do ar).
+  em reais, bruto). `null` quando o ativo não tem histórico em cache (renda
+  fixa, cripto, histórico ainda não buscado ou provedor fora do ar).
 - `income`: o que o aporte soma por mês (`added_monthly`, a soma dos itens) e a
-  renda mensal estimada da carteira antes e depois. `null` quando nenhum ativo
-  tem histórico. É estimativa, nunca extrato; o motor não olha para ela.
+  renda mensal estimada da carteira antes e depois. É estimativa, nunca
+  extrato; o motor não olha para ela.
+  - `null` quando nenhum ativo da carteira paga provento (só renda fixa e
+    cripto): não há o que estimar.
+  - `available: false` quando há ativo que paga provento e nenhum tem histórico
+    em cache ainda: os três valores vêm zerados e a tela diz "estimativa
+    indisponível".
+  - `missing`: os ativos que pagam provento e ficaram fora da conta.
+- **O cálculo do plano nunca espera a rede.** A estimativa lê só o cache do
+  banco (ver `GET /income/summary`); quem o enche é uma tarefa em segundo plano.
 
 - `invested`: soma dos itens. `change`: troco do arredondamento para cotas
   inteiras. `unallocated`: dinheiro sem destino porque a classe que precisaria
@@ -1186,10 +1194,22 @@ em dólar usam o câmbio da carteira) e `monthly = per_unit_12m × quantity ÷ 1
 Renda fixa por valor e cripto não entram. `missing` lista os papéis sem
 histórico (provedor fora do ar ou sem câmbio), que ficam fora da conta.
 
-O histórico fica no banco (`dividend_history`, compartilhado entre as
-carteiras) e só é buscado de novo depois de 24 horas; símbolo que falhou
-descansa 10 minutos. Com o provedor fora do ar vale o que está guardado. O que
-a pessoa lançou ou importou nunca é substituído por esta estimativa.
+**Nenhuma rota espera pelo provedor.** O resumo e o plano leem só o histórico
+guardado no banco (`dividend_history`, compartilhado entre as carteiras); sem
+ele, o ativo entra em `missing` e a estimativa fica de fora (`monthly` zerado se
+nenhum tiver). Quem enche o cache é o servidor, em segundo plano:
+
+- ao criar um ativo (ou trocar o mercado dele), a busca desse símbolo é
+  disparada na hora, sem a resposta esperar;
+- uma tarefa periódica (a primeira ao subir o processo, depois a cada hora)
+  busca todo símbolo de todas as carteiras que nunca foi buscado ou tem mais de
+  24 horas, no mesmo esquema do refresher de cotações. Símbolo que falhou
+  descansa 10 minutos.
+
+Gravar é idempotente (lock por símbolo e upsert), então duas réplicas buscando o
+mesmo símbolo ao mesmo tempo terminam no mesmo estado. Com o provedor fora do ar
+vale o que já está guardado. O que a pessoa lançou ou importou nunca é
+substituído por esta estimativa.
 
 ### `GET /api/v1/income/cash-suggestion`
 

@@ -17,6 +17,7 @@ use crate::domain::asset_class::{normalize_symbol, AssetClass, Checklist, Market
 use crate::domain::ledger::{check_for_unit, Kind};
 use crate::domain::treasury::Bond;
 use crate::domain::income::today_in_brazil;
+use crate::domain::treasury::Bond;
 use crate::error::{ApiError, ApiResult};
 use crate::service;
 use crate::store::{AssetPatch, NewAsset, NewContributionItem, OpeningCost, StoreError};
@@ -289,6 +290,9 @@ pub async fn create_asset(
         .store
         .insert_asset_with_opening(user.id, &new, cost)
         .await?;
+    // O histórico de dividendos chega em segundo plano, para a estimativa de
+    // renda já o encontrar; a resposta não espera.
+    state.income.prefetch(market, asset.symbol.as_deref());
     let dto = asset_response(&state, user.id, asset.id).await?;
     Ok((StatusCode::CREATED, Json(dto)))
 }
@@ -382,6 +386,7 @@ pub async fn update_asset(
         if let Some(symbol) = asset.symbol.as_deref() {
             state.quotes.quote_now(market, symbol).await;
         }
+        state.income.prefetch(market, asset.symbol.as_deref());
     }
     Ok(Json(asset_response(&state, user.id, id).await?))
 }
@@ -459,10 +464,10 @@ pub async fn plan(
 ) -> ApiResult<Json<PlanDto>> {
     let amount = non_negative("O valor do aporte", body.amount)?;
     let (plan, view) = service::plan(&state.store, user.id, amount).await?;
-    let now = time::OffsetDateTime::now_utc();
+    // Só o cache: o plano não espera o provedor de dividendos.
     let income = state
         .income
-        .estimate(&view, today_in_brazil(now), now)
+        .estimate(&view, today_in_brazil(time::OffsetDateTime::now_utc()))
         .await;
     Ok(Json(PlanDto::new(&plan, &view).with_income(&income)))
 }

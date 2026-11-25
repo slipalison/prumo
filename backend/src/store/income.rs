@@ -512,6 +512,9 @@ impl Store {
     }
 
     /// Troca o histórico de um símbolo pelo que o provedor acabou de dizer.
+    /// Idempotente: duas réplicas gravando o mesmo símbolo ao mesmo tempo
+    /// terminam no mesmo estado (o lock da transação as põe em fila, e a
+    /// gravação é um upsert).
     pub async fn save_dividends(
         &self,
         symbol: &str,
@@ -519,16 +522,25 @@ impl Store {
         fetched_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
         let mut tx = self.pool.begin().await?;
-        sqlx::query("delete from dividend_history where symbol = $1")
-            .bind(symbol)
+        sqlx::query("select pg_advisory_xact_lock(hashtextextended($1::text, 0))")
+            .bind(format!("dividends:{symbol}"))
             .execute(&mut *tx)
             .await?;
+        let dates: Vec<Date> = history.events.iter().map(|e| e.ex_date).collect();
+        let amounts: Vec<Decimal> = history.events.iter().map(|e| e.amount).collect();
+        // O que o provedor não traz mais (dividendo corrigido ou fora da janela) sai.
+        sqlx::query(
+            "delete from dividend_history where symbol = $1 and ex_date <> all($2::date[])",
+        )
+        .bind(symbol)
+        .bind(&dates)
+        .execute(&mut *tx)
+        .await?;
         if !history.events.is_empty() {
-            let dates: Vec<Date> = history.events.iter().map(|e| e.ex_date).collect();
-            let amounts: Vec<Decimal> = history.events.iter().map(|e| e.amount).collect();
             sqlx::query(
                 "insert into dividend_history (symbol, ex_date, amount)
-                 select $1, d, a from unnest($2::date[], $3::numeric[]) as t (d, a)",
+                 select $1, d, a from unnest($2::date[], $3::numeric[]) as t (d, a)
+                 on conflict (symbol, ex_date) do update set amount = excluded.amount",
             )
             .bind(symbol)
             .bind(&dates)

@@ -5,6 +5,13 @@
 //! dividendo, sem data de pagamento), e o passado não garante o futuro. Quem
 //! mostra o número escreve "estimativa", e o que a pessoa de fato recebeu
 //! (`income_events`) sempre vence.
+//!
+//! **Nenhuma requisição espera pela rede.** [`IncomeService::estimate`] lê só o
+//! cache do banco; quem o enche é uma tarefa em segundo plano
+//! ([`IncomeService::spawn_refresher`], no mesmo esquema do refresher de
+//! cotações) e a busca disparada quando um ativo nasce
+//! ([`IncomeService::prefetch`]). Gravar é idempotente, então duas réplicas
+//! buscando o mesmo símbolo não brigam.
 
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
@@ -25,13 +32,16 @@ use crate::store::{CachedDividends, Store};
 /// novo aparece de poucos em poucos dias; um dia basta e poupa o provedor.
 pub const CACHE_TTL: time::Duration = time::Duration::days(1);
 
+/// De quanto em quanto tempo a tarefa confere o que está vencido. A conferência
+/// é barata (uma leitura); só o vencido vai ao provedor.
+pub const CHECK_EVERY: Duration = Duration::from_secs(60 * 60);
+
 /// Depois de uma busca que falhou, o símbolo descansa antes da próxima
-/// tentativa: com o provedor fora do ar, cada tela não pode refazer a espera.
+/// tentativa: com o provedor fora do ar, a tarefa não o martela.
 const RETRY_AFTER_FAILURE: Duration = Duration::from_secs(10 * 60);
 
-/// Quanto uma tela espera pelo provedor. O que não chegar nesse prazo termina
-/// em segundo plano e entra no cache para a próxima vez.
-const FETCH_BUDGET: Duration = Duration::from_secs(6);
+/// Quantos símbolos vão ao provedor ao mesmo tempo.
+const FETCH_BATCH: usize = 8;
 
 /// A estimativa de um ativo.
 #[derive(Debug, Clone, PartialEq)]
@@ -49,8 +59,11 @@ pub struct PortfolioIncome {
     pub assets: HashMap<Uuid, AssetIncome>,
     /// Soma das rendas mensais por ativo.
     pub monthly_total: Decimal,
-    /// Símbolos que pagam dividendo mas ficaram sem estimativa (provedor fora
-    /// do ar ou sem câmbio).
+    /// Quantos ativos da carteira pagam provento (B3 e EUA). Com zero, não há
+    /// o que estimar; com algum e nenhuma estimativa, ela está indisponível.
+    pub payers: usize,
+    /// Símbolos que pagam dividendo mas ficaram sem estimativa (histórico ainda
+    /// não buscado, provedor fora do ar ou sem câmbio).
     pub missing: Vec<String>,
     /// De quando é o dado mais velho que entrou na conta.
     pub updated_at: Option<OffsetDateTime>,
@@ -69,6 +82,14 @@ pub struct IncomeService {
     resting: Mutex<HashMap<String, Instant>>,
 }
 
+/// O símbolo no provedor de um ativo que paga provento, ou `None`.
+fn payer_symbol(market: Market, symbol: Option<&str>) -> Option<String> {
+    if !matches!(market, Market::B3 | Market::Us) {
+        return None;
+    }
+    market.quote_symbol(symbol?)
+}
+
 impl IncomeService {
     pub fn new(store: Store, provider: Arc<dyn DividendProvider>) -> Self {
         Self {
@@ -83,24 +104,14 @@ impl IncomeService {
         Self::new(store, Arc::new(DisabledDividends))
     }
 
-    /// Estima a renda mensal de cada ativo que paga dividendo. `today` é o dia
-    /// de Brasília; `now`, o instante, para a idade do cache.
-    pub async fn estimate(
-        self: &Arc<Self>,
-        view: &PortfolioView,
-        today: Date,
-        now: OffsetDateTime,
-    ) -> PortfolioIncome {
-        // Só papel cotado paga provento: renda fixa por valor e cripto ficam de fora.
+    /// Estima a renda mensal de cada ativo que paga dividendo, **só com o que
+    /// está no cache**: não fala com o provedor. `today` é o dia de Brasília.
+    pub async fn estimate(&self, view: &PortfolioView, today: Date) -> PortfolioIncome {
         let payers: Vec<(Uuid, Decimal, String)> = view
             .assets
             .iter()
             .filter_map(|a| {
-                let market = a.asset.market();
-                if !matches!(market, Market::B3 | Market::Us) {
-                    return None;
-                }
-                let symbol = market.quote_symbol(a.asset.symbol.as_deref()?)?;
+                let symbol = payer_symbol(a.asset.market(), a.asset.symbol.as_deref())?;
                 Some((a.asset.id, a.asset.quantity, symbol))
             })
             .collect();
@@ -110,7 +121,7 @@ impl IncomeService {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
-        let mut cache = self
+        let cache = self
             .store
             .dividend_cache(&symbols)
             .await
@@ -118,15 +129,6 @@ impl IncomeService {
                 tracing::error!(error = %error, "cache de dividendos ilegivel");
                 HashMap::new()
             });
-
-        let stale = self.stale(&symbols, &cache, now);
-        if !stale.is_empty() {
-            self.refresh(&stale, now).await;
-            if let Ok(fresh) = self.store.dividend_cache(&stale).await {
-                cache.extend(fresh);
-            }
-        }
-
         let currencies: Vec<String> = cache
             .values()
             .filter(|c| c.currency != "BRL")
@@ -136,7 +138,10 @@ impl IncomeService {
             .collect();
         let fx = self.store.quotes(&currencies).await.unwrap_or_default();
 
-        let mut income = PortfolioIncome::default();
+        let mut income = PortfolioIncome {
+            payers: payers.len(),
+            ..PortfolioIncome::default()
+        };
         let mut missing = BTreeSet::new();
         for (asset_id, quantity, symbol) in payers {
             let Some(cached) = cache.get(&symbol) else {
@@ -184,6 +189,66 @@ impl IncomeService {
         income
     }
 
+    /// Busca no provedor, e guarda, o histórico dos símbolos (do provedor,
+    /// `KNRI11.SA`) que nunca foram buscados ou estão vencidos, fora os que
+    /// falharam há pouco. Devolve quantos foram buscados. Fica fora do caminho
+    /// de qualquer requisição: demora o que o provedor demorar.
+    pub async fn fill(&self, symbols: &[String], now: OffsetDateTime) -> usize {
+        let cache = self.store.dividend_cache(symbols).await.unwrap_or_default();
+        let stale = self.stale(symbols, &cache, now);
+        for batch in stale.chunks(FETCH_BATCH) {
+            futures_util::future::join_all(batch.iter().map(|s| self.fetch_and_store(s, now)))
+                .await;
+        }
+        stale.len()
+    }
+
+    /// Enche o cache de todos os ativos que pagam provento, de todas as
+    /// carteiras.
+    pub async fn refresh_all(&self, now: OffsetDateTime) -> usize {
+        match self.store.tracked_symbols().await {
+            Ok(tracked) => {
+                let symbols: Vec<String> = tracked
+                    .into_iter()
+                    .filter_map(|(market, symbol)| payer_symbol(market, Some(&symbol)))
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect();
+                self.fill(&symbols, now).await
+            }
+            Err(error) => {
+                tracing::error!(error = %error, "nao foi possivel listar os simbolos");
+                0
+            }
+        }
+    }
+
+    /// Busca em segundo plano o histórico de um ativo recém-criado (ou que
+    /// mudou de mercado), para a primeira estimativa já o encontrar.
+    pub fn prefetch(self: &Arc<Self>, market: Market, symbol: Option<&str>) {
+        let Some(symbol) = payer_symbol(market, symbol) else {
+            return;
+        };
+        let service = Arc::clone(self);
+        tokio::spawn(async move {
+            service.fill(&[symbol], OffsetDateTime::now_utc()).await;
+        });
+    }
+
+    /// Rodada periódica, até o processo encerrar: a primeira na hora, as outras
+    /// a cada `every`.
+    pub fn spawn_refresher(self: Arc<Self>, every: Duration) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(every);
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                ticker.tick().await;
+                let fetched = self.refresh_all(OffsetDateTime::now_utc()).await;
+                tracing::info!(fetched, "historico de dividendos conferido");
+            }
+        })
+    }
+
     /// Os símbolos que precisam de busca: nunca buscados ou com o cache vencido,
     /// fora os que falharam há pouco.
     fn stale(
@@ -207,26 +272,6 @@ impl IncomeService {
             })
             .cloned()
             .collect()
-    }
-
-    /// Busca os símbolos no provedor, todos ao mesmo tempo, e guarda. A tela
-    /// espera até [`FETCH_BUDGET`]; o que passar disso continua em segundo plano.
-    async fn refresh(self: &Arc<Self>, symbols: &[String], now: OffsetDateTime) {
-        let tasks: Vec<_> = symbols
-            .iter()
-            .map(|symbol| {
-                let service = Arc::clone(self);
-                let symbol = symbol.clone();
-                tokio::spawn(async move { service.fetch_and_store(&symbol, now).await })
-            })
-            .collect();
-        let waiting = futures_util::future::join_all(tasks);
-        if tokio::time::timeout(FETCH_BUDGET, waiting).await.is_err() {
-            tracing::warn!(
-                symbols = symbols.len(),
-                "historico de dividendos demorou; segue em segundo plano"
-            );
-        }
     }
 
     async fn fetch_and_store(&self, symbol: &str, now: OffsetDateTime) {

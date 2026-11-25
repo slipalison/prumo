@@ -1,0 +1,423 @@
+/* ================= Renda ================= */
+
+.income__actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.income-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+}
+
+.income-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.income-tag--upcoming {
+  border-style: dashed;
+  color: var(--gold-text);
+}
+
+/* --- Meta --- */
+
+.income-goal,
+.income-estimate {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+}
+
+.income-goal__head,
+.income-estimate__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.income-goal__now {
+  margin-top: 4px;
+  color: var(--text-muted);
+}
+
+.income-goal__value {
+  color: var(--gold-text);
+  font-family: var(--font-display);
+  font-size: clamp(1.9rem, 6vw, 2.6rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.income-goal__per {
+  color: var(--text-muted);
+}
+
+.income-goal__legend {
+  color: var(--text-muted);
+}
+
+.income-goal__legend strong {
+  color: var(--text);
+  font-family: var(--font-display);
+}
+
+.income-goal__done {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.income-progress {
+  position: relative;
+  height: 14px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  background: var(--surface-sunken);
+}
+
+.income-progress__fill {
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: linear-gradient(90deg, var(--gold-2), var(--gold));
+  box-shadow: 0 0 18px var(--gold-glow);
+}
+
+/* A estimativa se lê diferente do recebido: listrada, não cheia. */
+.income-progress__fill--estimate {
+  background:
+    repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--gold-ink) 28%, transparent) 6px 9px),
+    linear-gradient(90deg, var(--gold-2), var(--gold));
+}
+
+.income-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+}
+
+.income-remove {
+  align-self: flex-start;
+}
+
+/* --- Números do topo --- */
+
+.income-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.income-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+}
+
+.income-stat__label {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.income-stat__value {
+  font-family: var(--font-display);
+  font-size: clamp(1rem, 3.4vw, 1.35rem);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 520px) {
+  .income-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .income-goal__head,
+  .income-estimate__head {
+    flex-direction: column;
+  }
+}
+
+/* --- Barras mensais --- */
+
+.income-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+}
+
+.income-bars__svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.income-bars__grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.income-bars__axis {
+  fill: var(--text-subtle);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.income-bars__received {
+  fill: var(--gold-text);
+}
+
+.income-bars__upcoming {
+  stroke: var(--gold-text);
+  stroke-width: 1.2;
+  stroke-dasharray: 3 2;
+}
+
+.income-bars__hatch-bg {
+  fill: transparent;
+}
+
+.income-bars__hatch {
+  fill: var(--gold-text);
+  opacity: 0.65;
+}
+
+.income-bars__goal {
+  stroke: var(--info);
+  stroke-width: 1.6;
+  stroke-dasharray: 6 4;
+}
+
+.income-bars__goal-label {
+  fill: var(--info);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.income-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.income-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.income-legend__swatch {
+  display: inline-block;
+  width: 16px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.income-legend__swatch--received {
+  background: var(--gold-text);
+}
+
+.income-legend__swatch--upcoming {
+  border: 1.2px dashed var(--gold-text);
+  background: repeating-linear-gradient(135deg, transparent 0 3px, color-mix(in srgb, var(--gold-text) 65%, transparent) 3px 5px);
+}
+
+.income-legend__swatch--goal {
+  height: 0;
+  border-top: 2px dashed var(--info);
+  border-radius: 0;
+}
+
+/* --- Listas --- */
+
+.income-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.income-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+}
+
+.income-row__date {
+  min-width: 5.5ch;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.income-row__who {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.income-row__value {
+  color: var(--gold-text);
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.income-row__confirm {
+  display: inline-flex;
+  gap: 12px;
+}
+
+.income-row--event {
+  flex-wrap: wrap;
+}
+
+/* --- Ano × mês --- */
+
+.income-table-wrap {
+  overflow-x: auto;
+  border-radius: var(--r-md);
+}
+
+
+.income-table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.income-table th,
+.income-table td {
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.income-table thead th {
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.income-table tbody th {
+  color: var(--text);
+  font-family: var(--font-display);
+  text-align: left;
+}
+
+.income-table td.is-empty {
+  color: var(--text-subtle);
+}
+
+.income-table__total {
+  color: var(--gold-text);
+  font-weight: 700;
+}
+
+/* --- Quem pagou --- */
+
+.payers {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+
+.payers__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.payers__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  background: var(--surface-sunken);
+}
+
+.payers__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+}
+
+.payers__numbers {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media (min-width: 720px) {
+  .payers {
+    flex-direction: row;
+    align-items: center;
+  }
+}
+
+/* --- Formulário e prévia --- */
+
+.income-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+}
+
+.income-preview strong {
+  color: var(--text);
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- No aporte --- */
+
+.plan__income {
+  margin-top: 6px;
+  color: var(--text-muted);
+}
+
+.plan-card__income {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.cash-suggestion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 12px;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  text-align: center;
+}

@@ -32,6 +32,7 @@ use crate::config::{AuthConfig, Config};
 use crate::history::{DisabledHistory, HistoryProvider, PublicHistory};
 use crate::dividends::{DisabledDividends, DividendProvider, YahooDividends};
 use crate::http::{AppState, BuildInfo};
+use crate::income::IncomeService;
 use crate::live::yahoo::YahooStreamer;
 use crate::live::LiveQuotes;
 use crate::quotes::{QuoteError, QuoteProvider, SymbolMatch, YahooProvider};
@@ -124,6 +125,7 @@ pub async fn run(config: Config) -> Result<(), StartError> {
         } else {
             (Arc::new(DisabledQuotes), Arc::new(DisabledDividends))
         };
+    let income = Arc::new(IncomeService::new(store.clone(), dividends));
     let live = LiveQuotes::new(store.clone());
     let quotes = Arc::new(QuoteService::new(
         store.clone(),
@@ -132,6 +134,9 @@ pub async fn run(config: Config) -> Result<(), StartError> {
     ));
     if config.quotes_enabled {
         Arc::clone(&quotes).spawn_refresher(config.quotes_refresh);
+        // O histórico de dividendos da estimativa de renda: fora do caminho das
+        // requisições, uma conferência por hora (só o vencido vai ao Yahoo).
+        Arc::clone(&income).spawn_refresher(income::CHECK_EVERY);
         // O preço do Tesouro Direto: uma tabela por dia, fora do streamer.
         Arc::new(TreasurySync::new(
             store.clone(),
@@ -155,7 +160,7 @@ pub async fn run(config: Config) -> Result<(), StartError> {
         },
         telemetry::install_metrics(),
     )
-    .with_dividend_provider(dividends);
+    .with_income_service(income);
     let public = http::public_router(state.clone(), &config.static_dir);
     let operational = http::operational_router(state.clone());
 
