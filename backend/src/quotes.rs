@@ -265,52 +265,48 @@ fn classify(quote: &SearchQuote) -> Option<SymbolMatch> {
     })
 }
 
-/// Classe de um papel da B3. Além de ação e FII, a B3 lista ETFs e BDRs que,
-/// para a carteira, são outra coisa: o ETF de bitcoin é cripto, o de S&P 500 e
-/// o BDR são ações internacionais, o de IMA-B é renda fixa. O Yahoo marca todos
-/// como `EQUITY`; o que separa é o nome.
-pub(crate) fn classify_b3(base: &str, kind: &str, upper_name: &str, short: &str) -> AssetClass {
-    let named = |words: &[&str]| {
-        words
-            .iter()
-            .any(|w| upper_name.contains(w) || short.contains(w))
-    };
-    let looks_like_us_reit = named(&["REIT", "REALTY"]);
+/// Se algum dos termos aparece no nome longo ou no curto (ambos em maiúsculas).
+fn named(upper_name: &str, short: &str, words: &[&str]) -> bool {
+    words
+        .iter()
+        .any(|w| upper_name.contains(w) || short.contains(w))
+}
 
-    // BDR: o nome curto termina em DRN/DR1/DR2/DR3/DRE, e o código em 31–35 ou
-    // 39 (ação brasileira nunca tem dois dígitos no fim, salvo o 11).
+/// BDR: o nome curto termina em DRN/DR1/DR2/DR3/DRE, e o código em 31–35 ou
+/// 39 (ação brasileira nunca tem dois dígitos no fim, salvo o 11).
+pub(crate) fn is_bdr(base: &str, short: &str) -> bool {
     let bdr_suffix = short
         .split_whitespace()
         .any(|w| matches!(w, "DRN" | "DR1" | "DR2" | "DR3" | "DRE"));
     let bdr_code = base.len() == 6
+        && base.is_ascii()
         && base[..4].chars().all(|c| c.is_ascii_alphabetic())
         && matches!(&base[4..], "31" | "32" | "33" | "34" | "35" | "39");
-    if bdr_suffix || bdr_code {
-        return if looks_like_us_reit {
-            AssetClass::UsReits
-        } else {
-            AssetClass::IntlStocks
-        };
-    }
+    bdr_suffix || bdr_code
+}
 
-    let index_fund = kind == "ETF"
-        || named(&[
-            "FUNDO DE ÍNDICE",
-            "FUNDO DE INDICE",
-            "CLASSE DE ÍNDICE",
-            "CLASSE DE INDICE",
-        ]);
-    if index_fund {
-        return if named(&[
-            "BITCOIN",
-            "CRYPTO",
-            "CRIPTO",
-            "ETHEREUM",
-            "BLOCKCHAIN",
-            "SOLANA",
-        ]) {
-            AssetClass::Crypto
-        } else if named(&[
+/// Fundo de índice (ETF): o Yahoo às vezes diz (`kind == "ETF"`); quase
+/// sempre só o nome diz.
+pub(crate) fn is_index_fund(kind: &str, upper_name: &str, short: &str) -> bool {
+    kind == "ETF"
+        || named(
+            upper_name,
+            short,
+            &[
+                "FUNDO DE ÍNDICE",
+                "FUNDO DE INDICE",
+                "CLASSE DE ÍNDICE",
+                "CLASSE DE INDICE",
+            ],
+        )
+}
+
+/// O índice do ETF é de renda fixa (IMA-B, IRF-M, Tesouro, debêntures).
+pub(crate) fn tracks_fixed_income(upper_name: &str, short: &str) -> bool {
+    named(
+        upper_name,
+        short,
+        &[
             "IMA-B",
             "IMA,B",
             "IMAB",
@@ -321,7 +317,37 @@ pub(crate) fn classify_b3(base: &str, kind: &str, upper_name: &str, short: &str)
             "SELIC",
             "DEBENTURE",
             "DEBÊNTURE",
+        ],
+    )
+}
+
+/// Classe de um papel da B3. Além de ação e FII, a B3 lista ETFs e BDRs que,
+/// para a carteira, são outra coisa: o ETF de bitcoin é cripto, o de S&P 500 e
+/// o BDR são ações internacionais, o de IMA-B é renda fixa. O Yahoo marca todos
+/// como `EQUITY`; o que separa é o nome.
+pub(crate) fn classify_b3(base: &str, kind: &str, upper_name: &str, short: &str) -> AssetClass {
+    let named = |words: &[&str]| named(upper_name, short, words);
+    let looks_like_us_reit = named(&["REIT", "REALTY"]);
+
+    if is_bdr(base, short) {
+        return if looks_like_us_reit {
+            AssetClass::UsReits
+        } else {
+            AssetClass::IntlStocks
+        };
+    }
+
+    if is_index_fund(kind, upper_name, short) {
+        return if named(&[
+            "BITCOIN",
+            "CRYPTO",
+            "CRIPTO",
+            "ETHEREUM",
+            "BLOCKCHAIN",
+            "SOLANA",
         ]) {
+            AssetClass::Crypto
+        } else if tracks_fixed_income(upper_name, short) {
             AssetClass::FixedIncome
         } else if looks_like_us_reit {
             AssetClass::UsReits

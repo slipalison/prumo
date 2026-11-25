@@ -2,6 +2,7 @@ import { useId, useState } from "react";
 import { errorMessage } from "../../api/client";
 import { useDeleteAsset, useUpdateAsset } from "../../api/queries";
 import type { Asset, Portfolio, UpdateAssetRequest } from "../../api/types";
+import { TAX_INSTRUMENTS, type TaxInstrument } from "../../api/taxTypes";
 import { AnswerToggle } from "../../components/AnswerToggle";
 import { IconAlert, IconSparkle, IconTrash } from "../../components/icons";
 import { MagneticButton } from "../../components/MagneticButton";
@@ -12,6 +13,7 @@ import { ScoreSlider } from "../../components/ScoreSlider";
 import { Sheet } from "../../components/Sheet";
 import { useToast } from "../../components/toastContext";
 import { TransactionsSection } from "../ledger/TransactionsSection";
+import { INSTRUMENT_HINT, INSTRUMENT_LABEL } from "../tax/taxText";
 import { acceptsB3Listing, CLASS_META, unitOf } from "../../lib/assetClasses";
 import { formatDay, formatRelative } from "../../lib/format";
 import { useMoney } from "../../lib/privacy";
@@ -79,6 +81,7 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
     b3Toggle: useId(),
     ceiling: useId(),
     ceilingToggle: useId(),
+    tax: useId(),
   };
   const money = useMoney();
   const meta = CLASS_META[asset.asset_class];
@@ -107,6 +110,7 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
   const [useCeiling, setUseCeiling] = useState(asset.max_price !== null);
   const [maxPrice, setMaxPrice] = useState(asset.max_price ?? asset.unit_price ?? 0);
   const [answers, setAnswers] = useState<Record<string, Answer>>({ ...asset.answers });
+  const [taxInstrument, setTaxInstrument] = useState<TaxInstrument>(asset.tax_instrument);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const update = useUpdateAsset();
@@ -146,6 +150,10 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
     if (meta.checklist) {
       const diff = answersDiff(asset.answers, answers);
       if (diff) body.answers = diff;
+    }
+    // Escolher o padrão é voltar a segui-lo (ele muda com a B3 e o nome).
+    if (taxInstrument !== asset.tax_instrument) {
+      body.tax_instrument = taxInstrument === asset.tax_instrument_default ? null : taxInstrument;
     }
     return body;
   };
@@ -273,6 +281,33 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
     </>
   );
 
+  const taxBlock = !valueBased && (
+    <div className="field">
+      <label htmlFor={ids.tax} className="field__label">
+        No imposto de renda
+      </label>
+      <select
+        id={ids.tax}
+        className="text-input"
+        value={taxInstrument}
+        onChange={(event) => setTaxInstrument(event.target.value as TaxInstrument)}
+      >
+        {TAX_INSTRUMENTS.map((option) => (
+          <option key={option} value={option}>
+            {INSTRUMENT_LABEL[option]}
+            {option === asset.tax_instrument_default ? " (padrão)" : ""}
+          </option>
+        ))}
+      </select>
+      <span className="field__hint">
+        {INSTRUMENT_HINT[taxInstrument]}{" "}
+        {taxInstrument === asset.tax_instrument_default
+          ? "É o padrão do Prumo pela classe, pela B3 e pelo nome."
+          : `O padrão do Prumo seria ${INSTRUMENT_LABEL[asset.tax_instrument_default]}.`}
+      </span>
+    </div>
+  );
+
   const scoreBlock = (
     <>
       {meta.checklist && (
@@ -346,6 +381,7 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
           {amountBlock}
           {priceBlock}
           {ceilingBlock}
+          {taxBlock}
           <TransactionsSection asset={asset} />
         </>
       ) : (
@@ -353,6 +389,7 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
           {amountBlock}
           {priceBlock}
           {ceilingBlock}
+          {taxBlock}
           <TransactionsSection asset={asset} />
           {scoreBlock}
         </>

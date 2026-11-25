@@ -4,6 +4,7 @@ import { MotionGlobalConfig } from "motion/react";
 import { afterAll, afterEach, beforeAll, vi } from "vitest";
 import { FakeEventSource } from "./eventSource";
 import { resetDb, server } from "./server";
+import { resetTaxDb } from "./taxHandlers";
 
 // Animação pulada: o teste mede o estado final, não o caminho até ele.
 MotionGlobalConfig.skipAnimations = true;
@@ -22,6 +23,7 @@ afterEach(() => {
   FakeEventSource.reset();
   server.resetHandlers();
   resetDb();
+  resetTaxDb();
   window.localStorage.clear();
   window.location.hash = "";
   document.documentElement.removeAttribute("data-theme");

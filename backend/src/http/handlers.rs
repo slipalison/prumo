@@ -369,6 +369,7 @@ pub async fn update_asset(
             .max_price
             .map(|p| p.map(|v| positive("O teto de preco", v)).transpose())
             .transpose()?,
+        tax_instrument: body.tax_instrument,
     };
     state
         .store

@@ -59,7 +59,10 @@ pub enum Action {
         withheld: Decimal,
     },
     /// Desdobramento (fator > 1) ou grupamento (fator < 1): a quantidade é
-    /// multiplicada pelo fator e o custo total não muda.
+    /// multiplicada pelo fator e o custo total não muda. O produto sai
+    /// arredondado a [`QUANTITY_DECIMALS`] casas: um grupamento de 1 para 3 tem
+    /// fator 0,333… e, sem o arredondamento, 99 cotas virariam 32,999… em vez
+    /// de 33.
     Split { factor: Decimal },
     /// Bonificação: ações novas com o custo unitário informado pela empresa.
     Bonus {
@@ -67,6 +70,10 @@ pub enum Action {
         unit_cost: Decimal,
     },
 }
+
+/// Casas decimais da quantidade depois de um desdobramento ou grupamento: a
+/// precisão do livro (`numeric(28, 10)`).
+pub const QUANTITY_DECIMALS: u32 = 10;
 
 /// Posição de partida (antes do primeiro lançamento), com o custo total pelo
 /// preço médio da Receita.
@@ -443,7 +450,7 @@ impl Book {
                     .get_mut(&operation.symbol)
                     .filter(|holding| holding.quantity > Decimal::ZERO)
                     .ok_or_else(no_position)?;
-                holding.quantity *= factor;
+                holding.quantity = (holding.quantity * factor).round_dp(QUANTITY_DECIMALS);
             }
             Action::Bonus {
                 quantity,
@@ -660,6 +667,39 @@ pub(crate) mod tests {
         assert_eq!(holding.quantity, dec!(300));
         assert_eq!(holding.total_cost, dec!(3000));
         assert_eq!(holding.average_price(), dec!(10));
+    }
+
+    #[test]
+    fn reverse_split_with_an_inexact_factor_lands_on_whole_shares() {
+        // Grupamento de 3 para 1: o fator 1/3 não cabe em decimal, e a venda
+        // das 33 cotas novas precisa achar 33, não 32,999...
+        let factor = dec!(33) / dec!(99);
+        let operations = [
+            buy(
+                date!(2025 - 01 - 10),
+                "AAAA3",
+                Instrument::Stock,
+                dec!(99),
+                dec!(10),
+            ),
+            Operation {
+                date: date!(2025 - 05 - 02),
+                symbol: "AAAA3".to_owned(),
+                instrument: Instrument::Stock,
+                broker: None,
+                action: Action::Split { factor },
+            },
+            sell(
+                date!(2025 - 06 - 02),
+                "AAAA3",
+                Instrument::Stock,
+                dec!(33),
+                dec!(40),
+            ),
+        ];
+        let replay = replay(&[], &operations, END).unwrap();
+        assert!(replay.holdings.is_empty());
+        assert_eq!(replay.realized[0].cost, dec!(990));
     }
 
     #[test]

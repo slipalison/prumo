@@ -18,6 +18,7 @@ import type { HealthRule, HealthWarning, RuleId, RulesRequest, SectorSourceInfo 
 import type { CreateTransactionRequest, Transaction, UpdateTransactionRequest } from "../api/ledgerTypes";
 import { incomeHandlers } from "./incomeHandlers";
 import { objectivesHandlers } from "./objectivesHandlers";
+import { taxHandlers } from "./taxHandlers";
 import {
   defaultAssets,
   defaultChecklists,
@@ -250,6 +251,8 @@ export const handlers = [
     if (body.manual_price !== undefined) stored.manual_price = body.manual_price;
     if (body.score_override !== undefined) stored.score_override = body.score_override;
     if (body.max_price !== undefined) stored.max_price = body.max_price;
+    if (body.tax_instrument === null) delete stored.tax_instrument;
+    else if (body.tax_instrument !== undefined) stored.tax_instrument = body.tax_instrument;
     if (body.listed_on_b3 !== undefined) {
       stored.listed_on_b3 = body.listed_on_b3;
       // Na B3 o ativo tem cotação; fora dela, um ticker da B3 fica sem preço.
@@ -460,4 +463,4 @@ export const handlers = [
   ),
 ];
 
-export const server = setupServer(...handlers, ...incomeHandlers, ...objectivesHandlers);
+export const server = setupServer(...handlers, ...incomeHandlers, ...objectivesHandlers, ...taxHandlers);

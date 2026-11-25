@@ -17,6 +17,7 @@ use super::profit::ProfitDto;
 use crate::domain::allocation::{ClassOutcome, Notice, Plan};
 use crate::domain::asset_class::{AssetClass, Checklist};
 use crate::domain::scoring::ScoreSource;
+use crate::domain::tax_book::TaxInstrument;
 use crate::service::{AssetView, ClassView, PortfolioView};
 use crate::store::{Contribution, ContributionItem, Question};
 
@@ -76,6 +77,13 @@ pub fn patch_decimal<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<Option<Decimal>>, D::Error> {
     optional_decimal(deserializer).map(Some)
+}
+
+/// Três estados para qualquer valor: ausente, `null` e valor.
+pub fn patch_value<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
+    deserializer: D,
+) -> Result<Option<Option<T>>, D::Error> {
+    Option::<T>::deserialize(deserializer).map(Some)
 }
 
 pub fn patch_i64<'de, D: Deserializer<'de>>(
@@ -144,6 +152,9 @@ pub struct UpdateAssetRequest {
     pub listed_on_b3: Option<bool>,
     #[serde(default, deserialize_with = "patch_decimal")]
     pub max_price: Option<Option<Decimal>>,
+    /// Instrumento fiscal; `null` volta ao padrão.
+    #[serde(default, deserialize_with = "patch_value")]
+    pub tax_instrument: Option<Option<TaxInstrument>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -288,6 +299,9 @@ pub struct AssetDto {
     pub realized_gain: Option<Decimal>,
     #[serde(with = "decimal_out::option")]
     pub return_percent: Option<Decimal>,
+    /// O que o ativo é para o IR, e o que o Prumo escolheria sozinho.
+    pub tax_instrument: TaxInstrument,
+    pub tax_instrument_default: TaxInstrument,
 }
 
 impl From<&AssetView> for AssetDto {
@@ -321,6 +335,8 @@ impl From<&AssetView> for AssetDto {
             unrealized_gain: a.performance.unrealized_gain,
             realized_gain: a.performance.realized_gain,
             return_percent: a.performance.return_percent,
+            tax_instrument: a.asset.tax_instrument,
+            tax_instrument_default: a.asset.tax_instrument_default(),
         }
     }
 }
@@ -738,6 +754,14 @@ mod tests {
         let cleared: UpdateAssetRequest = serde_json::from_str(r#"{"max_price": null}"#).unwrap();
         assert_eq!(cleared.max_price, Some(None));
         assert_eq!(absent.max_price, None);
+        let etf: UpdateAssetRequest = serde_json::from_str(r#"{"tax_instrument": "etf"}"#).unwrap();
+        assert_eq!(etf.tax_instrument, Some(Some(TaxInstrument::Etf)));
+        let back: UpdateAssetRequest = serde_json::from_str(r#"{"tax_instrument": null}"#).unwrap();
+        assert_eq!(back.tax_instrument, Some(None));
+        assert_eq!(absent.tax_instrument, None);
+        assert!(
+            serde_json::from_str::<UpdateAssetRequest>(r#"{"tax_instrument": "option"}"#).is_err()
+        );
     }
 
     #[test]

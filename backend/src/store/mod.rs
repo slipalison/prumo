@@ -9,6 +9,7 @@ mod b3_import;
 mod cash;
 pub mod health;
 pub mod sectors;
+pub mod tax;
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -22,6 +23,7 @@ use crate::domain::allocation::{round_cents, Targets};
 use crate::domain::asset_class::{AssetClass, Checklist, Market, UnitKind};
 use crate::domain::defaults;
 use crate::domain::ledger::{check_for_unit, Kind, LedgerError};
+use crate::domain::tax_book::TaxInstrument;
 use crate::live::Tick;
 use crate::quotes::Quote;
 
@@ -80,11 +82,25 @@ pub struct Asset {
     pub treasury: bool,
     /// Teto de preço da pessoa, em reais: acima dele o ativo fica fora do aporte.
     pub max_price: Option<Decimal>,
+    /// O que o ativo é para o IR (`docs/ir.md`, ligação com o livro).
+    pub tax_instrument: TaxInstrument,
+    /// A pessoa escolheu o instrumento; sem escolha, ele segue o padrão.
+    pub tax_instrument_custom: bool,
 }
 
 impl Asset {
     pub fn market(&self) -> Market {
         self.asset_class.market_of(self.listed_on_b3, self.treasury)
+    }
+
+    /// O instrumento fiscal que o Prumo escolheria para o ativo.
+    pub fn tax_instrument_default(&self) -> TaxInstrument {
+        TaxInstrument::default_for(
+            self.asset_class,
+            self.listed_on_b3,
+            self.symbol.as_deref(),
+            &self.display_name,
+        )
     }
 }
 
@@ -110,6 +126,8 @@ pub struct AssetPatch {
     pub manual_price: Option<Option<Decimal>>,
     pub score_override: Option<Option<u8>>,
     pub max_price: Option<Option<Decimal>>,
+    /// `Some(None)` volta ao padrão.
+    pub tax_instrument: Option<Option<TaxInstrument>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -184,6 +202,8 @@ struct AssetRow {
     listed_on_b3: bool,
     treasury: bool,
     max_price: Option<Decimal>,
+    tax_instrument: String,
+    tax_instrument_custom: bool,
 }
 
 #[derive(FromRow)]
@@ -227,7 +247,7 @@ struct ContributionItemRow {
 /// aceita SQL estático (`&'static str`), e a lista é a única parte repetida.
 macro_rules! asset_columns {
     () => {
-        "id, asset_class, symbol, display_name, quantity, manual_price, score_override, listed_on_b3, treasury, max_price"
+        "id, asset_class, symbol, display_name, quantity, manual_price, score_override, listed_on_b3, treasury, max_price,          tax_instrument, tax_instrument_custom"
     };
 }
 
@@ -257,6 +277,9 @@ impl TryFrom<AssetRow> for Asset {
             listed_on_b3: row.listed_on_b3,
             treasury: row.treasury,
             max_price: row.max_price.map(|p| p.normalize()),
+            tax_instrument: TaxInstrument::parse(&row.tax_instrument)
+                .ok_or_else(|| decode_error(&row.tax_instrument))?,
+            tax_instrument_custom: row.tax_instrument_custom,
         })
     }
 }
@@ -443,6 +466,23 @@ impl Store {
                 ledger::rebuild(&mut tx, id).await?;
             }
         }
+        // Sem escolha da pessoa, o instrumento fiscal segue o padrão, que
+        // depende da marca da B3 e do nome.
+        let default = Asset {
+            listed_on_b3: patch.listed_on_b3.unwrap_or(current.listed_on_b3),
+            display_name: patch
+                .display_name
+                .clone()
+                .unwrap_or_else(|| current.display_name.clone()),
+            ..current.clone()
+        }
+        .tax_instrument_default();
+        let (tax_instrument, tax_instrument_custom) = match patch.tax_instrument {
+            Some(Some(chosen)) => (chosen, chosen != default),
+            Some(None) => (default, false),
+            None if current.tax_instrument_custom => (current.tax_instrument, true),
+            None => (default, false),
+        };
         let row: AssetRow = sqlx::query_as(concat!(
             "update assets set
                 display_name = coalesce($3, display_name),
@@ -450,6 +490,8 @@ impl Store {
                 score_override = case when $6 then $7 else score_override end,
                 listed_on_b3 = coalesce($8, listed_on_b3),
                 max_price = case when $9 then $10 else max_price end,
+                tax_instrument = $11,
+                tax_instrument_custom = $12,
                 updated_at = now()
              where user_id = $1 and id = $2
              returning ",
@@ -466,6 +508,8 @@ impl Store {
         .bind(patch.listed_on_b3)
         .bind(patch.max_price.is_some())
         .bind(patch.max_price.flatten())
+        .bind(tax_instrument.as_str())
+        .bind(tax_instrument_custom)
         .fetch_one(&mut *tx)
         .await?;
         tx.commit().await?;
@@ -913,8 +957,8 @@ async fn insert_asset_row(
     new: &NewAsset,
 ) -> Result<Asset, StoreError> {
     let result: Result<AssetRow, sqlx::Error> = sqlx::query_as(concat!(
-        "insert into assets (id, user_id, asset_class, symbol, display_name, quantity, manual_price, score_override, listed_on_b3, treasury, max_price)
-         values ($1, $2, $3, $4, $5, 0, $6, $7, $8, $9, $10) returning ",
+        "insert into assets (id, user_id, asset_class, symbol, display_name, quantity, manual_price, score_override, listed_on_b3, treasury, max_price, tax_instrument)
+         values ($1, $2, $3, $4, $5, 0, $6, $7, $8, $9, $10, $11) returning ",
         asset_columns!(),
         ""
     ))
@@ -928,6 +972,15 @@ async fn insert_asset_row(
     .bind(new.listed_on_b3)
     .bind(new.treasury)
     .bind(new.max_price)
+    .bind(
+        TaxInstrument::default_for(
+            new.asset_class,
+            new.listed_on_b3,
+            new.symbol.as_deref(),
+            &new.display_name,
+        )
+        .as_str(),
+    )
     .fetch_one(&mut **tx)
     .await;
     match result {

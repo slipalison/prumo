@@ -1,6 +1,7 @@
 import type { Transaction } from "../api/ledgerTypes";
 import { ASSET_CLASSES, type Asset, type AssetClass, type Checklists, type GoalTargets, type Plan, type Portfolio, type Profit } from "../api/types";
 import type { HealthRule, HealthWarning, SectorSourceInfo } from "../api/healthTypes";
+import type { TaxInstrument } from "../api/taxTypes";
 import { checklistScore } from "../lib/score";
 
 /** Ativo como o banco falso guarda: o que o servidor calcula sai em `toPortfolio`. */
@@ -30,7 +31,27 @@ export type StoredAsset = {
   /** Custo do livro, em reais. Ausente ou `null` = desconhecido (com quantidade). */
   cost_basis?: number | null;
   realized_gain?: number | null;
+  /** Instrumento fiscal escolhido; ausente = o padrão. */
+  tax_instrument?: TaxInstrument;
 };
+
+/** O padrão do instrumento fiscal, pela classe e pela B3 (o servidor também lê o nome). */
+export function defaultTaxInstrument(stored: StoredAsset): TaxInstrument {
+  const listed = stored.listed_on_b3 ?? nativeB3(stored.asset_class);
+  switch (stored.asset_class) {
+    case "br_stocks":
+      return "stock";
+    case "br_reits":
+      return "real_estate_fund";
+    case "crypto":
+      return listed ? "etf" : "crypto";
+    case "intl_stocks":
+    case "us_reits":
+      return listed ? "bdr" : "unsupported";
+    default:
+      return "unsupported";
+  }
+}
 
 const nativeB3 = (assetClass: AssetClass) => assetClass === "br_stocks" || assetClass === "br_reits";
 
@@ -224,6 +245,8 @@ export function toAsset(stored: StoredAsset, checklists: Checklists, classTotal:
     unrealized_gain: unrealized,
     realized_gain: stored.realized_gain === undefined ? 0 : stored.realized_gain,
     return_percent: unrealized === null || cost === null || cost <= 0 ? null : round2((unrealized / cost) * 100),
+    tax_instrument: stored.tax_instrument ?? defaultTaxInstrument(stored),
+    tax_instrument_default: defaultTaxInstrument(stored),
   };
 }
 

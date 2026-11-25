@@ -13,6 +13,7 @@ mod objectives;
 mod ops;
 mod performance;
 mod profit;
+mod tax;
 mod treasury;
 mod yoc;
 
@@ -291,6 +292,16 @@ pub fn public_router(state: AppState, static_dir: &str) -> Router {
         .route(
             "/settings/allocation",
             get(allocation::settings).put(allocation::save_settings),
+        )
+        .route("/tax/months", get(tax::months))
+        .route("/tax/irpf/{year}", get(tax::irpf))
+        .route(
+            "/tax/darfs/{year}/{month}/paid",
+            post(tax::mark_paid).delete(tax::unmark_paid),
+        )
+        .route(
+            "/tax/carryforward",
+            get(tax::get_carryforward).put(tax::put_carryforward),
         )
         .fallback(|| async { ApiError::not_found() })
         .layer(RequestBodyLimitLayer::new(64 * 1024))

@@ -17,5 +17,6 @@ pub mod retro;
 pub mod scoring;
 pub mod sector;
 pub mod tax;
+pub mod tax_book;
 pub mod treasury;
 pub mod yoc;

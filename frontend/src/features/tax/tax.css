@@ -1,0 +1,248 @@
+/* Impostos (Ajustes › Impostos). Desenho em docs/design.md § Impostos. */
+
+.tax-disclaimer {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  border-radius: var(--r-md);
+  border: 1px solid color-mix(in srgb, var(--gold) 40%, transparent);
+  background: color-mix(in srgb, var(--gold) 10%, transparent);
+  color: var(--text);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.tax-disclaimer p {
+  margin: 0;
+}
+
+.tax-disclaimer__icon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--gold-text);
+}
+
+.tax__loading {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.tax-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  min-width: 0;
+}
+
+.tax-card p {
+  margin: 0;
+}
+
+.tax-subtitle {
+  margin: 8px 0 0;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.tax-meter__value {
+  font-size: 1rem;
+  color: var(--text-muted);
+}
+
+.tax-meter__value strong {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.8rem;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.tax-meter__percent {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.tax-meter__over {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.tax-doubt {
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  border-left: 3px solid var(--info);
+  background: color-mix(in srgb, var(--info) 10%, transparent);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.tax-table-wrap {
+  overflow-x: auto;
+  border-radius: var(--r-sm);
+}
+
+.tax-table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.tax-table--compact {
+  min-width: 720px;
+  font-size: 0.8rem;
+}
+
+.tax-table th,
+.tax-table td {
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+  vertical-align: top;
+}
+
+.tax-table thead th {
+  color: var(--text-muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tax-table tbody th {
+  text-align: left;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.tax-table .is-empty {
+  color: var(--text-subtle);
+}
+
+.tax-line {
+  display: block;
+  white-space: nowrap;
+}
+
+.tax-line--muted {
+  display: block;
+  color: var(--text-subtle);
+  font-size: 0.78rem;
+  white-space: normal;
+}
+
+.tax-paid {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.tax-status {
+  font-weight: 700;
+}
+
+.tax-status--paid {
+  color: var(--success);
+}
+
+.tax-status--due {
+  color: var(--gold-text);
+}
+
+.tax-closing,
+.tax-facts {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+ul.tax-facts {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.tax-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tax-month {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+}
+
+.tax-month summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.tax-month[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tax-irpf,
+.tax-skipped,
+.tax-never {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tax-irpf__item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: var(--surface-sunken);
+  align-items: flex-start;
+}
+
+.tax-irpf__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+}
+
+.tax-irpf__text {
+  font-variant-numeric: tabular-nums;
+}
+
+.tax-skipped li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tax-never {
+  padding-left: 1.1rem;
+  list-style: disc;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  gap: 4px;
+}
+
+.tax-carry {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tax-carry__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}

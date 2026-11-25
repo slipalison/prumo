@@ -433,6 +433,8 @@ mod tests {
             listed_on_b3,
             treasury: false,
             max_price: None,
+            tax_instrument: crate::domain::tax_book::TaxInstrument::Stock,
+            tax_instrument_custom: false,
         }
     }
 

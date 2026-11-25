@@ -1,6 +1,8 @@
 // Espelho exato do JSON de docs/api.md. Campo novo no contrato entra aqui
 // primeiro; o compilador aponta o resto.
 
+import type { TaxInstrument } from "./taxTypes";
+
 export const ASSET_CLASSES = [
   "br_stocks",
   "br_reits",
@@ -84,6 +86,10 @@ export type Asset = {
   realized_gain: number | null;
   /** `unrealized_gain / cost_basis`, de 0 a 100 (pode passar de 100 ou ser negativo). */
   return_percent: number | null;
+  /** O que o ativo é para o IR (docs/ir.md); `unsupported` fica fora da conta. */
+  tax_instrument: TaxInstrument;
+  /** O que o Prumo escolheria pela classe, pela B3 e pelo nome. */
+  tax_instrument_default: TaxInstrument;
 };
 
 export type ChecklistQuestion = {
@@ -180,6 +186,8 @@ export type UpdateAssetRequest = {
   answers?: Record<string, boolean | null>;
   listed_on_b3?: boolean;
   max_price?: number | null;
+  /** `null` volta ao padrão. */
+  tax_instrument?: TaxInstrument | null;
 };
 
 export type PlanItem = {
