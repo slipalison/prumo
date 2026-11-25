@@ -110,6 +110,15 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
 1. Pergunta grande: **"Quanto você vai aportar?"**
 2. Campo de valor enorme, em reais, com máscara (digitar `600000` mostra
    `R$ 6.000,00`), foco automático.
+   - **Caixa**, logo abaixo do campo, quando há saldo: "+ R$ 812 em caixa —
+     **Incluir**". Incluir soma o saldo ao valor digitado; "Tirar" desfaz; digitar
+     um valor menor que o caixa incluído desfaz a inclusão (o caixa nunca passa
+     do aporte). Um detalhe recolhido, "De onde vem esse caixa", diz quanto vem
+     de proventos recebidos e de vendas, quanto os aportes já usaram, desde que dia
+     a conta vale e os movimentos mais novos, cada um com o sinal escrito. A frase
+     do detalhe lembra que, para aportar dinheiro de fora, basta digitar o valor
+     total: só o que se incluiu do caixa sai dele. Ao registrar ("Já comprei"), a
+     folha avisa "R$ X deste aporte saem do caixa" e o saldo baixa.
 3. Chips rápidos: R$ 500 · R$ 1.000 · R$ 2.000 · R$ 5.000 · último aporte.
 4. Botão **Calcular** (Enter também calcula).
 5. Resultado, abaixo, sem trocar de tela:
@@ -134,6 +143,15 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
   15 min de atraso" quando a carteira tem papel da B3; "Conectando ao vivo…"
   enquanto abre; fora do ao vivo, a hora da última cotação. O botão de
   atualizar continua ao lado.
+- **Lucro total**, logo abaixo do patrimônio: "Lucro total +R$ 3.150" — o ganho
+  de capital (realizado + não realizado) mais os proventos recebidos. Um
+  detalhe recolhido, "Como se chega nesse número", abre as três parcelas. O
+  sinal é escrito (`+` / `−`), nunca só cor, e anda com o preço ao vivo (o evento
+  `prices` leva o bloco). Quando algum ativo está sem preço médio, sem cotação ou
+  com uma venda de custo desconhecido, o rótulo vira "Lucro total (parcial)" e o
+  detalhe diz quem falta ("Parcial: falta o preço médio de HGLG11 …"): o número
+  é só do que se sabe, nada é estimado. Venda de ativo que já saiu da carteira
+  tem aviso próprio.
 - Uma seção por classe, na ordem fixa: nome, % atual vs meta com barra e
   marcador de prumo, e a lista dos ativos (ticker, quantidade, valor, nota).
 - **Atual × ideal por ativo.** Sob cada ativo que recebe aporte (nota > 0 e
@@ -179,7 +197,10 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
 - **Lançamentos**, dentro da folha:
   - um resumo em quatro números — preço médio, custo (em renda fixa,
     "aplicado"), resultado com a rentabilidade e lucro realizado —, "—" onde
-    o custo é desconhecido;
+    o custo é desconhecido; um quinto, **yield on cost (12 meses)**, aparece só
+    para o ativo que rendeu provento (nada de "0,0%" em quem não paga): o
+    percentual, "(estimado)" quando não há recebido, ou "informe o preço médio"
+    quando falta o custo;
   - custo desconhecido mostra o aviso dourado "Informe o preço médio para ver
     a rentabilidade" com o botão que abre o saldo inicial já com o foco no
     preço;
@@ -351,29 +372,43 @@ planilha: uma meta no topo, o resto por baixo.
    "estimativa" e o aviso de que é o que a cota pagou nos últimos 12 meses, sem
    separar JCP e sem ser extrato. Papéis sem histórico são listados.
 6. **Ano por mês:** tabela real (`<table>`), uma linha por ano.
-7. **Quem pagou:** rosca (a mesma `Donut`) e a lista com nome, valor e parte de
-   cada um; do sétimo em diante vira "Outros (N)".
-8. **Proventos lançados:** lista com apagar (confirmação na própria linha).
-9. **Lançar provento:** folha com ativo, tipo (chips), data de pagamento, valor
-   por cota, quantidade (em branco vale a da carteira) e data ex opcional. A
+7. **Yield on cost** da carteira, um cartão antes do mês a mês: o percentual
+   grande e a conta por baixo ("Renda dos últimos 12 meses (recebida) ÷ o que
+   você pagou. Hoje: R$ X sobre R$ Y"). Sem recebido, a renda é a estimada e o
+   texto diz "(estimado)" e "estimada, não é extrato". Ativo sem preço médio sai
+   da conta, e o cartão avisa "Parcial: fica de fora o que está sem preço médio
+   (…)". Sem nenhum custo conhecido, no lugar do número vem "informe o preço médio".
+8. **Quem pagou:** rosca (a mesma `Donut`) e a lista com nome, valor, parte e
+   **yield on cost** de cada um ("yield on cost 6,2%" ou "informe o preço
+   médio"); do sétimo em diante vira "Outros (N)", sem yield (junta vários).
+9. **Proventos lançados:** lista com apagar (confirmação na própria linha).
+10. **Lançar provento:** folha com ativo, tipo (chips), data de pagamento, valor
+   por cota, quantidade e data ex opcional. **Em branco, a quantidade vale a do
+   livro na data com** (não a de hoje): o campo mostra o número que o servidor
+   vai usar ("Em branco vale o que o livro tinha na data com (09/11/2026)") e ele
+   muda quando a data ex muda. Sem cotas naquela data, a folha avisa e só deixa
+   lançar com a quantidade informada. A
    prévia mostra bruto, IR retido e líquido (JCP perde 15%) e fala com
    `aria-live`. Renda fixa por valor pede só o valor recebido.
 
 Na tela **Aportar**:
 
-- Abaixo do campo de valor, quando há proventos recebidos desde o último
-  aporte: "+ R$ 812 de proventos recebidos desde o último aporte (3 pagamentos)
-  — **Incluir**". Incluir soma ao valor; "Tirar" desfaz. Só mexe no valor de
-  entrada.
+- Abaixo do campo de valor, quando há caixa: "+ R$ 812 em caixa —
+  **Incluir**" (proventos recebidos e vendas, menos o que aportes anteriores já
+  usaram; ver o item 1 de "Aportar"). Incluir soma ao valor; "Tirar" desfaz. Só
+  mexe no valor de entrada.
 - No resultado, uma frase com o selo "estimativa": "Este aporte soma ~R$ 35/mês
   de renda: sua renda vai de R$ 410 para R$ 445 por mês". Cada cartão mostra a
   renda mensal que ele soma. O plano não espera o provedor de dividendos: sem
   histórico em cache ainda, a frase vira "Estimativa de renda indisponível por
   enquanto".
 - Com o olho fechado (ver "Ocultar valores"), tudo isso sai mascarado — meta,
-  barras, tabelas, rosca, prévia do lançamento, a renda do plano e a sugestão
-  de caixa —, inclusive o que só o leitor de tela lê (`aria-label`,
-  `aria-valuetext`, tabelas `sr-only`). Só a proporção (percentual) continua.
+  barras, tabelas, rosca, prévia do lançamento e a quantidade em branco (o que o
+  livro tinha na data com), a renda do plano, o caixa (saldo, detalhe e
+  movimentos), o lucro total e os valores do yield on cost —, inclusive o que só o leitor de tela lê (`aria-label`,
+  `aria-valuetext`, tabelas `sr-only`). Só a proporção (percentual) continua — o yield on cost é percentual e fica; o
+  motivo de um yield ausente ("informe o preço médio") e o "parcial" do lucro
+  total também, porque são texto, não valor.
 
 ### Histórico
 

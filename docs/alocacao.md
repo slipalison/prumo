@@ -271,10 +271,14 @@ E por dois cenários fixos (carteira fictícia de R$ 120 mil):
 O motor decide só pela meta e pela nota. Renda e proventos entram **ao lado**,
 nunca dentro dele:
 
-- **Proventos no valor do aporte.** `GET /income/cash-suggestion` soma o que a
-  carteira pagou, líquido, desde o último aporte registrado, e a tela oferece
-  "incluir". Aceitando, o valor digitado sobe; o motor recebe um número a mais
-  no mesmo campo e roda como sempre.
+- **Caixa no valor do aporte.** `GET /cash` devolve o que os proventos líquidos
+  recebidos e as vendas do livro deixaram, menos o que aportes anteriores já
+  usaram (nunca negativo), e a tela oferece "+ R$ X em caixa — incluir?".
+  Aceitando, o valor digitado sobe; o motor recebe um número a mais no mesmo
+  campo e roda como sempre — **o caixa só muda o valor de entrada, o motor não
+  muda**. Ao registrar o aporte, `cash_used` diz quanto dele era caixa e o saldo
+  baixa; o resto do aporte é dinheiro de fora e não toca o caixa
+  ([`api.md`](api.md#caixa)).
 - **Renda estimada no resultado.** Depois do plano pronto, cada item ganha a
   renda mensal que soma (`estimated_monthly_income`) e o plano ganha `income`
   (o que o aporte soma e a renda de antes e de depois). É informação sobre o

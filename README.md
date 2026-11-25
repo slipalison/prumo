@@ -41,10 +41,20 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   mesmo no que é cotado em dólar. O "Já comprei" grava as compras sozinho.
 - **Renda** — dividendos, JCP e rendimentos de FII que você recebeu ou vai
   receber, mês a mês, contra uma meta de renda mensal. O aporte mostra quanto de
-  renda estimada ele soma e oferece incluir os proventos recebidos desde o
-  último aporte. A renda "da carteira de hoje" é **estimativa** (histórico por
-  cota do Yahoo, bruto, buscado em segundo plano: nenhuma tela espera por ele): o
-  que você lança, e depois o que importa da B3, vale mais.
+  renda estimada ele soma. A renda "da carteira de hoje" é **estimativa**
+  (histórico por cota do Yahoo, bruto, buscado em segundo plano: nenhuma tela
+  espera por ele): o que você lança, e depois o que importa da B3, vale mais. O
+  provento lançado sem quantidade vale as cotas que o livro tinha na **data com**,
+  não as de hoje. Cada pagador, o ativo e a carteira mostram o **yield on cost**
+  (renda de 12 meses ÷ o que você pagou; sem preço médio, a tela pede o preço
+  médio em vez de inventar).
+- **Caixa** — o que os proventos recebidos e as vendas deixaram e você ainda não
+  aportou. O campo do aporte oferece "+ R$ X em caixa — incluir?", com um detalhe
+  de onde o saldo veio; registrar o aporte baixa o que foi usado, e o resto é
+  dinheiro de fora. O motor não muda, só o valor que você digita.
+- **Lucro total** — na Carteira: ganho de capital (realizado + não realizado)
+  mais os proventos recebidos. O que falta saber (preço médio, cotação) deixa o
+  número marcado como parcial, sem estimativa.
 - **Preço ao vivo** — patrimônio e ativos mudam na tela sem recarregar, pelo
   streamer do Yahoo: EUA, câmbio e cripto em segundos; B3 com os 15 minutos
   de atraso do dado gratuito. Tudo convertido para reais.

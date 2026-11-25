@@ -196,6 +196,15 @@ A tela inteira numa chamada.
       "return_percent": 9.23
     }
   ],
+  "profit": {
+    "unrealized": 120.0,
+    "realized": 0.0,
+    "income_received": 85.0,
+    "total": 205.0,
+    "partial": false,
+    "partial_assets": [],
+    "removed_assets": false
+  },
   "checklists": {
     "stocks": [{ "id": "…", "position": 1, "prompt": "…" }],
     "real_estate": [{ "id": "…", "position": 1, "prompt": "…" }]
@@ -255,6 +264,30 @@ A tela inteira numa chamada.
   - `return_percent`: `unrealized_gain ÷ cost_basis × 100`, duas casas. `null`
     com custo desconhecido ou zero.
 
+#### `profit`: lucro total
+
+`total = realized + unrealized + income_received` — o ganho de capital
+(realizado e não realizado) mais os proventos recebidos. Tudo em reais. A conta
+é `backend/src/domain/profit.rs`.
+
+- `unrealized`: a soma do `unrealized_gain` dos ativos com posição, custo e
+  preço conhecidos.
+- `realized`: a soma do `realized_gain` dos ativos (inclusive os já zerados).
+- `income_received`: o líquido dos proventos com `pay_date` até hoje (dia de
+  Brasília), de qualquer ativo — também dos que já saíram da carteira. O que
+  ainda vai cair não entra.
+- **O que não se sabe fica de fora, e é dito.** `partial` é `true` quando algum
+  ativo não entrou inteiro, e `partial_assets` lista quem: `{ asset_id, label,
+  reason }` com `reason` `unknown_cost` (posição de custo desconhecido: falta o
+  preço médio), `unknown_realized` (uma venda saiu de custo desconhecido) ou
+  `missing_price` (sem cotação). O ativo conta com o que se sabe dele e nunca
+  vira zero ou estimativa. A tela escreve "Lucro total (parcial)".
+- `removed_assets`: há venda de um ativo que já saiu da carteira. O lançamento
+  fica no livro, mas sem o ativo não há como refazer a posição dele, então o
+  ganho realizado dessa venda **não entra** no total. Os proventos dele entram.
+- O bloco também vai no evento `prices` do stream (`profit`): o ganho não
+  realizado muda com o preço.
+
 ### `GET /api/v1/portfolio/stream`
 
 A carteira ao vivo, em [Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html)
@@ -274,7 +307,8 @@ retry: 3000
   `current_value`, `class_percent`, `ideal_class_percent`, `unrealized_gain` e
   `return_percent` — o que muda com o preço (o ideal muda quando um ativo
   ganha ou perde preço e entra ou sai da divisão; ganho e rentabilidade andam
-  com o valor de hoje). O resto (preço médio, custo, lucro realizado, notas) a
+  com o valor de hoje) —, e o evento leva também o bloco `profit` inteiro (o
+  lucro total anda com o ganho não realizado). O resto (preço médio, custo, lucro realizado, notas) a
   tela já tem do `GET /portfolio`.
 - Comentário de keep-alive (`: keep-alive`… ) a cada 15 s, para proxy nenhum
   derrubar a conexão parada.
@@ -516,15 +550,23 @@ do `GET`. O próximo `POST /plans` já usa o valor novo.
 Registra o que a pessoa comprou de fato — normalmente o plano, editado ou não.
 
 ```json
-{ "amount": 6000, "items": [{ "asset_id": "…", "quantity": 5, "unit_price": 94.55 }] }
+{ "amount": 6000, "cash_used": 812.5, "items": [{ "asset_id": "…", "quantity": 5, "unit_price": 94.55 }] }
 ```
+
+`cash_used` (opcional, padrão `0`) é a parte do aporte que veio do **caixa**
+([`GET /cash`](#caixa)): o saldo baixa por esse valor. O resto do `amount` é
+dinheiro de fora e não toca o caixa. `cash_used` não pode passar do `amount`
+nem do saldo na hora do registro (`422`, com o saldo na mensagem); a conferência
+é na mesma transação que grava o aporte, sob um lock por pessoa, então dois
+aportes ao mesmo tempo não gastam o mesmo dinheiro. O valor é arredondado a
+centavos.
 
 Cada item vira uma compra (`buy`, `source: "plan"`, com `contribution_id`) no
 livro do ativo, datada hoje, com o preço do item — nas classes por valor, a
 compra é `quantity × unit_price` em reais, a preço 1. Responde `201`:
 
 ```json
-{ "id": "…", "created_at": "…", "amount": 6000, "invested": 472.75, "items": [
+{ "id": "…", "created_at": "…", "amount": 6000, "cash_used": 812.5, "invested": 472.75, "items": [
   { "asset_id": "…", "symbol": "BTLG11", "display_name": "BTG Logística", "quantity": 5, "unit_price": 94.55, "value": 472.75 }
 ] }
 ```
@@ -1166,10 +1208,36 @@ Lança um provento à mão.
 ```
 
 - Obrigatórios: `asset_id` (da pessoa), `kind`, `pay_date`, `amount_per_unit`.
-- Opcionais: `quantity` (padrão: a quantidade atual do ativo; em renda fixa por
-  valor, `1` — use `amount_per_unit` como o valor recebido), `ex_date` (não pode
-  passar da `pay_date`) e `withholding` (substitui a regra do tipo; entre 0 e o
-  bruto).
+- Opcionais: `quantity`, `ex_date` (não pode passar da `pay_date`) e
+  `withholding` (substitui a regra do tipo; entre 0 e o bruto).
+- **Sem `quantity`, vale a posição do livro na data com** — não a de hoje. A
+  data com é o dia anterior à `ex_date` (o último em que comprar dava direito); sem
+  `ex_date`, o dia da `pay_date` (no máximo hoje). A posição é o replay do livro
+  até essa data (`domain/entitlement.rs`):
+  - lançamento datado na `ex_date` ou depois não conta (comprou no dia da data
+    ex: sem direito; comprou na data com: com direito);
+  - **desdobramento e grupamento anteriores à data com já estão na quantidade**
+    (100 cotas que viraram 200 em março valem 200 num provento de junho);
+  - o **saldo inicial** (`opening`) vale desde sempre: a data dele é a do
+    cadastro, não a da compra, e as cotas já existiam antes do livro. Compras,
+    vendas e ajustes valem na data deles;
+  - quem não tinha cota na data com recebe `422` ("Voce nao tinha cotas desse
+    ativo na data com…") e pode lançar mesmo assim informando `quantity`;
+  - renda fixa por valor não tem cota: o valor recebido é "1 × valor", como
+    antes.
+  A `quantity` do corpo sempre vale mais que o livro.
+
+### `GET /api/v1/income/entitlement?asset=…&ex_date=AAAA-MM-DD&pay_date=AAAA-MM-DD`
+
+As cotas que o servidor usaria, para a tela mostrar antes de lançar. `asset`
+é obrigatório (de outra pessoa é `404`); `ex_date` e `pay_date` são opcionais
+(sem as duas, vale hoje).
+
+```json
+{ "quantity": 15.0, "record_date": "2026-03-09" }
+```
+
+`record_date` é a data com usada; `quantity`, a posição do livro nela.
 - `pay_date` entre 2000 e 2100; valor por cota e quantidade maiores que zero; o
   bruto precisa chegar a um centavo. Responde `201` com o evento.
 
@@ -1177,7 +1245,9 @@ Lança um provento à mão.
 
 Qualquer subconjunto de `kind`, `ex_date` (`null` limpa), `pay_date`,
 `amount_per_unit`, `quantity` e `withholding`. Os valores são recalculados; sem
-`withholding` no corpo, o IR volta à regra do tipo. Só evento `manual`:
+`withholding` no corpo, o IR volta à regra do tipo. Sem `quantity` no corpo, a
+quantidade **continua a do evento** — o `PATCH` não a recalcula pelo livro, nem
+quando muda a data. Só evento `manual`:
 os de extrato respondem `422`. `200` com o evento.
 
 ### `DELETE /api/v1/income/{id}`
@@ -1196,14 +1266,21 @@ O que a tela Renda precisa, numa chamada.
   "monthly_average": 135.0,
   "upcoming_total": 90.0,
   "months": [{ "month": "2025-12", "received": 120.0, "upcoming": 0.0 }],
-  "by_payer": [{ "asset_id": "…", "label": "KNRI11", "total": 972.0, "percent": 60.0 }],
+  "by_payer": [{
+    "asset_id": "…", "label": "KNRI11", "total": 972.0, "percent": 60.0,
+    "yield_on_cost": { "income_12m": 972.0, "basis": "received", "cost": 9000.0, "percent": 10.8, "gap": null, "message": null }
+  }],
   "years": [{ "year": 2026, "months": [0, 125, 130, 0, 140, 145, 0, 155, 160, 0, 170, 240], "total": 1265.0 }],
   "upcoming": [],
   "estimate": {
     "monthly": 410.5,
     "updated_at": "2026-11-25T11:00:00Z",
-    "assets": [{ "asset_id": "…", "symbol": "KNRI11", "display_name": "Kinea", "quantity": 10, "per_unit_12m": 12.6, "monthly": 10.5 }],
+    "assets": [{ "asset_id": "…", "symbol": "KNRI11", "display_name": "Kinea", "quantity": 10, "per_unit_12m": 12.6, "monthly": 10.5, "trailing_12m": 126.0 }],
     "missing": ["XPTO3"]
+  },
+  "yield_on_cost": {
+    "income_12m": 972.0, "basis": "received", "cost": 9000.0, "percent": 10.8, "gap": null, "message": null,
+    "partial": true, "unknown_cost": ["WEGE3"]
   },
   "goal": null
 }
@@ -1215,7 +1292,7 @@ O que a tela Renda precisa, numa chamada.
 - `total_12m`: soma do **recebido** nos 12 meses. `monthly_average = total_12m
   ÷ 12`. `upcoming_total`: tudo que ainda vai cair, de qualquer mês.
 - `by_payer`: o recebido nos 12 meses por ativo, do maior para o menor, com a
-  parte (`percent`, soma 100) de cada um.
+  parte (`percent`, soma 100) de cada um e o seu `yield_on_cost` (abaixo).
 - `years`: todos os anos com evento, do mais novo ao mais velho; `months` vai de
   janeiro a dezembro e soma recebido e a receber.
 - `upcoming`: até 20 eventos com pagamento depois de hoje, do mais perto ao
@@ -1228,7 +1305,22 @@ O que a tela Renda precisa, numa chamada.
 (`chart` com `events=div`): data ex e valor bruto, sem data de pagamento e com
 JCP misturado ao dividendo nas ações da B3. Para cada ativo cotado na B3 ou nos
 EUA, `per_unit_12m` é o que a cota pagou nos últimos 365 dias (em reais; valores
-em dólar usam o câmbio da carteira) e `monthly = per_unit_12m × quantity ÷ 12`.
+em dólar usam o câmbio da carteira) e `monthly = per_unit_12m × quantity ÷ 12`,
+com a quantidade **de hoje**: é o ritmo da carteira atual, e o plano soma o
+que o aporte compra por cima dele (a renda projetada do plano usa a quantidade
+depois do aporte, não a da data com).
+
+`trailing_12m` é a outra conta, a que olha para trás: o que a posição teria
+rendido nos últimos 365 dias (bruto, em reais) com as cotas que o **livro tinha
+na data com de cada dividendo** — cada dividendo do histórico vezes a posição
+daquela data, não 12 meses de dividendo vezes a quantidade de hoje. O histórico do
+Yahoo é ajustado por desdobramento (o dividendo antigo de uma ação que dobrou
+aparece pela metade), então a quantidade da data com é levada à **base de hoje**
+multiplicando pelos desdobramentos e grupamentos posteriores à data ex
+(bonificação não entra: o provedor a trata de forma diferente de uma emissora
+para outra). Dividendo de um dia em que a pessoa não tinha cota não conta.
+`trailing_12m` é `null` quando o livro não fecha. É o que alimenta o yield on
+cost quando ainda não há nada recebido.
 Renda fixa por valor e cripto não entram. `missing` lista os papéis sem
 histórico (provedor fora do ar ou sem câmbio), que ficam fora da conta.
 
@@ -1249,19 +1341,51 @@ mesmo símbolo ao mesmo tempo terminam no mesmo estado. Com o provedor fora do a
 vale o que já está guardado. O que a pessoa lançou ou importou nunca é
 substituído por esta estimativa.
 
-### `GET /api/v1/income/cash-suggestion`
+### Yield on cost
 
-Os proventos **líquidos recebidos desde o último aporte registrado**, para o
-campo do aporte oferecer "+ R$ X de proventos — incluir?". O motor não muda; só
-o valor de entrada, se a pessoa aceitar.
+`yield on cost = renda de 12 meses ÷ custo × 100`, onde o custo é o
+`cost_basis` do livro (o que a pessoa pagou, com taxas — não o preço de hoje). A
+conta é `backend/src/domain/yoc.rs`. Aparece em três lugares: em cada pagador de
+`by_payer`, no `yield_on_cost` do resumo (a carteira) e em
+`GET /api/v1/income/yield-on-cost` (cada ativo, para a folha dele).
 
 ```json
-{ "amount": 812.0, "count": 3, "since": "2026-11-01" }
+{ "income_12m": 972.0, "basis": "received", "cost": 9000.0, "percent": 10.8, "gap": null, "message": null }
 ```
 
-Soma o `net` dos eventos com `pay_date` depois do dia (de Brasília) do último
-aporte e até hoje. `since` é esse dia; sem aporte registrado, `amount` é `0`,
-`count` é `0` e `since` é `null` (não há de onde contar).
+- `basis: "received"`: a renda é o **líquido recebido** nos 12 meses
+  (`by_payer`). Só quando nada foi recebido nesse período a renda vem de
+  `trailing_12m` (bruta, estimada) e `basis` é `"estimate"` — o dado do livro
+  sempre vence a estimativa, a mesma regra da meta de renda.
+- **Custo desconhecido** (saldo inicial sem preço médio) não vira zero nem
+  chute: `percent` é `null`, `gap` é `unknown_cost` e `message` é
+  `"informe o preco medio"`; `cost` também é `null`. A renda continua
+  aparecendo. Os outros motivos: `zero_cost` (há posição, mas o custo é zero —
+  só bonificação) e `no_position` (ativo zerado ou removido, que ainda tem renda
+  nos 12 meses).
+- **Carteira** (`yield_on_cost` no resumo e `portfolio` no relatório): a renda dos
+  ativos de custo conhecido sobre o custo deles, contando também o custo dos que
+  não renderam (puxam o yield para baixo, como deve). Ativo sem posição não
+  entra; ativo de custo desconhecido sai da renda **e** do custo, `partial` vira
+  `true` e `unknown_cost` lista quem ficou de fora. `cost` é a soma dos custos
+  que entraram. Sem nenhum ativo de custo conhecido, `percent` é `null`.
+- Limite conhecido: a renda dos 12 meses é dividida pelo custo **de hoje**. Quem
+  comprou mais cotas há poucos meses tem o custo cheio e a renda de uma posição
+  menor; o número sai baixo até completar um ano.
+
+### `GET /api/v1/income/yield-on-cost`
+
+```json
+{
+  "portfolio": { "income_12m": 972.0, "basis": "received", "cost": 9000.0, "percent": 10.8,
+                 "gap": null, "message": null, "partial": false, "unknown_cost": [] },
+  "assets": [{ "asset_id": "…", "income_12m": 972.0, "basis": "received", "cost": 9000.0,
+               "percent": 10.8, "gap": null, "message": null }]
+}
+```
+
+Um item por ativo da carteira, na ordem dela (inclusive os que não renderam:
+`income_12m` é `0`, e a tela só mostra a linha de quem rendeu).
 
 ### Meta de renda: `/api/v1/income/goal`
 
@@ -1290,6 +1414,76 @@ enquanto não há nada recebido nos 12 meses, a estimativa da carteira
 (`basis: "estimate"`). `percent` pode passar de 100. `reached` só vale com o
 recebido: a estimativa não conquista meta. Na primeira vez que o recebido
 alcança a meta, `achieved_at` guarda o instante e fica.
+
+## Caixa
+
+O dinheiro que a carteira gerou e a pessoa ainda não reaplicou. O campo do aporte
+oferece o saldo ("+ R$ X em caixa — incluir?"); o motor do aporte **não muda**,
+só o valor de entrada (ver [`alocacao.md`](alocacao.md#o-que-o-motor-não-olha)).
+A conta é `backend/src/domain/cash.rs`.
+
+**Entra:** o provento líquido recebido (`pay_date` até hoje) e o valor líquido das
+vendas e resgates do livro (`quantidade × preço − taxas`, em reais; venda com taxa
+maior que o valor rende zero). **Sai:** o `cash_used` de cada aporte registrado.
+A amortização do livro não entra (ela devolve capital que a pessoa lança também
+como provento `amortization`, e contar as duas dobraria o dinheiro); para uma
+amortização virar caixa, lance-a como provento.
+
+**Calculado, não guardado.** Não há tabela `cash_balance`: o saldo é refeito a
+cada leitura, dos eventos de renda, do livro e dos aportes (`contributions.cash_used`).
+Uma tabela de saldo seria uma segunda fonte da verdade, errada na primeira edição
+ou exclusão de um provento ou de uma venda; o livro inteiro é refeito justamente
+para isso não acontecer.
+
+**Nunca negativo.** O replay vai em ordem de data, com as entradas antes das
+saídas no mesmo dia (o provento que cai no dia do aporte já estava no caixa), e
+uma saída que passa do saldo o leva a zero em vez de a negativo. Isso só acontece
+quando algo que sustentava um aporte é apagado depois — um provento, uma venda: o
+excesso fica em `adjustment` e **não come as entradas futuras** (o provento
+seguinte vale inteiro).
+
+**Dinheiro de fora.** O aporte tem um valor (`amount`) e uma parte que veio do caixa
+(`cash_used`, no máximo o saldo e o `amount`). A diferença é dinheiro novo da pessoa
+e **não passa** pelo caixa: não entra, não sai, e o saldo não muda. Aportar mais do
+que o caixa, ou aportar sem incluí-lo, é sempre válido; é a pessoa quem decide, na
+tela, quanto do caixa entra no aporte ("Incluir" / "Tirar").
+
+**O caixa começa em `cash_since`.** O que entrou antes dessa data (Brasília) não é
+caixa: já foi gasto, ou nunca foi do Prumo — sem isso, todo dividendo recebido na
+vida da pessoa viraria "caixa" no primeiro dia, e importar anos de extrato da B3
+faria o mesmo. Quem já existia começa no dia **seguinte** ao do último aporte (a
+regra de "proventos desde o último aporte" que o Prumo mostrava) ou, sem aporte,
+hoje; quem chega depois, no dia em que chega. A data é `users.cash_since`
+(migração 0012, que também cria `contributions.cash_used`, `0` nos aportes
+antigos).
+
+### `GET /api/v1/cash`
+
+```json
+{
+  "balance": 812.0,
+  "since": "2026-10-01",
+  "income": { "amount": 612.0, "count": 3 },
+  "sales": { "amount": 300.0, "count": 1 },
+  "used": 100.0,
+  "adjustment": 0.0,
+  "recent": [
+    { "date": "2026-11-20", "kind": "sale", "label": "ITSA4", "amount": 300.0 },
+    { "date": "2026-11-14", "kind": "income", "label": "KNRI11", "amount": 12.0 },
+    { "date": "2026-11-02", "kind": "contribution", "label": "Aporte", "amount": 100.0 }
+  ]
+}
+```
+
+- `balance = income.amount + sales.amount − used + adjustment`, nunca negativo.
+- `income` e `sales`: o que entrou desde `since` e em quantos pagamentos ou
+  vendas — é "de onde veio", que a tela mostra num detalhe ("De onde vem esse
+  caixa").
+- `recent`: até 30 movimentos, do mais novo ao mais velho (no mesmo dia, o que
+  entra antes do que sai). `amount` é sempre positivo; `kind` diz o sentido
+  (`income` e `sale` entram, `contribution` sai).
+- Registrar o aporte com `cash_used` ([`POST /contributions`](#post-apiv1contributions))
+  baixa o saldo na hora; editar ou apagar um provento ou um lançamento o refaz.
 
 ## Operacional (porta interna 9090)
 
