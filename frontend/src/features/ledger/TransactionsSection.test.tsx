@@ -1,6 +1,8 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
+import { MASK_BRL, MASK_QUANTITY } from "../../lib/money";
+import { HIDE_VALUES_KEY } from "../../lib/privacy";
 import { renderApp } from "../../test/render";
 import { getDb, server } from "../../test/server";
 import { formatSignedBRL, formatSignedPercent, numberText } from "./format";
@@ -271,6 +273,96 @@ describe("Lançamentos", () => {
     await waitFor(() =>
       expect(lastRequest("POST", "/api/v1/assets")?.body).toMatchObject({ amount: 52000, invested: 50000 }),
     );
+  });
+});
+
+describe("Lançamentos com os valores ocultos", () => {
+  /** Qualquer R$ seguido de dígito é valor vazando. */
+  const MONEY = /R\$\s*\d/;
+
+  /** O texto, os atributos que o leitor de tela lê e o valor dos campos. */
+  function heard(root: HTMLElement): string[] {
+    const out: string[] = [];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) out.push(node.textContent ?? "");
+    for (const element of root.querySelectorAll("*")) {
+      for (const attribute of ["aria-label", "aria-valuetext", "title", "alt", "placeholder"]) {
+        const value = element.getAttribute(attribute);
+        if (value) out.push(value);
+      }
+      if (element instanceof HTMLInputElement) out.push(element.value);
+    }
+    return out;
+  }
+
+  it("PM, custo, resultado, lucro e o livro saem mascarados; a rentabilidade em % fica", async () => {
+    window.localStorage.setItem(HIDE_VALUES_KEY, "1");
+    const rendered = renderApp("carteira");
+    await screen.findByRole("heading", { name: "Tudo o que você tem, no eixo certo" });
+    const stocks = screen.getByRole("region", { name: "Ações Nacionais" });
+    const itsa = within(stocks).getByRole("button", { name: /ITSA4/ });
+    expect(itsa).toHaveTextContent(`PM ${MASK_BRL}`);
+    expect(within(itsa).getByText("+12,0%")).toBeInTheDocument();
+    for (const text of heard(itsa)) expect(text).not.toMatch(MONEY);
+
+    await rendered.user.click(screen.getByRole("button", { name: /KNRI11/ }));
+    const dialog = await screen.findByRole("dialog", { name: "KNRI11" });
+    const ledger = within(dialog).getByRole("region", { name: "Lançamentos" });
+    expect(await within(ledger).findAllByText(`${MASK_QUANTITY} cotas × ${MASK_BRL}`)).toHaveLength(2);
+    expect(within(ledger).getByText("Preço médio").nextSibling).toHaveTextContent(MASK_BRL);
+    expect(within(ledger).getByText("Custo").nextSibling).toHaveTextContent(MASK_BRL);
+    // O ganho em reais some; o percentual fica, como o "% da classe".
+    expect(within(ledger).getByText("Resultado").nextSibling).toHaveTextContent(`${MASK_BRL} (+9,2%)`);
+    expect(within(ledger).getByText("Lucro realizado").nextSibling).toHaveTextContent(MASK_BRL);
+    for (const text of heard(ledger)) {
+      expect(text).not.toMatch(MONEY);
+      expect(text).not.toMatch(/[0-9]+ cotas/);
+    }
+
+    // No formulário, fora do foco, os campos também mascaram; no foco, o número.
+    await rendered.user.click(within(ledger).getByRole("button", { name: "Editar Compra de 10/02/2026" }));
+    const form = within(ledger).getByRole("form", { name: "Editar lançamento" });
+    const quantity = within(form).getByLabelText("Quantidade");
+    expect(quantity).toHaveValue(MASK_QUANTITY);
+    expect(within(form).getByLabelText("Preço por unidade")).toHaveValue(MASK_BRL);
+    for (const text of heard(form)) expect(text).not.toMatch(MONEY);
+    await rendered.user.click(quantity);
+    expect(quantity).toHaveValue("2");
+    await rendered.user.clear(quantity);
+    await rendered.user.type(quantity, "3");
+    await rendered.user.click(within(form).getByRole("button", { name: "Salvar lançamento" }));
+    await waitFor(() => expect(lastRequest("PATCH", "/api/v1/transactions/t-knri-2")?.body).toMatchObject({ quantity: 3, unit_price: 150 }));
+  });
+});
+
+describe("Lançamentos de título do Tesouro", () => {
+  it("fração em centésimos e o substantivo do título", async () => {
+    getDb().assets.push({
+      id: "a-td",
+      asset_class: "fixed_income",
+      symbol: "TD-SELIC-20290301",
+      display_name: "Tesouro Selic 2029",
+      quantity: 0,
+      quote_price: 16000.5,
+      manual_price: null,
+      currency: "BRL",
+      score_override: 6,
+      answers: {},
+      treasury: true,
+    });
+    const { user, ledger } = await openAsset(/Tesouro Selic 2029/, "Tesouro Selic 2029");
+    // Título é por unidade: tem preço médio, compra, venda e preço por título.
+    expect(within(ledger).getByText("Preço médio")).toBeInTheDocument();
+    await user.click(within(ledger).getByRole("button", { name: /Adicionar/ }));
+    const form = within(ledger).getByRole("form", { name: "Novo lançamento" });
+    expect(within(within(form).getByLabelText("Tipo")).getAllByRole("option").map((o) => o.textContent)).toContain("Venda");
+    await user.type(within(form).getByLabelText("Quantidade"), "0,35");
+    await user.type(within(form).getByLabelText("Preço por unidade"), "2450");
+    await user.click(within(form).getByRole("button", { name: "Adicionar lançamento" }));
+    await waitFor(() =>
+      expect(lastRequest("POST", "/api/v1/transactions")?.body).toMatchObject({ asset_id: "a-td", quantity: 0.35, unit_price: 2450 }),
+    );
+    expect(await within(ledger).findByText("0,35 títulos × R$ 2.450,00")).toBeInTheDocument();
   });
 });
 

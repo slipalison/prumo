@@ -355,7 +355,12 @@ junto do tema) mascara os valores em todas as telas e fica salvo no
   abrir. Os botões − e + da quantidade continuam funcionando às cegas.
 - O **sentido** do preço também é dado: com o olho fechado somem as setas ▲/▼ e
   o brilho verde/vermelho. O selo "Ao vivo" fica, porque diz só o estado.
-- Ficam visíveis o que não é valor em reais: percentuais, notas, nomes e
+- **Lançamentos e posição**: preço médio, custo, resultado e lucro realizado
+  em reais viram `R$ ••••` (sem sinal: o sentido fica na rentabilidade em %);
+  na lista, a linha diz só o tipo, a data e "•• cotas × R$ ••••"; os campos
+  do formulário seguem a regra dos campos de valor acima. Na linha da
+  Carteira, "PM R$ ••••". O câmbio do lançamento é cotação pública e fica.
+- Ficam visíveis o que não é valor em reais: percentuais (inclusive a rentabilidade da posição), notas, nomes e
   tickers, e os atalhos fixos do campo do aporte (R$ 500, R$ 1.000...).
 
 ## Acessibilidade

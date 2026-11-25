@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent } from "react";
+import { useId, useState, type FormEvent, type InputHTMLAttributes, type Ref } from "react";
 import { errorMessage } from "../../api/client";
 import { useCreateTransaction, useUpdateTransaction } from "../../api/ledger";
 import type { Transaction, TransactionKind, UpdateTransactionRequest } from "../../api/ledgerTypes";
@@ -7,6 +7,8 @@ import { MagneticButton } from "../../components/MagneticButton";
 import { useToast } from "../../components/toastContext";
 import { unitOf } from "../../lib/assetClasses";
 import { parseDecimal } from "../../lib/format";
+import { MASK_BRL, MASK_QUANTITY } from "../../lib/money";
+import { useMoney } from "../../lib/privacy";
 import { useFocusOnMount } from "../../lib/useFocusOnMount";
 import { numberText } from "./format";
 import { kindLabel, kindsFor, PRICE_RULE, priceLabel, quantityHint, takesFees, todayIso } from "./kinds";
@@ -37,7 +39,7 @@ export function TransactionForm({ asset, initial, focusPrice = false, onDone }: 
     fx: useId(),
     costKnown: useId(),
   };
-  const unit = unitOf(asset.asset_class, asset.listed_on_b3);
+  const unit = unitOf(asset.asset_class, asset.listed_on_b3, asset.treasury);
   const valueBased = unit === "value";
   // Preço em outra moeda só faz sentido onde a cotação já é em outra moeda.
   const foreign = !valueBased && asset.currency !== "BRL" ? asset.currency : null;
@@ -146,15 +148,12 @@ export function TransactionForm({ asset, initial, focusPrice = false, onDone }: 
           <label htmlFor={ids.quantity} className="field__label">
             {quantityLabel}
           </label>
-          <input
+          <MaskedInput
             id={ids.quantity}
-            className="text-input"
-            type="text"
-            inputMode="decimal"
-            autoComplete="off"
+            mask={valueBased ? MASK_BRL : MASK_QUANTITY}
             aria-describedby={hint ? ids.quantityHint : undefined}
             value={quantity}
-            onChange={(event) => setQuantity(event.target.value)}
+            onChange={setQuantity}
           />
         </div>
         {showPrice && (
@@ -162,16 +161,7 @@ export function TransactionForm({ asset, initial, focusPrice = false, onDone }: 
             <label htmlFor={ids.price} className="field__label">
               {priceLabel(kind)}
             </label>
-            <input
-              id={ids.price}
-              ref={priceRef}
-              className="text-input"
-              type="text"
-              inputMode="decimal"
-              autoComplete="off"
-              value={price}
-              onChange={(event) => setPrice(event.target.value)}
-            />
+            <MaskedInput id={ids.price} ref={priceRef} mask={MASK_BRL} value={price} onChange={setPrice} />
           </div>
         )}
         {showFees && (
@@ -179,16 +169,7 @@ export function TransactionForm({ asset, initial, focusPrice = false, onDone }: 
             <label htmlFor={ids.fees} className="field__label">
               Taxas (corretagem, emolumentos)
             </label>
-            <input
-              id={ids.fees}
-              className="text-input"
-              type="text"
-              inputMode="decimal"
-              autoComplete="off"
-              placeholder="0"
-              value={fees}
-              onChange={(event) => setFees(event.target.value)}
-            />
+            <MaskedInput id={ids.fees} mask={MASK_BRL} placeholder="0" value={fees} onChange={setFees} />
           </div>
         )}
         {showCurrency && (
@@ -207,15 +188,7 @@ export function TransactionForm({ asset, initial, focusPrice = false, onDone }: 
             <label htmlFor={ids.fx} className="field__label">
               Câmbio (R$ por 1 {currency})
             </label>
-            <input
-              id={ids.fx}
-              className="text-input"
-              type="text"
-              inputMode="decimal"
-              autoComplete="off"
-              value={fx}
-              onChange={(event) => setFx(event.target.value)}
-            />
+            <MaskedInput id={ids.fx} mask={null} value={fx} onChange={setFx} />
           </div>
         )}
       </div>
@@ -254,5 +227,38 @@ export function TransactionForm({ asset, initial, focusPrice = false, onDone }: 
         </MagneticButton>
       </div>
     </form>
+  );
+}
+
+type MaskedInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange"> & {
+  value: string;
+  onChange: (text: string) => void;
+  /** O que aparece com os valores ocultos enquanto o campo não tem foco; `null` nunca mascara. */
+  mask: string | null;
+  ref?: Ref<HTMLInputElement>;
+};
+
+/**
+ * Campo de número do lançamento. Com o olho fechado, fora do foco ele mostra
+ * a máscara (é o que o leitor de tela lê também), como o `MoneyInput`; no
+ * foco, o número para editar.
+ */
+function MaskedInput({ value, onChange, mask, ref, ...rest }: MaskedInputProps) {
+  const money = useMoney();
+  const [focused, setFocused] = useState(false);
+  const masked = money.hidden && !focused && mask !== null && value !== "";
+  return (
+    <input
+      {...rest}
+      ref={ref}
+      className="text-input"
+      type="text"
+      inputMode="decimal"
+      autoComplete="off"
+      value={masked ? mask : value}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onChange={(event) => onChange(event.target.value)}
+    />
   );
 }

@@ -8,36 +8,48 @@ import { MagneticButton } from "../../components/MagneticButton";
 import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/toastContext";
 import { nounOf, unitOf, type UnitKind } from "../../lib/assetClasses";
-import { formatBRL, formatQuantity, plural } from "../../lib/format";
-import { formatSignedBRL, formatSignedPercent } from "./format";
+import { formatBRL, plural } from "../../lib/format";
+import type { Money } from "../../lib/money";
+import { useMoney } from "../../lib/privacy";
+import { formatSignedPercent, signedBRL } from "./format";
 import { formatTradeDate, kindLabel, quantityDelta } from "./kinds";
 import { TransactionForm } from "./TransactionForm";
 import "./ledger.css";
 
-/** O que a linha mostra depois do tipo: quantidade, preço, taxa. */
-function detail(t: Transaction, asset: Asset, unit: UnitKind): string {
+/** Valor na moeda do lançamento; com os valores ocultos, a máscara. */
+function inCurrency(money: Money, value: number, currency: string): string {
+  if (currency === "BRL" || money.hidden) return money.brl(value);
+  return `${currency} ${value.toLocaleString("pt-BR", { maximumFractionDigits: 8 })}`;
+}
+
+/**
+ * O que a linha mostra depois do tipo: quantidade, preço, taxa. Quantidade e
+ * dinheiro passam pelos formatadores da tela (`useMoney`): com o olho fechado,
+ * a linha diz só o tipo e a data. O câmbio é cotação pública, não patrimônio.
+ */
+function detail(t: Transaction, asset: Asset, unit: UnitKind, money: Money): string {
   const delta = quantityDelta(t);
   if (unit === "value") {
-    const amount = t.kind === "opening" || t.kind === "buy" || t.kind === "redemption" ? formatBRL(t.quantity) : formatSignedBRL(delta);
+    const amount =
+      t.kind === "opening" || t.kind === "buy" || t.kind === "redemption" ? money.brl(t.quantity) : signedBRL(money, delta);
     return t.kind === "opening" && t.unit_price === null ? `${amount} · custo desconhecido` : amount;
   }
   const fractional = unit === "fraction";
-  const noun = fractional ? (asset.symbol ?? "") : plural(Math.abs(t.quantity), nounOf(asset.asset_class, asset.listed_on_b3));
-  const units = `${formatQuantity(Math.abs(t.quantity), fractional)} ${noun}`.trim();
+  const noun =
+    fractional && !asset.treasury
+      ? (asset.symbol ?? "")
+      : plural(Math.abs(t.quantity), nounOf(asset.asset_class, asset.listed_on_b3, asset.treasury));
+  const units = `${money.quantity(Math.abs(t.quantity), fractional)} ${noun}`.trim();
   const parts: string[] = [];
   if (t.kind === "adjustment" || t.kind === "split" || t.kind === "reverse_split") {
-    parts.push(`${delta > 0 ? "+" : "−"}${units}`);
+    parts.push(money.hidden ? units : `${delta > 0 ? "+" : "−"}${units}`);
   } else if (t.unit_price === null) {
     parts.push(t.kind === "opening" ? `${units} · custo desconhecido` : units);
   } else {
-    const price =
-      t.currency === "BRL"
-        ? formatBRL(t.unit_price)
-        : `${t.currency} ${t.unit_price.toLocaleString("pt-BR", { maximumFractionDigits: 8 })}`;
-    parts.push(`${units} × ${price}`);
+    parts.push(`${units} × ${inCurrency(money, t.unit_price, t.currency)}`);
     if (t.fx_rate !== null) parts.push(`câmbio ${formatBRL(t.fx_rate)}`);
   }
-  if (t.fees > 0) parts.push(`taxas ${t.currency === "BRL" ? formatBRL(t.fees) : `${t.currency} ${t.fees}`}`);
+  if (t.fees > 0) parts.push(`taxas ${inCurrency(money, t.fees, t.currency)}`);
   return parts.join(" · ");
 }
 
@@ -59,7 +71,8 @@ export function TransactionsSection({ asset }: TransactionsSectionProps) {
   const [confirming, setConfirming] = useState<string | null>(null);
   const remove = useDeleteTransaction();
   const toast = useToast();
-  const unit = unitOf(asset.asset_class, asset.listed_on_b3);
+  const money = useMoney();
+  const unit = unitOf(asset.asset_class, asset.listed_on_b3, asset.treasury);
   const valueBased = unit === "value";
 
   const unknownOpening = list.data?.find((t) => t.kind === "opening" && t.unit_price === null);
@@ -103,23 +116,23 @@ export function TransactionsSection({ asset }: TransactionsSectionProps) {
         {!valueBased && (
           <div>
             <dt>Preço médio</dt>
-            <dd>{asset.average_price === null ? "—" : formatBRL(asset.average_price)}</dd>
+            <dd>{asset.average_price === null ? "—" : money.brl(asset.average_price)}</dd>
           </div>
         )}
         <div>
           <dt>{valueBased ? "Aplicado" : "Custo"}</dt>
-          <dd>{asset.cost_basis === null ? "—" : formatBRL(asset.cost_basis)}</dd>
+          <dd>{asset.cost_basis === null ? "—" : money.brl(asset.cost_basis)}</dd>
         </div>
         <div>
           <dt>{valueBased ? "Rendimento" : "Resultado"}</dt>
           <dd>
-            {asset.unrealized_gain === null ? "—" : formatSignedBRL(asset.unrealized_gain)}
+            {asset.unrealized_gain === null ? "—" : signedBRL(money, asset.unrealized_gain)}
             {asset.return_percent !== null && <span className="muted"> ({formatSignedPercent(asset.return_percent)})</span>}
           </dd>
         </div>
         <div>
           <dt>Lucro realizado</dt>
-          <dd>{asset.realized_gain === null ? "—" : formatSignedBRL(asset.realized_gain)}</dd>
+          <dd>{asset.realized_gain === null ? "—" : signedBRL(money, asset.realized_gain)}</dd>
         </div>
       </dl>
 
@@ -173,7 +186,7 @@ export function TransactionsSection({ asset }: TransactionsSectionProps) {
                     {label}
                     {SOURCE_TAG[t.source] && <span className="ledger-row__tag">{SOURCE_TAG[t.source]}</span>}
                   </span>
-                  <span className="ledger-row__detail">{detail(t, asset, unit)}</span>
+                  <span className="ledger-row__detail">{detail(t, asset, unit, money)}</span>
                 </div>
                 <span className="ledger-row__date">{date}</span>
                 {confirming === t.id ? (
