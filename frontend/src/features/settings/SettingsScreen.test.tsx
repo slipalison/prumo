@@ -31,6 +31,7 @@ describe("Navegação e Ajustes", () => {
     expect(within(sections).getAllByRole("link").map((link) => link.textContent)).toEqual([
       "Metas por classe",
       "Critérios",
+      "Saúde da carteira",
     ]);
     expect(within(sections).getByRole("link", { name: "Metas por classe" })).toHaveAttribute("aria-current", "page");
     expect(within(sections).getByRole("link", { name: "Critérios" })).not.toHaveAttribute("aria-current");

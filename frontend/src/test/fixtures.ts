@@ -1,4 +1,5 @@
 import { ASSET_CLASSES, type Asset, type AssetClass, type Checklists, type GoalTargets, type Plan, type Portfolio } from "../api/types";
+import type { HealthRule, HealthWarning, SectorSourceInfo } from "../api/healthTypes";
 import { checklistScore } from "../lib/score";
 
 /** Ativo como o banco falso guarda: o que o servidor calcula sai em `toPortfolio`. */
@@ -19,6 +20,10 @@ export type StoredAsset = {
   treasury?: boolean;
   /** De quando é a cotação, se não for `QUOTES_AT` (o Tesouro: a data-base). */
   quote_at?: string;
+  /** Setor da fonte pública; ausente = sem setor. */
+  sector?: string;
+  subsector?: string;
+  segment?: string;
 };
 
 const nativeB3 = (assetClass: AssetClass) => assetClass === "br_stocks" || assetClass === "br_reits";
@@ -76,12 +81,16 @@ export function defaultAssets(): StoredAsset[] {
       currency: "BRL",
       score_override: null,
       answers: { s1: true, s2: true, s3: true },
+      sector: "Financeiro",
+      subsector: "Holdings Diversificadas",
+      segment: "Holdings Diversificadas",
     },
-    fii("a-knri", "KNRI11", "Kinea Renda Imobiliária", 10, 142, allYes),
-    fii("a-hglg", "HGLG11", "Pátria Log", 12, 140.8, allYes),
-    fii("a-btlg", "BTLG11", "BTG Pactual Logística", 15, 94.55, { ...allYes, r6: false }),
+    { ...fii("a-knri", "KNRI11", "Kinea Renda Imobiliária", 10, 142, allYes), sector: "Tijolo", segment: "Multicategoria" },
+    { ...fii("a-hglg", "HGLG11", "Pátria Log", 12, 140.8, allYes), sector: "Tijolo", segment: "Multicategoria" },
+    { ...fii("a-btlg", "BTLG11", "BTG Pactual Logística", 15, 94.55, { ...allYes, r6: false }), sector: "Tijolo", segment: "Multicategoria" },
+    // Fora da referência (fundo sem informe): fica "sem setor".
     fii("a-trxf", "TRXF11", "TRX Real Estate", 20, 53.81, { ...allYes, r5: false }),
-    fii("a-mxrf", "MXRF11", "Maxi Renda", 100, 8.37, { r1: false, r2: true, r3: false, r4: true, r5: true, r6: false }),
+    { ...fii("a-mxrf", "MXRF11", "Maxi Renda", 100, 8.37, { r1: false, r2: true, r3: false, r4: true, r5: true, r6: false }), sector: "Papel", segment: "Logística" },
     {
       id: "a-btc",
       asset_class: "crypto",
@@ -170,6 +179,9 @@ export function toAsset(stored: StoredAsset, checklists: Checklists, classTotal:
     score_source: scoreSource,
     score_override: stored.score_override,
     answers: { ...stored.answers },
+    sector: stored.sector ?? null,
+    subsector: stored.subsector ?? null,
+    segment: stored.segment ?? null,
   };
 }
 
@@ -277,4 +289,80 @@ export function samplePlan(amount = 6000): Plan {
     ],
     notices: [{ code: "class_blocked", asset_class: "intl_stocks", amount: 25226.45, reason: "no_assets" }],
   };
+}
+
+/** As cinco regras como o servidor as devolve de fábrica. */
+export function defaultHealthRules(): HealthRule[] {
+  return [
+    { rule: "max_asset", enabled: true, unit: "percent", threshold: 15, default_threshold: 15 },
+    { rule: "top_five", enabled: true, unit: "percent", threshold: 60, default_threshold: 60 },
+    { rule: "max_sector", enabled: true, unit: "percent", threshold: 40, default_threshold: 40 },
+    { rule: "min_assets", enabled: true, unit: "count", threshold: 3, default_threshold: 3 },
+    { rule: "empty_class", enabled: true, unit: null, threshold: null, default_threshold: null },
+  ];
+}
+
+/**
+ * Os avisos da carteira fictícia: Tesouro e Itaúsa pesam demais, os cinco
+ * maiores são quase tudo, os FIIs são só tijolo e Ações Internacionais tem
+ * meta sem nada dentro.
+ */
+export function defaultWarnings(): HealthWarning[] {
+  return [
+    {
+      rule: "max_asset",
+      subject: { kind: "asset", asset_id: "a-ipca", label: "Tesouro IPCA+ 2035" },
+      unit: "percent",
+      current: 70.76,
+      limit: 15,
+      needed_contribution: 446_000,
+    },
+    {
+      rule: "max_asset",
+      subject: { kind: "asset", asset_id: "a-itsa", label: "ITSA4" },
+      unit: "percent",
+      current: 23.31,
+      limit: 15,
+      needed_contribution: 66_500.5,
+    },
+    {
+      rule: "top_five",
+      subject: { kind: "top_assets", labels: ["Tesouro IPCA+ 2035", "ITSA4", "HGLG11", "KNRI11", "BTLG11"] },
+      unit: "percent",
+      current: 97.84,
+      limit: 60,
+      needed_contribution: 75_900,
+    },
+    {
+      rule: "max_sector",
+      subject: { kind: "sector", asset_class: "br_reits", sector: "Tijolo" },
+      unit: "percent",
+      current: 87.01,
+      limit: 40,
+      needed_contribution: 8_200,
+    },
+    {
+      rule: "min_assets",
+      subject: { kind: "class", asset_class: "br_stocks" },
+      unit: "count",
+      current: 1,
+      limit: 3,
+      needed_contribution: null,
+    },
+    {
+      rule: "empty_class",
+      subject: { kind: "class", asset_class: "intl_stocks" },
+      unit: "count",
+      current: 0,
+      limit: 1,
+      needed_contribution: null,
+    },
+  ];
+}
+
+export function defaultSectorSources(): SectorSourceInfo[] {
+  return [
+    { source: "b3_stocks", asset_class: "br_stocks", updated_at: "2026-11-20T09:00:00Z", failing: false },
+    { source: "cvm_reits", asset_class: "br_reits", updated_at: "2026-11-21T09:00:00Z", failing: false },
+  ];
 }

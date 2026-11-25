@@ -19,9 +19,11 @@ import { countBelowIdeal, hasIdeal, readIdeal, type IdealReading } from "../../l
 import { useLiveStatus } from "../../lib/liveStatus";
 import { useMoney } from "../../lib/privacy";
 import { assetName, needsRating, ratingIntro } from "../../lib/rating";
+import { HealthSummary } from "../health/HealthSummary";
 import { AddAssetSheet } from "./AddAssetSheet";
 import { ContributionHistory } from "./ContributionHistory";
 import { EditAssetSheet } from "./EditAssetSheet";
+import { SectorBreakdown } from "./SectorBreakdown";
 
 type PortfolioScreenProps = { portfolio: Portfolio };
 
@@ -107,6 +109,8 @@ export function PortfolioScreen({ portfolio }: PortfolioScreenProps) {
           <span className="donut__caption">{plural(portfolio.assets.length, ["ativo", "ativos"])}</span>
         </Donut>
       </GlassCard>
+
+      <HealthSummary />
 
       <div className="class-list">
         {shown.map((summary, index) => (
@@ -215,6 +219,7 @@ function ClassSection({ index, summary, assets, onEdit, onAdd }: ClassSectionPro
           </span>
         </header>
         <ClassBar assetClass={summary.asset_class} current={summary.current_percent} target={summary.target_percent} />
+        <SectorBreakdown assetClass={summary.asset_class} assets={assets} />
         {assets.length === 0 ? (
           <div className="class-card__empty">
             <span className="field__hint">

@@ -29,6 +29,10 @@ comprar para a carteira ficar o mais perto possível das suas metas.
 - **Preço ao vivo** — patrimônio e ativos mudam na tela sem recarregar, pelo
   streamer do Yahoo: EUA, câmbio e cripto em segundos; B3 com os 15 minutos
   de atraso do dado gratuito. Tudo convertido para reais.
+- **Saúde da carteira** — avisos (sem nota) sobre concentração num ativo, nos
+  cinco maiores ou num setor, e classe rasa ou vazia. As cinco regras são suas:
+  liga, desliga e escolhe o limite. O setor vem da B3 (ações) e da CVM (FIIs).
+  Detalhes em [`docs/saude.md`](docs/saude.md).
 
 No ar em <https://prumo.alisonamorim.com>, atrás do Cloudflare Access.
 
@@ -47,6 +51,7 @@ Documentos:
 - [`docs/api.md`](docs/api.md) — contrato da API
 - [`docs/alocacao.md`](docs/alocacao.md) — o algoritmo do aporte
 - [`docs/tesouro.md`](docs/tesouro.md) — o Tesouro Direto: fonte, modelo e limites
+- [`docs/saude.md`](docs/saude.md) — regras de saúde, fontes de setor e limitações
 - [`docs/design.md`](docs/design.md) — interface, identidade e movimento
 - [`docs/ir.md`](docs/ir.md) — regras de IR por ano, com fonte, e o que não é calculado
 - [`deploy/README.md`](deploy/README.md) — como o app chega ao cluster
@@ -86,6 +91,7 @@ npm run dev
 | `QUOTES_ENABLED` | `true` | `false` desliga o provedor de cotações |
 | `QUOTES_STREAM` | `true` | `false` desliga o preço ao vivo (fica o `chart` a cada `QUOTES_REFRESH_SECS`) |
 | `QUOTES_REFRESH_SECS` | `900` | intervalo da atualização automática (mín. 60) |
+| `SECTORS_ENABLED` | `true` | `false` desliga a busca de setor (B3 e CVM, a cada 30 dias) |
 
 O binário recusa subir com configuração pela metade.
 

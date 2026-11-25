@@ -166,6 +166,46 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
   remover, restaurar padrão.
 - Texto curto explicando a nota: "cada sim soma 1, cada não tira 1".
 
+### 5. Saúde
+
+Avisos, não nota. Cabeçalho "Saúde da carteira" e uma frase dizendo que as
+regras são da pessoa.
+
+- **Veredito** (cartão no topo, `role="status"`): o prumo parado e
+  "Nenhum aviso" quando está tudo dentro dos limites; "N avisos" com quantas
+  regras passaram; ou "Ainda sem o que medir" (carteira vazia, sem metas).
+  Nunca "tudo certo" quando não há o que medir.
+- **Um cartão por aviso**, com a pergunta que o servidor respondeu em quatro
+  linhas: o que é ("ITUB4 é 31,04% da carteira"), **Agora** e **Limite** em
+  números grandes, a barra com o limite no fio de prumo (mesmo desenho da barra
+  de classe, com o fio no limite em vez da meta) e **"O que fazer."** —
+  aportar fora do que passou (valor em reais), nunca vender — com um link para
+  Aportar ou Carteira. A barra é só reforço: o texto diz "passou".
+- **Suas regras**: uma linha por regra, em frase ("Nenhum ativo acima de [15] %
+  da carteira"), o campo do limite, o porquê em uma linha, o **estado em texto
+  com ícone** (Passou do limite / Dentro do limite / Sem o que medir /
+  Desligada) e o interruptor. "Voltar para 60%" aparece quando o limite não é o
+  de fábrica. **Salvar regras** só habilita com mudança válida; o erro de um
+  limite aparece na própria linha (`role="alert"`, `aria-invalid`).
+- **De onde vem o setor**: a fonte de cada classe, de quando é, se a última
+  busca falhou, quantos ativos ficaram sem setor e por que os EUA não têm.
+
+Na **Carteira**:
+
+- Abaixo do patrimônio, um **resumo curto** ("Saúde da carteira: 3 avisos", os
+  dois primeiros e "e mais N") com o link "Ver painel". Some se os avisos não
+  carregam, para nunca atrapalhar a carteira.
+- Dentro de **Ações Nacionais** e **Fundos Imobiliários**, uma **rosca por
+  setor** (por tipo de fundo nos FIIs) com a lista ao lado: nome e fatia sempre
+  escritos; a cor só ajuda a achar. Sete setores têm cor; o resto vira "Outros
+  setores", e o que a fonte não conhece vira "Sem setor" (cinza). Se a fonte
+  nunca respondeu, uma linha diz isso no lugar da rosca.
+
+A paleta dos setores (`--sector-1` a `--sector-7`, `--sector-other`,
+`--sector-none`) tem tom próprio nos dois temas e fica em `styles/health.css`;
+todos passam de 3:1 sobre o fundo (elementos gráficos), e o texto de cada fatia
+está na lista.
+
 ### Histórico
 
 Dentro de Carteira (ou do Aportar): lista dos aportes registrados com data,

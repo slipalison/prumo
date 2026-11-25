@@ -176,7 +176,10 @@ A tela inteira numa chamada.
       "score": 6,
       "score_source": "checklist",
       "score_override": null,
-      "answers": { "4c1e…": true, "9a77…": false }
+      "answers": { "4c1e…": true, "9a77…": false },
+      "sector": "Tijolo",
+      "subsector": null,
+      "segment": "Multicategoria"
     }
   ],
   "checklists": {
@@ -212,6 +215,13 @@ A tela inteira numa chamada.
   dado gratuito da bolsa sai atrasado); fora do pregão, é a do último
   negócio. Ativo em moeda estrangeira leva a mais velha entre a do preço e a
   do câmbio. `quotes_updated_at` é a mais velha da carteira.
+- `sector`, `subsector`, `segment`: onde o papel está, de fonte pública (ver
+  [Saúde da carteira](#saúde-da-carteira)). Em `br_stocks` é a Classificação
+  Setorial da B3 (setor, subsetor, segmento); em `br_reits`, `sector` é o
+  **tipo** do fundo (`Tijolo`, `Papel`, `Fundo de fundos` ou `Híbrido`) e
+  `segment` o que o administrador declara à CVM. Nulos nas outras classes e
+  enquanto a fonte não respondeu ou não conhece o papel: a carteira nunca
+  falha por isso.
 
 ### `GET /api/v1/portfolio/stream`
 
@@ -454,6 +464,115 @@ o resultado por lá.
 ```json
 { "refreshed": 8, "failed": ["XYZW11"] }
 ```
+
+## Saúde da carteira
+
+Avisos sobre o que a meta por classe não enxerga, com regras da própria pessoa.
+**Não há nota.** O desenho, as fontes de setor e os limites estão em
+[saude.md](saude.md). Tudo pelo dono, como o resto.
+
+### `GET /api/v1/health`
+
+```json
+{
+  "total_value": 9665.0,
+  "warnings": [
+    {
+      "rule": "max_asset",
+      "subject": { "kind": "asset", "asset_id": "8f0c…", "label": "ITUB4" },
+      "unit": "percent",
+      "current": 31.04,
+      "limit": 15.0,
+      "needed_contribution": 10335.0
+    },
+    {
+      "rule": "max_sector",
+      "subject": { "kind": "sector", "asset_class": "br_stocks", "sector": "Financeiro" },
+      "unit": "percent",
+      "current": 83.33,
+      "limit": 40.0,
+      "needed_contribution": 6500.0
+    },
+    {
+      "rule": "empty_class",
+      "subject": { "kind": "class", "asset_class": "crypto" },
+      "unit": "count",
+      "current": 0.0,
+      "limit": 1.0,
+      "needed_contribution": null
+    }
+  ],
+  "rules": [
+    {
+      "rule": "max_asset",
+      "enabled": true,
+      "unit": "percent",
+      "threshold": 15.0,
+      "default_threshold": 15.0,
+      "status": "warning"
+    }
+  ],
+  "unclassified_count": 1,
+  "sources": [
+    {
+      "source": "b3_stocks",
+      "asset_class": "br_stocks",
+      "updated_at": "2026-11-25T12:00:00Z",
+      "failing": false
+    }
+  ]
+}
+```
+
+- `warnings`: só as regras ligadas que passaram do limite, na ordem das regras
+  (e, dentro de uma, do maior para o menor). O servidor manda fatos; o texto
+  que a pessoa lê é montado na tela.
+- `rule`: `max_asset`, `top_five`, `max_sector`, `min_assets` ou `empty_class`.
+- `subject.kind`: `asset` (`asset_id`, `label`), `top_assets` (`labels`, do maior
+  para o menor), `sector` (`asset_class`, `sector`) ou `class` (`asset_class`).
+- `unit`: `percent` (0 a 100) ou `count` (quantidade de ativos). `current` e
+  `limit` estão nessa unidade.
+- `needed_contribution`: quantos reais de **dinheiro novo**, em outros ativos
+  (em `max_sector`, em outros setores da mesma classe), levam o percentual de
+  volta ao limite sem vender nada. `null` nas regras de contagem.
+- `rules`: sempre as cinco, na ordem acima. `status`: `warning` (passou do
+  limite), `ok`, `off` (desligada) ou `not_applicable` (ligada, mas a
+  carteira ainda não dá o que medir: poucos ativos, sem setor, sem metas).
+  `threshold` e `unit` são nulos em `empty_class`, que não tem limite.
+- `unclassified_count`: ativos **com valor** em `br_stocks` e `br_reits` que a
+  fonte de setor não classificou.
+- `sources`: uma por fonte de setor. `updated_at` é da última busca que deu
+  certo (`null` se nunca deu); `failing` diz que a última tentativa falhou e o
+  setor mostrado é o da busca anterior.
+
+### `GET /api/v1/health/rules`
+
+```json
+{
+  "rules": [
+    { "rule": "max_asset", "enabled": true, "unit": "percent", "threshold": 15.0, "default_threshold": 15.0 },
+    { "rule": "empty_class", "enabled": true, "unit": null, "threshold": null, "default_threshold": null }
+  ]
+}
+```
+
+As cinco regras como a pessoa as deixou (o que ela nunca mexeu vale o padrão
+de `default_threshold`).
+
+### `PUT /api/v1/health/rules`
+
+```json
+{ "rules": { "max_asset": { "enabled": false }, "top_five": { "threshold": 70 } } }
+```
+
+Muda só as regras e os campos enviados; o resto fica como está. Cada regra
+leva `enabled`, `threshold` ou os dois (vazio é `422`). Responde como o `GET`.
+Tudo ou nada: uma regra inválida não grava nenhuma.
+
+- `threshold` em `max_asset`, `top_five` e `max_sector`: percentual maior que
+  0 e até 100, com até duas casas. Em `min_assets`: inteiro de 1 a 50.
+- `empty_class` não tem limite: mandar `threshold` é `422`.
+- Regra desconhecida, campo desconhecido ou corpo que não é objeto: `422`.
 
 ## Operacional (porta interna 9090)
 

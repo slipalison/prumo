@@ -2,7 +2,7 @@ import type { SVGProps } from "react";
 
 type IconProps = SVGProps<SVGSVGElement>;
 
-function Svg({ children, ...props }: IconProps) {
+export function Svg({ children, ...props }: IconProps) {
   return (
     <svg
       width="22"

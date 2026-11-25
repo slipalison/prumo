@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import type { Portfolio } from "../../api/types";
 import { CriteriaScreen } from "../criteria/CriteriaScreen";
 import { GoalsScreen } from "../goals/GoalsScreen";
+import { HealthScreen } from "../health/HealthScreen";
 
 export type SettingsSection = {
   /** O trecho do endereço: `#/ajustes/<id>`. */
@@ -18,4 +19,5 @@ export type SettingsSection = {
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { id: "metas", label: "Metas por classe", Component: GoalsScreen },
   { id: "criterios", label: "Critérios", Component: CriteriaScreen },
+  { id: "saude", label: "Saúde da carteira", Component: HealthScreen },
 ];

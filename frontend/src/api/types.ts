@@ -62,6 +62,13 @@ export type Asset = {
   score_source: ScoreSource;
   score_override: number | null;
   answers: Record<string, boolean>;
+  /**
+   * Setor, subsetor e segmento da fonte pública (B3 nas ações, CVM nos FIIs).
+   * Nulos onde não há fonte (EUA, cripto, renda fixa) ou enquanto ela não respondeu.
+   */
+  sector: string | null;
+  subsector: string | null;
+  segment: string | null;
 };
 
 export type ChecklistQuestion = {
