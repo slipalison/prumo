@@ -95,10 +95,11 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
   quantas houver), o título da aba, o `aria-current` e o roteamento saem dela.
   Hoje: Aportar, Carteira, Ajustes.
 - Ajustes agrupa **seções** (`SETTINGS_SECTIONS`,
-  `frontend/src/features/settings/sections.ts`): Metas por classe e Critérios.
+  `frontend/src/features/settings/sections.ts`): Metas por classe, Critérios e
+  Saúde da carteira.
   Seção nova também é uma linha. A lista de seções fica no topo de Ajustes
   (links com `aria-current="page"` na atual), cada seção tem endereço próprio
-  (`#/ajustes/metas`, `#/ajustes/criterios`) e uma seção por vez na tela.
+  (`#/ajustes/metas`, `#/ajustes/criterios`, `#/ajustes/saude`) e uma seção por vez na tela.
 - Os links antigos `#/metas` e `#/criterios` seguem valendo: abrem a seção
   certa de Ajustes e trocam o endereço pelo novo, sem entrada nova no
   histórico (`LEGACY_ROUTES` em `lib/route.ts`).
@@ -166,9 +167,10 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
   remover, restaurar padrão.
 - Texto curto explicando a nota: "cada sim soma 1, cada não tira 1".
 
-### 5. Saúde
+### 5. Saúde (seção de Ajustes)
 
-Avisos, não nota. Cabeçalho "Saúde da carteira" e uma frase dizendo que as
+Em `#/ajustes/saude`, fora da barra principal: a pessoa chega por Ajustes ou
+pelo resumo da Carteira. Avisos, não nota. Cabeçalho "Saúde da carteira" e uma frase dizendo que as
 regras são da pessoa.
 
 - **Veredito** (cartão no topo, `role="status"`): o prumo parado e
@@ -193,13 +195,21 @@ regras são da pessoa.
 Na **Carteira**:
 
 - Abaixo do patrimônio, um **resumo curto** ("Saúde da carteira: 3 avisos", os
-  dois primeiros e "e mais N") com o link "Ver painel". Some se os avisos não
-  carregam, para nunca atrapalhar a carteira.
+  dois primeiros e "e mais N") com o link "Ver painel" para `#/ajustes/saude`.
+  Junto com o "N ativos abaixo do ideal" do cabeçalho, são os dois resumos do
+  topo: o do ideal diz onde aportar, o de saúde diz o que passou do limite. Some
+  se os avisos não carregam, para nunca atrapalhar a carteira.
 - Dentro de **Ações Nacionais** e **Fundos Imobiliários**, uma **rosca por
   setor** (por tipo de fundo nos FIIs) com a lista ao lado: nome e fatia sempre
   escritos; a cor só ajuda a achar. Sete setores têm cor; o resto vira "Outros
   setores", e o que a fonte não conhece vira "Sem setor" (cinza). Se a fonte
   nunca respondeu, uma linha diz isso no lugar da rosca.
+
+Com o **olho fechado**, o aporte em reais de cada aviso vira `R$ ••••` (por
+`useMoney()`, também para o leitor de tela); percentuais, limites e as fatias
+das roscas são percentuais e ficam à vista. O título do Tesouro Direto (renda
+fixa) não tem setor e aparece nos avisos pelo nome ("Tesouro IPCA+ 2035"), não
+pela chave `TD-…`.
 
 A paleta dos setores (`--sector-1` a `--sector-7`, `--sector-other`,
 `--sector-none`) tem tom próprio nos dois temas e fica em `styles/health.css`;

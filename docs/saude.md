@@ -131,6 +131,13 @@ setor: em FIIs, `sector` é o tipo e `segment`, o que o administrador declara
 (que pode destoar: o `Segmento_Atuacao` de alguns fundos de papel é
 "Logística").
 
+### Tesouro Direto e o resto: sem setor
+
+O título do Tesouro Direto (`TD-…`, renda fixa) não tem setor B3 nem CVM: o
+Prumo nem o procura e ele **não conta** como "sem setor" de ações ou FIIs
+(`unclassified_count` olha só Ações Nacionais e FIIs). Nos avisos o título
+aparece pelo nome, não pela chave. Cripto e renda fixa por valor idem.
+
 ### Ações dos EUA: sem setor
 
 A fonte pública seria o código SIC do **SEC EDGAR**. A SEC exige que quem

@@ -215,11 +215,7 @@ fn health_assets(view: &PortfolioView) -> Vec<HealthAsset> {
         .iter()
         .map(|a| HealthAsset {
             id: a.asset.id,
-            label: a
-                .asset
-                .symbol
-                .clone()
-                .unwrap_or_else(|| a.asset.display_name.clone()),
+            label: a.label(),
             asset_class: a.asset.asset_class,
             value: a.current_value,
             sector: a.sector.as_ref().map(|s| s.sector.clone()),

@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::domain::allocation::{self, class_index, percent, round_cents, Holding, Plan, Targets};
 use crate::domain::asset_class::{AssetClass, Market, UnitKind};
 use crate::domain::scoring::{self, ScoreSource};
-use crate::domain::sector::{reference_key, SectorInfo};
+use crate::domain::sector::{reference_key, SectorInfo, SectorSource};
 use crate::live::LiveQuotes;
 use crate::quotes::{fx_symbol, Quote, QuoteError, QuoteProvider};
 use crate::store::{unit_value, Asset, Question, Store, StoreError, StoredQuote};
@@ -75,17 +75,21 @@ pub struct PortfolioView {
 }
 
 impl AssetView {
+    /// Como os avisos citam o ativo: o nome que a pessoa lê. O símbolo do
+    /// título do Tesouro é uma chave, não um ticker.
+    pub fn label(&self) -> String {
+        match &self.asset.symbol {
+            Some(symbol) if !self.asset.treasury => symbol.clone(),
+            _ => self.asset.display_name.clone(),
+        }
+    }
+
     /// O ativo como o motor do aporte o enxerga.
     fn holding(&self) -> Holding {
         Holding {
             asset_id: self.asset.id,
             asset_class: self.asset.asset_class,
-            // O aviso do plano cita o ativo pelo nome que a pessoa lê: o
-            // símbolo do título do Tesouro é uma chave, não um ticker.
-            label: match &self.asset.symbol {
-                Some(symbol) if !self.asset.treasury => symbol.clone(),
-                _ => self.asset.display_name.clone(),
-            },
+            label: self.label(),
             value: self.current_value,
             unit_price: self.unit_price,
             unit: self.asset.market().unit_kind(),
@@ -163,6 +167,15 @@ fn resolve_price(
     }
 }
 
+/// Onde procurar o setor de um ativo. O título do Tesouro é renda fixa sem
+/// setor B3/CVM: nem é procurado, e não conta como "sem setor" de ações ou FIIs.
+fn sector_key(asset: &Asset) -> Option<(SectorSource, String)> {
+    if asset.treasury {
+        return None;
+    }
+    reference_key(asset.asset_class, asset.symbol.as_deref()?)
+}
+
 /// A carteira inteira, pronta para a tela.
 pub async fn portfolio(store: &Store, user: Uuid) -> Result<PortfolioView, StoreError> {
     let targets = store.goals(user).await?;
@@ -188,7 +201,7 @@ pub async fn portfolio(store: &Store, user: Uuid) -> Result<PortfolioView, Store
 
     let keys: Vec<_> = assets
         .iter()
-        .filter_map(|a| reference_key(a.asset_class, a.symbol.as_deref()?))
+        .filter_map(sector_key)
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
@@ -224,11 +237,7 @@ pub async fn portfolio(store: &Store, user: Uuid) -> Result<PortfolioView, Store
                     .map(|p| unit_value(asset.market().unit_kind(), asset.quantity, p))
                     .unwrap_or(Decimal::ZERO),
             );
-            let sector = reference_key(
-                asset.asset_class,
-                asset.symbol.as_deref().unwrap_or_default(),
-            )
-            .and_then(|key| sectors.get(&key).cloned());
+            let sector = sector_key(&asset).and_then(|key| sectors.get(&key).cloned());
             AssetView {
                 asset,
                 unit_price,
@@ -478,6 +487,27 @@ mod tests {
                 traded_at: None,
             },
         )
+    }
+
+    #[test]
+    fn treasury_bonds_and_other_classes_have_no_sector_key() {
+        let key = sector_key;
+        let stock = asset(AssetClass::BrStocks, Some("WEGE3"), None);
+        assert_eq!(
+            key(&stock),
+            Some((SectorSource::B3Stocks, "WEGE".to_owned()))
+        );
+        // Título do Tesouro: renda fixa sem setor B3/CVM, nem chega a procurar.
+        let bond = Asset {
+            treasury: true,
+            listed_on_b3: false,
+            ..asset(AssetClass::FixedIncome, Some("TD-IPCA-20350515"), None)
+        };
+        assert_eq!(key(&bond), None);
+        // Mesmo que a marca faltasse, a classe e o formato já não têm fonte.
+        let unmarked = asset(AssetClass::FixedIncome, Some("TD-IPCA-20350515"), None);
+        assert_eq!(key(&unmarked), None);
+        assert_eq!(key(&asset(AssetClass::FixedIncome, None, None)), None);
     }
 
     #[test]
