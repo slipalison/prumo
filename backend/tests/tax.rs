@@ -47,6 +47,17 @@ fn f(value: Decimal) -> f64 {
 
 // ---------------------------------------------------------------- migração --
 
+/// Um ativo de antes da 0015: classe, na B3, Tesouro, símbolo, nome e o
+/// instrumento esperado.
+type Case = (
+    AssetClass,
+    bool,
+    bool,
+    Option<&'static str>,
+    &'static str,
+    TaxInstrument,
+);
+
 /// A carteira de antes da 0015 ganha o instrumento padrão, e o SQL da
 /// migração dá o mesmo que `TaxInstrument::default_for` para cada caso.
 #[tokio::test]
@@ -71,7 +82,7 @@ async fn migration_fills_the_default_instrument() {
     use AssetClass::*;
     use TaxInstrument as T;
     // (classe, na B3, Tesouro, símbolo, nome, o esperado)
-    let cases: Vec<(AssetClass, bool, bool, Option<&str>, &str, TaxInstrument)> = vec![
+    let cases: Vec<Case> = vec![
         (BrStocks, true, false, Some("WEGE3"), "WEG S.A.", T::Stock),
         (
             BrStocks,
