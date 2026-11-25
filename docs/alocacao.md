@@ -266,6 +266,20 @@ E por dois cenários fixos (carteira fictícia de R$ 120 mil):
   sem ativo aparece como `unallocated` — R$ 95.994,15, que é o buraco dela
   (R$ 96.000) menos o excesso de outra classe (R$ 5,85).
 
+## O que o motor não olha
+
+O motor decide só pela meta e pela nota. Renda e proventos entram **ao lado**,
+nunca dentro dele:
+
+- **Proventos no valor do aporte.** `GET /income/cash-suggestion` soma o que a
+  carteira pagou, líquido, desde o último aporte registrado, e a tela oferece
+  "incluir". Aceitando, o valor digitado sobe; o motor recebe um número a mais
+  no mesmo campo e roda como sempre.
+- **Renda estimada no resultado.** Depois do plano pronto, cada item ganha a
+  renda mensal que soma (`estimated_monthly_income`) e o plano ganha `income`
+  (o que o aporte soma e a renda de antes e de depois). É informação sobre o
+  plano: nenhum ativo ganha ou perde cota por render mais ou menos.
+
 ## Problemas que este desenho evita
 
 Vistos em calculadoras de rebalanceamento por aí:

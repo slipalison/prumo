@@ -7,6 +7,10 @@ Dinheiro e quantidade trafegam como **número JSON**. Percentuais vão de 0 a 10
 (não de 0 a 1). Datas com hora em RFC 3339, UTC; a data de um negócio
 (`trade_date`) é `AAAA-MM-DD`, sem hora.
 
+(não de 0 a 1). Instantes em RFC 3339, UTC. Datas de calendário (pagamento de
+provento) em `AAAA-MM-DD`; o "hoje" que separa recebido de a receber é o de
+Brasília (UTC−3).
+
 ## Autenticação
 
 Em produção quem autentica é o **Cloudflare Access**. A borda injeta o JWT no
@@ -437,9 +441,18 @@ Calcula, não grava.
   ],
   "notices": [
     { "code": "class_blocked", "asset_class": "intl_stocks", "amount": 37800.0, "reason": "no_assets" }
-  ]
+  ],
+  "income": { "added_monthly": 35.4, "before_monthly": 410.5, "after_monthly": 445.9 }
 }
 ```
+
+- `items[].estimated_monthly_income`: a renda mensal que o item soma,
+  **estimada** (o que a cota pagou em 12 meses × a quantidade comprada ÷ 12,
+  em reais, bruto). `null` quando o ativo não tem histórico (renda fixa, cripto,
+  provedor fora do ar).
+- `income`: o que o aporte soma por mês (`added_monthly`, a soma dos itens) e a
+  renda mensal estimada da carteira antes e depois. `null` quando nenhum ativo
+  tem histórico. É estimativa, nunca extrato; o motor não olha para ela.
 
 - `invested`: soma dos itens. `change`: troco do arredondamento para cotas
   inteiras. `unallocated`: dinheiro sem destino porque a classe que precisaria
@@ -1049,6 +1062,176 @@ Antes do livro, a quantidade vinha do que a pessoa digitou e do "Já comprei"
 Na prática: depois da migração, todo ativo que tinha quantidade digitada
 aparece com "informe o preço médio"; os que só receberam pelo "Já comprei"
 já mostram preço médio e rentabilidade.
+
+## Renda
+
+Proventos são o dinheiro que a carteira paga: dividendo, JCP, rendimento de FII
+e amortização. Cada um é um **evento** com data de pagamento; recebido ou a
+receber **não é gravado**, sai da `pay_date` contra o dia de hoje (pagamento
+hoje já é recebido). Tudo é filtrado pela pessoa dona; id de outra pessoa é
+`404`.
+
+### O evento (`IncomeEvent`)
+
+```json
+{
+  "id": "…",
+  "asset_id": "8f0c…",
+  "symbol": "ITSA4",
+  "display_name": "Itaúsa",
+  "kind": "jcp",
+  "ex_date": "2026-11-10",
+  "pay_date": "2026-11-30",
+  "amount_per_unit": 0.5,
+  "quantity": 200,
+  "gross": 100.0,
+  "withholding": 15.0,
+  "net": 85.0,
+  "status": "upcoming",
+  "source": "manual",
+  "external_ref": null
+}
+```
+
+- `kind`: `dividend`, `jcp`, `reit_income`, `amortization` ou `other`.
+- `gross = amount_per_unit × quantity` (centavos). `withholding` é o IR retido
+  na fonte: **15% do bruto no JCP**, zero nos demais (dividendo e rendimento de
+  FII são isentos para pessoa física); `net = gross − withholding`.
+- `status`: `received` ou `upcoming`, pela `pay_date`.
+- `source`: `manual` (lançado pela pessoa), `b3_import` (extrato da B3) ou
+  `estimate`. Só `manual` se edita; `external_ref` é único por pessoa (a
+  importação repetida não duplica).
+- `asset_id` vira `null` se o ativo for apagado da carteira; o evento guarda
+  `symbol` e `display_name`, e a renda passada continua de pé.
+
+### `GET /api/v1/income`
+
+Lista do pagamento mais novo para o mais velho. Filtros, todos opcionais:
+`from` e `to` (`AAAA-MM-DD`, na `pay_date`, inclusivos), `status`
+(`received` ou `upcoming`), `asset` (id do ativo) e `limit` (1 a 1000, padrão
+200). Filtro inválido é `422`.
+
+### `POST /api/v1/income`
+
+Lança um provento à mão.
+
+```json
+{ "asset_id": "…", "kind": "reit_income", "pay_date": "2026-11-14", "amount_per_unit": 1.1, "quantity": 10 }
+```
+
+- Obrigatórios: `asset_id` (da pessoa), `kind`, `pay_date`, `amount_per_unit`.
+- Opcionais: `quantity` (padrão: a quantidade atual do ativo; em renda fixa por
+  valor, `1` — use `amount_per_unit` como o valor recebido), `ex_date` (não pode
+  passar da `pay_date`) e `withholding` (substitui a regra do tipo; entre 0 e o
+  bruto).
+- `pay_date` entre 2000 e 2100; valor por cota e quantidade maiores que zero; o
+  bruto precisa chegar a um centavo. Responde `201` com o evento.
+
+### `PATCH /api/v1/income/{id}`
+
+Qualquer subconjunto de `kind`, `ex_date` (`null` limpa), `pay_date`,
+`amount_per_unit`, `quantity` e `withholding`. Os valores são recalculados; sem
+`withholding` no corpo, o IR volta à regra do tipo. Só evento `manual`:
+os de extrato respondem `422`. `200` com o evento.
+
+### `DELETE /api/v1/income/{id}`
+
+`204`. Apaga qualquer evento da pessoa (um evento importado volta se o extrato
+for importado de novo).
+
+### `GET /api/v1/income/summary`
+
+O que a tela Renda precisa, numa chamada.
+
+```json
+{
+  "today": "2026-11-25",
+  "total_12m": 1620.0,
+  "monthly_average": 135.0,
+  "upcoming_total": 90.0,
+  "months": [{ "month": "2025-12", "received": 120.0, "upcoming": 0.0 }],
+  "by_payer": [{ "asset_id": "…", "label": "KNRI11", "total": 972.0, "percent": 60.0 }],
+  "years": [{ "year": 2026, "months": [0, 125, 130, 0, 140, 145, 0, 155, 160, 0, 170, 240], "total": 1265.0 }],
+  "upcoming": [],
+  "estimate": {
+    "monthly": 410.5,
+    "updated_at": "2026-11-25T11:00:00Z",
+    "assets": [{ "asset_id": "…", "symbol": "KNRI11", "display_name": "Kinea", "quantity": 10, "per_unit_12m": 12.6, "monthly": 10.5 }],
+    "missing": ["XPTO3"]
+  },
+  "goal": null
+}
+```
+
+- `months`: os 12 meses civis que terminam no mês de hoje, do mais velho ao
+  atual. `received` é o líquido com `pay_date` até hoje; `upcoming`, o líquido
+  do mesmo mês que ainda vai cair (só o mês corrente pode ter).
+- `total_12m`: soma do **recebido** nos 12 meses. `monthly_average = total_12m
+  ÷ 12`. `upcoming_total`: tudo que ainda vai cair, de qualquer mês.
+- `by_payer`: o recebido nos 12 meses por ativo, do maior para o menor, com a
+  parte (`percent`, soma 100) de cada um.
+- `years`: todos os anos com evento, do mais novo ao mais velho; `months` vai de
+  janeiro a dezembro e soma recebido e a receber.
+- `upcoming`: até 20 eventos com pagamento depois de hoje, do mais perto ao
+  mais longe.
+- `goal`: a meta de renda com o progresso (ver abaixo), ou `null`.
+
+#### `estimate`: a renda estimada da carteira
+
+**É estimativa, não extrato.** Vem do histórico de dividendo por cota do Yahoo
+(`chart` com `events=div`): data ex e valor bruto, sem data de pagamento e com
+JCP misturado ao dividendo nas ações da B3. Para cada ativo cotado na B3 ou nos
+EUA, `per_unit_12m` é o que a cota pagou nos últimos 365 dias (em reais; valores
+em dólar usam o câmbio da carteira) e `monthly = per_unit_12m × quantity ÷ 12`.
+Renda fixa por valor e cripto não entram. `missing` lista os papéis sem
+histórico (provedor fora do ar ou sem câmbio), que ficam fora da conta.
+
+O histórico fica no banco (`dividend_history`, compartilhado entre as
+carteiras) e só é buscado de novo depois de 24 horas; símbolo que falhou
+descansa 10 minutos. Com o provedor fora do ar vale o que está guardado. O que
+a pessoa lançou ou importou nunca é substituído por esta estimativa.
+
+### `GET /api/v1/income/cash-suggestion`
+
+Os proventos **líquidos recebidos desde o último aporte registrado**, para o
+campo do aporte oferecer "+ R$ X de proventos — incluir?". O motor não muda; só
+o valor de entrada, se a pessoa aceitar.
+
+```json
+{ "amount": 812.0, "count": 3, "since": "2026-11-01" }
+```
+
+Soma o `net` dos eventos com `pay_date` depois do dia (de Brasília) do último
+aporte e até hoje. `since` é esse dia; sem aporte registrado, `amount` é `0`,
+`count` é `0` e `since` é `null` (não há de onde contar).
+
+### Meta de renda: `/api/v1/income/goal`
+
+A meta de renda mensal (`kind = monthly_income` na tabela `objectives`). Uma por
+pessoa.
+
+- `GET`: a meta com o progresso, ou `null` sem meta.
+- `PUT { "target": 800 }`: cria ou troca o valor (maior que zero) e zera a data
+  de conquista. `200` com a meta.
+- `DELETE`: `204`; `404` sem meta.
+
+```json
+{
+  "id": "…",
+  "target": 800.0,
+  "achieved_at": null,
+  "current_monthly": 135.0,
+  "basis": "received",
+  "percent": 16.88,
+  "reached": false
+}
+```
+
+`current_monthly` é a média mensal do **recebido** (`basis: "received"`) ou,
+enquanto não há nada recebido nos 12 meses, a estimativa da carteira
+(`basis: "estimate"`). `percent` pode passar de 100. `reached` só vale com o
+recebido: a estimativa não conquista meta. Na primeira vez que o recebido
+alcança a meta, `achieved_at` guarda o instante e fica.
 
 ## Operacional (porta interna 9090)
 

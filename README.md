@@ -39,6 +39,12 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   quantidade é a soma do livro; dele saem o preço médio (regra da Receita,
   com taxas), o lucro realizado e a rentabilidade de cada ativo, em reais
   mesmo no que é cotado em dólar. O "Já comprei" grava as compras sozinho.
+- **Renda** — dividendos, JCP e rendimentos de FII que você recebeu ou vai
+  receber, mês a mês, contra uma meta de renda mensal. O aporte mostra quanto de
+  renda estimada ele soma e oferece incluir os proventos recebidos desde o
+  último aporte. A renda "da carteira de hoje" é **estimativa** (histórico por
+  cota do Yahoo, bruto): o que você lança, e depois o que importa da B3, vale
+  mais.
 - **Preço ao vivo** — patrimônio e ativos mudam na tela sem recarregar, pelo
   streamer do Yahoo: EUA, câmbio e cripto em segundos; B3 com os 15 minutos
   de atraso do dado gratuito. Tudo convertido para reais.

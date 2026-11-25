@@ -326,6 +326,44 @@ Responde "estou ganhando do CDI?". Método e limites em
   prévia seguem o olho de ocultar valores, inclusive para o leitor de tela, e o
   texto cru das linhas não entendidas (que traz valores) também some.
 
+### 5. Renda
+
+Aba entre Carteira e Metas. Responde "quanto minha carteira paga?" sem virar
+planilha: uma meta no topo, o resto por baixo.
+
+1. **Meta de renda mensal.** Número grande (média mensal dos 12 meses
+   recebidos), barra de progresso até a meta (`role="progressbar"` com texto
+   para o leitor de tela: "R$ 135 de R$ 800 por mês, 17%") e a data em que foi
+   atingida, quando foi. Sem nada recebido ainda, a barra usa a **estimativa** e
+   fica listrada, com a etiqueta "estimativa": o desenho muda, não só a cor.
+2. **Três números:** recebido em 12 meses, média por mês e a receber.
+3. **Mês a mês:** barras em SVG próprio com Motion (mola, como as barras de
+   classe). O recebido é cheio e embaixo; o a receber é **listrado** e em cima;
+   a meta é uma linha tracejada com o valor. A legenda dá nome a cada um e uma
+   tabela escondida (`sr-only`) traz os 12 meses para o leitor de tela.
+4. **Próximos pagamentos:** data, ativo, tipo e líquido.
+5. **Estimativa da carteira de hoje:** "~R$ 410/mês" com a etiqueta
+   "estimativa" e o aviso de que é o que a cota pagou nos últimos 12 meses, sem
+   separar JCP e sem ser extrato. Papéis sem histórico são listados.
+6. **Ano por mês:** tabela real (`<table>`), uma linha por ano.
+7. **Quem pagou:** rosca (a mesma `Donut`) e a lista com nome, valor e parte de
+   cada um; do sétimo em diante vira "Outros (N)".
+8. **Proventos lançados:** lista com apagar (confirmação na própria linha).
+9. **Lançar provento:** folha com ativo, tipo (chips), data de pagamento, valor
+   por cota, quantidade (em branco vale a da carteira) e data ex opcional. A
+   prévia mostra bruto, IR retido e líquido (JCP perde 15%) e fala com
+   `aria-live`. Renda fixa por valor pede só o valor recebido.
+
+Na tela **Aportar**:
+
+- Abaixo do campo de valor, quando há proventos recebidos desde o último
+  aporte: "+ R$ 812 de proventos recebidos desde o último aporte (3 pagamentos)
+  — **Incluir**". Incluir soma ao valor; "Tirar" desfaz. Só mexe no valor de
+  entrada.
+- No resultado, uma frase com o selo "estimativa": "Este aporte soma ~R$ 35/mês
+  de renda: sua renda vai de R$ 410 para R$ 445 por mês". Cada cartão mostra a
+  renda mensal que ele soma.
+
 ### Histórico
 
 Dentro de Carteira (ou do Aportar): lista dos aportes registrados com data,
@@ -369,6 +407,9 @@ junto do tema) mascara os valores em todas as telas e fica salvo no
 - Todo controle alcançável por teclado, foco visível (anel dourado).
 - Folhas são `dialog` com foco preso e `Esc` fecha.
 - Números com `aria-live="polite"` no resultado do aporte.
+- Gráficos de barras e roscas têm descrição (`role="img"` + `aria-label`) e uma
+  tabela escondida ou a lista ao lado com todos os números; recebido e a receber
+  se distinguem por desenho (cheio × listrado), nunca só por cor.
 - O preço ao vivo **não** é anunciado (mudaria a cada segundo); o selo de
   estado é `role="status"` e só fala quando o estado muda.
 - O selo "abaixo do ideal" traz seta e texto; a barra de atual × ideal é só
