@@ -817,6 +817,15 @@ pub enum FormatProblem {
 }
 
 impl FormatProblem {
+    /// Código estável para a tela escolher o texto.
+    pub fn code(&self) -> &'static str {
+        match self {
+            FormatProblem::Unknown => "unknown_format",
+            FormatProblem::MissingColumns(..) => "missing_columns",
+            FormatProblem::Position => "position_sheet",
+        }
+    }
+
     /// Texto do servidor (sem acento).
     pub fn message(&self) -> String {
         match self {
@@ -1446,8 +1455,14 @@ pub struct FileReport {
     pub name: String,
     pub status: FileStatus,
     pub kinds: Vec<FileKind>,
+    /// Código do problema quando o arquivo não foi lido (`unknown_format`,
+    /// `missing_columns`, `position_sheet`, `not_xlsx`, `legacy_xls`,
+    /// `corrupt`, `too_large`).
+    pub problem: Option<&'static str>,
     /// Texto do servidor (sem acento) quando o arquivo não foi lido.
     pub message: Option<String>,
+    /// Colunas que faltam, quando o tipo foi reconhecido mas o layout mudou.
+    pub missing_columns: Vec<&'static str>,
     pub rows: usize,
     /// Linhas que viraram negócio, evento ou provento.
     pub accepted: usize,
@@ -1531,7 +1546,8 @@ pub struct Preview {
 pub enum FileOutcome {
     Read(FileReading),
     UnknownFormat(FormatProblem),
-    Unreadable(String),
+    /// Não abriu como `.xlsx`: o código e o texto do servidor (sem acento).
+    Unreadable(&'static str, String),
 }
 
 fn kind_priority(kinds: &[FileKind]) -> FileKind {
@@ -1547,12 +1563,28 @@ pub fn build_preview(names: Vec<String>, outcomes: Vec<FileOutcome>) -> Preview 
     let mut reports: Vec<FileReport> = Vec::with_capacity(outcomes.len());
     let mut readings: Vec<(usize, FileReading)> = Vec::new();
     for (index, (name, outcome)) in names.into_iter().zip(outcomes).enumerate() {
-        let (status, message, reading) = match outcome {
-            FileOutcome::Read(reading) => (FileStatus::Read, None, Some(reading)),
+        let (status, problem, message, missing_columns, reading) = match outcome {
+            FileOutcome::Read(reading) => (FileStatus::Read, None, None, Vec::new(), Some(reading)),
             FileOutcome::UnknownFormat(problem) => {
-                (FileStatus::UnknownFormat, Some(problem.message()), None)
+                let missing = match &problem {
+                    FormatProblem::MissingColumns(_, columns) => columns.clone(),
+                    _ => Vec::new(),
+                };
+                (
+                    FileStatus::UnknownFormat,
+                    Some(problem.code()),
+                    Some(problem.message()),
+                    missing,
+                    None,
+                )
             }
-            FileOutcome::Unreadable(message) => (FileStatus::Unreadable, Some(message), None),
+            FileOutcome::Unreadable(code, message) => (
+                FileStatus::Unreadable,
+                Some(code),
+                Some(message),
+                Vec::new(),
+                None,
+            ),
         };
         reports.push(FileReport {
             index,
@@ -1562,7 +1594,9 @@ pub fn build_preview(names: Vec<String>, outcomes: Vec<FileOutcome>) -> Preview 
                 .as_ref()
                 .map(|r| r.kinds.clone())
                 .unwrap_or_default(),
+            problem,
             message,
+            missing_columns,
             rows: reading.as_ref().map_or(0, |r| r.rows),
             accepted: 0,
             unrecognized: 0,
@@ -2850,7 +2884,7 @@ mod tests {
                 FileOutcome::Read(trades),
                 FileOutcome::Read(provisioned),
                 FileOutcome::UnknownFormat(FormatProblem::Unknown),
-                FileOutcome::Unreadable("nao abriu".into()),
+                FileOutcome::Unreadable("corrupt", "nao abriu".into()),
             ],
         );
 
@@ -2934,6 +2968,8 @@ mod tests {
         assert!(files[5].0 != FileStatus::Read && preview.files[5].message.is_some());
         assert_eq!(files[6].0, FileStatus::Unreadable);
         assert_eq!(preview.files[6].message.as_deref(), Some("nao abriu"));
+        assert_eq!(preview.files[6].problem, Some("corrupt"));
+        assert_eq!(preview.files[5].problem, Some("unknown_format"));
     }
 
     #[test]

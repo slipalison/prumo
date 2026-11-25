@@ -114,7 +114,7 @@ pub async fn preview(
 
 fn outcome_of(bytes: &[u8]) -> FileOutcome {
     match b3_xlsx::read_workbook(bytes) {
-        Err(error) => FileOutcome::Unreadable(error.message().to_owned()),
+        Err(error) => FileOutcome::Unreadable(error.code(), error.message().to_owned()),
         Ok(sheets) => match read_file(&sheets) {
             Ok(reading) => FileOutcome::Read(reading),
             Err(problem) => FileOutcome::UnknownFormat(problem),

@@ -48,6 +48,16 @@ pub enum ReadError {
 }
 
 impl ReadError {
+    /// Código estável para a tela escolher o texto.
+    pub fn code(self) -> &'static str {
+        match self {
+            ReadError::NotXlsx => "not_xlsx",
+            ReadError::LegacyXls => "legacy_xls",
+            ReadError::Corrupt => "corrupt",
+            ReadError::TooLarge => "too_large",
+        }
+    }
+
     pub fn message(self) -> &'static str {
         match self {
             ReadError::NotXlsx => "Este arquivo nao e uma planilha .xlsx. Envie o arquivo que a Area do Investidor exporta, sem converter.",

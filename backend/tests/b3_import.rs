@@ -778,27 +778,51 @@ async fn full_preview_across_four_sheets(app: &TestApp) {
 async fn bad_files_are_reported_per_file(app: &TestApp) {
     let good = trades_sheet();
     let broken = good[..good.len() / 3].to_vec();
+    let changed_layout = workbook(&[(
+        "Negociação",
+        vec![header(&[
+            "Data do Negócio",
+            "Código de Negociação",
+            "Quantidade",
+        ])],
+    )]);
     let reply = upload(
         &app.router,
         &[
             ("estranha.xlsx", &stranger_sheet()),
             ("quebrada.xlsx", &broken),
-            ("lista.csv", b"Produto;Valor\nPETR4;100\n"),
+            (
+                "lista.csv",
+                b"Produto;Valor
+PETR4;100
+",
+            ),
             ("negociacao.xlsx", &good),
+            ("layout-novo.xlsx", &changed_layout),
         ],
     )
     .await;
     assert_eq!(reply.status, StatusCode::OK);
     let files = reply.body["files"].as_array().unwrap();
     assert_eq!(files[0]["status"], "unknown_format");
+    assert_eq!(files[0]["problem"], "unknown_format");
     assert!(files[0]["message"]
         .as_str()
         .unwrap()
         .contains("Formato nao reconhecido"));
     assert_eq!(files[1]["status"], "unreadable");
+    assert_eq!(files[1]["problem"], "corrupt");
     assert!(files[1]["message"].as_str().unwrap().contains("corrompida"));
     assert_eq!(files[2]["status"], "unreadable");
+    assert_eq!(files[2]["problem"], "not_xlsx");
     assert_eq!(files[3]["status"], "read");
+    assert_eq!(files[3]["problem"], Value::Null);
+    assert_eq!(files[4]["status"], "unknown_format");
+    assert_eq!(files[4]["problem"], "missing_columns");
+    assert!(files[4]["missing_columns"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("Mercado")));
     assert_eq!(reply.body["summary"]["trades"], 4);
     // A mensagem de erro nunca ecoa o conteúdo.
     for file in &files[..3] {

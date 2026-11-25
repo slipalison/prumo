@@ -29,6 +29,7 @@ const FRIENDLY: Partial<Record<string, string>> = {
   asset_already_exists: "Esse ativo já está na sua carteira.",
   not_found: "Não encontrei esse item. Ele pode ter sido removido.",
   quote_provider_unavailable: "A busca de cotações não respondeu agora. Tente de novo em instantes.",
+  payload_too_large: "Os arquivos passam de 10 MB juntos. Envie menos arquivos ou um período menor.",
   internal: INTERNAL,
   network: NETWORK,
 };
@@ -57,6 +58,7 @@ function codeFromStatus(status: number): string {
   if (status === 401) return "unauthenticated";
   if (status === 404) return "not_found";
   if (status === 409) return "asset_already_exists";
+  if (status === 413) return "payload_too_large";
   if (status === 422) return "validation_failed";
   if (status === 502) return "quote_provider_unavailable";
   return "internal";
@@ -83,7 +85,10 @@ async function toApiError(response: Response): Promise<ApiError> {
 export async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
   const init: RequestInit = { method, headers, credentials: "same-origin" };
-  if (body !== undefined) {
+  if (body instanceof FormData) {
+    // Upload: o navegador escreve o Content-Type com o boundary.
+    init.body = body;
+  } else if (body !== undefined) {
     headers["Content-Type"] = "application/json";
     init.body = JSON.stringify(body);
   }
