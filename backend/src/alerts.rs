@@ -258,14 +258,14 @@ impl AlertService {
         let command = command.split('@').next().unwrap_or("");
         let reply = match command {
             "/start" => match words.next() {
-                None => "Para vincular, abra a tela Alertas do Prumo, gere um codigo e mande aqui: /start CODIGO.".to_owned(),
+                None => "Para vincular, abra a tela Alertas do Prumo, gere um código e mande aqui: /start CÓDIGO.".to_owned(),
                 Some(code) => self.link(chat, code).await?,
             },
             "/stop" => {
                 if self.store.unlink_alert_chat_by_id(chat).await? {
-                    "Desvinculado: voce nao recebera mais o resumo do Prumo.".to_owned()
+                    "Desvinculado: você não receberá mais o resumo do Prumo.".to_owned()
                 } else {
-                    "Este chat nao estava vinculado a nenhum Prumo.".to_owned()
+                    "Este chat não estava vinculado a nenhum Prumo.".to_owned()
                 }
             }
             _ => return Ok(()),
@@ -282,11 +282,11 @@ impl AlertService {
         let code = code.to_ascii_uppercase();
         let Some(user) = self.store.consume_link_code(&code, now).await? else {
             return Ok(
-                "Codigo invalido ou vencido. Gere um novo na tela Alertas do Prumo.".to_owned(),
+                "Código inválido ou vencido. Gere um novo na tela Alertas do Prumo.".to_owned(),
             );
         };
         self.store.link_alert_chat(user, chat, now).await?;
-        Ok("Pronto: este chat esta vinculado ao seu Prumo. O resumo diario chega por aqui, so quando houver algo a dizer. Para parar, mande /stop.".to_owned())
+        Ok("Pronto: este chat está vinculado ao seu Prumo. O resumo diário chega por aqui, só quando houver algo a dizer. Para parar, mande /stop.".to_owned())
     }
 
     /// Lê o Telegram até o processo encerrar. Sem token, nem começa.

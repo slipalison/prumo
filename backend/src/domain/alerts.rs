@@ -9,8 +9,10 @@
 //!   apuração. Uma classe que já estava fora da meta ontem não volta a ser
 //!   avisada hoje; se sair e voltar, avisa de novo. É o que impede o spam.
 //!
-//! O texto é gerado no servidor e atravessa log: vai sem acento. O que
-//! `hide_values` esconde está em [`render_digest`].
+//! O texto do resumo é o que a pessoa lê no Telegram (UTF-8), como a tela: vai
+//! em português correto, com acento. A regra de texto sem acento vale para log
+//! e para o erro HTTP, que não passam por aqui. O que `hide_values` esconde está
+//! em [`render_digest`].
 
 use std::collections::HashSet;
 
@@ -313,6 +315,19 @@ fn brl(value: Decimal) -> String {
     format!("{}R$ {grouped},{cents}", if negative { "-" } else { "" })
 }
 
+/// O nome da classe como a pessoa o lê (o mesmo da tela).
+fn class_name(class: AssetClass) -> &'static str {
+    match class {
+        AssetClass::BrStocks => "Ações Nacionais",
+        AssetClass::BrReits => "Fundos Imobiliários",
+        AssetClass::IntlStocks => "Ações Internacionais",
+        AssetClass::UsReits => "REITs",
+        AssetClass::Crypto => "Criptomoedas",
+        AssetClass::FixedIncome => "Renda Fixa",
+        AssetClass::IntlFixedIncome => "Renda Fixa Internacional",
+    }
+}
+
 /// `12,5` (sem zeros à direita).
 fn number(value: Decimal) -> String {
     value.round_dp(2).normalize().to_string().replace('.', ",")
@@ -326,9 +341,9 @@ fn describe(item: &Item, hide_values: bool) -> String {
     match item {
         Item::IncomeTomorrow { label, net } => {
             if hide_values {
-                format!("{label} paga amanha.")
+                format!("{label} paga amanhã.")
             } else {
-                format!("{label} paga amanha: {} liquidos.", brl(*net))
+                format!("{label} paga amanhã: {} líquidos.", brl(*net))
             }
         }
         Item::ClassDrift {
@@ -339,8 +354,8 @@ fn describe(item: &Item, hide_values: bool) -> String {
             let gap = (*current - *target).abs();
             let side = if current > target { "acima" } else { "abaixo" };
             format!(
-                "{} esta com {} da carteira (meta {}), {} p.p. {side}.",
-                class.label(),
+                "{} está com {} da carteira (meta {}), {} p.p. {side}.",
+                class_name(*class),
                 pct(*current),
                 pct(*target),
                 number(gap)
@@ -353,10 +368,10 @@ fn describe(item: &Item, hide_values: bool) -> String {
             ..
         } => {
             if hide_values {
-                format!("{label} voltou a ficar no seu teto de preco ou abaixo.")
+                format!("{label} voltou a ficar no seu teto de preço ou abaixo.")
             } else {
                 format!(
-                    "{label} voltou a ficar no seu teto de preco: {} (teto {}).",
+                    "{label} voltou a ficar no seu teto de preço: {} (teto {}).",
                     brl(*price),
                     brl(*ceiling)
                 )
@@ -365,7 +380,7 @@ fn describe(item: &Item, hide_values: bool) -> String {
         Item::ObjectiveAchieved { kind, target, .. } => {
             let what = match kind {
                 ObjectiveKind::MonthlyIncome => "renda mensal",
-                ObjectiveKind::NetWorth => "patrimonio",
+                ObjectiveKind::NetWorth => "patrimônio",
                 ObjectiveKind::ClassValue => "valor da classe",
             };
             if hide_values {
@@ -383,7 +398,7 @@ fn describe_health(warning: &Warning, hide_values: bool) -> String {
     let limit = number(warning.limit);
     let mut text = match (&warning.rule, &warning.subject) {
         (RuleId::MaxAsset, Subject::Asset { label, .. }) => {
-            format!("{label} esta com {current}% da carteira (limite {limit}%).")
+            format!("{label} está com {current}% da carteira (limite {limit}%).")
         }
         (RuleId::TopFive, Subject::TopAssets { labels }) => format!(
             "Os 5 maiores ativos ({}) somam {current}% da carteira (limite {limit}%).",
@@ -391,18 +406,18 @@ fn describe_health(warning: &Warning, hide_values: bool) -> String {
         ),
         (RuleId::MaxSector, Subject::Sector { class, sector }) => format!(
             "O setor {sector} tem {current}% de {} (limite {limit}%).",
-            class.label()
+            class_name(*class)
         ),
         (RuleId::MinAssets, Subject::Class(class)) => format!(
-            "{} tem {current} ativo(s); o minimo que voce definiu e {limit}.",
-            class.label()
+            "{} tem {current} ativo(s); o mínimo que você definiu é {limit}.",
+            class_name(*class)
         ),
         (RuleId::EmptyClass, Subject::Class(class)) => {
-            format!("{} tem meta e nenhum ativo.", class.label())
+            format!("{} tem meta e nenhum ativo.", class_name(*class))
         }
         // Combinação que a regra não produz: o texto genérico não perde o aviso.
         (rule, _) => format!(
-            "Aviso de saude ({}): {current} contra o limite {limit}.",
+            "Aviso de saúde ({}): {current} contra o limite {limit}.",
             rule.as_str()
         ),
     };
@@ -425,7 +440,7 @@ pub fn render_digest(today: Date, items: &[Item], hide_values: bool) -> Option<S
         return None;
     }
     let mut text = format!(
-        "Prumo - resumo de {:02}/{:02}",
+        "Prumo – resumo de {:02}/{:02}",
         today.day(),
         u8::from(today.month())
     );
@@ -468,12 +483,12 @@ pub fn render_digest(today: Date, items: &[Item], hide_values: bool) -> Option<S
 
 fn section_title(kind: AlertKind) -> &'static str {
     match kind {
-        AlertKind::IncomeTomorrow => "Proventos amanha",
+        AlertKind::IncomeTomorrow => "Proventos amanhã",
         AlertKind::ClassDrift => "Classes fora da meta",
-        AlertKind::PriceBelowCeiling => "No seu teto de preco",
+        AlertKind::PriceBelowCeiling => "No seu teto de preço",
         AlertKind::ObjectiveAchieved => "Objetivos atingidos",
-        AlertKind::TaxExemption => "Isentometro",
-        AlertKind::HealthWarning => "Saude da carteira",
+        AlertKind::TaxExemption => "Isentômetro",
+        AlertKind::HealthWarning => "Saúde da carteira",
     }
 }
 
@@ -481,7 +496,7 @@ fn section_title(kind: AlertKind) -> &'static str {
 /// virá, sem dado nenhum da carteira.
 pub fn test_message(send_at: Time) -> String {
     format!(
-        "Prumo: teste de alerta. Este chat esta vinculado; o resumo diario chega as {} (horario de Brasilia), so quando houver algo a dizer.",
+        "Prumo: teste de alerta. Este chat está vinculado; o resumo diário chega às {} (horário de Brasília), só quando houver algo a dizer.",
         format_send_at(send_at)
     )
 }
@@ -740,35 +755,34 @@ mod tests {
         let text = render_digest(date!(2026 - 11 - 25), &one_of_each(), false).unwrap();
         assert_eq!(
             text,
-            "Prumo - resumo de 25/11\n\
+            "Prumo – resumo de 25/11\n\
              \n\
-             Proventos amanha\n\
-             - KNRI11 paga amanha: R$ 90,00 liquidos.\n\
+             Proventos amanhã\n\
+             - KNRI11 paga amanhã: R$ 90,00 líquidos.\n\
              \n\
              Classes fora da meta\n\
-             - Fundos Imobiliarios esta com 28,4% da carteira (meta 20%), 8,4 p.p. acima.\n\
+             - Fundos Imobiliários está com 28,4% da carteira (meta 20%), 8,4 p.p. acima.\n\
              \n\
-             No seu teto de preco\n\
-             - ITSA4 voltou a ficar no seu teto de preco: R$ 9,50 (teto R$ 10,00).\n\
+             No seu teto de preço\n\
+             - ITSA4 voltou a ficar no seu teto de preço: R$ 9,50 (teto R$ 10,00).\n\
              \n\
              Objetivos atingidos\n\
              - Objetivo de renda mensal atingido: R$ 3.000,00.\n\
              \n\
-             Saude da carteira\n\
-             - KNRI11 esta com 23,5% da carteira (limite 15%). Um aporte de cerca de R$ 1.234,50 em outros ativos volta ao limite."
+             Saúde da carteira\n\
+             - KNRI11 está com 23,5% da carteira (limite 15%). Um aporte de cerca de R$ 1.234,50 em outros ativos volta ao limite."
         );
-        assert!(text.is_ascii());
     }
 
     #[test]
     fn the_digest_without_values_keeps_names_and_percentages_only() {
         let text = render_digest(date!(2026 - 11 - 25), &one_of_each(), true).unwrap();
         assert!(!text.contains("R$"), "{text}");
-        assert!(text.contains("KNRI11 paga amanha."));
+        assert!(text.contains("KNRI11 paga amanhã."));
         assert!(text.contains("28,4% da carteira (meta 20%)"));
-        assert!(text.contains("ITSA4 voltou a ficar no seu teto de preco ou abaixo."));
+        assert!(text.contains("ITSA4 voltou a ficar no seu teto de preço ou abaixo."));
         assert!(text.contains("Objetivo de renda mensal atingido."));
-        assert!(text.contains("KNRI11 esta com 23,5% da carteira (limite 15%)."));
+        assert!(text.contains("KNRI11 está com 23,5% da carteira (limite 15%)."));
     }
 
     #[test]
@@ -795,7 +809,7 @@ mod tests {
                     dec!(55),
                     dec!(40),
                 ),
-                "O setor Financeiro tem 55% de Acoes Nacionais (limite 40%).",
+                "O setor Financeiro tem 55% de Ações Nacionais (limite 40%).",
             ),
             (
                 Warning {
@@ -807,7 +821,7 @@ mod tests {
                         dec!(3),
                     )
                 },
-                "Fundos Imobiliarios tem 2 ativo(s); o minimo que voce definiu e 3.",
+                "Fundos Imobiliários tem 2 ativo(s); o mínimo que você definiu é 3.",
             ),
             (
                 Warning {
@@ -833,7 +847,7 @@ mod tests {
             dec!(1),
             dec!(2),
         );
-        assert!(describe_health(&odd, true).starts_with("Aviso de saude (max_asset)"));
+        assert!(describe_health(&odd, true).starts_with("Aviso de saúde (max_asset)"));
     }
 
     #[test]
@@ -928,7 +942,6 @@ mod tests {
                 None => prop_assert!(items.is_empty()),
                 Some(text) => {
                     prop_assert!(text.len() < 4096);
-                    prop_assert!(text.is_ascii());
                 }
             }
         }
