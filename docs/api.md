@@ -774,10 +774,10 @@ limites em [desempenho.md](desempenho.md). Tudo pelo dono, como o resto.
 
 ### `GET /api/v1/history/net-worth?period=12m`
 
-O patrimônio no tempo, separado em aplicado e ganho. Uma foto por dia (horário
-de Brasília), tirada depois do fechamento; antes dela, o ponto de hoje é
-calculado na hora e vem com `partial: true`. Método em
-[`desempenho.md`](desempenho.md).
+O patrimônio no tempo, separado em aplicado e ganho. Uma foto por dia corrido
+(horário de Brasília) desde o primeiro lançamento do livro; a de hoje é tirada
+depois do fechamento e, antes dela, o ponto de hoje é calculado na hora e vem
+com `partial: true`. Método em [`desempenho.md`](desempenho.md).
 
 `period`: `month` (desde o fim do mês passado), `ytd` (desde 31/12), `12m`
 (padrão) ou `all`. Outro valor é `422`. Os pontos começam no fechamento de
@@ -787,17 +787,25 @@ base do período (o último em ou antes do começo dele).
 {
   "period": "12m",
   "starts_on": "2026-11-23",
+  "rebuilding_since": null,
   "points": [
-    { "date": "2026-11-23", "market_value": 1000.0, "invested": 1000.0, "gain": 0.0, "partial": false },
-    { "date": "2026-11-25", "market_value": 1490.0, "invested": 1500.0, "gain": -10.0, "partial": true }
+    { "date": "2026-11-23", "market_value": 1000.0, "invested": 1000.0, "gain": 0.0, "income": 0.0, "partial": false },
+    { "date": "2026-11-25", "market_value": 1490.0, "invested": 1500.0, "gain": -10.0, "income": 12.5, "partial": true }
   ]
 }
 ```
 
-- `starts_on`: a primeira foto da pessoa (`null` sem série: carteira sem
-  ativo).
-- `invested`: a soma dos fluxos desde `starts_on`; a primeira foto entra
-  inteira. `gain = market_value - invested`.
+- `starts_on`: o primeiro dia da série, que é o do lançamento mais antigo
+  (`null` sem série: livro vazio).
+- `rebuilding_since`: o livro mudou no passado (importação, lançamento antigo
+  editado ou apagado) e a série está sendo refeita em segundo plano desde
+  essa data; os pontos ainda são os de antes. `null` quando a série está em
+  dia. A tela pergunta de novo enquanto não for `null`.
+- `invested`: a soma dos fluxos desde `starts_on` — o que a pessoa pôs
+  (compras com taxas) menos o que tirou (vendas, resgates, amortizações).
+  `gain = market_value - invested`, o ganho de preço.
+- `income`: proventos líquidos recebidos (pela data de pagamento) desde
+  `starts_on`. Não estão em `gain`; estão na rentabilidade.
 
 ### `GET /api/v1/performance?period=12m&benchmarks=cdi,ipca,ibov`
 
@@ -812,6 +820,7 @@ casas.
 {
   "period": "12m",
   "starts_on": "2026-11-23",
+  "rebuilding_since": null,
   "window": { "from": "2026-11-23", "to": "2026-11-25" },
   "return_percent": 1.2345,
   "benchmarks": [
@@ -837,6 +846,9 @@ casas.
 }
 ```
 
+- `rebuilding_since`: como em `GET /history/net-worth`.
+- `return_percent`: pelo método de cotas, com os proventos recebidos como
+  retorno (não como aporte).
 - `window`: as datas que a conta usou de fato (`from` é o fechamento de base;
   se a série é mais nova que o período, é a primeira foto). `null`, com
   `return_percent: null`, sem série.

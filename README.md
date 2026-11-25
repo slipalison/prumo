@@ -63,10 +63,13 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   pagador que carrega renda demais. As sete regras são suas: liga, desliga e
   escolhe o limite. O setor vem da B3 (ações) e da CVM (FIIs).
   Detalhes em [`docs/saude.md`](docs/saude.md).
-- **Desempenho** — patrimônio no tempo (aplicado × ganho) e rentabilidade pelo
-  método de cotas, contra CDI, IPCA e Ibovespa, com a tabela mês a mês. A
-  série nasce com uma foto diária da carteira depois do fechamento. Detalhes
-  em [`docs/desempenho.md`](docs/desempenho.md).
+- **Desempenho** — patrimônio no tempo (aplicado × ganho, e os proventos) e
+  rentabilidade pelo método de cotas, com os proventos como retorno, contra
+  CDI, IPCA e Ibovespa, com a tabela mês a mês. A série começa no primeiro
+  lançamento do livro: importou a B3, o histórico aparece desde a primeira
+  negociação, com desdobramentos e o Tesouro Direto. Lançamento antigo editado
+  ou apagado refaz a série dali em diante, em segundo plano. Detalhes em
+  [`docs/desempenho.md`](docs/desempenho.md).
 
 No ar em <https://prumo.alisonamorim.com>, atrás do Cloudflare Access.
 

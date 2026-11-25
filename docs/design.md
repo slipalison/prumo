@@ -308,9 +308,17 @@ Responde "estou ganhando do CDI?". Método e limites em
   **Desde o início**, com a rentabilidade grande e assinada (`+1,23%`), a frase
   "**1,13% acima do CDI** (118% do CDI). O CDI rendeu +0,10%." e as datas. Se a
   série ainda não tem 12 meses, o cartão diz.
-- **Patrimônio no tempo:** patrimônio, aplicado e ganho; área dourada do
-  patrimônio e a linha tracejada neutra do aplicado. O ponto de hoje antes do
-  fechamento tem o selo "Hoje é parcial".
+- **Patrimônio no tempo:** patrimônio, aplicado, ganho e proventos; área
+  dourada do patrimônio e a linha tracejada neutra do aplicado. Uma nota diz
+  que o ganho é o do preço e que os proventos entram na rentabilidade. O ponto
+  de hoje antes do fechamento tem o selo "Hoje é parcial".
+- **Série longa:** a série começa no primeiro lançamento do livro (anos, depois
+  de importar a B3). As datas das pontas do eixo e o resumo do leitor de tela
+  levam o ano quando a série passa de um ano.
+- **Série sendo refeita:** depois de importar ou de mexer num lançamento
+  antigo, uma nota (`role="status"`) diz "Refazendo a série desde DD/MM/AAAA
+  com os lançamentos novos. Os números se acertam em instantes." e a tela
+  pergunta de novo a cada 5 s até acabar.
 - **Rentabilidade contra os índices:** a linha da carteira e uma por índice.
   A legenda mostra o número de cada um no período e liga/desliga os índices
   (`aria-pressed`). Ao passar o ponteiro (ou tocar), uma régua vertical marca o
@@ -327,12 +335,12 @@ Responde "estou ganhando do CDI?". Método e limites em
   violeta — e cada índice com o próprio tracejado, para a cor não ser a única
   pista. Texto nunca usa a cor da série. Alta e baixa levam sinal (+/−) além
   do verde/vermelho.
-- **Olho fechado:** todo valor em R$ (patrimônio, aplicado, ganho, o eixo e a
+- **Olho fechado:** todo valor em R$ (patrimônio, aplicado, ganho, proventos, o eixo e a
   régua do gráfico de patrimônio e o resumo para o leitor de tela) sai por
   `useMoney()` como `R$ ••••`, e o ganho perde o sinal e a cor. As
   rentabilidades são percentuais e ficam à vista, como na Carteira.
-- **Estado vazio honesto:** sem patrimônio, "Ainda não há série" com o caminho
-  para a Carteira; com uma foto só, "A série começa em DD/MM/AAAA" e nenhum
+- **Estado vazio honesto:** sem lançamento, "Ainda não há série" com o caminho
+  para a Carteira e para a importação da B3; com uma foto só, "A série começa em DD/MM/AAAA" e nenhum
   número inventado.
 
 ### 7. Ajustes › Importar da B3

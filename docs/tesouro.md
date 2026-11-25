@@ -60,6 +60,12 @@ momento do resgate.
   se alguma carteira o guarda: esse fica com o último preço e a data dele, e a
   tela mostra a data. Uma tabela que vem sem nenhum título (formato mudou, página
   de erro) é erro e **não apaga nada**.
+- **O histórico, para o Desempenho.** Cada rodada grava também, em
+  `price_history`, o preço do dia de cada título que alguma carteira guarda. O
+  passado (desde o primeiro lançamento do título no livro) sai do mesmo
+  arquivo, lido em fluxo por `src/treasury/history.rs`, só quando falta dia de
+  antes do que já está guardado. Detalhes em
+  [`desempenho.md`](desempenho.md#fontes).
 - As colunas são achadas pelo nome do cabeçalho: coluna nova ou fora de ordem
   não quebra a leitura; coluna que falta (`PU Venda Manha`) é erro. Tipo de
   título que o Prumo não conhece vira aviso no log, não erro.
