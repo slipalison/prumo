@@ -242,6 +242,8 @@ pub struct AssetDto {
     pub current_value: Decimal,
     #[serde(with = "decimal_out")]
     pub class_percent: Decimal,
+    #[serde(with = "decimal_out")]
+    pub ideal_class_percent: Decimal,
     pub score: u8,
     pub score_source: ScoreSource,
     pub score_override: Option<u8>,
@@ -264,6 +266,7 @@ impl From<&AssetView> for AssetDto {
             quote_updated_at: a.quote_updated_at,
             current_value: a.current_value,
             class_percent: a.class_percent,
+            ideal_class_percent: a.ideal_class_percent,
             score: a.score,
             score_source: a.score_source,
             score_override: a.asset.score_override,
@@ -342,6 +345,8 @@ pub struct LiveAssetDto {
     pub current_value: Decimal,
     #[serde(with = "decimal_out")]
     pub class_percent: Decimal,
+    #[serde(with = "decimal_out")]
+    pub ideal_class_percent: Decimal,
 }
 
 impl From<&PortfolioView> for LivePricesDto {
@@ -361,6 +366,7 @@ impl From<&PortfolioView> for LivePricesDto {
                     quote_updated_at: a.quote_updated_at,
                     current_value: a.current_value,
                     class_percent: a.class_percent,
+                    ideal_class_percent: a.ideal_class_percent,
                 })
                 .collect(),
         }

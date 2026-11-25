@@ -68,6 +68,13 @@ Ativos sem nota ou sem preço continuam ocupando espaço: o valor deles é
 descontado antes de dividir a classe entre os elegíveis. O dinheiro vai para
 quem está abaixo da própria fatia, na proporção do que falta a cada um.
 
+**O % ideal que a Carteira mostra** é esta mesma fatia, `nota / Σ notas`, em
+percentual: `ideal_class_percents` em `allocation.rs`, e o motor e a tela
+passam pela mesma função de fatia. Ativo sem nota ou sem preço tem ideal 0, e
+numa classe com algum elegível os ideais somam 100 (conferido por teste de
+propriedade). Com `KNRI11` e `HGLG11` de nota 6, `BTLG11` e `TRXF11` de nota 4 e
+`MXRF11` de nota 0: 30%, 30%, 20%, 20% e 0%.
+
 ### 5. Unidades compráveis
 
 A unidade vem do **mercado** do ativo, não da classe:

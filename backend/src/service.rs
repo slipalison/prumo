@@ -42,6 +42,9 @@ pub struct AssetView {
     pub quote_updated_at: Option<OffsetDateTime>,
     pub current_value: Decimal,
     pub class_percent: Decimal,
+    /// A fatia que o motor mira para o ativo dentro da classe (`nota / Σ notas`
+    /// dos ativos elegíveis). Zero para quem não recebe aporte.
+    pub ideal_class_percent: Decimal,
     pub score: u8,
     pub score_source: ScoreSource,
     pub answers: HashMap<Uuid, bool>,
@@ -65,6 +68,25 @@ pub struct PortfolioView {
     pub classes: Vec<ClassView>,
     pub assets: Vec<AssetView>,
     pub questions: Vec<Question>,
+}
+
+impl AssetView {
+    /// O ativo como o motor do aporte o enxerga.
+    fn holding(&self) -> Holding {
+        Holding {
+            asset_id: self.asset.id,
+            asset_class: self.asset.asset_class,
+            label: self
+                .asset
+                .symbol
+                .clone()
+                .unwrap_or_else(|| self.asset.display_name.clone()),
+            value: self.current_value,
+            unit_price: self.unit_price,
+            unit: self.asset.market().unit_kind(),
+            score: self.score,
+        }
+    }
 }
 
 impl PortfolioView {
@@ -197,6 +219,7 @@ pub async fn portfolio(store: &Store, user: Uuid) -> Result<PortfolioView, Store
                 quote_updated_at,
                 current_value,
                 class_percent: Decimal::ZERO,
+                ideal_class_percent: Decimal::ZERO,
                 score,
                 score_source,
                 answers,
@@ -214,11 +237,14 @@ pub async fn portfolio(store: &Store, user: Uuid) -> Result<PortfolioView, Store
         class_counts[i] += 1;
         class_eligible[i] |= view.score > 0 && view.unit_price.is_some_and(|p| p > Decimal::ZERO);
     }
-    for view in &mut views {
+    let holdings: Vec<Holding> = views.iter().map(AssetView::holding).collect();
+    let ideal = allocation::ideal_class_percents(&holdings);
+    for (view, ideal) in views.iter_mut().zip(ideal) {
         view.class_percent = percent(
             view.current_value,
             class_values[class_index(view.asset.asset_class)],
         );
+        view.ideal_class_percent = round_cents(ideal);
     }
     let bp_sum = targets.sum().max(1);
     let classes = AssetClass::ALL
@@ -254,23 +280,7 @@ pub async fn plan(
     amount: Decimal,
 ) -> Result<(Plan, PortfolioView), StoreError> {
     let view = portfolio(store, user).await?;
-    let holdings: Vec<Holding> = view
-        .assets
-        .iter()
-        .map(|a| Holding {
-            asset_id: a.asset.id,
-            asset_class: a.asset.asset_class,
-            label: a
-                .asset
-                .symbol
-                .clone()
-                .unwrap_or_else(|| a.asset.display_name.clone()),
-            value: a.current_value,
-            unit_price: a.unit_price,
-            unit: a.asset.market().unit_kind(),
-            score: a.score,
-        })
-        .collect();
+    let holdings: Vec<Holding> = view.assets.iter().map(AssetView::holding).collect();
     let plan = allocation::plan(amount, view.targets, &holdings);
     Ok((plan, view))
 }

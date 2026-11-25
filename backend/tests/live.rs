@@ -456,7 +456,7 @@ async fn the_portfolio_streams_new_prices_as_they_arrive() {
         &dir.path(),
     );
     for body in [
-        json!({ "asset_class": "br_reits", "symbol": "KNRI11", "quantity": 10 }),
+        json!({ "asset_class": "br_reits", "symbol": "KNRI11", "quantity": 10, "score_override": 6 }),
         json!({ "asset_class": "intl_stocks", "symbol": "AAPL", "quantity": 2 }),
     ] {
         post(&app.router, "/api/v1/assets", body).await;
@@ -505,6 +505,9 @@ async fn the_portfolio_streams_new_prices_as_they_arrive() {
         .expect("KNRI11 com o preco novo");
     assert_eq!(knri["current_value"], 1500.0);
     assert_eq!(knri["price_source"], "quote");
+    // Sozinho na classe, é 100% do que o motor mira — o evento leva o ideal
+    // junto para a tela não depender de um GET para o selo.
+    assert_eq!(knri["ideal_class_percent"], 100.0);
     let br_reits = find(&prices["classes"], "asset_class", "br_reits");
     assert_eq!(br_reits["current_value"], 1500.0);
 

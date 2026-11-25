@@ -257,7 +257,7 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding]) -> Plan {
         let gaps: Vec<Decimal> = members
             .iter()
             .map(|&i| {
-                let share = eligible_after * Decimal::from(holdings[i].score) / state.score_sum;
+                let share = slice(eligible_after, holdings[i].score, state.score_sum);
                 (share - holdings[i].value).max(Decimal::ZERO)
             })
             .collect();
@@ -297,9 +297,11 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding]) -> Plan {
         .map(|h| {
             let state = classes[class_index(h.asset_class)];
             if h.is_eligible() && state.score_sum > Decimal::ZERO {
-                (state.target_value - state.ineligible_value).max(Decimal::ZERO)
-                    * Decimal::from(h.score)
-                    / state.score_sum
+                slice(
+                    (state.target_value - state.ineligible_value).max(Decimal::ZERO),
+                    h.score,
+                    state.score_sum,
+                )
             } else {
                 Decimal::ZERO
             }
@@ -482,6 +484,37 @@ fn purchasable(kind: UnitKind, budget: Decimal, price: Decimal) -> (Decimal, Dec
             (value, value)
         }
     }
+}
+
+/// A fatia de `base` que cabe a um ativo de nota `score` numa classe cuja soma
+/// das notas elegíveis é `score_sum` (passo 4 do motor: `nota / Σ notas`).
+/// É a única fórmula da fatia: o plano e o % ideal da Carteira passam por ela.
+fn slice(base: Decimal, score: u8, score_sum: Decimal) -> Decimal {
+    base * Decimal::from(score) / score_sum
+}
+
+/// O % ideal de cada ativo dentro da própria classe: a fatia `nota / Σ notas`
+/// do passo 4, em percentual de 0 a 100, na ordem de `holdings`.
+///
+/// Ativo sem nota ou sem preço fica em 0 (não recebe, então não tem fatia), e
+/// numa classe com ao menos um ativo elegível a soma dos ideais é 100. Sem
+/// elegível, todos ficam em 0. O valor sai sem arredondar; quem exibe arredonda.
+pub fn ideal_class_percents(holdings: &[Holding]) -> Vec<Decimal> {
+    let mut score_sums = [Decimal::ZERO; 7];
+    for holding in holdings.iter().filter(|h| h.is_eligible()) {
+        score_sums[class_index(holding.asset_class)] += Decimal::from(holding.score);
+    }
+    holdings
+        .iter()
+        .map(|holding| {
+            let score_sum = score_sums[class_index(holding.asset_class)];
+            if holding.is_eligible() && score_sum > Decimal::ZERO {
+                slice(HUNDRED, holding.score, score_sum)
+            } else {
+                Decimal::ZERO
+            }
+        })
+        .collect()
 }
 
 /// `part / whole` em percentual com duas casas; zero quando `whole` é zero.
@@ -855,6 +888,69 @@ mod tests {
     }
 
     #[test]
+    fn ideal_percent_is_the_score_slice_of_the_class() {
+        use AssetClass::*;
+        let holdings = vec![
+            holding(BrReits, "A", dec!(1000), Some(dec!(10)), 6),
+            holding(BrReits, "B", dec!(500), Some(dec!(10)), 6),
+            holding(BrReits, "C", dec!(100), Some(dec!(10)), 2),
+            holding(BrReits, "SEM-NOTA", dec!(300), Some(dec!(10)), 0),
+            holding(BrReits, "SEM-PRECO", Decimal::ZERO, None, 8),
+            holding(Crypto, "BTC", dec!(50), Some(dec!(345000)), 3),
+        ];
+        let ideal = ideal_class_percents(&holdings);
+        // 6/14, 6/14, 2/14 da classe; quem não recebe fica em zero.
+        assert_eq!(ideal[0].round_dp(2), dec!(42.86));
+        assert_eq!(ideal[1].round_dp(2), dec!(42.86));
+        assert_eq!(ideal[2].round_dp(2), dec!(14.29));
+        assert_eq!(ideal[3], Decimal::ZERO);
+        assert_eq!(ideal[4], Decimal::ZERO);
+        assert_eq!(ideal[0] + ideal[1] + ideal[2], dec!(100));
+        // Sozinho na classe, o ativo é 100%.
+        assert_eq!(ideal[5], dec!(100));
+    }
+
+    #[test]
+    fn ideal_percent_is_zero_when_nothing_in_the_class_can_receive() {
+        use AssetClass::*;
+        let holdings = vec![
+            holding(BrStocks, "SEM-NOTA", dec!(900), Some(dec!(10)), 0),
+            holding(BrStocks, "SEM-PRECO", Decimal::ZERO, None, 7),
+        ];
+        assert_eq!(
+            ideal_class_percents(&holdings),
+            vec![Decimal::ZERO, Decimal::ZERO]
+        );
+        assert!(ideal_class_percents(&[]).is_empty());
+    }
+
+    #[test]
+    fn the_ideal_percent_is_the_slice_the_plan_aims_at() {
+        // Duas classes com um ativo elegível e um de nota 0 que ocupa espaço:
+        // com meta 100% numa classe só, o plano leva cada elegível até
+        // `ideal% × (classe − ocupado)`, e o ideal exibido é esse mesmo %.
+        use AssetClass::*;
+        let holdings = vec![
+            holding(BrReits, "A", dec!(0), Some(dec!(1)), 3),
+            holding(BrReits, "B", dec!(0), Some(dec!(1)), 1),
+            holding(BrReits, "ZERO", dec!(100), Some(dec!(1)), 0),
+        ];
+        let mut targets = Targets::default();
+        targets.set(BrReits, FULL_BP);
+        let plan = plan(dec!(300), targets, &holdings);
+        let ideal = ideal_class_percents(&holdings);
+        let spendable = dec!(300);
+        for (i, label) in ["A", "B"].into_iter().enumerate() {
+            let bought = item(&plan, &holdings, label).expect("compra").value;
+            assert_eq!(
+                bought,
+                round_cents(spendable * ideal[i] / HUNDRED),
+                "{label}"
+            );
+        }
+    }
+
+    #[test]
     fn percent_handles_zero_whole() {
         assert_eq!(percent(dec!(5), Decimal::ZERO), Decimal::ZERO);
         assert_eq!(percent(dec!(1), dec!(3)), dec!(33.33));
@@ -921,6 +1017,31 @@ mod tests {
 
         proptest! {
             #![proptest_config(ProptestConfig::with_cases(300))]
+
+            #[test]
+            fn ideal_percents_sum_to_a_hundred_per_class_and_skip_ineligible(
+                holdings in prop::collection::vec(arb_holding(), 0..12),
+            ) {
+                let ideal = ideal_class_percents(&holdings);
+                prop_assert_eq!(ideal.len(), holdings.len());
+                for class in AssetClass::ALL {
+                    let members: Vec<usize> = (0..holdings.len())
+                        .filter(|&i| holdings[i].asset_class == class)
+                        .collect();
+                    let sum: Decimal = members.iter().map(|&i| ideal[i]).sum();
+                    if members.iter().any(|&i| holdings[i].is_eligible()) {
+                        prop_assert!((sum - HUNDRED).abs() < dec!(0.000001), "soma {sum}");
+                    } else {
+                        prop_assert_eq!(sum, Decimal::ZERO);
+                    }
+                    for &i in &members {
+                        prop_assert!(ideal[i] >= Decimal::ZERO && ideal[i] <= HUNDRED);
+                        if !holdings[i].is_eligible() {
+                            prop_assert_eq!(ideal[i], Decimal::ZERO);
+                        }
+                    }
+                }
+            }
 
             #[test]
             fn money_always_adds_up_and_nobody_overshoots(

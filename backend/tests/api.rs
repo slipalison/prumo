@@ -467,6 +467,27 @@ async fn b3_listings_and_assets_not_bought_yet(db: &Database, dir: &tempfile_dir
         assert_eq!(reit.body["current_value"], 0.0);
     }
 
+    // O % ideal é a fatia nota/soma das notas da classe: a mesma do motor, e
+    // soma 100 entre os ativos que recebem.
+    let portfolio = get(&app.router, "/api/v1/portfolio").await;
+    let reits: Vec<&Value> = portfolio.body["assets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|a| a["asset_class"] == "br_reits")
+        .collect();
+    let ideal = |symbol: &str| {
+        reits.iter().find(|a| a["symbol"] == symbol).unwrap()["ideal_class_percent"]
+            .as_f64()
+            .unwrap()
+    };
+    assert!((ideal("KNRI11") - 3.0 * ideal("MXRF11")).abs() < 0.02);
+    let sum: f64 = reits
+        .iter()
+        .map(|a| a["ideal_class_percent"].as_f64().unwrap())
+        .sum();
+    assert!((sum - 100.0).abs() < 0.05, "soma {sum}");
+
     // Renda fixa negociada na B3 (ETF de IMA-B) tem ticker e cota; virar
     // renda fixa por valor é outro cadastro.
     let ima_b = post(

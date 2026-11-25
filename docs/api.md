@@ -138,6 +138,7 @@ A tela inteira numa chamada.
       "quote_updated_at": "2026-11-25T12:00:00Z",
       "current_value": 1420.0,
       "class_percent": 14.36,
+      "ideal_class_percent": 22.22,
       "score": 6,
       "score_source": "checklist",
       "score_override": null,
@@ -156,6 +157,22 @@ A tela inteira numa chamada.
   vence a cotação) ou `missing` (sem preço — vale 0 e não recebe aporte).
 - `unit_price` já vem em reais. `currency` é a moeda da cotação original.
 - `class_percent`: quanto o ativo representa dentro da própria classe.
+- `ideal_class_percent`: a fatia que o motor mira para o ativo dentro da
+  classe — `nota ÷ soma das notas` dos ativos que recebem aporte (passo 4 de
+  [`alocacao.md`](alocacao.md)), de 0 a 100, com duas casas. É a mesma função
+  do motor (`ideal_class_percents`), não uma segunda fórmula. Ativo sem nota
+  ou sem preço vale `0`; numa classe com ao menos um ativo que recebe, a soma
+  dos ideais é 100 (com a folga do arredondamento). O ideal não depende de
+  quanto se aporta nem do valor dos ativos: muda com a nota e com o ativo
+  ganhar ou perder preço.
+  - **O selo "abaixo do ideal" é da tela**, não do servidor: ele compara o
+    valor do ativo com o ideal, e o valor muda ao vivo. A tela mede o ativo
+    entre os ativos da classe que recebem (`ideal_class_percent > 0`),
+    como o motor faz, e acende o selo quando falta mais de 0,5 ponto
+    percentual para o ideal (a folga evita o selo piscar a cada preço novo).
+    Por isso o evento `prices` leva `ideal_class_percent` junto de
+    `current_value`: o selo e o "N ativos abaixo do ideal" do topo se acertam
+    sozinhos, sem novo `GET /portfolio`.
 - `quote_updated_at`: de quando é o preço — a hora do negócio que o formou,
   não a hora em que o Prumo buscou. Na B3 fica uns 15 minutos para trás (o
   dado gratuito da bolsa sai atrasado); fora do pregão, é a do último
@@ -178,8 +195,9 @@ retry: 3000
   quando algum número mudou.
 - `classes` tem a forma de `GET /portfolio`; cada item de `assets` traz só
   `id`, `unit_price`, `currency`, `price_source`, `quote_updated_at`,
-  `current_value` e `class_percent` — o que muda com o preço. O resto a tela
-  já tem do `GET /portfolio`.
+  `current_value`, `class_percent` e `ideal_class_percent` — o que muda com o
+  preço (o ideal muda quando um ativo ganha ou perde preço e entra ou sai da
+  divisão). O resto a tela já tem do `GET /portfolio`.
 - Comentário de keep-alive (`: keep-alive`… ) a cada 15 s, para proxy nenhum
   derrubar a conexão parada.
 - O servidor **fecha** a conexão quando a credencial do Access vence e
