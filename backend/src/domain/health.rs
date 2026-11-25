@@ -363,7 +363,7 @@ fn max_sector(owned: &[&HealthAsset], limit: Decimal) -> Option<Vec<Warning>> {
         }
     }
     evaluated.then(|| {
-        found.sort_by(|a, b| b.current.cmp(&a.current));
+        found.sort_by_key(|w| std::cmp::Reverse(w.current));
         found
     })
 }

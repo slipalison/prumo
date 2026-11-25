@@ -27,6 +27,8 @@ type SyncRow = (
     Option<String>,
 );
 
+type ReferenceRow = (String, String, String, Option<String>, Option<String>);
+
 fn sync_state(row: SyncRow) -> Result<(SectorSource, SyncState), sqlx::Error> {
     let (source, last_attempt_at, last_success_at, entries, last_error) = row;
     let source = SectorSource::parse(&source).ok_or_else(|| decode_error(&source))?;
@@ -152,7 +154,7 @@ impl Store {
         }
         let sources: Vec<&str> = keys.iter().map(|(s, _)| s.as_str()).collect();
         let codes: Vec<&str> = keys.iter().map(|(_, c)| c.as_str()).collect();
-        let rows: Vec<(String, String, String, Option<String>, Option<String>)> = sqlx::query_as(
+        let rows: Vec<ReferenceRow> = sqlx::query_as(
             "select r.source, r.code, r.sector, r.subsector, r.segment
                    from sector_reference r
                    join unnest($1::text[], $2::text[]) as k (source, code)
