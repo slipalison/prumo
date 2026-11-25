@@ -10,6 +10,18 @@ import { toPortfolio } from "../test/fixtures";
 import { renderApp } from "../test/render";
 import { getDb } from "../test/server";
 
+// Na tela, a seta ▲/▼ some depois de 1,6 s de relógio real. Com a máquina
+// ocupada, o teste pode levar mais que isso entre o evento e a conferência:
+// aqui ela fica até o fim. O tempo de vida dela é conferido no teste do hook,
+// com relógio falso.
+vi.mock("../lib/usePriceTrend", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/usePriceTrend")>();
+  return {
+    ...actual,
+    usePriceTrend: (value: number, hold?: number) => actual.usePriceTrend(value, hold ?? 60_000),
+  };
+});
+
 /** O evento `prices` que o servidor mandaria para a carteira falsa de agora. */
 function pricesNow(change?: (portfolio: Portfolio) => void): LivePrices {
   const db = getDb();
