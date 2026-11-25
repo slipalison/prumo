@@ -30,11 +30,12 @@ Sempre as sete, sempre nesta ordem:
 | `intl_stocks` | Ações Internacionais | `stocks` | inteira | Yahoo `<SYMBOL>` em USD → BRL |
 | `us_reits` | REITs | `real_estate` | inteira | Yahoo `<SYMBOL>` em USD → BRL |
 | `crypto` | Criptomoedas | — (nota manual) | fracionada | Yahoo `<SYMBOL>-USD` em USD → BRL |
-| `fixed_income` | Renda Fixa | — (nota manual) | por valor | sem cotação |
+| `fixed_income` | Renda Fixa | — (nota manual) | por valor; fração de título no Tesouro Direto | sem cotação; Tesouro: tabela do Tesouro Transparente |
 | `intl_fixed_income` | Renda Fixa Internacional | — (nota manual) | por valor | sem cotação |
 
 Classes **por valor** não têm símbolo nem cotação: a pessoa informa quanto tem
-(`amount`) e o sistema guarda como `quantity = amount`, `unit_price = 1`.
+(`amount`) e o sistema guarda como `quantity = amount`, `unit_price = 1`. A
+exceção é o título do Tesouro Direto, em `fixed_income` (próxima seção).
 
 ### Negociado na B3 (`listed_on_b3`)
 
@@ -50,6 +51,38 @@ e BDR em Ações Internacionais, ETF de REITs, ETF de IMA-B em Renda Fixa.
 - Nas outras classes o padrão é `false`.
 - Renda fixa com a marca tem ticker e cota; sem ela, nome e valor. Trocar de
   um para o outro no `PATCH` é `422`: é outro cadastro.
+
+### Título do Tesouro Direto (`treasury`)
+
+Renda Fixa tem dois cadastros. **Por valor** (CDB, LCI): nome e valor, sem
+cotação, como sempre. **Título do Tesouro Direto**: `treasury: true`, `symbol`
+é a **chave do título** — tipo e vencimento, `TD-IPCA-20350515` — e `quantity`
+é a quantidade de títulos, **fracionária** (`0.35`). O preço vem sozinho da
+tabela diária do Tesouro (o preço de resgate), em reais, e entra no
+patrimônio como qualquer cotação. A chave é a que `GET /symbols` devolve ao
+digitar "tesouro", "ipca", "selic", "prefixado", "renda+" ou "educa+"; o
+`display_name` sai do tipo e do ano (`Tesouro IPCA+ 2035`).
+
+```json
+{ "asset_class": "fixed_income", "symbol": "TD-IPCA-20350515", "treasury": true, "quantity": 0.35, "score_override": 6 }
+```
+
+- `treasury: true` só vale em `fixed_income`, com a chave de um título (tipo
+  conhecido, data que existe) e sem `listed_on_b3: true`: o resto é `422`.
+- Sem `treasury`, Renda Fixa com símbolo é a de B3 (`listed_on_b3: true`,
+  como um ETF de IMA-B); a chave de título não vira título por acidente.
+- O preço é de uma data-base (`quote_updated_at` é a meia-noite dela em
+  Brasília), não do pregão: o Tesouro publica um preço por dia útil. Título
+  que ainda não está na tabela nasce sem preço (`price_source: "missing"`).
+- Não passa pelo provedor de cotações nem pelo stream ao vivo; `POST
+  /quotes/refresh` o ignora (não conta como falha).
+- `manual_price` vale e vence a tabela, como nos outros ativos.
+- No `PATCH`, `quantity` é a quantidade de títulos; `amount` e
+  `listed_on_b3: true` são `422`. O plano compra em **centésimos de título**
+  (`0.39`), o menor pedaço que o Tesouro vende.
+- Um ativo por valor que já existe **não vira** título: são cadastros
+  diferentes (valor informado × quantidade de títulos). Para migrar, cadastre o
+  título e remova o antigo. Ver [`tesouro.md`](tesouro.md).
 
 ### Ativo que a pessoa ainda não comprou
 
@@ -130,6 +163,7 @@ A tela inteira numa chamada.
       "symbol": "KNRI11",
       "display_name": "Kinea Renda Imobiliária",
       "listed_on_b3": true,
+      "treasury": false,
       "quantity": 10,
       "unit_price": 142.0,
       "manual_price": null,
@@ -242,9 +276,15 @@ Negociado na B3 numa classe de fora dela:
 { "asset_class": "crypto", "symbol": "QBTC11", "quantity": 0, "listed_on_b3": true, "score_override": 7 }
 ```
 
-Opcionais em ambos: `display_name`, `manual_price` (só por unidade),
-`score_override`, `listed_on_b3`. `quantity`/`amount` ausente vale 0. Na B3 e
-nas ações americanas a quantidade é inteira. O símbolo é normalizado para
+Título do Tesouro Direto (ver [Título do Tesouro Direto](#título-do-tesouro-direto-treasury)):
+
+```json
+{ "asset_class": "fixed_income", "symbol": "TD-IPCA-20350515", "treasury": true, "quantity": 0.35, "score_override": 6 }
+```
+
+Opcionais em todos: `display_name`, `manual_price` (só por unidade),
+`score_override`, `listed_on_b3`, `treasury`. `quantity`/`amount` ausente vale
+0. Na B3 e nas ações americanas a quantidade é inteira. O símbolo é normalizado para
 maiúsculas, sem `.SA`. Responde
 `201` com o ativo no mesmo formato de `portfolio.assets[]`. Mesmo símbolo na
 mesma classe: `409 asset_already_exists`.
@@ -308,6 +348,7 @@ Calcula, não grava.
       "symbol": "BTC",
       "display_name": "Bitcoin",
       "listed_on_b3": false,
+      "treasury": false,
       "quantity": 0.01214582,
       "unit_price": 345000.0,
       "value": 4190.31,
@@ -375,9 +416,24 @@ Busca no provedor de cotações, para o autocompletar.
 
 ```json
 [
-  { "symbol": "KNRI11", "display_name": "Kinea Renda Imobiliária", "exchange": "SAO", "suggested_class": "br_reits", "listed_on_b3": true }
+  { "symbol": "KNRI11", "display_name": "Kinea Renda Imobiliária", "exchange": "SAO", "suggested_class": "br_reits", "listed_on_b3": true, "treasury": false }
 ]
 ```
+
+**Títulos do Tesouro Direto** vêm antes, do banco (a tabela diária), quando a
+busca (3 caracteres ou mais) casa com o nome do título — cada palavra
+digitada aparece no nome, em qualquer ordem: `tesouro`, `ipca`, `ipca 2035`,
+`selic`, `prefixado`, `renda+`, `educa+`. Só os vigentes (não vencidos, ainda
+na tabela), até 10, do tipo mais simples ao mais longo e, dentro do tipo, do
+vencimento mais próximo ao mais distante:
+
+```json
+{ "symbol": "TD-IPCA-20350515", "display_name": "Tesouro IPCA+ 2035", "exchange": "Tesouro Direto", "suggested_class": "fixed_income", "listed_on_b3": false, "treasury": true }
+```
+
+Quem escolhe o título cadastra com `treasury: true` e esse `symbol`. Se o
+provedor de cotações cair e já houver título para sugerir, a resposta é `200`
+só com eles; sem título, continua `502 quote_provider_unavailable`.
 
 `suggested_class` é palpite; a pessoa confirma. Na B3 o nome separa o que o
 Yahoo marca igual (`EQUITY`): ETF de índice ("fundo de índice") de bitcoin/
@@ -389,7 +445,8 @@ ou `us_reits`; FII e ação como antes. Fora da B3: cripto → `crypto`, EUA →
 
 ### `POST /api/v1/quotes/refresh`
 
-Atualiza agora as cotações dos ativos da pessoa pelo `chart`. O servidor
+Atualiza agora as cotações dos ativos da pessoa pelo `chart` (o título do
+Tesouro fica de fora: o preço dele vem da tabela diária). O servidor
 também atualiza sozinho a cada 15 minutos, e o streamer entre uma rodada e
 outra (ver `GET /portfolio/stream`). Quem estiver com o stream aberto recebe
 o resultado por lá.

@@ -21,6 +21,11 @@ comprar para a carteira ficar o mais perto possível das suas metas.
 - **Ocultar valores** — o olho na navegação mascara R$, quantidades e totais em
   todas as telas, inclusive para o leitor de tela; a escolha fica salva no
   navegador.
+- **Tesouro Direto** — cadastre o título pelo nome ("Tesouro IPCA+ 2035") e a
+  quantidade, com fração (0,35). O preço de resgate vem sozinho da tabela
+  pública do Tesouro Transparente, uma vez por dia; o aporte compra em
+  centésimos de título. CDB e LCI seguem por valor. Detalhes em
+  [`docs/tesouro.md`](docs/tesouro.md).
 - **Preço ao vivo** — patrimônio e ativos mudam na tela sem recarregar, pelo
   streamer do Yahoo: EUA, câmbio e cripto em segundos; B3 com os 15 minutos
   de atraso do dado gratuito. Tudo convertido para reais.
@@ -41,6 +46,7 @@ Documentos:
 
 - [`docs/api.md`](docs/api.md) — contrato da API
 - [`docs/alocacao.md`](docs/alocacao.md) — o algoritmo do aporte
+- [`docs/tesouro.md`](docs/tesouro.md) — o Tesouro Direto: fonte, modelo e limites
 - [`docs/design.md`](docs/design.md) — interface, identidade e movimento
 - [`deploy/README.md`](deploy/README.md) — como o app chega ao cluster
 

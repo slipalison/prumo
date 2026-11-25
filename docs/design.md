@@ -144,7 +144,8 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
 - Botão flutuante **+** abre uma folha (sheet) com **um campo só**: digita o
   ticker, aparece o autocompletar (`/symbols`), escolhe, a classe já vem
   sugerida em chips (troca com um toque), informa a quantidade, pronto. Para
-  renda fixa: nome + valor.
+  renda fixa: nome + valor, ou "Tesouro Direto" (busca pelo nome, quantidade
+  fracionária, preço automático).
 - Tocar num ativo abre a folha de edição: quantidade com stepper, preço manual
   opcional, o checklist (perguntas com sim/não/sem resposta) e a nota ao vivo;
   ou o controle de nota manual (0–10) para cripto e renda fixa. Remover fica no

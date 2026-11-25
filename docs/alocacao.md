@@ -83,7 +83,17 @@ A unidade vem do **mercado** do ativo, não da classe:
 |---|---|
 | B3 (ações, FIIs, ETFs, BDRs) e bolsa americana | inteira, arredondada para baixo |
 | Cripto | até 8 casas |
+| Título do Tesouro Direto | centésimos de título (0,01) |
 | Renda fixa por valor | centavos |
+
+O **título do Tesouro Direto** é Renda Fixa na carteira (a meta e a fatia são
+as da classe), mas tem mercado próprio: a quantidade é fracionária — o Tesouro
+vende a partir de 0,01 título — e o preço é o de resgate da tabela diária
+(`docs/tesouro.md`). O motor compra o que cabe em centésimos de título, para
+baixo, e o que sobra do arredondamento (no máximo um centésimo de título,
+algo como R$ 25 num título de R$ 2.500) entra no troco ou vai para o ativo
+fracionável mais atrasado. Não modela o valor mínimo de compra do Tesouro
+(R$ 30): quem monta o aporte confere na hora de comprar.
 
 Quase sempre o mercado é o natural da classe. A exceção é o ativo marcado como
 negociado na B3 (`listed_on_b3`) fora de Ações Nacionais e FIIs: um ETF de
@@ -98,7 +108,8 @@ Arredondar para baixo deixa troco. Em vez de devolvê-lo, uma rodada gulosa:
    unidade** do que estiver mais atrás da meta — **desde que** isso o aproxime
    da meta (o que falta a ele é maior que meio preço). Repete.
 2. Quando nenhuma unidade inteira couber, o resto vai para o ativo
-   **fracionável** (cripto, renda fixa) mais atrasado, até o que falta a ele.
+   **fracionável** (cripto, título do Tesouro, renda fixa por valor) mais
+   atrasado, até o que falta a ele.
 3. O que sobrar depois disso é `change`.
 
 ## O que o resultado garante
