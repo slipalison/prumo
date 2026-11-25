@@ -33,9 +33,13 @@ origem do `values.yaml`; quem o cluster lê é a do GitOps, e o CI reescreve
 
 ## O que aconteceu no primeiro deploy (2026-11-25)
 
-Passos 1, 3, 4, 5 e 6 feitos (homelab-gitops#47). O passo 2, a aplicação no
-Access, ainda não existe: até lá a regra do gateway e o `CF_ACCESS_AUD` têm um
-valor que não é AUD de nada, e o host responde **403** de fora (medido).
+Passos 1, 3, 4, 5 e 6 feitos em homelab-gitops#47, com o host respondendo
+**403** de fora enquanto o AUD era provisório (medido). Passo 2 no mesmo dia:
+aplicação `prumo` criada no Access pela API (molde dos painéis: política
+`so-eu`, provedor Cloudflare, 24 h), AUD conferido no `kid` do 302 e trocado nos
+dois lugares em homelab-gitops#48. Medido depois: `302` sem sessão, e logado
+no navegador o app abre, `/api/v1/info` devolve o commit publicado e a busca
+de símbolo responde pelo Yahoo (saída do cluster funcionando).
 
 **Armadilha do chart `app` 0.8.0 em app novo:** o `Database` vem na onda 1 e o
 `Rollout` na onda 0. O ArgoCD espera o Rollout ficar saudável antes da onda 1,
