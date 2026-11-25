@@ -195,7 +195,7 @@ impl From<&Question> for QuestionDto {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, PartialEq)]
 pub struct ClassDto {
     pub asset_class: AssetClass,
     #[serde(with = "decimal_out")]
@@ -313,6 +313,56 @@ impl From<&PortfolioView> for PortfolioDto {
             classes: p.classes.iter().map(ClassDto::from).collect(),
             assets: p.assets.iter().map(AssetDto::from).collect(),
             checklists: ChecklistsDto::from_questions(&p.questions),
+        }
+    }
+}
+
+/// O evento `prices` do stream da carteira: só o que muda com o preço. O
+/// resto (metas, notas, checklists) a tela já tem do `GET /portfolio`.
+#[derive(Debug, Serialize, PartialEq)]
+pub struct LivePricesDto {
+    #[serde(with = "decimal_out")]
+    pub total_value: Decimal,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub quotes_updated_at: Option<OffsetDateTime>,
+    pub classes: Vec<ClassDto>,
+    pub assets: Vec<LiveAssetDto>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+pub struct LiveAssetDto {
+    pub id: Uuid,
+    #[serde(with = "decimal_out::option")]
+    pub unit_price: Option<Decimal>,
+    pub currency: String,
+    pub price_source: &'static str,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub quote_updated_at: Option<OffsetDateTime>,
+    #[serde(with = "decimal_out")]
+    pub current_value: Decimal,
+    #[serde(with = "decimal_out")]
+    pub class_percent: Decimal,
+}
+
+impl From<&PortfolioView> for LivePricesDto {
+    fn from(p: &PortfolioView) -> Self {
+        Self {
+            total_value: p.total_value,
+            quotes_updated_at: p.quotes_updated_at,
+            classes: p.classes.iter().map(ClassDto::from).collect(),
+            assets: p
+                .assets
+                .iter()
+                .map(|a| LiveAssetDto {
+                    id: a.asset.id,
+                    unit_price: a.unit_price,
+                    currency: a.currency.clone(),
+                    price_source: a.price_source.as_str(),
+                    quote_updated_at: a.quote_updated_at,
+                    current_value: a.current_value,
+                    class_percent: a.class_percent,
+                })
+                .collect(),
         }
     }
 }

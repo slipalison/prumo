@@ -13,6 +13,7 @@ use async_trait::async_trait;
 use axum::http::{header, HeaderMap};
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
+use time::OffsetDateTime;
 use tokio::sync::{Mutex, RwLock};
 
 use crate::error::ApiError;
@@ -28,6 +29,9 @@ const REFRESH_COOLDOWN: Duration = Duration::from_secs(30);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Identity {
     pub email: String,
+    /// Quando a credencial vence. Uma conexão longa (o stream da carteira)
+    /// termina aqui, e a reconexão passa pelo Access de novo.
+    pub expires_at: Option<OffsetDateTime>,
 }
 
 #[async_trait]
@@ -53,6 +57,7 @@ impl Authenticator for DevAuthenticator {
     async fn authenticate(&self, _headers: &HeaderMap) -> Result<Identity, ApiError> {
         Ok(Identity {
             email: self.email.clone(),
+            expires_at: None,
         })
     }
 }
@@ -73,6 +78,7 @@ struct Jwk {
 #[derive(Debug, Deserialize)]
 struct AccessClaims {
     email: Option<String>,
+    exp: Option<i64>,
 }
 
 #[derive(Default)]
@@ -195,7 +201,11 @@ impl Authenticator for AccessAuthenticator {
             .map(|e| e.trim().to_lowercase())
             .filter(|e| e.contains('@'))
             .ok_or_else(|| ApiError::unauthenticated("Credencial sem e-mail."))?;
-        Ok(Identity { email })
+        let expires_at = data
+            .claims
+            .exp
+            .and_then(|exp| OffsetDateTime::from_unix_timestamp(exp).ok());
+        Ok(Identity { email, expires_at })
     }
 }
 

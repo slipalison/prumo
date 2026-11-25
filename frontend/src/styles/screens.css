@@ -409,6 +409,125 @@
   gap: 4px;
 }
 
+.portfolio__total-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ---------- Ao vivo ---------- */
+
+.live-badge {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 0.82rem;
+}
+
+.live-badge__dot {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.live-badge__dot::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--success);
+  animation: live-pulse 1.8s ease-out infinite;
+  content: "";
+}
+
+.live-badge__label {
+  color: var(--success);
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.live-badge__note {
+  color: var(--text-subtle);
+}
+
+@keyframes live-pulse {
+  from {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+
+/* Preço que andou: a cor do sentido, e volta ao normal. A seta diz o mesmo
+   sem depender da cor. */
+.price-flash {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.price-flash__value--up {
+  animation: flash-up 1.6s ease-out;
+}
+
+.price-flash__value--down {
+  animation: flash-down 1.6s ease-out;
+}
+
+@keyframes flash-up {
+  from {
+    color: var(--success);
+  }
+}
+
+@keyframes flash-down {
+  from {
+    color: var(--danger);
+  }
+}
+
+.trend-mark {
+  font-size: 0.7rem;
+  line-height: 1;
+  animation: trend-fade 1.6s ease-out forwards;
+}
+
+.portfolio__total-line .trend-mark {
+  font-size: 1rem;
+}
+
+.trend-mark--up {
+  color: var(--success);
+  --trend-from: 4px;
+}
+
+.trend-mark--down {
+  color: var(--danger);
+  --trend-from: -4px;
+}
+
+@keyframes trend-fade {
+  0% {
+    opacity: 0;
+    transform: translateY(var(--trend-from));
+  }
+  15% {
+    opacity: 1;
+    transform: none;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 .class-list {
   display: flex;
   flex-direction: column;

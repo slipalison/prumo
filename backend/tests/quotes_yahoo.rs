@@ -24,6 +24,7 @@ fn chart(symbol: &str, currency: &str, price: serde_json::Value) -> serde_json::
         "currency": currency,
         "symbol": symbol,
         "regularMarketPrice": price,
+        "regularMarketTime": 1795638630,
         "longName": " Kinea Renda Imobiliária Fundo de Investimento Imobiliário ",
         "shortName": "FII KINEA   CI"
     }}], "error": null }})
@@ -46,6 +47,10 @@ async fn reads_price_currency_and_name() {
     assert_eq!(quote.symbol, "KNRI11.SA");
     assert_eq!(quote.price, dec!(142.92));
     assert_eq!(quote.currency, "BRL");
+    assert_eq!(
+        quote.traded_at.map(|t| t.unix_timestamp()),
+        Some(1_795_638_630)
+    );
     assert_eq!(
         quote.name.as_deref(),
         Some("Kinea Renda Imobiliária Fundo de Investimento Imobiliário")

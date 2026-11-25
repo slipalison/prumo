@@ -17,47 +17,6 @@ fn static_dir() -> tempfile_dir::Dir {
     tempfile_dir::Dir::new()
 }
 
-/// Diretório temporário com um `index.html` e um asset, apagado no fim.
-mod tempfile_dir {
-    pub struct Dir(pub std::path::PathBuf);
-
-    impl Dir {
-        pub fn new() -> Self {
-            let path = std::env::temp_dir().join(format!("prumo-static-{}", uuid::Uuid::new_v4()));
-            std::fs::create_dir_all(path.join("assets")).unwrap();
-            std::fs::write(
-                path.join("index.html"),
-                "<!doctype html><title>Prumo</title>",
-            )
-            .unwrap();
-            std::fs::write(
-                path.join("assets").join("app-123.js"),
-                "console.log('prumo')",
-            )
-            .unwrap();
-            Self(path)
-        }
-
-        pub fn path(&self) -> String {
-            self.0.to_string_lossy().into_owned()
-        }
-    }
-
-    impl Drop for Dir {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-}
-
-fn find<'a>(list: &'a Value, key: &str, value: &str) -> &'a Value {
-    list.as_array()
-        .unwrap()
-        .iter()
-        .find(|item| item[key] == value)
-        .unwrap_or_else(|| panic!("{key}={value} nao encontrado em {list}"))
-}
-
 #[tokio::test]
 async fn api_contract() {
     let db = database().await;

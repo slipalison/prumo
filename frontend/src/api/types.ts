@@ -69,6 +69,20 @@ export type Portfolio = {
   checklists: Checklists;
 };
 
+/** Um ativo no evento `prices` do stream: só o que muda com o preço. */
+export type LiveAsset = Pick<
+  Asset,
+  "id" | "unit_price" | "currency" | "price_source" | "quote_updated_at" | "current_value" | "class_percent"
+>;
+
+/** Evento `prices` de `GET /portfolio/stream` (docs/api.md § Carteira ao vivo). */
+export type LivePrices = {
+  total_value: number;
+  quotes_updated_at: string | null;
+  classes: ClassSummary[];
+  assets: LiveAsset[];
+};
+
 export type GoalTargets = Record<AssetClass, number>;
 
 export type GoalsRequest = { targets: Partial<GoalTargets> };

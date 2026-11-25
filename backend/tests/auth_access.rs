@@ -134,6 +134,9 @@ async fn a_valid_token_yields_the_normalized_email_and_keys_are_cached() {
 
     let identity = auth.authenticate(&with_header(&token)).await.unwrap();
     assert_eq!(identity.email, "eu@exemplo.com");
+    // O vencimento do token segue para quem abre conexão longa.
+    let expires = identity.expires_at.unwrap().unix_timestamp();
+    assert!((now() + 590..=now() + 610).contains(&expires));
 
     let mut cookie = HeaderMap::new();
     cookie.insert(

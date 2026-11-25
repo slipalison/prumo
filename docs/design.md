@@ -59,6 +59,9 @@ Biblioteca `motion` (Framer Motion). Molas em vez de curvas de tempo; nada dura
 mais que 600 ms, exceto o prumo e o fundo.
 
 - **Números contam** até o valor (count-up com mola) sempre que mudam.
+- **Preço ao vivo:** o valor que andou pisca na cor do sentido (verde sobe,
+  vermelho desce) e uma seta ▲/▼ aparece ao lado por 1,6 s — a seta diz o
+  sentido sem depender da cor. No patrimônio, só a seta: o número já conta.
 - **Rosca (donut)** da carteira: os arcos se desenham (`pathLength`) ao entrar;
   no resultado do aporte, a rosca **transita** do antes para o depois.
 - **Barras de classe:** a parte atual cresce da esquerda; a parte que o aporte
@@ -103,7 +106,11 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
 
 ### 2. Carteira
 
-- Topo: patrimônio total (count-up) e a rosca por classe.
+- Topo: patrimônio total (count-up) e a rosca por classe. Embaixo do total,
+  de onde vem o número: **● Ao vivo** (ponto que pulsa) com o aviso "B3 com
+  15 min de atraso" quando a carteira tem papel da B3; "Conectando ao vivo…"
+  enquanto abre; fora do ao vivo, a hora da última cotação. O botão de
+  atualizar continua ao lado.
 - Uma seção por classe, na ordem fixa: nome, % atual vs meta com barra e
   marcador de prumo, e a lista dos ativos (ticker, quantidade, valor, nota).
 - Botão flutuante **+** abre uma folha (sheet) com **um campo só**: digita o
@@ -141,6 +148,8 @@ valor e itens.
 - Todo controle alcançável por teclado, foco visível (anel dourado).
 - Folhas são `dialog` com foco preso e `Esc` fecha.
 - Números com `aria-live="polite"` no resultado do aporte.
+- O preço ao vivo **não** é anunciado (mudaria a cada segundo); o selo de
+  estado é `role="status"` e só fala quando o estado muda.
 - Alvos de toque ≥ 44px.
 
 ## Texto

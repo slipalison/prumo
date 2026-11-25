@@ -15,7 +15,9 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   entra na divisão pela nota: é assim que uma classe vazia passa a receber.
 - **Negociado na B3** — um ETF de bitcoin conta em Cripto, um BDR ou ETF de
   S&P 500 em Ações Internacionais, cotados na B3 em cota inteira.
-- **Cotações automáticas** (B3, EUA e cripto, convertidas para reais).
+- **Preço ao vivo** — patrimônio e ativos mudam na tela sem recarregar, pelo
+  streamer do Yahoo: EUA, câmbio e cripto em segundos; B3 com os 15 minutos
+  de atraso do dado gratuito. Tudo convertido para reais.
 
 No ar em <https://prumo.alisonamorim.com>, atrás do Cloudflare Access.
 
@@ -69,6 +71,7 @@ npm run dev
 | `PORT` / `OPERATIONAL_PORT` | `8080` / `9090` | pública / sondas e métricas |
 | `STATIC_DIR` | `static` | onde está o build do frontend |
 | `QUOTES_ENABLED` | `true` | `false` desliga o provedor de cotações |
+| `QUOTES_STREAM` | `true` | `false` desliga o preço ao vivo (fica o `chart` a cada `QUOTES_REFRESH_SECS`) |
 | `QUOTES_REFRESH_SECS` | `900` | intervalo da atualização automática (mín. 60) |
 
 O binário recusa subir com configuração pela metade.

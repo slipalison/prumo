@@ -9,6 +9,7 @@ pub mod config;
 pub mod domain;
 pub mod error;
 pub mod http;
+pub mod live;
 pub mod quotes;
 pub mod service;
 pub mod store;
@@ -22,6 +23,8 @@ use async_trait::async_trait;
 use crate::auth::{AccessAuthenticator, Authenticator, DevAuthenticator};
 use crate::config::{AuthConfig, Config};
 use crate::http::{AppState, BuildInfo};
+use crate::live::yahoo::YahooStreamer;
+use crate::live::LiveQuotes;
 use crate::quotes::{QuoteError, QuoteProvider, SymbolMatch, YahooProvider};
 use crate::service::QuoteService;
 use crate::store::Store;
@@ -37,6 +40,12 @@ pub enum StartError {
     #[error("cliente http: {0}")]
     Http(#[from] reqwest::Error),
 }
+
+/// De quanto em quanto tempo os preços do streamer vão para o banco (e para a
+/// tela). Um segundo é o passo do próprio streamer na B3.
+const LIVE_FLUSH_EVERY: Duration = Duration::from_secs(1);
+/// Rodada de conferência do que assinar; ativo novo ou apagado já refaz na hora.
+const LIVE_TRACK_EVERY: Duration = Duration::from_secs(60);
 
 /// Provedor que não cota nada — para `QUOTES_ENABLED=false`.
 pub struct DisabledQuotes;
@@ -89,9 +98,18 @@ pub async fn run(config: Config) -> Result<(), StartError> {
     } else {
         Arc::new(DisabledQuotes)
     };
-    let quotes = Arc::new(QuoteService::new(store.clone(), provider));
+    let live = LiveQuotes::new(store.clone());
+    let quotes = Arc::new(QuoteService::new(
+        store.clone(),
+        provider,
+        Arc::clone(&live),
+    ));
     if config.quotes_enabled {
         Arc::clone(&quotes).spawn_refresher(config.quotes_refresh);
+        if config.quotes_stream {
+            live.spawn(LIVE_FLUSH_EVERY, LIVE_TRACK_EVERY);
+            tokio::spawn(YahooStreamer::default().run(live.symbols(), live.ticks()));
+        }
     }
 
     let state = AppState::new(
@@ -105,25 +123,24 @@ pub async fn run(config: Config) -> Result<(), StartError> {
         telemetry::install_metrics(),
     );
     let public = http::public_router(state.clone(), &config.static_dir);
-    let operational = http::operational_router(state);
+    let operational = http::operational_router(state.clone());
 
     let public_listener = tokio::net::TcpListener::bind(("0.0.0.0", config.port)).await?;
     let operational_listener =
         tokio::net::TcpListener::bind(("0.0.0.0", config.operational_port)).await?;
     tracing::info!(port = config.port, operational_port = config.operational_port, version = %config.version, commit = %config.commit, "prumo no ar");
 
-    let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
     let wait = |mut rx: tokio::sync::watch::Receiver<bool>| async move {
         let _ = rx.wait_for(|stop| *stop).await;
     };
     let public_server =
-        axum::serve(public_listener, public).with_graceful_shutdown(wait(stop_rx.clone()));
-    let operational_server =
-        axum::serve(operational_listener, operational).with_graceful_shutdown(wait(stop_rx));
+        axum::serve(public_listener, public).with_graceful_shutdown(wait(state.stopping()));
+    let operational_server = axum::serve(operational_listener, operational)
+        .with_graceful_shutdown(wait(state.stopping()));
     tokio::spawn(async move {
         shutdown_signal().await;
         tracing::info!("encerrando");
-        let _ = stop_tx.send(true);
+        state.stop();
     });
     let (public_result, operational_result) = tokio::join!(public_server, operational_server);
     public_result?;

@@ -12,6 +12,7 @@ use uuid::Uuid;
 use crate::domain::allocation::{round_cents, Targets};
 use crate::domain::asset_class::{AssetClass, Checklist, Market, UnitKind};
 use crate::domain::defaults;
+use crate::live::Tick;
 use crate::quotes::Quote;
 
 static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
@@ -91,6 +92,15 @@ pub struct StoredQuote {
     pub currency: String,
     pub name: Option<String>,
     pub fetched_at: OffsetDateTime,
+    /// Hora do negócio que formou o preço, quando o provedor diz.
+    pub traded_at: Option<OffsetDateTime>,
+}
+
+impl StoredQuote {
+    /// De quando é o preço: a hora do negócio ou, sem ela, a da busca.
+    pub fn as_of(&self) -> OffsetDateTime {
+        self.traded_at.unwrap_or(self.fetched_at)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -145,6 +155,7 @@ struct QuoteRow {
     currency: String,
     name: Option<String>,
     fetched_at: OffsetDateTime,
+    traded_at: Option<OffsetDateTime>,
 }
 
 #[derive(FromRow)]
@@ -573,7 +584,7 @@ impl Store {
             return Ok(HashMap::new());
         }
         let rows: Vec<QuoteRow> = sqlx::query_as(
-            "select symbol, price, currency, name, fetched_at from quotes where symbol = any($1)",
+            "select symbol, price, currency, name, fetched_at, traded_at from quotes where symbol = any($1)",
         )
         .bind(symbols)
         .fetch_all(&self.pool)
@@ -587,31 +598,89 @@ impl Store {
                     currency: r.currency,
                     name: r.name,
                     fetched_at: r.fetched_at,
+                    traded_at: r.traded_at,
                 };
                 (r.symbol, quote)
             })
             .collect())
     }
 
+    /// Grava a cotação do `chart`. Moeda e nome sempre; o preço só se o
+    /// negócio dele não for mais velho que o do preço gravado (o streamer pode
+    /// ter trazido um mais novo).
     pub async fn upsert_quote(
         &self,
         quote: &Quote,
         fetched_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
         sqlx::query(
-            "insert into quotes (symbol, price, currency, name, fetched_at) values ($1, $2, $3, $4, $5)
+            "insert into quotes (symbol, price, currency, name, fetched_at, traded_at)
+             values ($1, $2, $3, $4, $5, $6)
              on conflict (symbol) do update set
-                price = excluded.price, currency = excluded.currency,
-                name = coalesce(excluded.name, quotes.name), fetched_at = excluded.fetched_at",
+                price = case when excluded.traded_at is null or quotes.traded_at is null
+                                  or excluded.traded_at >= quotes.traded_at
+                             then excluded.price else quotes.price end,
+                traded_at = case when excluded.traded_at is null or quotes.traded_at is null
+                                      or excluded.traded_at >= quotes.traded_at
+                                 then excluded.traded_at else quotes.traded_at end,
+                currency = excluded.currency,
+                name = coalesce(excluded.name, quotes.name),
+                fetched_at = excluded.fetched_at",
         )
         .bind(&quote.symbol)
         .bind(quote.price)
         .bind(&quote.currency)
         .bind(&quote.name)
         .bind(fetched_at)
+        .bind(quote.traded_at)
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    /// Grava um lote de preços do streamer e devolve os símbolos cujo preço
+    /// mudou. Só atualiza símbolo que já tem cotação (a moeda vem do `chart`)
+    /// e só com negócio mais novo que o gravado. Um símbolo por lote.
+    pub async fn apply_ticks(
+        &self,
+        ticks: &[Tick],
+        fetched_at: OffsetDateTime,
+    ) -> Result<BTreeSet<String>, StoreError> {
+        if ticks.is_empty() {
+            return Ok(BTreeSet::new());
+        }
+        let symbols: Vec<&str> = ticks.iter().map(|t| t.symbol.as_str()).collect();
+        let prices: Vec<Decimal> = ticks.iter().map(|t| t.price).collect();
+        let traded: Vec<OffsetDateTime> = ticks.iter().map(|t| t.traded_at).collect();
+        // Todos os pedaços de um `with` leem a mesma foto do banco: `before`
+        // enxerga o preço de antes do `update`.
+        let moved: Vec<(String,)> = sqlx::query_as(
+            "with batch as (
+                 select * from unnest($1::text[], $2::numeric[], $3::timestamptz[])
+                     as b (symbol, price, traded_at)
+             ),
+             before as (
+                 select q.symbol, q.price from quotes q join batch b on b.symbol = q.symbol
+             ),
+             updated as (
+                 update quotes q
+                    set price = b.price, traded_at = b.traded_at, fetched_at = $4
+                   from batch b
+                  where q.symbol = b.symbol
+                    and (q.traded_at is null or b.traded_at > q.traded_at)
+                 returning q.symbol, q.price
+             )
+             select updated.symbol from updated
+               join before on before.symbol = updated.symbol
+              where updated.price <> before.price",
+        )
+        .bind(&symbols)
+        .bind(&prices)
+        .bind(&traded)
+        .bind(fetched_at)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(moved.into_iter().map(|(symbol,)| symbol).collect())
     }
 
     /// Mercado e símbolo de todos os ativos cotáveis, de todas as carteiras.

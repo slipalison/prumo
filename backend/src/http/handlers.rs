@@ -317,6 +317,8 @@ pub async fn delete_asset(
     ApiPath(id): ApiPath<Uuid>,
 ) -> ApiResult<StatusCode> {
     if state.store.delete_asset(user.id, id).await? {
+        // O streamer deixa de acompanhar o símbolo, se ninguém mais o tem.
+        state.quotes.live().resync();
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(ApiError::not_found())

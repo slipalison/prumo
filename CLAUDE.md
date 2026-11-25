@@ -19,7 +19,7 @@
 
 ## Onde está cada coisa
 
-- `backend/` — Rust 1.98, Axum 0.8, sqlx 0.8 (consultas em tempo de execução,
+- `backend/` — Rust 1.98, Axum 0.8, sqlx 0.9 (consultas em tempo de execução,
   sem cache `.sqlx`). `domain/` é puro (o motor do aporte em
   `domain/allocation.rs`, explicado em `docs/alocacao.md`).
 - `frontend/` — React 19 + Vite + TypeScript + Motion. Contrato em `docs/api.md`,

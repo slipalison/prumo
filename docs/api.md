@@ -156,6 +156,43 @@ A tela inteira numa chamada.
   vence a cotação) ou `missing` (sem preço — vale 0 e não recebe aporte).
 - `unit_price` já vem em reais. `currency` é a moeda da cotação original.
 - `class_percent`: quanto o ativo representa dentro da própria classe.
+- `quote_updated_at`: de quando é o preço — a hora do negócio que o formou,
+  não a hora em que o Prumo buscou. Na B3 fica uns 15 minutos para trás (o
+  dado gratuito da bolsa sai atrasado); fora do pregão, é a do último
+  negócio. Ativo em moeda estrangeira leva a mais velha entre a do preço e a
+  do câmbio. `quotes_updated_at` é a mais velha da carteira.
+
+### `GET /api/v1/portfolio/stream`
+
+A carteira ao vivo, em [Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html)
+(`text/event-stream`). Abra com `new EventSource("/api/v1/portfolio/stream")`.
+
+```text
+event: prices
+data: {"total_value":120080.0,"quotes_updated_at":"2026-11-25T13:44:58Z","classes":[…],"assets":[…]}
+retry: 3000
+```
+
+- Um evento `prices` sai **na hora** da conexão e outro sempre que muda um
+  preço de que a carteira depende (do ativo ou do câmbio dele). Só sai evento
+  quando algum número mudou.
+- `classes` tem a forma de `GET /portfolio`; cada item de `assets` traz só
+  `id`, `unit_price`, `currency`, `price_source`, `quote_updated_at`,
+  `current_value` e `class_percent` — o que muda com o preço. O resto a tela
+  já tem do `GET /portfolio`.
+- Comentário de keep-alive (`: keep-alive`… ) a cada 15 s, para proxy nenhum
+  derrubar a conexão parada.
+- O servidor **fecha** a conexão quando a credencial do Access vence e
+  quando o processo vai encerrar (deploy). O `EventSource` reconecta em 3 s
+  (`retry`); com a sessão vencida, a reconexão recebe o redirecionamento do
+  Access e o navegador desiste — o app tenta de novo com espera crescente.
+- De onde vêm os preços: o streamer do Yahoo (o WebSocket da página deles)
+  para B3, EUA, cripto e dólar, gravado no banco a cada segundo; e o `chart`,
+  a cada 15 minutos, para todo o resto e para moeda e nome. Vale o negócio
+  mais recente, venha de onde vier. Medido em 25/11/2026: B3 com 15 minutos
+  de atraso (tempo real na B3 exige licença paga de distribuidor), EUA e
+  câmbio com 1–2 s, cripto a cada ~5 s. Nos EUA o streamer inclui o pré e o
+  pós-mercado.
 
 ### `PUT /api/v1/goals`
 
@@ -334,8 +371,10 @@ ou `us_reits`; FII e ação como antes. Fora da B3: cripto → `crypto`, EUA →
 
 ### `POST /api/v1/quotes/refresh`
 
-Atualiza agora as cotações dos ativos da pessoa. O servidor também atualiza
-sozinho a cada 15 minutos.
+Atualiza agora as cotações dos ativos da pessoa pelo `chart`. O servidor
+também atualiza sozinho a cada 15 minutos, e o streamer entre uma rodada e
+outra (ver `GET /portfolio/stream`). Quem estiver com o stream aberto recebe
+o resultado por lá.
 
 ```json
 { "refreshed": 8, "failed": ["XYZW11"] }

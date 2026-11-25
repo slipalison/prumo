@@ -9,6 +9,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use rust_decimal::Decimal;
 use serde::Deserialize;
+use time::OffsetDateTime;
 
 use crate::domain::asset_class::{normalize_symbol, AssetClass};
 
@@ -19,6 +20,9 @@ pub struct Quote {
     pub price: Decimal,
     pub currency: String,
     pub name: Option<String>,
+    /// Hora do negócio que formou o preço (`regularMarketTime`). Na B3, com o
+    /// atraso de 15 minutos do dado gratuito.
+    pub traded_at: Option<OffsetDateTime>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -95,6 +99,7 @@ struct ChartMeta {
     symbol: String,
     currency: Option<String>,
     regular_market_price: Option<f64>,
+    regular_market_time: Option<i64>,
     long_name: Option<String>,
     short_name: Option<String>,
 }
@@ -155,6 +160,9 @@ impl QuoteProvider for YahooProvider {
         Ok(Quote {
             symbol: meta.symbol,
             price,
+            traded_at: meta
+                .regular_market_time
+                .and_then(|t| OffsetDateTime::from_unix_timestamp(t).ok()),
             currency: meta
                 .currency
                 .unwrap_or_else(|| "BRL".to_owned())

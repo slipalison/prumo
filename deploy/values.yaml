@@ -79,4 +79,7 @@ egress:
     port: 443
   - host: query2.finance.yahoo.com
     port: 443
+  # preco ao vivo: o WebSocket do streamer do Yahoo
+  - host: streamer.finance.yahoo.com
+    port: 443
 versao: 0.1.0

@@ -10,9 +10,11 @@ use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use axum::Router;
 use http_body_util::BodyExt;
+use prumo::auth::Authenticator;
 use prumo::auth::DevAuthenticator;
 use prumo::domain::asset_class::AssetClass;
 use prumo::http::{AppState, BuildInfo};
+use prumo::live::LiveQuotes;
 use prumo::quotes::{Quote, QuoteError, QuoteProvider, SymbolMatch};
 use prumo::service::QuoteService;
 use prumo::store::Store;
@@ -54,6 +56,8 @@ pub struct FakeQuotes {
     pub prices: Mutex<HashMap<String, (Decimal, &'static str, &'static str)>>,
     pub fail: Mutex<bool>,
     pub calls: Mutex<usize>,
+    /// Hora do negócio que o falso diz em toda cotação (`None` = não diz).
+    pub traded_at: Mutex<Option<time::OffsetDateTime>>,
 }
 
 impl FakeQuotes {
@@ -96,6 +100,7 @@ impl QuoteProvider for FakeQuotes {
             price: *price,
             currency: (*currency).to_owned(),
             name: Some((*name).to_owned()),
+            traded_at: *self.traded_at.lock().unwrap(),
         })
     }
 
@@ -120,10 +125,29 @@ pub struct TestApp {
 }
 
 pub fn app(store: &Store, email: &str, quotes: Arc<FakeQuotes>, static_dir: &str) -> TestApp {
-    let service = Arc::new(QuoteService::new(store.clone(), quotes));
+    app_with_auth(
+        store,
+        Arc::new(DevAuthenticator::new(email)),
+        quotes,
+        static_dir,
+    )
+}
+
+/// Lote do hub nos testes: curto, para o teste não esperar o segundo de produção.
+pub const TEST_FLUSH: std::time::Duration = std::time::Duration::from_millis(20);
+
+pub fn app_with_auth(
+    store: &Store,
+    auth: Arc<dyn Authenticator>,
+    quotes: Arc<FakeQuotes>,
+    static_dir: &str,
+) -> TestApp {
+    let live = LiveQuotes::new(store.clone());
+    live.spawn(TEST_FLUSH, std::time::Duration::from_millis(50));
+    let service = Arc::new(QuoteService::new(store.clone(), quotes, live));
     let state = AppState::new(
         store.clone(),
-        Arc::new(DevAuthenticator::new(email)),
+        auth,
         service,
         BuildInfo {
             version: "9.9.9".into(),
@@ -190,4 +214,46 @@ pub async fn patch(router: &Router, uri: &str, body: Value) -> Reply {
 
 pub async fn delete(router: &Router, uri: &str) -> Reply {
     call(router, Method::DELETE, uri, None).await
+}
+
+/// Diretório temporário com um `index.html` e um asset, apagado no fim.
+pub mod tempfile_dir {
+    pub struct Dir(pub std::path::PathBuf);
+
+    impl Dir {
+        pub fn new() -> Self {
+            let path = std::env::temp_dir().join(format!("prumo-static-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(path.join("assets")).unwrap();
+            std::fs::write(
+                path.join("index.html"),
+                "<!doctype html><title>Prumo</title>",
+            )
+            .unwrap();
+            std::fs::write(
+                path.join("assets").join("app-123.js"),
+                "console.log('prumo')",
+            )
+            .unwrap();
+            Self(path)
+        }
+
+        pub fn path(&self) -> String {
+            self.0.to_string_lossy().into_owned()
+        }
+    }
+
+    impl Drop for Dir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+}
+
+/// O item de uma lista JSON com `key == value`.
+pub fn find<'a>(list: &'a Value, key: &str, value: &str) -> &'a Value {
+    list.as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item[key] == value)
+        .unwrap_or_else(|| panic!("{key}={value} nao encontrado em {list}"))
 }

@@ -24,8 +24,13 @@ jsonwebtoken = { version = "10", default-features = false, features = ["aws_lc_r
 # (`rust_crypto`) puxaria a crate `rsa`, que tem o RUSTSEC-2023-0071 sem
 # correcao. Os testes geram a chave RSA com o proprio aws-lc-rs.
 aws-lc-rs = { version = "1", features = ["prebuilt-nasm"] }
+base64 = "0.22"
+futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
 metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.17", default-features = false }
+# Só o derive: a mensagem do streamer do Yahoo tem três campos que importam e
+# o esquema mora em `live/yahoo.rs`, sem `.proto` nem build script.
+prost = { version = "0.14", default-features = false, features = ["derive", "std"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "json", "http2"] }
 rust_decimal = { version = "1", features = ["serde-with-float", "maths"] }
 serde = { version = "1", features = ["derive"] }
@@ -34,6 +39,9 @@ sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio",
 thiserror = "2"
 time = { version = "0.3", features = ["serde", "formatting", "parsing", "macros"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time", "net"] }
+# WebSocket do streamer de preços. Mesmas raízes (webpki) e o mesmo provedor
+# criptográfico (ring) do reqwest: um rustls só no binário.
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["fs", "trace", "timeout", "limit", "compression-gzip", "set-header"] }
 tracing = "0.1"
@@ -47,7 +55,6 @@ rust_decimal_macros = "1"
 testcontainers = "0.27"
 testcontainers-modules = { version = "0.15", features = ["postgres"] }
 wiremock = "0.6"
-base64 = "0.22"
 
 [lints.rust]
 unsafe_code = "forbid"

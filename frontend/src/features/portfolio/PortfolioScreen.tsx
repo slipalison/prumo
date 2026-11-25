@@ -8,11 +8,14 @@ import { CountUp } from "../../components/CountUp";
 import { Donut } from "../../components/Donut";
 import { GlassCard } from "../../components/GlassCard";
 import { IconAlert, IconPlus, IconRefresh } from "../../components/icons";
+import { LiveBadge } from "../../components/LiveBadge";
+import { PriceFlash, TrendMark } from "../../components/PriceFlash";
 import { ScoreBadge } from "../../components/ScoreBadge";
 import { useToast } from "../../components/toastContext";
 import { acceptsB3Listing, CLASS_META, classColor, nounOf, unitOf } from "../../lib/assetClasses";
 import { cx } from "../../lib/cx";
-import { formatBRL, formatPercent, formatQuantity, formatRelative, plural } from "../../lib/format";
+import { formatBRL, formatPercent, formatQuantity, plural } from "../../lib/format";
+import { useLiveStatus } from "../../lib/liveStatus";
 import { needsRating, ratingIntro } from "../../lib/rating";
 import { AddAssetSheet } from "./AddAssetSheet";
 import { ContributionHistory } from "./ContributionHistory";
@@ -26,6 +29,8 @@ export function PortfolioScreen({ portfolio }: PortfolioScreenProps) {
   const [justCreated, setJustCreated] = useState<Asset | null>(null);
   const refresh = useRefreshQuotes();
   const toast = useToast();
+  const live = useLiveStatus();
+  const delayedB3 = portfolio.assets.some((a) => a.listed_on_b3 && a.price_source === "quote");
 
   const editing =
     portfolio.assets.find((a) => a.id === editingId) ?? (justCreated?.id === editingId ? justCreated : null);
@@ -57,9 +62,12 @@ export function PortfolioScreen({ portfolio }: PortfolioScreenProps) {
       <GlassCard as="section" className="portfolio__hero" aria-label="Patrimônio">
         <div className="portfolio__total">
           <span className="eyebrow">Patrimônio</span>
-          <CountUp value={portfolio.total_value} className="display-number" />
+          <div className="portfolio__total-line">
+            <CountUp value={portfolio.total_value} className="display-number" />
+            <TrendMark value={portfolio.total_value} />
+          </div>
           <div className="portfolio__quotes">
-            <span className="field__hint">Cotações {formatRelative(portfolio.quotes_updated_at)}</span>
+            <LiveBadge status={live} updatedAt={portfolio.quotes_updated_at} delayedB3={delayedB3} />
             <button
               type="button"
               className={cx("icon-btn", refresh.isPending && "is-spinning")}
@@ -254,7 +262,7 @@ function AssetRow({ asset, onClick }: { asset: Asset; onClick: () => void }) {
       </span>
       <span className="asset-row__qty">{asset.symbol ? quantityLine : ""}</span>
       <span className="asset-row__value">
-        {formatBRL(asset.current_value)}
+        <PriceFlash value={asset.current_value}>{formatBRL(asset.current_value)}</PriceFlash>
         <span className="asset-row__share">{formatPercent(asset.class_percent)} da classe</span>
       </span>
       <span className="asset-row__score">

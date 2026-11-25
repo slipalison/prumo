@@ -12,6 +12,7 @@ use uuid::Uuid;
 use crate::domain::allocation::{self, class_index, percent, round_cents, Holding, Plan, Targets};
 use crate::domain::asset_class::{AssetClass, Market, UnitKind};
 use crate::domain::scoring::{self, ScoreSource};
+use crate::live::LiveQuotes;
 use crate::quotes::{fx_symbol, Quote, QuoteError, QuoteProvider};
 use crate::store::{unit_value, Asset, Question, Store, StoreError, StoredQuote};
 
@@ -70,6 +71,26 @@ impl PortfolioView {
     pub fn asset(&self, id: Uuid) -> Option<&AssetView> {
         self.assets.iter().find(|a| a.asset.id == id)
     }
+
+    /// Os símbolos do `chart` de que o valor desta carteira depende: o de cada
+    /// ativo cotável e o câmbio das moedas que aparecem.
+    pub fn quote_symbols(&self) -> BTreeSet<String> {
+        let mut symbols: BTreeSet<String> = self
+            .assets
+            .iter()
+            .filter_map(|a| {
+                let symbol = a.asset.symbol.as_deref()?;
+                a.asset.market().quote_symbol(symbol)
+            })
+            .collect();
+        symbols.extend(
+            self.assets
+                .iter()
+                .filter(|a| a.currency != "BRL")
+                .map(|a| fx_symbol(&a.currency)),
+        );
+        symbols
+    }
 }
 
 /// Preço em reais de um ativo e de onde ele veio.
@@ -96,7 +117,7 @@ fn resolve_price(
             Some(quote.price),
             quote.currency.clone(),
             PriceSource::Quote,
-            Some(quote.fetched_at),
+            Some(quote.as_of()),
         );
     }
     match quotes.get(&fx_symbol(&quote.currency)) {
@@ -104,13 +125,13 @@ fn resolve_price(
             Some((quote.price * fx.price).round_dp(8)),
             quote.currency.clone(),
             PriceSource::Quote,
-            Some(quote.fetched_at.min(fx.fetched_at)),
+            Some(quote.as_of().min(fx.as_of())),
         ),
         None => (
             None,
             quote.currency.clone(),
             PriceSource::Missing,
-            Some(quote.fetched_at),
+            Some(quote.as_of()),
         ),
     }
 }
@@ -264,15 +285,25 @@ pub struct RefreshReport {
 pub struct QuoteService {
     store: Store,
     provider: Arc<dyn QuoteProvider>,
+    live: Arc<LiveQuotes>,
 }
 
 impl QuoteService {
-    pub fn new(store: Store, provider: Arc<dyn QuoteProvider>) -> Self {
-        Self { store, provider }
+    pub fn new(store: Store, provider: Arc<dyn QuoteProvider>, live: Arc<LiveQuotes>) -> Self {
+        Self {
+            store,
+            provider,
+            live,
+        }
     }
 
     pub fn provider(&self) -> &dyn QuoteProvider {
         self.provider.as_ref()
+    }
+
+    /// O preço ao vivo: avisos de preço novo e a assinatura do streamer.
+    pub fn live(&self) -> &Arc<LiveQuotes> {
+        &self.live
     }
 
     /// Cota um ativo agora, para ele já aparecer com preço. Falha não é erro
@@ -282,6 +313,8 @@ impl QuoteService {
         if report.refreshed == 0 {
             return None;
         }
+        // Símbolo novo no banco: o streamer passa a acompanhar já.
+        self.live.resync();
         let provider_symbol = market.quote_symbol(symbol)?;
         let stored = self.store.quotes(&[provider_symbol]).await.ok()?;
         stored.into_values().next().map(|q| Quote {
@@ -289,13 +322,16 @@ impl QuoteService {
             price: q.price,
             currency: q.currency,
             name: q.name,
+            traded_at: q.traded_at,
         })
     }
 
-    /// Atualiza os símbolos dados e o câmbio das moedas que aparecerem.
+    /// Atualiza os símbolos dados e o câmbio das moedas que aparecerem, e
+    /// avisa quem acompanha a carteira ao vivo.
     pub async fn refresh(&self, targets: &[(Market, String)]) -> RefreshReport {
         let mut report = RefreshReport::default();
         let mut currencies = BTreeSet::new();
+        let mut stored = BTreeSet::new();
         for (market, symbol) in targets {
             let Some(provider_symbol) = market.quote_symbol(symbol) else {
                 continue;
@@ -306,6 +342,7 @@ impl QuoteService {
                     if quote.currency != "BRL" {
                         currencies.insert(quote.currency);
                     }
+                    stored.insert(provider_symbol);
                 }
                 Err(error) => {
                     tracing::warn!(symbol = %provider_symbol, error = %error, "cotacao nao atualizada");
@@ -315,10 +352,16 @@ impl QuoteService {
         }
         for currency in currencies {
             let symbol = fx_symbol(&currency);
-            if let Err(error) = self.fetch_and_store(&symbol).await {
-                tracing::warn!(symbol = %symbol, error = %error, "cambio nao atualizado");
+            match self.fetch_and_store(&symbol).await {
+                Ok(_) => {
+                    stored.insert(symbol);
+                }
+                Err(error) => {
+                    tracing::warn!(symbol = %symbol, error = %error, "cambio nao atualizado");
+                }
             }
         }
+        self.live.announce(stored);
         report
     }
 
@@ -388,6 +431,7 @@ mod tests {
                 currency: currency.to_owned(),
                 name: None,
                 fetched_at: OffsetDateTime::now_utc(),
+                traded_at: None,
             },
         )
     }

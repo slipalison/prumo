@@ -11,6 +11,7 @@ import { CriteriaScreen } from "../features/criteria/CriteriaScreen";
 import { GoalsScreen } from "../features/goals/GoalsScreen";
 import { PortfolioScreen } from "../features/portfolio/PortfolioScreen";
 import { ROUTE_LABEL, useRoute, type RouteId } from "../lib/route";
+import { useLivePrices } from "./useLivePrices";
 
 /**
  * Cada tela abre do topo, e não na rolagem da anterior. Sem animação de
@@ -40,6 +41,7 @@ export function Shell() {
   const me = useMe();
   const info = useInfo();
   const mainRef = useRef<HTMLElement>(null);
+  useLivePrices(portfolio.isSuccess);
 
   useEffect(() => {
     document.title = `${ROUTE_LABEL[route]} · Prumo`;

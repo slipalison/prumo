@@ -2,6 +2,7 @@
 
 pub mod dto;
 mod handlers;
+mod live;
 mod ops;
 
 use std::collections::HashMap;
@@ -17,7 +18,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, patch, post, put};
 use axum::Router;
 use metrics_exporter_prometheus::PrometheusHandle;
-use tokio::sync::{Mutex, RwLock};
+use time::OffsetDateTime;
+use tokio::sync::{watch, Mutex, RwLock};
 use tower_http::compression::CompressionLayer;
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::services::{ServeDir, ServeFile};
@@ -47,6 +49,7 @@ pub struct AppState {
     pub metrics: Option<PrometheusHandle>,
     users: Arc<RwLock<HashMap<String, Uuid>>>,
     refreshes: Arc<Mutex<HashMap<Uuid, Instant>>>,
+    stop: Arc<watch::Sender<bool>>,
 }
 
 /// Intervalo mínimo entre duas atualizações manuais de cotação da mesma pessoa.
@@ -68,7 +71,20 @@ impl AppState {
             metrics,
             users: Arc::default(),
             refreshes: Arc::default(),
+            stop: Arc::new(watch::channel(false).0),
         }
+    }
+
+    /// Começa o encerramento: os servidores param de aceitar conexão e as
+    /// conexões longas (o stream da carteira) terminam, para o desligamento
+    /// gracioso não esperar por elas.
+    pub fn stop(&self) {
+        self.stop.send_replace(true);
+    }
+
+    /// `true` a partir do [`AppState::stop`].
+    pub fn stopping(&self) -> watch::Receiver<bool> {
+        self.stop.subscribe()
     }
 
     /// `true` se a pessoa pode atualizar agora (e marca o momento).
@@ -90,6 +106,8 @@ impl AppState {
 pub struct CurrentUser {
     pub id: Uuid,
     pub email: String,
+    /// Quando a credencial vence (ver [`crate::auth::Identity`]).
+    pub expires_at: Option<OffsetDateTime>,
 }
 
 impl FromRequestParts<AppState> for CurrentUser {
@@ -104,6 +122,7 @@ impl FromRequestParts<AppState> for CurrentUser {
             return Ok(CurrentUser {
                 id: *id,
                 email: identity.email,
+                expires_at: identity.expires_at,
             });
         }
         let id = state
@@ -118,6 +137,7 @@ impl FromRequestParts<AppState> for CurrentUser {
         Ok(CurrentUser {
             id,
             email: identity.email,
+            expires_at: identity.expires_at,
         })
     }
 }
@@ -183,6 +203,7 @@ pub fn public_router(state: AppState, static_dir: &str) -> Router {
         .route("/info", get(handlers::info))
         .route("/me", get(handlers::me))
         .route("/portfolio", get(handlers::portfolio))
+        .route("/portfolio/stream", get(live::portfolio_stream))
         .route("/goals", put(handlers::set_goals))
         .route("/assets", post(handlers::create_asset))
         .route(

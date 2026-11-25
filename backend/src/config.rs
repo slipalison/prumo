@@ -25,6 +25,8 @@ pub struct Config {
     pub static_dir: String,
     pub auth: AuthConfig,
     pub quotes_enabled: bool,
+    /// Preço ao vivo pelo streamer do Yahoo (com `quotes_enabled`).
+    pub quotes_stream: bool,
     pub quotes_refresh: Duration,
     pub version: String,
     pub commit: String,
@@ -84,14 +86,14 @@ impl Config {
             }
         };
 
-        let quotes_enabled = match get("QUOTES_ENABLED").as_deref() {
-            None | Some("true") => true,
-            Some("false") => false,
-            Some(other) => {
-                return Err(ConfigError::Invalid {
-                    name: "QUOTES_ENABLED",
+        let flag = |name: &'static str| -> Result<bool, ConfigError> {
+            match get(name).as_deref() {
+                None | Some("true") => Ok(true),
+                Some("false") => Ok(false),
+                Some(other) => Err(ConfigError::Invalid {
+                    name,
                     value: other.to_owned(),
-                });
+                }),
             }
         };
 
@@ -101,7 +103,8 @@ impl Config {
             database_url: required("DATABASE_URL")?,
             static_dir: get("STATIC_DIR").unwrap_or_else(|| "static".to_owned()),
             auth,
-            quotes_enabled,
+            quotes_enabled: flag("QUOTES_ENABLED")?,
+            quotes_stream: flag("QUOTES_STREAM")?,
             quotes_refresh: Duration::from_secs(number("QUOTES_REFRESH_SECS", 900)?.max(60)),
             version: get("APP_VERSION").unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_owned()),
             commit: get("GIT_SHA").unwrap_or_else(|| "unknown".to_owned()),
@@ -156,6 +159,7 @@ mod tests {
         assert_eq!(config.operational_port, 9090);
         assert_eq!(config.static_dir, "static");
         assert!(config.quotes_enabled);
+        assert!(config.quotes_stream);
         assert_eq!(config.quotes_refresh, Duration::from_secs(900));
         assert_eq!(config.commit, "a1b2c3d");
     }
@@ -167,6 +171,7 @@ mod tests {
             ("AUTH_MODE", "dev"),
             ("PORT", "3000"),
             ("QUOTES_ENABLED", "false"),
+            ("QUOTES_STREAM", "false"),
             ("QUOTES_REFRESH_SECS", "5"),
         ]))
         .unwrap();
@@ -178,6 +183,7 @@ mod tests {
         );
         assert_eq!(config.port, 3000);
         assert!(!config.quotes_enabled);
+        assert!(!config.quotes_stream);
         assert_eq!(config.quotes_refresh, Duration::from_secs(60));
     }
 
@@ -214,6 +220,17 @@ mod tests {
             ])),
             Err(ConfigError::Invalid {
                 name: "QUOTES_ENABLED",
+                ..
+            })
+        ));
+        assert!(matches!(
+            Config::from_lookup(lookup(&[
+                ("AUTH_MODE", "dev"),
+                ("DATABASE_URL", "x"),
+                ("QUOTES_STREAM", "sim")
+            ])),
+            Err(ConfigError::Invalid {
+                name: "QUOTES_STREAM",
                 ..
             })
         ));
