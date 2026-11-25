@@ -12,6 +12,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+use super::income::PlanIncomeDto;
 use crate::domain::allocation::{ClassOutcome, Notice, Plan};
 use crate::domain::asset_class::{AssetClass, Checklist};
 use crate::domain::scoring::ScoreSource;
@@ -446,6 +447,9 @@ pub struct PlanItemDto {
     pub divisible: bool,
     #[serde(with = "decimal_out")]
     pub class_percent_after: Decimal,
+    /// Renda mensal que o item soma, estimada (`null` sem histórico do ativo).
+    #[serde(with = "decimal_out::option")]
+    pub estimated_monthly_income: Option<Decimal>,
 }
 
 #[derive(Debug, Serialize)]
@@ -570,6 +574,8 @@ pub struct PlanDto {
     pub items: Vec<PlanItemDto>,
     pub classes: Vec<PlanClassDto>,
     pub notices: Vec<NoticeDto>,
+    /// A renda estimada que o aporte soma; `null` sem estimativa de nenhum ativo.
+    pub income: Option<PlanIncomeDto>,
 }
 
 impl PlanDto {
@@ -591,6 +597,7 @@ impl PlanDto {
                     value: item.value,
                     divisible: item.divisible,
                     class_percent_after: item.class_percent_after,
+                    estimated_monthly_income: None,
                 }
             })
             .collect();
@@ -605,6 +612,7 @@ impl PlanDto {
             items,
             classes: plan.classes.iter().map(PlanClassDto::from).collect(),
             notices: plan.notices.iter().map(NoticeDto::from).collect(),
+            income: None,
         }
     }
 }

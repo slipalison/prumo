@@ -7,10 +7,12 @@
 pub mod auth;
 pub mod b3_xlsx;
 pub mod config;
+pub mod dividends;
 pub mod domain;
 pub mod error;
 pub mod history;
 pub mod http;
+pub mod income;
 pub mod live;
 pub mod performance;
 pub mod quotes;
@@ -28,6 +30,7 @@ use async_trait::async_trait;
 use crate::auth::{AccessAuthenticator, Authenticator, DevAuthenticator};
 use crate::config::{AuthConfig, Config};
 use crate::history::{DisabledHistory, HistoryProvider, PublicHistory};
+use crate::dividends::{DisabledDividends, DividendProvider, YahooDividends};
 use crate::http::{AppState, BuildInfo};
 use crate::live::yahoo::YahooStreamer;
 use crate::live::LiveQuotes;
@@ -112,11 +115,15 @@ pub async fn run(config: Config) -> Result<(), StartError> {
         };
         Arc::new(performance::Performance::new(store.clone(), history)).spawn(at);
     }
-    let provider: Arc<dyn QuoteProvider> = if config.quotes_enabled {
-        Arc::new(YahooProvider::new(http.clone()))
-    } else {
-        Arc::new(DisabledQuotes)
-    };
+    let (provider, dividends): (Arc<dyn QuoteProvider>, Arc<dyn DividendProvider>) =
+        if config.quotes_enabled {
+            (
+                Arc::new(YahooProvider::new(http.clone())),
+                Arc::new(YahooDividends::new(http.clone())),
+            )
+        } else {
+            (Arc::new(DisabledQuotes), Arc::new(DisabledDividends))
+        };
     let live = LiveQuotes::new(store.clone());
     let quotes = Arc::new(QuoteService::new(
         store.clone(),
@@ -147,7 +154,8 @@ pub async fn run(config: Config) -> Result<(), StartError> {
             commit: config.commit.clone(),
         },
         telemetry::install_metrics(),
-    );
+    )
+    .with_dividend_provider(dividends);
     let public = http::public_router(state.clone(), &config.static_dir);
     let operational = http::operational_router(state.clone());
 

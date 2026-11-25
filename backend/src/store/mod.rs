@@ -28,6 +28,12 @@ mod treasury;
 
 pub use performance::{JobLock, Snapshot, SnapshotPoint};
 
+mod income;
+
+pub use income::{
+    CachedDividends, IncomeEvent, IncomeFields, IncomeFilter, NewIncomeEvent, Objective,
+};
+
 static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
 #[derive(Debug, thiserror::Error)]

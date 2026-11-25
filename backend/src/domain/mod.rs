@@ -7,6 +7,7 @@ pub mod defaults;
 pub mod health;
 pub mod ledger;
 pub mod performance;
+pub mod income;
 pub mod scoring;
 pub mod sector;
 pub mod tax;

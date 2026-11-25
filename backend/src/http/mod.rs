@@ -6,6 +6,7 @@ pub mod dto;
 mod handlers;
 mod health;
 mod ledger;
+mod income;
 mod live;
 mod ops;
 mod performance;
@@ -35,7 +36,9 @@ use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
 use crate::auth::Authenticator;
+use crate::dividends::DividendProvider;
 use crate::error::ApiError;
+use crate::income::IncomeService;
 use crate::service::QuoteService;
 use crate::store::Store;
 
@@ -51,6 +54,7 @@ pub struct AppState {
     pub store: Store,
     pub auth: Arc<dyn Authenticator>,
     pub quotes: Arc<QuoteService>,
+    pub income: Arc<IncomeService>,
     pub info: Arc<BuildInfo>,
     pub metrics: Option<PrometheusHandle>,
     users: Arc<RwLock<HashMap<String, Uuid>>>,
@@ -70,6 +74,7 @@ impl AppState {
         metrics: Option<PrometheusHandle>,
     ) -> Self {
         Self {
+            income: Arc::new(IncomeService::disabled(store.clone())),
             store,
             auth,
             quotes,
@@ -79,6 +84,13 @@ impl AppState {
             refreshes: Arc::default(),
             stop: Arc::new(watch::channel(false).0),
         }
+    }
+
+    /// Liga a estimativa de renda a um provedor de histórico de dividendos
+    /// (sem ele, só vale o que já está no cache).
+    pub fn with_dividend_provider(mut self, provider: Arc<dyn DividendProvider>) -> Self {
+        self.income = Arc::new(IncomeService::new(self.store.clone(), provider));
+        self
     }
 
     /// Começa o encerramento: os servidores param de aceitar conexão e as
@@ -240,6 +252,16 @@ pub fn public_router(state: AppState, static_dir: &str) -> Router {
             "/transactions/{id}",
             patch(ledger::update).delete(ledger::delete),
         )
+        .route("/income", get(income::list).post(income::create))
+        .route("/income/summary", get(income::summary))
+        .route("/income/cash-suggestion", get(income::cash_suggestion))
+        .route(
+            "/income/goal",
+            get(income::get_goal)
+                .put(income::set_goal)
+                .delete(income::delete_goal),
+        )
+        .route("/income/{id}", patch(income::update).delete(income::delete))
         .route("/symbols", get(handlers::symbols))
         .route("/quotes/refresh", post(handlers::refresh_quotes))
         .route("/history/net-worth", get(performance::net_worth))

@@ -16,6 +16,7 @@ use crate::domain::allocation::{Targets, FULL_BP};
 use crate::domain::asset_class::{normalize_symbol, AssetClass, Checklist, Market, UnitKind};
 use crate::domain::ledger::{check_for_unit, Kind};
 use crate::domain::treasury::Bond;
+use crate::domain::income::today_in_brazil;
 use crate::error::{ApiError, ApiResult};
 use crate::service;
 use crate::store::{AssetPatch, NewAsset, NewContributionItem, OpeningCost, StoreError};
@@ -458,7 +459,12 @@ pub async fn plan(
 ) -> ApiResult<Json<PlanDto>> {
     let amount = non_negative("O valor do aporte", body.amount)?;
     let (plan, view) = service::plan(&state.store, user.id, amount).await?;
-    Ok(Json(PlanDto::new(&plan, &view)))
+    let now = time::OffsetDateTime::now_utc();
+    let income = state
+        .income
+        .estimate(&view, today_in_brazil(now), now)
+        .await;
+    Ok(Json(PlanDto::new(&plan, &view).with_income(&income)))
 }
 
 pub async fn record_contribution(
