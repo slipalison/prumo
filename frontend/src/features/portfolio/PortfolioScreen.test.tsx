@@ -17,7 +17,8 @@ const lastRequest = (method: string, path: string) =>
 describe("Carteira", () => {
   it("mostra patrimônio, classes, ativos e quem precisa de atenção", async () => {
     await openPortfolio();
-    expect(await screen.findByText(/R\$\s120\.132,23/)).toBeInTheDocument();
+    // O total conta (CountUp); o texto da região vale durante e depois da contagem.
+    await waitFor(() => expect(screen.getByRole("region", { name: "Patrimônio" })).toHaveTextContent(/R\$\s120\.132,23/));
     const fiis = screen.getByRole("region", { name: "Fundos Imobiliários" });
     expect(within(fiis).getAllByRole("button")).toHaveLength(5);
     expect(within(fiis).getByText(/15 cotas · R\$\s94,55/)).toBeInTheDocument();
