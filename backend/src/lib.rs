@@ -29,8 +29,8 @@ use async_trait::async_trait;
 
 use crate::auth::{AccessAuthenticator, Authenticator, DevAuthenticator};
 use crate::config::{AuthConfig, Config};
-use crate::history::{DisabledHistory, HistoryProvider, PublicHistory};
 use crate::dividends::{DisabledDividends, DividendProvider, YahooDividends};
+use crate::history::{DisabledHistory, HistoryProvider, PublicHistory};
 use crate::http::{AppState, BuildInfo};
 use crate::income::IncomeService;
 use crate::live::yahoo::YahooStreamer;

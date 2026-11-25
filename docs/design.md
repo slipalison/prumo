@@ -326,9 +326,9 @@ Responde "estou ganhando do CDI?". Método e limites em
   prévia seguem o olho de ocultar valores, inclusive para o leitor de tela, e o
   texto cru das linhas não entendidas (que traz valores) também some.
 
-### 5. Renda
+### 8. Renda
 
-Aba entre Carteira e Ajustes (uma linha em `APP_ROUTES`). Responde "quanto minha carteira paga?" sem virar
+Aba entre Carteira e Desempenho (uma linha em `APP_ROUTES`). Responde "quanto minha carteira paga?" sem virar
 planilha: uma meta no topo, o resto por baixo.
 
 1. **Meta de renda mensal.** Número grande (média mensal dos 12 meses
