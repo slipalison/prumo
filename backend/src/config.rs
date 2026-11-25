@@ -22,6 +22,10 @@ pub struct Config {
     pub port: u16,
     pub operational_port: u16,
     pub database_url: String,
+    /// Teto de conexões do pool de cada réplica. O papel do app no Postgres
+    /// aceita 20; no canário convivem 4 pods (2 estáveis + 2 novos), então o
+    /// padrão 4 cabe com folga (16).
+    pub database_max_connections: u32,
     pub static_dir: String,
     pub auth: AuthConfig,
     pub quotes_enabled: bool,
@@ -105,6 +109,13 @@ impl Config {
             port: port("PORT", 8080)?,
             operational_port: port("OPERATIONAL_PORT", 9090)?,
             database_url: required("DATABASE_URL")?,
+            database_max_connections: u32::try_from(number("DATABASE_MAX_CONNECTIONS", 4)?)
+                .ok()
+                .filter(|n| (1..=100).contains(n))
+                .ok_or_else(|| ConfigError::Invalid {
+                    name: "DATABASE_MAX_CONNECTIONS",
+                    value: get("DATABASE_MAX_CONNECTIONS").unwrap_or_default(),
+                })?,
             static_dir: get("STATIC_DIR").unwrap_or_else(|| "static".to_owned()),
             auth,
             quotes_enabled: flag("QUOTES_ENABLED")?,
@@ -187,6 +198,7 @@ mod tests {
         assert_eq!(config.static_dir, "static");
         assert!(config.quotes_enabled);
         assert!(config.quotes_stream);
+        assert_eq!(config.database_max_connections, 4);
         assert!(config.sectors_enabled);
         assert_eq!(config.quotes_refresh, Duration::from_secs(900));
         assert_eq!(config.snapshot_at, Some(time::macros::time!(19:00)));
@@ -202,6 +214,7 @@ mod tests {
             ("QUOTES_ENABLED", "false"),
             ("QUOTES_STREAM", "false"),
             ("QUOTES_REFRESH_SECS", "5"),
+            ("DATABASE_MAX_CONNECTIONS", "8"),
             ("SECTORS_ENABLED", "false"),
         ]))
         .unwrap();
@@ -214,6 +227,7 @@ mod tests {
         assert_eq!(config.port, 3000);
         assert!(!config.quotes_enabled);
         assert!(!config.quotes_stream);
+        assert_eq!(config.database_max_connections, 8);
         assert!(!config.sectors_enabled);
         assert_eq!(config.quotes_refresh, Duration::from_secs(60));
     }
@@ -290,6 +304,19 @@ mod tests {
                 ..
             })
         ));
+        for bad in ["0", "101", "muitas"] {
+            assert!(matches!(
+                Config::from_lookup(lookup(&[
+                    ("AUTH_MODE", "dev"),
+                    ("DATABASE_URL", "x"),
+                    ("DATABASE_MAX_CONNECTIONS", bad)
+                ])),
+                Err(ConfigError::Invalid {
+                    name: "DATABASE_MAX_CONNECTIONS",
+                    ..
+                })
+            ));
+        }
         assert!(matches!(
             Config::from_lookup(lookup(&[
                 ("AUTH_MODE", "dev"),

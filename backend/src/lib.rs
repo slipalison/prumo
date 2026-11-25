@@ -86,7 +86,7 @@ fn http_client() -> Result<reqwest::Client, reqwest::Error> {
 
 /// Sobe tudo e só volta quando o processo recebe sinal para encerrar.
 pub async fn run(config: Config) -> Result<(), StartError> {
-    let store = connect_with_retry(&config.database_url).await?;
+    let store = connect_with_retry(&config.database_url, config.database_max_connections).await?;
     store.migrate().await?;
     tracing::info!("migracoes aplicadas");
 
@@ -188,10 +188,10 @@ pub async fn run(config: Config) -> Result<(), StartError> {
 }
 
 /// O Postgres pode demorar a aceitar conexão logo depois de um deploy.
-async fn connect_with_retry(url: &str) -> Result<Store, sqlx::Error> {
+async fn connect_with_retry(url: &str, max_connections: u32) -> Result<Store, sqlx::Error> {
     let mut attempt = 0u32;
     loop {
-        match Store::connect(url).await {
+        match Store::connect_with(url, max_connections).await {
             Ok(store) => return Ok(store),
             Err(error) if attempt < 10 => {
                 attempt += 1;

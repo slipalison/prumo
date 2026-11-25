@@ -34,6 +34,9 @@ pub use income::{
     CachedDividends, IncomeEvent, IncomeFields, IncomeFilter, NewIncomeEvent, Objective,
 };
 
+/// Padrão do teto do pool por réplica (ver `Config::database_max_connections`).
+pub const DEFAULT_MAX_CONNECTIONS: u32 = 4;
+
 static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
 #[derive(Debug, thiserror::Error)]
@@ -280,8 +283,20 @@ pub struct Store {
 
 impl Store {
     pub async fn connect(database_url: &str) -> Result<Self, sqlx::Error> {
+        Self::connect_with(database_url, DEFAULT_MAX_CONNECTIONS).await
+    }
+
+    /// Pool com teto de `max_connections`. Conexão parada por um minuto é
+    /// devolvida ao Postgres: o papel do app tem limite de conexões, e num
+    /// deploy as réplicas velhas e novas dividem esse limite.
+    pub async fn connect_with(
+        database_url: &str,
+        max_connections: u32,
+    ) -> Result<Self, sqlx::Error> {
         let pool = PgPoolOptions::new()
-            .max_connections(10)
+            .max_connections(max_connections)
+            .min_connections(0)
+            .idle_timeout(std::time::Duration::from_secs(60))
             .acquire_timeout(std::time::Duration::from_secs(5))
             .connect(database_url)
             .await?;

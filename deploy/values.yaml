@@ -28,7 +28,10 @@ probes:
     path: /healthz
     initialDelaySeconds: 10
     periodSeconds: 30
-# Binario pequeno (Axum + pool de 10 conexoes): ~20 MiB em repouso.
+# Binario pequeno (Axum + pool de ate 4 conexoes): ~20 MiB em repouso. O papel
+# `prumo` no Postgres aceita 20 conexoes e no canario convivem 4 pods: com o
+# pool de 10 de antes, o pod novo nao conseguia conectar e o deploy travava
+# (25/11/2026). `DATABASE_MAX_CONNECTIONS` ajusta, se precisar.
 resources:
   requests:
     cpu: 50m

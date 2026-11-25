@@ -107,6 +107,7 @@ npm run dev
 | Variável | Padrão | |
 |---|---|---|
 | `DATABASE_URL` | — | obrigatória |
+| `DATABASE_MAX_CONNECTIONS` | `4` | teto do pool por réplica (1–100); com o limite de 20 do papel no Postgres, cabe o canário de 4 pods |
 | `AUTH_MODE` | — | obrigatória: `cloudflare-access` ou `dev` |
 | `CF_ACCESS_TEAM_DOMAIN` | — | obrigatória no Access (`<team>.cloudflareaccess.com`) |
 | `CF_ACCESS_AUD` | — | obrigatória no Access (AUD da aplicação) |
