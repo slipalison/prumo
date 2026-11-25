@@ -275,6 +275,22 @@ Responde "estou ganhando do CDI?". Método e limites em
   para a Carteira; com uma foto só, "A série começa em DD/MM/AAAA" e nenhum
   número inventado.
 
+### 7. Ajustes › Importar da B3
+
+- Passo a passo em texto de como baixar as planilhas na Área do Investidor (sem
+  imagem de terceiros) e o aviso do que a planilha não traz (corretagem).
+- Seletor de um ou mais `.xlsx`; cada arquivo da lista mostra o que foi lido
+  (tipo, linhas, quantas entram, quantas não foram entendidas) ou, se não abriu,
+  o motivo em português.
+- Prévia: contadores, tabela agrupada por ativo (classe sugerida, com aviso
+  "só pelo código — confira" quando falta o nome; compras, vendas, saldo dos
+  negócios, proventos) e, por ativo, a lista de linhas que expande. Abaixo, as
+  linhas que não entendi e as deixadas de fora de propósito.
+- O botão **Importar** fica desligado, com o texto "Chega na próxima versão":
+  a tela não finge que grava.
+- Está na barra como "Importar da B3" por enquanto; a reorganização da
+  navegação a leva para Ajustes.
+
 ### Histórico
 
 Dentro de Carteira (ou do Aportar): lista dos aportes registrados com data,

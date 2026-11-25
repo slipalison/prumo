@@ -30,6 +30,10 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   pública do Tesouro Transparente, uma vez por dia; o aporte compra em
   centésimos de título. CDB e LCI seguem por valor. Detalhes em
   [`docs/tesouro.md`](docs/tesouro.md).
+- **Importar da B3** — suba as planilhas da Área do Investidor (Negociação,
+  Movimentação, Proventos) e veja o que entraria: agrupado por ativo, com as
+  linhas que o Prumo não entendeu. Nesta versão só lê e mostra; gravar chega
+  depois. Ver [`docs/importacao-b3.md`](docs/importacao-b3.md).
 - **Preço ao vivo** — patrimônio e ativos mudam na tela sem recarregar, pelo
   streamer do Yahoo: EUA, câmbio e cripto em segundos; B3 com os 15 minutos
   de atraso do dado gratuito. Tudo convertido para reais.
@@ -60,6 +64,7 @@ Documentos:
 - [`docs/alocacao.md`](docs/alocacao.md) — o algoritmo do aporte
 - [`docs/tesouro.md`](docs/tesouro.md) — o Tesouro Direto: fonte, modelo e limites
 - [`docs/saude.md`](docs/saude.md) — regras de saúde, fontes de setor e limitações
+- [`docs/importacao-b3.md`](docs/importacao-b3.md) — planilhas da B3: formato, mapeamento e limites
 - [`docs/design.md`](docs/design.md) — interface, identidade e movimento
 - [`docs/ir.md`](docs/ir.md) — regras de IR por ano, com fonte, e o que não é calculado
 - [`docs/desempenho.md`](docs/desempenho.md) — rentabilidade por cotas, índices e fontes

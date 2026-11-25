@@ -121,6 +121,7 @@ Ativo com nota 0 não recebe aporte.
 | `targets_must_sum_100` | 422 | metas que não somam 100 |
 | `asset_already_exists` | 409 | mesmo símbolo duas vezes na mesma classe |
 | `not_found` | 404 | id que não existe ou não é da pessoa |
+| `payload_too_large` | 413 | envio de planilhas acima de 10 MiB (só `POST /imports/b3/preview`) |
 | `quote_provider_unavailable` | 502 | busca de símbolo sem resposta do provedor |
 | `internal` | 500 | o resto (detalhe genérico; o log tem o porquê) |
 
@@ -699,6 +700,124 @@ casas.
   de forma composta, `(1 + r) / (1 + cdi) - 1`. `percent_of_cdi`: `r / cdi`
   em % (só com CDI positivo). `full_window`: a série cobre o período inteiro.
 - `years[].months`: janeiro a dezembro; `null` onde não há série.
+
+### `POST /api/v1/imports/b3/preview`
+
+Lê as planilhas `.xlsx` que a Área do Investidor da B3 exporta e devolve a
+**prévia** do que entraria na carteira. **Só lê: não grava nada** (a gravação
+chega numa próxima versão). Formato das planilhas, mapeamento e limites em
+[`importacao-b3.md`](importacao-b3.md).
+
+`multipart/form-data` com um ou mais arquivos (qualquer nome de campo; a tela
+usa `files`). Limites: **10 MiB** no corpo todo (esta é a única rota acima do
+teto geral de 64 KiB), até **10 arquivos**. Os arquivos ficam só na memória do
+pedido; nada do conteúdo vai para log nem para mensagem de erro.
+
+Datas desta rota são datas de calendário `aaaa-mm-dd` (não RFC 3339); dinheiro
+e quantidade são número JSON.
+
+```json
+{
+  "files": [
+    {
+      "index": 0, "name": "negociacao.xlsx", "status": "read",
+      "kinds": ["trades"], "problem": null, "message": null, "missing_columns": [],
+      "rows": 5, "accepted": 4, "unrecognized": 1, "ignored": 0
+    }
+  ],
+  "assets": [
+    {
+      "key": "PETR4",
+      "name": "PETROLEO BRASILEIRO S.A. PETROBRAS",
+      "suggested_class": "br_stocks",
+      "class_basis": "name",
+      "listed_on_b3": true,
+      "treasury": false,
+      "totals": {
+        "bought_quantity": 105, "sold_quantity": 50,
+        "bought_value": 3150.5, "sold_value": 1700, "net_quantity": 55,
+        "income_received": 213.75, "income_provisioned": 216
+      },
+      "trades": [
+        {
+          "external_ref": "b3:v1:trade:3f2a...", "date": "2026-01-05", "side": "buy",
+          "market": "fractional", "code": "PETR4", "institution": "CORRETORA EXEMPLO S/A",
+          "quantity": 5, "unit_price": 30.1, "total": 150.5, "line": 3
+        }
+      ],
+      "events": [
+        {
+          "external_ref": "b3:v1:event:...", "date": "2026-03-20", "kind": "bonus",
+          "direction": "credit", "code": "PETR4", "product": "PETR4 - PETROLEO ...",
+          "quantity": 10, "unit_price": null, "value": null, "institution": null,
+          "description": "Bonificação em Ativos", "treasury": false,
+          "source": "movements", "line": 6
+        }
+      ],
+      "income": [
+        {
+          "external_ref": "b3:v1:income:...", "kind": "jcp", "status": "received",
+          "date": "2025-12-18", "code": "PETR4", "product": "PETR4 - PETROLEO ...",
+          "quantity": 150, "unit_price": 0.5, "net_amount": 63.75,
+          "institution": null, "source": "movements", "line": 3
+        }
+      ]
+    }
+  ],
+  "unrecognized": [
+    {
+      "file": 0, "sheet": "Negociação", "line": 6,
+      "reason_code": "unsupported_market",
+      "reason": "mercado ainda nao suportado (opcoes, termo, futuro)",
+      "text": "05/03/2026 | Compra | Opção de Compra sobre Ações | ..."
+    }
+  ],
+  "ignored": [
+    { "reason_code": "settlement", "reason": "compra ou venda liquidada: vem da planilha de Negociacao", "count": 3 }
+  ],
+  "summary": {
+    "assets": 1, "trades": 2, "events": 1, "income": 2, "unrecognized": 1, "ignored": 3,
+    "first_date": "2025-12-18", "last_date": "2026-04-02"
+  }
+}
+```
+
+- `files[].status`: `read`, `unknown_format` (abriu, mas não é nenhuma planilha
+  conhecida ou o layout mudou) ou `unreadable` (não abriu como `.xlsx`).
+  `problem` diz por quê: `unknown_format`, `missing_columns` (com
+  `missing_columns`), `position_sheet`, `not_xlsx`, `legacy_xls`, `corrupt`,
+  `too_large`. `kinds`: `trades`, `movements`, `income_received`,
+  `income_provisioned`. Um arquivo que não foi lido não derruba o envio: os
+  outros seguem.
+- `assets[]`, ordenado por `key`. Ativo de renda fixa do Tesouro Direto tem
+  `treasury: true`, `suggested_class: "fixed_income"`, `listed_on_b3: false` e
+  `key` com o nome do título (não tem código); o preço é da frente do Tesouro.
+- `suggested_class` e `listed_on_b3` são sugestão pelas regras de
+  `GET /symbols`; `class_basis` diz a base: `name` (nome do produto), `code`
+  (só o código — a Negociação não traz nome; a tela pede para conferir) ou
+  `treasury`.
+- `external_ref` é estável (`b3:v1:<trade|event|income>:<hash>`): o mesmo
+  negócio em dois arquivos de períodos que se sobrepõem tem a mesma chave. Linha
+  repetida entre arquivos do mesmo envio entra uma vez; a outra vai para
+  `ignored` como `duplicate_in_request`.
+- `trades[].market`: `spot` ou `fractional` (o `F` do código já saiu).
+  `events[].kind`: `split`, `reverse_split`, `bonus`, `fraction_in_kind`,
+  `amortization`, `redemption`, `maturity`, `treasury_movement`.
+  `income[].kind`: `dividend`, `jcp`, `yield`, `reimbursement`,
+  `fraction_auction`; `net_amount` é sempre o líquido. `status`: `received` ou
+  `provisioned` (`date` pode ser `null` neste).
+- `unrecognized[]` são linhas que o Prumo não soube ler (`reason_code`:
+  `invalid_date`, `invalid_number`, `unknown_side`, `unsupported_market`,
+  `invalid_code`, `unknown_direction`, `unknown_movement`, `update`,
+  `subscription`, `no_code`, `missing_value`, `missing_quantity`,
+  `unknown_income_type`, `income_debit`). `ignored[]` são linhas entendidas e
+  deixadas de fora de propósito (`settlement`, `custody_transfer`,
+  `transferred`, `lending`, `duplicate_in_request`), contadas por motivo.
+  `reason` é texto do servidor (sem acento); a tela escolhe o dela pelo
+  `reason_code`.
+
+Erros: `401` sem credencial; `413 payload_too_large` acima de 10 MiB; `422`
+sem arquivo, com mais de 10 arquivos ou fora de `multipart/form-data`.
 
 ## Operacional (porta interna 9090)
 
