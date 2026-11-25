@@ -6,7 +6,7 @@ const GOALS_HEADING = "Quanto você quer em cada classe?";
 const CRITERIA_HEADING = "As perguntas que dão a nota";
 
 describe("Navegação e Ajustes", () => {
-  it("a navegação principal tem Aportar, Carteira e Ajustes", async () => {
+  it("a navegação principal tem Aportar, Carteira, Desempenho e Ajustes", async () => {
     renderApp();
     await screen.findByRole("heading", { name: "Quanto você vai aportar?" });
     const nav = screen.getByRole("navigation", { name: "Principal" });
@@ -14,6 +14,7 @@ describe("Navegação e Ajustes", () => {
     expect(within(within(nav).getByRole("list")).getAllByRole("link").map((link) => link.textContent)).toEqual([
       "Aportar",
       "Carteira",
+      "Desempenho",
       "Ajustes",
     ]);
     expect(within(nav).getByRole("link", { name: "Aportar" })).toHaveAttribute("aria-current", "page");

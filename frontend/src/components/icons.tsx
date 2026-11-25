@@ -230,3 +230,12 @@ export function IconArrowDown(props: IconProps) {
     </Svg>
   );
 }
+
+export function IconChart(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 4v16h16" />
+      <path d="M7 15l4-4 3 3 5-6" />
+    </Svg>
+  );
+}
