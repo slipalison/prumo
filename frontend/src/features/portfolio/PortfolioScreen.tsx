@@ -7,15 +7,17 @@ import { ClassBar } from "../../components/ClassBar";
 import { CountUp } from "../../components/CountUp";
 import { Donut } from "../../components/Donut";
 import { GlassCard } from "../../components/GlassCard";
-import { IconAlert, IconPlus, IconRefresh } from "../../components/icons";
+import { IconAlert, IconArrowDown, IconPlus, IconRefresh } from "../../components/icons";
 import { LiveBadge } from "../../components/LiveBadge";
 import { PriceFlash, TrendMark } from "../../components/PriceFlash";
 import { ScoreBadge } from "../../components/ScoreBadge";
 import { useToast } from "../../components/toastContext";
 import { acceptsB3Listing, CLASS_META, classColor, nounOf, unitOf } from "../../lib/assetClasses";
 import { cx } from "../../lib/cx";
-import { formatBRL, formatPercent, formatQuantity, plural } from "../../lib/format";
+import { formatPercent, plural } from "../../lib/format";
+import { countBelowIdeal, hasIdeal, readIdeal, type IdealReading } from "../../lib/ideal";
 import { useLiveStatus } from "../../lib/liveStatus";
+import { useMoney } from "../../lib/privacy";
 import { needsRating, ratingIntro } from "../../lib/rating";
 import { AddAssetSheet } from "./AddAssetSheet";
 import { ContributionHistory } from "./ContributionHistory";
@@ -30,6 +32,7 @@ export function PortfolioScreen({ portfolio }: PortfolioScreenProps) {
   const refresh = useRefreshQuotes();
   const toast = useToast();
   const live = useLiveStatus();
+  const belowIdeal = countBelowIdeal(portfolio.assets);
   const delayedB3 = portfolio.assets.some((a) => a.listed_on_b3 && a.price_source === "quote");
 
   const editing =
@@ -57,6 +60,14 @@ export function PortfolioScreen({ portfolio }: PortfolioScreenProps) {
       <header className="screen__header">
         <p className="eyebrow">Carteira</p>
         <h1 className="screen__title">Tudo o que você tem, no eixo certo</h1>
+        {hasIdeal(portfolio.assets) && (
+          <p className={cx("portfolio__ideal", belowIdeal > 0 && "is-below")}>
+            {belowIdeal > 0 && <IconArrowDown width={16} height={16} />}
+            {belowIdeal > 0
+              ? `${belowIdeal} ${plural(belowIdeal, ["ativo abaixo do ideal", "ativos abaixo do ideal"])}`
+              : "Nenhum ativo abaixo do ideal"}
+          </p>
+        )}
       </header>
 
       <GlassCard as="section" className="portfolio__hero" aria-label="Patrimônio">
@@ -219,7 +230,7 @@ function ClassSection({ index, summary, assets, onEdit, onAdd }: ClassSectionPro
           <ul className="asset-list">
             {assets.map((asset) => (
               <li key={asset.id}>
-                <AssetRow asset={asset} onClick={() => onEdit(asset)} />
+                <AssetRow asset={asset} classAssets={assets} onClick={() => onEdit(asset)} />
               </li>
             ))}
           </ul>
@@ -229,10 +240,12 @@ function ClassSection({ index, summary, assets, onEdit, onAdd }: ClassSectionPro
   );
 }
 
-function AssetRow({ asset, onClick }: { asset: Asset; onClick: () => void }) {
+function AssetRow({ asset, classAssets, onClick }: { asset: Asset; classAssets: Asset[]; onClick: () => void }) {
+  const money = useMoney();
+  const ideal = readIdeal(asset, classAssets);
   const unit = unitOf(asset.asset_class, asset.listed_on_b3);
   const missingPrice = asset.price_source === "missing";
-  const price = missingPrice || asset.unit_price === null ? "sem preço" : formatBRL(asset.unit_price);
+  const price = missingPrice || asset.unit_price === null ? "sem preço" : money.brl(asset.unit_price);
   // Quantidade 0 é ativo da lista, ainda não comprado: recebe aporte pela nota.
   const notOwned = asset.quantity === 0;
   const quantityLine =
@@ -242,7 +255,7 @@ function AssetRow({ asset, onClick }: { asset: Asset; onClick: () => void }) {
         : "Valor informado"
       : notOwned
         ? `Ainda não tem · ${price}`
-        : `${formatQuantity(asset.quantity, unit === "fraction")} ${
+        : `${money.quantity(asset.quantity, unit === "fraction")} ${
             unit === "fraction" ? (asset.symbol ?? "") : plural(asset.quantity, nounOf(asset.asset_class, asset.listed_on_b3))
           } · ${price}`;
   const b3Tag = asset.listed_on_b3 && acceptsB3Listing(asset.asset_class);
@@ -262,8 +275,8 @@ function AssetRow({ asset, onClick }: { asset: Asset; onClick: () => void }) {
       </span>
       <span className="asset-row__qty">{asset.symbol ? quantityLine : ""}</span>
       <span className="asset-row__value">
-        <PriceFlash value={asset.current_value}>{formatBRL(asset.current_value)}</PriceFlash>
-        <span className="asset-row__share">{formatPercent(asset.class_percent)} da classe</span>
+        <PriceFlash value={asset.current_value}>{money.brl(asset.current_value)}</PriceFlash>
+        {!ideal.counts && <span className="asset-row__share">{formatPercent(asset.class_percent)} da classe</span>}
       </span>
       <span className="asset-row__score">
         {(missingPrice || asset.score === 0) && (
@@ -276,6 +289,34 @@ function AssetRow({ asset, onClick }: { asset: Asset; onClick: () => void }) {
         )}
         <ScoreBadge score={asset.score} />
       </span>
+      {ideal.counts && <IdealLine reading={ideal} />}
     </button>
+  );
+}
+
+/**
+ * Atual × ideal do ativo dentro da classe: uma barra fina com um traço no
+ * ideal, os dois números por extenso e, abaixo do ideal, o selo com seta e
+ * texto (cor nunca é a única pista). A barra é só desenho; quem lê o leitor de
+ * tela é o texto ao lado.
+ */
+function IdealLine({ reading }: { reading: IdealReading }) {
+  const scale = Math.min(Math.max(reading.idealShare, reading.currentShare, 1) * 1.15, 100);
+  const at = (value: number) => `${Math.min((value / scale) * 100, 100)}%`;
+  return (
+    <span className="asset-row__ideal">
+      <span className="ideal-bar" aria-hidden="true">
+        <span className="ideal-bar__fill" style={{ width: at(reading.currentShare) }} />
+        <span className="ideal-bar__mark" style={{ left: at(reading.idealShare) }} />
+      </span>
+      <span className="asset-row__ideal-text">
+        {formatPercent(reading.currentShare)} da classe <span className="muted">· ideal {formatPercent(reading.idealShare)}</span>
+      </span>
+      {reading.below && (
+        <span className="below-badge">
+          <IconArrowDown width={12} height={12} /> abaixo do ideal
+        </span>
+      )}
+    </span>
   );
 }

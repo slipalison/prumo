@@ -1,6 +1,7 @@
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { MotionConfig } from "motion/react";
 import type { ReactNode } from "react";
+import { PrivacyProvider } from "../components/PrivacyProvider";
 import { ToastProvider } from "../components/ToastProvider";
 
 type ProvidersProps = { client: QueryClient; children: ReactNode };
@@ -10,7 +11,9 @@ export function Providers({ client, children }: ProvidersProps) {
   return (
     <QueryClientProvider client={client}>
       <MotionConfig reducedMotion="user">
-        <ToastProvider>{children}</ToastProvider>
+        <PrivacyProvider>
+          <ToastProvider>{children}</ToastProvider>
+        </PrivacyProvider>
       </MotionConfig>
     </QueryClientProvider>
   );

@@ -8,7 +8,7 @@ import { QuantityInput } from "../../components/QuantityInput";
 import { Sheet } from "../../components/Sheet";
 import { nounOf, unitOf } from "../../lib/assetClasses";
 import { celebrate, originFrom } from "../../lib/celebrate";
-import { formatBRL } from "../../lib/format";
+import { useMoney } from "../../lib/privacy";
 
 type ContributionSheetProps = {
   open: boolean;
@@ -36,6 +36,7 @@ export function ContributionSheet({ open, plan, onClose, onRegistered }: Contrib
 
 function ContributionForm({ plan, onRegistered }: { plan: Plan; onRegistered: (c: Contribution) => void }) {
   const baseId = useId();
+  const money = useMoney();
   const [quantities, setQuantities] = useState<Record<string, number>>(() =>
     Object.fromEntries(plan.items.map((item) => [item.asset_id, item.quantity])),
   );
@@ -77,7 +78,7 @@ function ContributionForm({ plan, onRegistered }: { plan: Plan; onRegistered: (c
             <li key={item.asset_id} className="contribution-form__row">
               <div className="contribution-form__id">
                 <strong>{item.symbol ?? item.display_name}</strong>
-                <span className="field__hint">{formatBRL(valueOf(item))}</span>
+                <span className="field__hint">{money.brl(valueOf(item))}</span>
               </div>
               {unit === "value" ? (
                 <MoneyInput id={id} label="Valor aplicado" value={quantities[item.asset_id] ?? 0} onChange={set} />
@@ -97,7 +98,7 @@ function ContributionForm({ plan, onRegistered }: { plan: Plan; onRegistered: (c
 
       <div className="contribution-form__total">
         <span>Total</span>
-        <strong>{formatBRL(total)}</strong>
+        <strong>{money.brl(total)}</strong>
       </div>
 
       {contribute.isError && (

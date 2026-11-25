@@ -1,6 +1,7 @@
 import type { Asset, PlanItem, PlanNotice } from "../api/types";
 import { acceptsB3Listing, CLASS_META, looksLikeB3Ticker, nounOf, unitOf } from "./assetClasses";
-import { formatBRL, formatCompactBRL, formatQuantity, plural } from "./format";
+import { plural } from "./format";
+import type { Money } from "./money";
 import { findAssetByLabel } from "./rating";
 
 /**
@@ -11,8 +12,8 @@ export function looksMissingB3Flag(asset: Pick<Asset, "asset_class" | "symbol" |
   return acceptsB3Listing(asset.asset_class) && !asset.listed_on_b3 && looksLikeB3Ticker(asset.symbol ?? "");
 }
 
-function blockedText(notice: Extract<PlanNotice, { code: "class_blocked" }>): string {
-  const lead = `${CLASS_META[notice.asset_class].label} precisa de ${formatCompactBRL(notice.amount)} para chegar na meta`;
+function blockedText(notice: Extract<PlanNotice, { code: "class_blocked" }>, money: Money): string {
+  const lead = `${CLASS_META[notice.asset_class].label} precisa de ${money.compact(notice.amount)} para chegar na meta`;
   switch (notice.reason) {
     case "no_assets":
       return `${lead} e ainda não tem nenhum ativo.`;
@@ -24,10 +25,10 @@ function blockedText(notice: Extract<PlanNotice, { code: "class_blocked" }>): st
 }
 
 /** O aviso do plano em uma frase que diz o que fazer. */
-export function noticeText(notice: PlanNotice, assets: Asset[] = []): string {
+export function noticeText(notice: PlanNotice, assets: Asset[], money: Money): string {
   switch (notice.code) {
     case "class_blocked":
-      return blockedText(notice);
+      return blockedText(notice, money);
     case "assets_without_price": {
       const one = notice.symbols.length === 1;
       const b3Hint = notice.symbols
@@ -45,11 +46,11 @@ export function noticeText(notice: PlanNotice, assets: Asset[] = []): string {
 }
 
 /** "17 cotas × R$ 53,81", "0,0045 BTC × R$ …" ou "Aplicar este valor". */
-export function unitLine(item: PlanItem): string {
+export function unitLine(item: PlanItem, money: Money): string {
   const unit = unitOf(item.asset_class, item.listed_on_b3);
   if (unit === "value") return "Aplicar este valor";
   if (unit === "fraction") {
-    return `${formatQuantity(item.quantity, true)} ${item.symbol ?? ""} × ${formatBRL(item.unit_price)}`;
+    return `${money.quantity(item.quantity, true)} ${item.symbol ?? ""} × ${money.brl(item.unit_price)}`;
   }
-  return `${formatQuantity(item.quantity, false)} ${plural(item.quantity, nounOf(item.asset_class, item.listed_on_b3))} × ${formatBRL(item.unit_price)}`;
+  return `${money.quantity(item.quantity, false)} ${plural(item.quantity, nounOf(item.asset_class, item.listed_on_b3))} × ${money.brl(item.unit_price)}`;
 }

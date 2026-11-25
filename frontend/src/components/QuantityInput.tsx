@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { formatQuantity, parseDecimal } from "../lib/format";
+import { useMoney } from "../lib/privacy";
 import { useFocusOnMount } from "../lib/useFocusOnMount";
 import { IconPlus } from "./icons";
 
@@ -20,6 +21,9 @@ type QuantityInputProps = {
  * Quantidade com − e + para inteiros; para fração, campo livre que aceita
  * vírgula ("0,015"). O texto digitado fica como a pessoa escreveu até sair do
  * campo — "0," não vira "0" no meio da digitação.
+ *
+ * Com os valores ocultos o campo segue editável: mostra a quantidade só
+ * enquanto tem o foco, e a máscara fora dele (e para o leitor de tela).
  */
 export function QuantityInput({
   id,
@@ -34,6 +38,8 @@ export function QuantityInput({
   const hintId = `${id}-hint`;
   const inputRef = useFocusOnMount<HTMLInputElement>(focusOnMount);
   const [text, setText] = useState(() => formatQuantity(value, fractional));
+  const money = useMoney();
+  const [focused, setFocused] = useState(false);
 
   useEffect(() => {
     setText((current) => {
@@ -74,13 +80,17 @@ export function QuantityInput({
           ref={inputRef}
           data-autofocus={focusOnMount ? "" : undefined}
           aria-describedby={hint ? hintId : undefined}
-          value={text}
+          value={money.hidden && !focused ? money.quantity(value, fractional) : text}
+          onFocus={() => setFocused(true)}
           onChange={(event) => {
             setText(event.target.value);
             const parsed = parseDecimal(event.target.value.replace(/\./g, fractional ? "." : ""));
             if (parsed !== null && parsed >= min) onChange(fractional ? parsed : Math.round(parsed));
           }}
-          onBlur={() => setText(formatQuantity(value, fractional))}
+          onBlur={() => {
+            setFocused(false);
+            setText(formatQuantity(value, fractional));
+          }}
         />
         {!fractional && (
           <button

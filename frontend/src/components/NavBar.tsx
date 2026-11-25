@@ -1,17 +1,9 @@
 import { motion } from "motion/react";
-import type { ComponentType, SVGProps } from "react";
+import { APP_ROUTES, type RouteId } from "../app/routes";
 import { cx } from "../lib/cx";
-import { ROUTES, ROUTE_LABEL, type RouteId } from "../lib/route";
-import { IconChecklist, IconCoins, IconTarget, IconWallet } from "./icons";
 import { Logo } from "./Logo";
+import { PrivacyToggle } from "./PrivacyToggle";
 import { ThemeToggle } from "./ThemeToggle";
-
-const ICON: Record<RouteId, ComponentType<SVGProps<SVGSVGElement>>> = {
-  aportar: IconCoins,
-  carteira: IconWallet,
-  metas: IconTarget,
-  criterios: IconChecklist,
-};
 
 type NavBarProps = {
   route: RouteId;
@@ -21,7 +13,8 @@ type NavBarProps = {
 
 /**
  * Uma navegação só: barra de abas embaixo no celular, trilho à esquerda a
- * partir de 960px (a troca é só CSS). O destaque da aba escorrega.
+ * partir de 960px (a troca é só CSS). O destaque da aba escorrega. As entradas
+ * saem de `APP_ROUTES`. O olho dos valores fica junto do tema, no canto.
  */
 export function NavBar({ route, email, version }: NavBarProps) {
   return (
@@ -30,8 +23,7 @@ export function NavBar({ route, email, version }: NavBarProps) {
         <Logo />
       </div>
       <ul className="nav__list">
-        {ROUTES.map((id) => {
-          const Icon = ICON[id];
+        {APP_ROUTES.map(({ id, label, Icon }) => {
           const active = id === route;
           return (
             <li key={id} className="nav__entry">
@@ -48,13 +40,14 @@ export function NavBar({ route, email, version }: NavBarProps) {
                   />
                 )}
                 <Icon className="nav__icon" />
-                <span className="nav__label">{ROUTE_LABEL[id]}</span>
+                <span className="nav__label">{label}</span>
               </a>
             </li>
           );
         })}
       </ul>
       <div className="nav__footer">
+        <PrivacyToggle />
         <ThemeToggle />
         {email && <span className="nav__meta">{email}</span>}
         {version && <span className="nav__meta">v{version}</span>}

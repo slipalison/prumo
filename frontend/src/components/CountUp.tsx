@@ -1,7 +1,7 @@
 import { animate, useMotionValue, useMotionValueEvent, useReducedMotion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { cx } from "../lib/cx";
-import { formatBRL } from "../lib/format";
+import { useMoney } from "../lib/privacy";
 
 type CountUpProps = {
   value: number;
@@ -12,31 +12,32 @@ type CountUpProps = {
 /**
  * Número que conta até o valor com mola sempre que ele muda. Enquanto conta, o
  * leitor de tela ouve só o valor final — os intermediários ficam escondidos.
+ * Com os valores ocultos, o formato padrão devolve a máscara: não há número
+ * para contar nem para o leitor de tela ler.
  */
-export function CountUp({ value, format = formatBRL, className }: CountUpProps) {
+export function CountUp({ value, format, className }: CountUpProps) {
   const reduce = useReducedMotion();
+  const money = useMoney();
   const motionValue = useMotionValue(reduce ? value : 0);
-  const [display, setDisplay] = useState(() => format(reduce ? value : 0));
-  // `format` costuma ser uma seta inline, com identidade nova a cada render: ela
-  // fica num ref, e só o número dispara a animação.
-  const formatRef = useRef(format);
-  useEffect(() => {
-    formatRef.current = format;
-  });
+  // O estado é o número, não o texto: formatar na hora de desenhar mantém o
+  // texto certo quando `format` ou a máscara mudam sem o número mudar.
+  const [current, setCurrent] = useState(reduce ? value : 0);
+  const show = format ?? money.brl;
 
-  useMotionValueEvent(motionValue, "change", (latest) => setDisplay(formatRef.current(latest)));
+  useMotionValueEvent(motionValue, "change", setCurrent);
 
   useEffect(() => {
     if (reduce) {
       motionValue.set(value);
-      setDisplay(formatRef.current(value));
+      setCurrent(value);
       return undefined;
     }
     const controls = animate(motionValue, value, { type: "spring", stiffness: 70, damping: 18, restDelta: 0.001 });
     return () => controls.stop();
   }, [value, reduce, motionValue]);
 
-  const final = format(value);
+  const display = show(current);
+  const final = show(value);
   const settled = display === final;
 
   return (

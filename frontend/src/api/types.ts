@@ -47,6 +47,12 @@ export type Asset = {
   quote_updated_at: string | null;
   current_value: number;
   class_percent: number;
+  /**
+   * A fatia que o motor mira para o ativo dentro da classe (nota ÷ soma das
+   * notas dos que recebem aporte), de 0 a 100. Zero para quem não recebe
+   * (sem nota ou sem preço).
+   */
+  ideal_class_percent: number;
   score: number;
   score_source: ScoreSource;
   score_override: number | null;
@@ -72,7 +78,7 @@ export type Portfolio = {
 /** Um ativo no evento `prices` do stream: só o que muda com o preço. */
 export type LiveAsset = Pick<
   Asset,
-  "id" | "unit_price" | "currency" | "price_source" | "quote_updated_at" | "current_value" | "class_percent"
+  "id" | "unit_price" | "currency" | "price_source" | "quote_updated_at" | "current_value" | "class_percent" | "ideal_class_percent"
 >;
 
 /** Evento `prices` de `GET /portfolio/stream` (docs/api.md § Carteira ao vivo). */

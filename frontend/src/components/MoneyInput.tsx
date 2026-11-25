@@ -1,6 +1,7 @@
 import type { CSSProperties, FocusEvent, KeyboardEvent } from "react";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { cx } from "../lib/cx";
+import { useMoney } from "../lib/privacy";
 import { useFocusOnMount } from "../lib/useFocusOnMount";
 import { formatMoneyInput, reaisFromInput } from "../lib/moneyMask";
 
@@ -31,6 +32,10 @@ const FULL_SIZE_CHARS = 11;
  * virar R$ 3.000.003.000,00). Com o campo já focado, o clique não mexe no
  * cursor: numa máscara de caixa eletrônico o dígito sempre entra pela direita,
  * e um cursor no meio do número produziria valores sem sentido.
+ *
+ * Com os valores ocultos o campo segue editável, mas só mostra o número
+ * enquanto tem o foco — é a pessoa digitando o próprio valor. Fora do foco, e
+ * para o leitor de tela, o campo mostra a máscara.
  */
 export function MoneyInput({
   id,
@@ -45,6 +50,8 @@ export function MoneyInput({
   disabled,
 }: MoneyInputProps) {
   const inputRef = useFocusOnMount<HTMLInputElement>(focusOnMount);
+  const money = useMoney();
+  const [focused, setFocused] = useState(false);
   // O clique que dá o foco termina num mouseup que reposiciona o cursor e
   // desfaz a seleção; esse primeiro mouseup é engolido.
   const justFocused = useRef(false);
@@ -53,10 +60,11 @@ export function MoneyInput({
     window.clearTimeout(pendingSelect.current);
     pendingSelect.current = undefined;
   };
-  const text = formatMoneyInput(value);
+  const text = money.hidden && !focused ? money.brl(value) : formatMoneyInput(value);
   const fit = Math.min(1, FULL_SIZE_CHARS / Math.max(text.length, 1));
 
   const handleFocus = (event: FocusEvent<HTMLInputElement>) => {
+    setFocused(true);
     justFocused.current = true;
     const input = event.currentTarget;
     input.select();
@@ -99,6 +107,7 @@ export function MoneyInput({
         style={{ "--money-fit": fit.toFixed(3) } as CSSProperties}
         disabled={disabled}
         onFocus={handleFocus}
+        onBlur={() => setFocused(false)}
         onMouseDown={(event) => {
           if (document.activeElement === event.currentTarget) event.preventDefault();
         }}

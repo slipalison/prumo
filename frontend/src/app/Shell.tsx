@@ -6,11 +6,8 @@ import { AuroraBackground } from "../components/AuroraBackground";
 import { ErrorState } from "../components/ErrorState";
 import { NavBar } from "../components/NavBar";
 import { ScreenSkeleton } from "../components/Skeleton";
-import { ContributeScreen } from "../features/contribute/ContributeScreen";
-import { CriteriaScreen } from "../features/criteria/CriteriaScreen";
-import { GoalsScreen } from "../features/goals/GoalsScreen";
-import { PortfolioScreen } from "../features/portfolio/PortfolioScreen";
-import { ROUTE_LABEL, useRoute, type RouteId } from "../lib/route";
+import { useRoute } from "../lib/route";
+import { APP_ROUTES, ROUTE_IDS } from "./routes";
 import { useLivePrices } from "./useLivePrices";
 
 /**
@@ -22,21 +19,14 @@ function scrollToTop(): void {
   window.scrollTo({ top: 0, left: 0, behavior: "instant" });
 }
 
-function Screen({ route, portfolio }: { route: RouteId; portfolio: Portfolio }) {
-  switch (route) {
-    case "carteira":
-      return <PortfolioScreen portfolio={portfolio} />;
-    case "metas":
-      return <GoalsScreen portfolio={portfolio} />;
-    case "criterios":
-      return <CriteriaScreen portfolio={portfolio} />;
-    default:
-      return <ContributeScreen portfolio={portfolio} />;
-  }
+function Screen({ route, portfolio }: { route: (typeof APP_ROUTES)[number]; portfolio: Portfolio }) {
+  const { Screen: Current } = route;
+  return <Current portfolio={portfolio} />;
 }
 
 export function Shell() {
-  const [route] = useRoute();
+  const { id } = useRoute(ROUTE_IDS);
+  const route = APP_ROUTES.find((entry) => entry.id === id) ?? APP_ROUTES[0];
   const portfolio = usePortfolio();
   const me = useMe();
   const info = useInfo();
@@ -44,7 +34,7 @@ export function Shell() {
   useLivePrices(portfolio.isSuccess);
 
   useEffect(() => {
-    document.title = `${ROUTE_LABEL[route]} · Prumo`;
+    document.title = `${route.label} · Prumo`;
   }, [route]);
 
   return (
@@ -54,14 +44,14 @@ export function Shell() {
       </button>
       <AuroraBackground />
       <div className="layout">
-        <NavBar route={route} email={me.data?.email} version={info.data?.version} />
+        <NavBar route={route.id} email={me.data?.email} version={info.data?.version} />
         <main ref={mainRef} className="main" tabIndex={-1}>
           {portfolio.isPending && <ScreenSkeleton />}
           {portfolio.isError && <ErrorState error={portfolio.error} onRetry={() => void portfolio.refetch()} />}
           {portfolio.data && (
             <AnimatePresence mode="wait" initial={false} onExitComplete={scrollToTop}>
               <motion.div
-                key={route}
+                key={route.id}
                 className="route"
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}

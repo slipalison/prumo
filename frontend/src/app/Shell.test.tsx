@@ -18,9 +18,9 @@ describe("Shell", () => {
   it("troca de tela pelo hash", async () => {
     const { user } = renderApp();
     await screen.findByRole("heading", { name: "Quanto você vai aportar?" });
-    await user.click(screen.getByRole("link", { name: "Metas" }));
+    await user.click(screen.getByRole("link", { name: "Ajustes" }));
     expect(await screen.findByRole("heading", { name: "Quanto você quer em cada classe?" })).toBeInTheDocument();
-    expect(document.title).toBe("Metas · Prumo");
+    expect(document.title).toBe("Ajustes · Prumo");
     await user.click(screen.getByRole("link", { name: "Critérios" }));
     expect(await screen.findByRole("heading", { name: "As perguntas que dão a nota" })).toBeInTheDocument();
     await user.click(screen.getByRole("link", { name: "Carteira" }));

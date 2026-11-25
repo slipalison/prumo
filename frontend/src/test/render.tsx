@@ -4,7 +4,6 @@ import userEvent, { type UserEvent } from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { Providers } from "../app/Providers";
 import { Shell } from "../app/Shell";
-import type { RouteId } from "../lib/route";
 
 export function testClient(): QueryClient {
   return new QueryClient({
@@ -20,8 +19,8 @@ export function renderWithProviders(ui: ReactElement, client: QueryClient = test
   return { ...result, user, client };
 }
 
-/** O app inteiro, aberto numa rota. */
-export function renderApp(route: RouteId = "aportar"): Rendered {
-  window.location.hash = `#/${route}`;
+/** O app inteiro, aberto num endereço (`carteira`, `ajustes/metas`, ou um link antigo). */
+export function renderApp(path = "aportar"): Rendered {
+  window.location.hash = `#/${path}`;
   return renderWithProviders(<Shell />);
 }

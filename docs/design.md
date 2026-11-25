@@ -5,6 +5,8 @@
 **Uma pergunta por tela.** A tela de abertura pergunta "quanto você vai aportar?"
 e responde com o que comprar. Todo o resto — carteira, metas, critérios — existe
 para essa resposta ficar certa, e fica a um toque de distância, nunca no caminho.
+São três itens na navegação: **Aportar**, **Carteira** e **Ajustes** (onde ficam
+as metas e os critérios).
 
 ## Identidade: o fio de prumo
 
@@ -86,6 +88,22 @@ mais que 600 ms, exceto o prumo e o fundo.
 Celular primeiro. No celular, barra de abas embaixo; no desktop (≥ 960px), um
 trilho à esquerda e conteúdo centralizado (máx. ~1100px).
 
+### Navegação
+
+- A barra lista as telas de `APP_ROUTES` (`frontend/src/app/routes.tsx`): tela
+  nova é **uma linha** nessa lista, e a barra (que reparte a largura entre
+  quantas houver), o título da aba, o `aria-current` e o roteamento saem dela.
+  Hoje: Aportar, Carteira, Ajustes.
+- Ajustes agrupa **seções** (`SETTINGS_SECTIONS`,
+  `frontend/src/features/settings/sections.ts`): Metas por classe e Critérios.
+  Seção nova também é uma linha. A lista de seções fica no topo de Ajustes
+  (links com `aria-current="page"` na atual), cada seção tem endereço próprio
+  (`#/ajustes/metas`, `#/ajustes/criterios`) e uma seção por vez na tela.
+- Os links antigos `#/metas` e `#/criterios` seguem valendo: abrem a seção
+  certa de Ajustes e trocam o endereço pelo novo, sem entrada nova no
+  histórico (`LEGACY_ROUTES` em `lib/route.ts`).
+- No canto (junto do tema; na barra do desktop) ficam o **olho** e o tema.
+
 ### 1. Aportar (abertura)
 
 1. Pergunta grande: **"Quanto você vai aportar?"**
@@ -113,6 +131,16 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
   atualizar continua ao lado.
 - Uma seção por classe, na ordem fixa: nome, % atual vs meta com barra e
   marcador de prumo, e a lista dos ativos (ticker, quantidade, valor, nota).
+- **Atual × ideal por ativo.** Sob cada ativo que recebe aporte (nota > 0 e
+  preço), uma barra fina com um traço no ideal, e o texto "25,3% da classe ·
+  ideal 30,0%". O ideal é a fatia `nota ÷ soma das notas` que o motor usa
+  (`ideal_class_percent`); o "atual" é o quanto o ativo vale entre os ativos
+  da classe que recebem. Abaixo do ideal por mais de 0,5 ponto, aparece o selo
+  **↓ abaixo do ideal** (seta e texto, nunca só cor). Ativo sem nota ou sem
+  preço não tem ideal nem selo: mostra só "% da classe" e o aviso que já tinha.
+  No topo da tela, "N ativos abaixo do ideal" (ou "Nenhum ativo abaixo do
+  ideal"); a linha não aparece sem nenhum ativo que receba. Tudo acompanha o
+  preço ao vivo, porque o evento `prices` leva o ideal.
 - Botão flutuante **+** abre uma folha (sheet) com **um campo só**: digita o
   ticker, aparece o autocompletar (`/symbols`), escolhe, a classe já vem
   sugerida em chips (troca com um toque), informa a quantidade, pronto. Para
@@ -122,7 +150,7 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
   ou o controle de nota manual (0–10) para cripto e renda fixa. Remover fica no
   fim, discreto, com confirmação na própria folha (nunca `window.confirm`).
 
-### 3. Metas
+### 3. Ajustes › Metas por classe
 
 - Perfis prontos em cartões (Conservador, Moderado, Arrojado) que preenchem as
   metas com animação.
@@ -131,7 +159,7 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
   100%. Botão **Salvar** só habilita em 100%; botão **Equilibrar** distribui o
   que falta/sobra proporcionalmente.
 
-### 4. Critérios
+### 4. Ajustes › Critérios
 
 - Duas listas (Ações e Imobiliário): perguntas editáveis no lugar, adicionar,
   remover, restaurar padrão.
@@ -142,6 +170,29 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
 Dentro de Carteira (ou do Aportar): lista dos aportes registrados com data,
 valor e itens.
 
+## Ocultar valores
+
+O **olho** (botão de alternância com `aria-pressed`, na barra de navegação,
+junto do tema) mascara os valores em todas as telas e fica salvo no
+`localStorage` (`prumo.hide-values`).
+
+- O ponto central é o `PrivacyProvider`: toda tela formata dinheiro e
+  quantidade por `useMoney()` (`brl`, `compact`, `quantity`), e nenhuma decide
+  sozinha. Com o olho fechado, esses formatadores devolvem `R$ ••••` e `••`.
+- Vale para Carteira, Aportar (plano, troco, frases dos avisos, "último
+  aporte"), histórico, folhas de edição e de registro, o patrimônio (o
+  `CountUp` não conta número nenhum) e a rosca do plano.
+- O leitor de tela lê a máscara: não há `aria-label` nem texto `sr-only` com o
+  valor, e o `CountUp` só tem texto escondido quando está contando.
+- **Campos de valor** (aporte, quantidade, valor atual, preço manual) seguem
+  editáveis: fora do foco mostram a máscara; com o foco mostram o número, para
+  a pessoa ver o que digita — o campo do aporte abre vazio, então nada vaza ao
+  abrir. Os botões − e + da quantidade continuam funcionando às cegas.
+- O **sentido** do preço também é dado: com o olho fechado somem as setas ▲/▼ e
+  o brilho verde/vermelho. O selo "Ao vivo" fica, porque diz só o estado.
+- Ficam visíveis o que não é valor em reais: percentuais, notas, nomes e
+  tickers, e os atalhos fixos do campo do aporte (R$ 500, R$ 1.000...).
+
 ## Acessibilidade
 
 - Contraste mínimo 4,5:1 para texto nos dois temas.
@@ -150,6 +201,9 @@ valor e itens.
 - Números com `aria-live="polite"` no resultado do aporte.
 - O preço ao vivo **não** é anunciado (mudaria a cada segundo); o selo de
   estado é `role="status"` e só fala quando o estado muda.
+- O selo "abaixo do ideal" traz seta e texto; a barra de atual × ideal é só
+  desenho (`aria-hidden`), e o texto ao lado diz os dois números.
+- Na navegação e nas seções de Ajustes, a atual leva `aria-current="page"`.
 - Alvos de toque ≥ 44px.
 
 ## Texto

@@ -12,6 +12,7 @@ import { useToast } from "../../components/toastContext";
 import { cx } from "../../lib/cx";
 import { formatBRL } from "../../lib/format";
 import { sumTargets, targetsFromClasses } from "../../lib/goals";
+import { useMoney } from "../../lib/privacy";
 import { needsRating, ratingIntro } from "../../lib/rating";
 import { Onboarding } from "../onboarding/Onboarding";
 import { AddAssetSheet } from "../portfolio/AddAssetSheet";
@@ -20,6 +21,9 @@ import { ContributionSheet } from "./ContributionSheet";
 import { PlanResult } from "./PlanResult";
 
 const QUICK_AMOUNTS = [500, 1000, 2000, 5000];
+
+/** `R$ 500`, `R$ 1.000`: os atalhos fixos não são dado da pessoa, e aparecem sempre. */
+const formatQuick = (value: number) => formatBRL(value).replace(",00", "");
 
 type ContributeScreenProps = { portfolio: Portfolio };
 
@@ -75,6 +79,7 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
   const planMutation = usePlan();
   const contributions = useContributions();
   const toast = useToast();
+  const money = useMoney();
 
   const lastAmount = contributions.data?.[0]?.amount;
   const quick = lastAmount && !QUICK_AMOUNTS.includes(lastAmount) ? [...QUICK_AMOUNTS, lastAmount] : QUICK_AMOUNTS;
@@ -138,7 +143,7 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
                   calculate(value);
                 }}
               >
-                {value === lastAmount ? `Último: ${formatBRL(value)}` : formatBRL(value).replace(",00", "")}
+                {value === lastAmount ? `Último: ${money.brl(value)}` : formatQuick(value)}
               </motion.button>
             ))}
           </div>
@@ -149,7 +154,7 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
         </form>
         {noGoals && (
           <p className="ask__hint">
-            Você ainda não tem metas. <a href="#/metas">Defina em Metas</a> para eu saber para onde levar a carteira.
+            Você ainda não tem metas. <a href="#/ajustes/metas">Defina em Metas</a> para eu saber para onde levar a carteira.
           </p>
         )}
       </GlassCard>

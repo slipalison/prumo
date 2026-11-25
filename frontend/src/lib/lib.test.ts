@@ -25,8 +25,10 @@ import {
 } from "./format";
 import { balanceTargets, isComplete, PRESETS, sameTargets, sumTargets, targetsFromClasses } from "./goals";
 import { centsFromInput, formatMoneyInput, reaisFromInput } from "./moneyMask";
+import { createMoney, MASK_BRL, MASK_QUANTITY } from "./money";
 import { looksMissingB3Flag, noticeText, unitLine } from "./planText";
-import { navigate, parseRoute } from "./route";
+import { HIDE_VALUES_KEY, readHideValues, saveHideValues } from "./privacy";
+import { hashSegments, navigate, parseRoute, parseSection } from "./route";
 import { answeredCount, answersDiff, checklistScore } from "./score";
 import { applyTheme, readThemePreference, saveThemePreference, THEME_KEY } from "./theme";
 
@@ -189,17 +191,35 @@ describe("theme", () => {
 });
 
 describe("route", () => {
+  const ids = ["aportar", "carteira", "ajustes"] as const;
+
   it("entende o hash e cai na abertura quando não conhece", () => {
-    expect(parseRoute("#/carteira")).toBe("carteira");
-    expect(parseRoute("#metas")).toBe("metas");
-    expect(parseRoute("#/criterios?x=1")).toBe("criterios");
-    expect(parseRoute("#/nada")).toBe("aportar");
-    expect(parseRoute("")).toBe("aportar");
+    expect(parseRoute("#/carteira", ids)).toBe("carteira");
+    expect(parseRoute("#ajustes", ids)).toBe("ajustes");
+    expect(parseRoute("#/ajustes/metas?x=1", ids)).toBe("ajustes");
+    expect(parseRoute("#/nada", ids)).toBe("aportar");
+    expect(parseRoute("", ids)).toBe("aportar");
+  });
+
+  it("os links antigos levam à seção certa de Ajustes", () => {
+    expect(parseRoute("#/metas", ids)).toBe("ajustes");
+    expect(parseSection("#/metas")).toBe("metas");
+    expect(parseRoute("#criterios", ids)).toBe("ajustes");
+    expect(parseSection("#/criterios?x=1")).toBe("criterios");
+    expect(hashSegments("#/ajustes/metas")).toEqual(["ajustes", "metas"]);
+  });
+
+  it("a seção é o segundo trecho, e só ele", () => {
+    expect(parseSection("#/ajustes")).toBeNull();
+    expect(parseSection("#/ajustes/criterios")).toBe("criterios");
+    expect(parseSection("")).toBeNull();
   });
 
   it("navega escrevendo o hash", () => {
-    navigate("metas");
-    expect(window.location.hash).toBe("#/metas");
+    navigate("carteira");
+    expect(window.location.hash).toBe("#/carteira");
+    navigate("ajustes/metas");
+    expect(window.location.hash).toBe("#/ajustes/metas");
   });
 });
 
@@ -244,18 +264,20 @@ describe("assetClasses", () => {
 });
 
 describe("planText", () => {
+  const shown = createMoney(false);
+
   it("escreve cada aviso numa frase que diz o que fazer", () => {
-    expect(nbsp(noticeText({ code: "class_blocked", asset_class: "intl_stocks", amount: 25226.45, reason: "no_assets" }))).toContain(
+    expect(nbsp(noticeText({ code: "class_blocked", asset_class: "intl_stocks", amount: 25226.45, reason: "no_assets" }, [], shown))).toContain(
       "Ações Internacionais precisa de R$ 25,2 mil",
     );
-    expect(noticeText({ code: "assets_without_price", symbols: ["XYZW11"] })).toContain("XYZW11");
-    expect(noticeText({ code: "assets_without_score", symbols: ["MXRF11", "ITSA4"] })).toContain("MXRF11, ITSA4");
-    expect(noticeText({ code: "no_targets" })).toContain("metas");
+    expect(noticeText({ code: "assets_without_price", symbols: ["XYZW11"] }, [], shown)).toContain("XYZW11");
+    expect(noticeText({ code: "assets_without_score", symbols: ["MXRF11", "ITSA4"] }, [], shown)).toContain("MXRF11, ITSA4");
+    expect(noticeText({ code: "no_targets" }, [], shown)).toContain("metas");
   });
 
   it("a classe bloqueada diz o que falta nela", () => {
     const blocked = (reason: "no_assets" | "unrated" | "unpriced") =>
-      noticeText({ code: "class_blocked", asset_class: "br_reits", amount: 499600, reason });
+      noticeText({ code: "class_blocked", asset_class: "br_reits", amount: 499600, reason }, [], shown);
     expect(blocked("no_assets")).toContain("ainda não tem nenhum ativo");
     expect(blocked("unrated")).toContain("nenhum ativo dela tem nota");
     expect(blocked("unpriced")).toContain("sem cotação");
@@ -273,10 +295,10 @@ describe("planText", () => {
     expect(looksMissingB3Flag({ ...etf, symbol: "BTC" })).toBe(false);
     expect(looksMissingB3Flag({ ...etf, asset_class: "br_stocks" })).toBe(false);
     const asset = { ...toAsset(must(defaultAssets()[0]), defaultChecklists(), 0), ...etf };
-    const one = noticeText({ code: "assets_without_price", symbols: ["QBTC11"] }, [asset]);
+    const one = noticeText({ code: "assets_without_price", symbols: ["QBTC11"] }, [asset], shown);
     expect(one).toContain("Fica fora da conta");
     expect(one).toContain("Negociado na B3");
-    const many = noticeText({ code: "assets_without_price", symbols: ["SUMIU3", "XYZW11"] }, [asset]);
+    const many = noticeText({ code: "assets_without_price", symbols: ["SUMIU3", "XYZW11"] }, [asset], shown);
     expect(many).toContain("Ficam fora da conta");
     expect(many).not.toContain("Negociado na B3");
   });
@@ -285,15 +307,65 @@ describe("planText", () => {
     const items = samplePlan().items;
     const btlg = must(items[1]);
     const btc = must(items[3]);
-    expect(nbsp(unitLine(btlg))).toBe("8 cotas × R$ 94,55");
-    expect(nbsp(unitLine(btc))).toBe("0,0045 BTC × R$ 345.588,05");
+    expect(nbsp(unitLine(btlg, shown))).toBe("8 cotas × R$ 94,55");
+    expect(nbsp(unitLine(btc, shown))).toBe("0,0045 BTC × R$ 345.588,05");
     expect(
-      unitLine({ ...btlg, asset_class: "fixed_income", listed_on_b3: false, symbol: null, quantity: 100, unit_price: 1, value: 100 }),
+      unitLine({ ...btlg, asset_class: "fixed_income", listed_on_b3: false, symbol: null, quantity: 100, unit_price: 1, value: 100 }, shown),
     ).toBe("Aplicar este valor");
     // ETF de bitcoin da B3 dentro de Cripto: cota inteira, não fração de BTC.
-    expect(nbsp(unitLine({ ...btc, symbol: "QBTC11", listed_on_b3: true, quantity: 5, unit_price: 52 }))).toBe(
+    expect(nbsp(unitLine({ ...btc, symbol: "QBTC11", listed_on_b3: true, quantity: 5, unit_price: 52 }, shown))).toBe(
       "5 cotas × R$ 52,00",
     );
+  });
+
+  it("com os valores ocultos, nenhuma frase carrega número", () => {
+    const hidden = createMoney(true);
+    const items = samplePlan().items;
+    const line = unitLine(must(items[3]), hidden);
+    expect(line).toContain(MASK_QUANTITY);
+    expect(line).toContain(MASK_BRL);
+    expect(line).not.toMatch(/\d/);
+    const blocked = noticeText(
+      { code: "class_blocked", asset_class: "intl_stocks", amount: 25226.45, reason: "no_assets" },
+      [],
+      hidden,
+    );
+    expect(blocked).toContain(MASK_BRL);
+    expect(blocked).not.toMatch(/\d/);
+  });
+});
+
+describe("privacidade dos valores", () => {
+  it("o formatador oculto devolve só a máscara, o visível o número", () => {
+    const hidden = createMoney(true);
+    expect(hidden.hidden).toBe(true);
+    expect([hidden.brl(1234.5), hidden.compact(136000)]).toEqual([MASK_BRL, MASK_BRL]);
+    expect(hidden.quantity(12, false)).toBe(MASK_QUANTITY);
+    expect(nbsp(createMoney(false).brl(1234.5))).toBe("R$ 1.234,50");
+    expect(createMoney(false).hidden).toBe(false);
+  });
+
+  it("a escolha vai para o localStorage e volta de lá", () => {
+    expect(readHideValues()).toBe(false);
+    saveHideValues(true);
+    expect(window.localStorage.getItem(HIDE_VALUES_KEY)).toBe("1");
+    expect(readHideValues()).toBe(true);
+    saveHideValues(false);
+    expect(window.localStorage.getItem(HIDE_VALUES_KEY)).toBeNull();
+    expect(readHideValues()).toBe(false);
+  });
+
+  it("armazenamento bloqueado não derruba: lê como visível e grava sem erro", () => {
+    const blocked = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("bloqueado");
+    });
+    const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("bloqueado");
+    });
+    expect(readHideValues()).toBe(false);
+    expect(() => saveHideValues(true)).not.toThrow();
+    blocked.mockRestore();
+    write.mockRestore();
   });
 });
 

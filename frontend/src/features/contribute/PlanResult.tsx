@@ -9,8 +9,9 @@ import { IconAlert, IconArrowRight, IconCheck, IconPlus } from "../../components
 import { MagneticButton } from "../../components/MagneticButton";
 import { CLASS_META, classColor } from "../../lib/assetClasses";
 import { cx } from "../../lib/cx";
-import { formatBRL, formatCompactBRL, formatPercent, plural } from "../../lib/format";
+import { formatPercent, plural } from "../../lib/format";
 import { noticeText, unitLine } from "../../lib/planText";
+import { useMoney } from "../../lib/privacy";
 import { assetName, findAssetByLabel } from "../../lib/rating";
 
 type AssetActions = {
@@ -53,7 +54,7 @@ function NoticeAction({ notice, assets, onRateAsset, onEditAsset, onAddAsset }: 
 
   if (notice.code === "no_targets") {
     return (
-      <a className="link-btn" href="#/metas">
+      <a className="link-btn" href="#/ajustes/metas">
         Ir para Metas {arrow}
       </a>
     );
@@ -100,6 +101,7 @@ const card = {
 
 export function PlanResult({ plan, assets, onConfirm, ...actions }: PlanResultProps) {
   const reduce = useReducedMotion();
+  const money = useMoney();
   const [view, setView] = useState<"before" | "after">(reduce ? "after" : "before");
 
   // A rosca nasce no "antes" e escorrega para o "depois" sozinha.
@@ -124,7 +126,7 @@ export function PlanResult({ plan, assets, onConfirm, ...actions }: PlanResultPr
             </h2>
             <p className="plan__subtitle">
               com <CountUp value={plan.invested} className="gold strong" />
-              {plan.change >= 0.01 && <span className="muted"> · troco de {formatBRL(plan.change)}</span>}
+              {plan.change >= 0.01 && <span className="muted"> · troco de {money.brl(plan.change)}</span>}
             </p>
           </>
         ) : (
@@ -147,7 +149,7 @@ export function PlanResult({ plan, assets, onConfirm, ...actions }: PlanResultPr
         )}
         {plan.unallocated >= 0.01 && (
           <p className="plan__unallocated">
-            <IconAlert /> {formatBRL(plan.unallocated)} ficaram sem destino.
+            <IconAlert /> {money.brl(plan.unallocated)} ficaram sem destino.
           </p>
         )}
       </div>
@@ -170,7 +172,7 @@ export function PlanResult({ plan, assets, onConfirm, ...actions }: PlanResultPr
                 </div>
                 <div className="plan-card__foot">
                   <CountUp value={item.value} className="plan-card__value" />
-                  <span className="plan-card__units">{unitLine(item)}</span>
+                  <span className="plan-card__units">{unitLine(item, money)}</span>
                 </div>
               </GlassCard>
             </motion.li>
@@ -189,7 +191,7 @@ export function PlanResult({ plan, assets, onConfirm, ...actions }: PlanResultPr
               transition={{ delay: 0.2 + index * 0.05 }}
             >
               <IconAlert className="notice__icon" />
-              <span>{noticeText(notice, assets)}</span>
+              <span>{noticeText(notice, assets, money)}</span>
               <NoticeAction notice={notice} assets={assets} {...actions} />
             </motion.li>
           ))}
@@ -229,7 +231,7 @@ export function PlanResult({ plan, assets, onConfirm, ...actions }: PlanResultPr
             >
               <span className="donut__caption">{view === "before" ? "hoje" : "depois"}</span>
               <strong className="donut__number donut__number--sm">
-                {formatCompactBRL(view === "before" ? plan.total_before : plan.total_after)}
+                {money.compact(view === "before" ? plan.total_before : plan.total_after)}
               </strong>
             </Donut>
             <ul className="plan__bars">

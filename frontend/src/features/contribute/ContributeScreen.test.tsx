@@ -126,13 +126,13 @@ describe("Aportar", () => {
       ),
     );
     const { user, input } = await openCalculator();
-    expect(screen.getByRole("link", { name: "Defina em Metas" })).toHaveAttribute("href", "#/metas");
+    expect(screen.getByRole("link", { name: "Defina em Metas" })).toHaveAttribute("href", "#/ajustes/metas");
     await user.type(input, "600000");
     await user.click(screen.getByRole("button", { name: /Calcular/ }));
     const result = await screen.findByRole("region", { name: "Resultado do aporte" });
     expect(within(result).getByRole("heading", { name: "Defina suas metas primeiro" })).toBeInTheDocument();
     expect(within(result).getByText(/R\$\s6\.000,00 ficaram sem destino/)).toBeInTheDocument();
-    expect(within(result).getByRole("link", { name: /Ir para Metas/ })).toHaveAttribute("href", "#/metas");
+    expect(within(result).getByRole("link", { name: /Ir para Metas/ })).toHaveAttribute("href", "#/ajustes/metas");
     expect(within(result).queryByRole("button", { name: /Já comprei/ })).toBeNull();
   });
 

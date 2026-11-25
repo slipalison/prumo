@@ -12,7 +12,8 @@ import { ScoreSlider } from "../../components/ScoreSlider";
 import { Sheet } from "../../components/Sheet";
 import { useToast } from "../../components/toastContext";
 import { acceptsB3Listing, CLASS_META, unitOf } from "../../lib/assetClasses";
-import { formatBRL, formatRelative } from "../../lib/format";
+import { formatRelative } from "../../lib/format";
+import { useMoney } from "../../lib/privacy";
 import { assetName } from "../../lib/rating";
 import { answeredCount, answersDiff, checklistScore, type Answer } from "../../lib/score";
 
@@ -73,6 +74,7 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
     priceToggle: useId(),
     b3Toggle: useId(),
   };
+  const money = useMoney();
   const meta = CLASS_META[asset.asset_class];
   const questions = meta.checklist ? portfolio.checklists[meta.checklist] : [];
 
@@ -258,10 +260,10 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
       <div className="edit-asset__summary">
         <div>
           <span className="eyebrow">Hoje</span>
-          <strong className="edit-asset__value">{formatBRL(asset.current_value)}</strong>
+          <strong className="edit-asset__value">{money.brl(asset.current_value)}</strong>
           {!valueBased && (
             <span className="edit-asset__caption">
-              {asset.unit_price !== null && asset.price_source !== "missing" ? formatBRL(asset.unit_price) : "—"} ·{" "}
+              {asset.unit_price !== null && asset.price_source !== "missing" ? money.brl(asset.unit_price) : "—"} ·{" "}
               {priceCaption(asset)}
             </span>
           )}

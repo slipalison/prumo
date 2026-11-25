@@ -15,6 +15,12 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   entra na divisão pela nota: é assim que uma classe vazia passa a receber.
 - **Negociado na B3** — um ETF de bitcoin conta em Cripto, um BDR ou ETF de
   S&P 500 em Ações Internacionais, cotados na B3 em cota inteira.
+- **Atual × ideal por ativo** — a Carteira mostra, em cada ativo, quanto ele é
+  da classe hoje e quanto deveria ser (a fatia que o motor usa), com um selo
+  "abaixo do ideal" e a contagem no topo.
+- **Ocultar valores** — o olho na navegação mascara R$, quantidades e totais em
+  todas as telas, inclusive para o leitor de tela; a escolha fica salva no
+  navegador.
 - **Preço ao vivo** — patrimônio e ativos mudam na tela sem recarregar, pelo
   streamer do Yahoo: EUA, câmbio e cripto em segundos; B3 com os 15 minutos
   de atraso do dado gratuito. Tudo convertido para reais.

@@ -109,17 +109,41 @@ export function defaultGoals(): GoalTargets {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-export function toAsset(stored: StoredAsset, checklists: Checklists, classTotal: number): Asset {
+function checklistKind(assetClass: AssetClass): "real_estate" | "stocks" | null {
+  if (assetClass === "br_reits" || assetClass === "us_reits") return "real_estate";
+  if (assetClass === "br_stocks" || assetClass === "intl_stocks") return "stocks";
+  return null;
+}
+
+function scoreOf(stored: StoredAsset, checklists: Checklists): number {
+  const kind = checklistKind(stored.asset_class);
+  return stored.score_override ?? (kind ? checklistScore(stored.answers, checklists[kind]) : 0);
+}
+
+/**
+ * O % ideal de cada ativo, como o servidor calcula: nota ÷ soma das notas dos
+ * que recebem aporte (nota > 0 e preço > 0) na classe. Quem não recebe fica em 0.
+ */
+export function idealPercents(assets: StoredAsset[], checklists: Checklists): Map<string, number> {
+  const eligible = (a: StoredAsset) => scoreOf(a, checklists) > 0 && (a.manual_price ?? a.quote_price ?? 0) > 0;
+  const sums = new Map<AssetClass, number>();
+  for (const a of assets.filter(eligible)) {
+    sums.set(a.asset_class, (sums.get(a.asset_class) ?? 0) + scoreOf(a, checklists));
+  }
+  return new Map(
+    assets.map((a) => {
+      const sum = sums.get(a.asset_class) ?? 0;
+      return [a.id, eligible(a) && sum > 0 ? round2((scoreOf(a, checklists) / sum) * 100) : 0];
+    }),
+  );
+}
+
+export function toAsset(stored: StoredAsset, checklists: Checklists, classTotal: number, idealPercent = 0): Asset {
   const price = stored.manual_price ?? stored.quote_price;
   const value = price === null ? 0 : stored.quantity * price;
-  const kind = stored.asset_class === "br_reits" || stored.asset_class === "us_reits"
-    ? "real_estate"
-    : stored.asset_class === "br_stocks" || stored.asset_class === "intl_stocks"
-      ? "stocks"
-      : null;
+  const kind = checklistKind(stored.asset_class);
   const scoreSource = stored.score_override !== null ? "manual" : kind ? "checklist" : "none";
-  const score =
-    stored.score_override ?? (kind ? checklistScore(stored.answers, checklists[kind]) : 0);
+  const score = scoreOf(stored, checklists);
   return {
     id: stored.id,
     asset_class: stored.asset_class,
@@ -134,6 +158,7 @@ export function toAsset(stored: StoredAsset, checklists: Checklists, classTotal:
     quote_updated_at: stored.quote_price === null ? null : QUOTES_AT,
     current_value: round2(value),
     class_percent: classTotal > 0 ? round2((value / classTotal) * 100) : 0,
+    ideal_class_percent: idealPercent,
     score,
     score_source: scoreSource,
     score_override: stored.score_override,
@@ -150,7 +175,8 @@ export function toPortfolio(assets: StoredAsset[], goals: GoalTargets, checklist
     ASSET_CLASSES.map((c) => [c, assets.filter((a) => a.asset_class === c).reduce((acc, a) => acc + valueOf(a), 0)]),
   ) as Record<AssetClass, number>;
   const total = Object.values(classTotals).reduce((acc, v) => acc + v, 0);
-  const mapped = assets.map((a) => toAsset(a, checklists, classTotals[a.asset_class]));
+  const ideal = idealPercents(assets, checklists);
+  const mapped = assets.map((a) => toAsset(a, checklists, classTotals[a.asset_class], ideal.get(a.id) ?? 0));
   return {
     total_value: round2(total),
     quotes_updated_at: QUOTES_AT,

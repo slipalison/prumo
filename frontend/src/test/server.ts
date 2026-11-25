@@ -18,7 +18,6 @@ import {
   defaultChecklists,
   defaultGoals,
   samplePlan,
-  toAsset,
   toPortfolio,
   type StoredAsset,
 } from "./fixtures";
@@ -70,10 +69,9 @@ const problem = (status: number, code: string, title: string, detail?: string) =
     { status, headers: { "Content-Type": "application/problem+json" } },
   );
 
-const classTotal = (assetClass: AssetClass) => {
-  const p = toPortfolio(db.assets, db.goals, db.checklists);
-  return p.classes.find((c) => c.asset_class === assetClass)?.current_value ?? 0;
-};
+/** O ativo como o servidor o devolve: com a carteira inteira em volta (% da classe, ideal). */
+const assetView = (stored: StoredAsset) =>
+  toPortfolio(db.assets, db.goals, db.checklists).assets.find((a) => a.id === stored.id);
 
 async function record(request: Request) {
   const url = new URL(request.url);
@@ -133,7 +131,7 @@ export const handlers = [
       listed_on_b3: listed,
     };
     db.assets.push(stored);
-    return HttpResponse.json(toAsset(stored, db.checklists, classTotal(stored.asset_class)), { status: 201 });
+    return HttpResponse.json(assetView(stored), { status: 201 });
   }),
 
   http.patch("/api/v1/assets/:id", async ({ request, params }) => {
@@ -156,7 +154,7 @@ export const handlers = [
         else stored.answers[id] = answer;
       }
     }
-    return HttpResponse.json(toAsset(stored, db.checklists, classTotal(stored.asset_class)));
+    return HttpResponse.json(assetView(stored));
   }),
 
   http.delete("/api/v1/assets/:id", ({ params }) => {

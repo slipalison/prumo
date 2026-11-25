@@ -3,10 +3,12 @@ import { useContributions } from "../../api/queries";
 import { GlassCard } from "../../components/GlassCard";
 import { IconHistory } from "../../components/icons";
 import { Skeleton } from "../../components/Skeleton";
-import { formatBRL, formatDateTime, formatQuantity } from "../../lib/format";
+import { formatDateTime } from "../../lib/format";
+import { useMoney } from "../../lib/privacy";
 
 export function ContributionHistory() {
   const contributions = useContributions();
+  const money = useMoney();
 
   return (
     <GlassCard as="section" className="history" aria-labelledby="history-title">
@@ -33,11 +35,11 @@ export function ContributionHistory() {
             >
               <div className="history__head">
                 <span className="history__date">{formatDateTime(contribution.created_at)}</span>
-                <strong className="history__value">{formatBRL(contribution.invested)}</strong>
+                <strong className="history__value">{money.brl(contribution.invested)}</strong>
               </div>
               <p className="history__items">
                 {contribution.items
-                  .map((item) => `${formatQuantity(item.quantity, !Number.isInteger(item.quantity))} ${item.symbol ?? item.display_name}`)
+                  .map((item) => `${money.quantity(item.quantity, !Number.isInteger(item.quantity))} ${item.symbol ?? item.display_name}`)
                   .join(" · ")}
               </p>
             </motion.li>

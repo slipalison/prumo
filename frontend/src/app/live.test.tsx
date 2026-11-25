@@ -20,7 +20,7 @@ function pricesNow(change?: (portfolio: Portfolio) => void): LivePrices {
     quotes_updated_at: portfolio.quotes_updated_at,
     classes: portfolio.classes,
     assets: portfolio.assets.map(
-      ({ id, unit_price, currency, price_source, quote_updated_at, current_value, class_percent }) => ({
+      ({ id, unit_price, currency, price_source, quote_updated_at, current_value, class_percent, ideal_class_percent }) => ({
         id,
         unit_price,
         currency,
@@ -28,6 +28,7 @@ function pricesNow(change?: (portfolio: Portfolio) => void): LivePrices {
         quote_updated_at,
         current_value,
         class_percent,
+        ideal_class_percent,
       }),
     ),
   };
