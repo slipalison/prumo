@@ -5,8 +5,8 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::domain::allocation::{self, class_index, percent, round_cents, Holding, Plan, Targets};
@@ -38,7 +38,7 @@ pub struct AssetView {
     pub unit_price: Option<Decimal>,
     pub currency: String,
     pub price_source: PriceSource,
-    pub quote_updated_at: Option<DateTime<Utc>>,
+    pub quote_updated_at: Option<OffsetDateTime>,
     pub current_value: Decimal,
     pub class_percent: Decimal,
     pub score: u8,
@@ -59,7 +59,7 @@ pub struct ClassView {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PortfolioView {
     pub total_value: Decimal,
-    pub quotes_updated_at: Option<DateTime<Utc>>,
+    pub quotes_updated_at: Option<OffsetDateTime>,
     pub targets: Targets,
     pub classes: Vec<ClassView>,
     pub assets: Vec<AssetView>,
@@ -76,7 +76,7 @@ impl PortfolioView {
 fn resolve_price(
     asset: &Asset,
     quotes: &HashMap<String, StoredQuote>,
-) -> (Option<Decimal>, String, PriceSource, Option<DateTime<Utc>>) {
+) -> (Option<Decimal>, String, PriceSource, Option<OffsetDateTime>) {
     if asset.asset_class.unit_kind() == UnitKind::Value {
         return (Some(Decimal::ONE), "BRL".into(), PriceSource::Manual, None);
     }
@@ -329,7 +329,7 @@ impl QuoteService {
         let mut quote = self.provider.quote(provider_symbol).await?;
         quote.symbol = provider_symbol.to_owned();
         self.store
-            .upsert_quote(&quote, Utc::now())
+            .upsert_quote(&quote, OffsetDateTime::now_utc())
             .await
             .map_err(|e| QuoteError::Unavailable(e.to_string()))?;
         Ok(quote)
@@ -389,7 +389,7 @@ mod tests {
                 price,
                 currency: currency.to_owned(),
                 name: None,
-                fetched_at: Utc::now(),
+                fetched_at: OffsetDateTime::now_utc(),
             },
         )
     }

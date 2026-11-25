@@ -3,10 +3,10 @@
 
 use std::collections::HashMap;
 
-use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use sqlx::{FromRow, Postgres, Transaction};
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::domain::allocation::{round_cents, Targets};
@@ -79,7 +79,7 @@ pub struct StoredQuote {
     pub price: Decimal,
     pub currency: String,
     pub name: Option<String>,
-    pub fetched_at: DateTime<Utc>,
+    pub fetched_at: OffsetDateTime,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -102,7 +102,7 @@ pub struct ContributionItem {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Contribution {
     pub id: Uuid,
-    pub created_at: DateTime<Utc>,
+    pub created_at: OffsetDateTime,
     pub amount: Decimal,
     pub items: Vec<ContributionItem>,
 }
@@ -132,13 +132,13 @@ struct QuoteRow {
     price: Decimal,
     currency: String,
     name: Option<String>,
-    fetched_at: DateTime<Utc>,
+    fetched_at: OffsetDateTime,
 }
 
 #[derive(FromRow)]
 struct ContributionRow {
     id: Uuid,
-    created_at: DateTime<Utc>,
+    created_at: OffsetDateTime,
     amount: Decimal,
 }
 
@@ -153,8 +153,13 @@ struct ContributionItemRow {
     value: Decimal,
 }
 
-const ASSET_COLUMNS: &str =
-    "id, asset_class, symbol, display_name, quantity, manual_price, score_override";
+/// As colunas de `assets`, como macro para entrar em `concat!`: o sqlx 0.9 só
+/// aceita SQL estático (`&'static str`), e a lista é a única parte repetida.
+macro_rules! asset_columns {
+    () => {
+        "id, asset_class, symbol, display_name, quantity, manual_price, score_override"
+    };
+}
 
 fn decode_error(what: &str) -> sqlx::Error {
     sqlx::Error::Decode(format!("valor desconhecido no banco: {what}").into())
@@ -296,8 +301,10 @@ impl Store {
     }
 
     pub async fn assets(&self, user: Uuid) -> Result<Vec<Asset>, StoreError> {
-        let rows: Vec<AssetRow> = sqlx::query_as(&format!(
-            "select {ASSET_COLUMNS} from assets where user_id = $1 order by created_at, id"
+        let rows: Vec<AssetRow> = sqlx::query_as(concat!(
+            "select ",
+            asset_columns!(),
+            " from assets where user_id = $1 order by created_at, id"
         ))
         .bind(user)
         .fetch_all(&self.pool)
@@ -309,8 +316,10 @@ impl Store {
     }
 
     pub async fn asset(&self, user: Uuid, id: Uuid) -> Result<Option<Asset>, StoreError> {
-        let row: Option<AssetRow> = sqlx::query_as(&format!(
-            "select {ASSET_COLUMNS} from assets where user_id = $1 and id = $2"
+        let row: Option<AssetRow> = sqlx::query_as(concat!(
+            "select ",
+            asset_columns!(),
+            " from assets where user_id = $1 and id = $2"
         ))
         .bind(user)
         .bind(id)
@@ -320,10 +329,8 @@ impl Store {
     }
 
     pub async fn insert_asset(&self, user: Uuid, new: &NewAsset) -> Result<Asset, StoreError> {
-        let result: Result<AssetRow, sqlx::Error> = sqlx::query_as(&format!(
-            "insert into assets (id, user_id, asset_class, symbol, display_name, quantity, manual_price, score_override)
-             values ($1, $2, $3, $4, $5, $6, $7, $8) returning {ASSET_COLUMNS}"
-        ))
+        let result: Result<AssetRow, sqlx::Error> = sqlx::query_as(concat!("insert into assets (id, user_id, asset_class, symbol, display_name, quantity, manual_price, score_override)
+             values ($1, $2, $3, $4, $5, $6, $7, $8) returning ", asset_columns!(), ""))
         .bind(Uuid::new_v4())
         .bind(user)
         .bind(new.asset_class.as_str())
@@ -347,7 +354,7 @@ impl Store {
         id: Uuid,
         patch: &AssetPatch,
     ) -> Result<Option<Asset>, StoreError> {
-        let row: Option<AssetRow> = sqlx::query_as(&format!(
+        let row: Option<AssetRow> = sqlx::query_as(concat!(
             "update assets set
                 quantity = coalesce($3, quantity),
                 display_name = coalesce($4, display_name),
@@ -355,7 +362,9 @@ impl Store {
                 score_override = case when $7 then $8 else score_override end,
                 updated_at = now()
              where user_id = $1 and id = $2
-             returning {ASSET_COLUMNS}"
+             returning ",
+            asset_columns!(),
+            ""
         ))
         .bind(user)
         .bind(id)
@@ -571,7 +580,7 @@ impl Store {
     pub async fn upsert_quote(
         &self,
         quote: &Quote,
-        fetched_at: DateTime<Utc>,
+        fetched_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
         sqlx::query(
             "insert into quotes (symbol, price, currency, name, fetched_at) values ($1, $2, $3, $4, $5)
@@ -611,7 +620,7 @@ impl Store {
     ) -> Result<Contribution, StoreError> {
         let mut tx = self.pool.begin().await?;
         let id = Uuid::new_v4();
-        let (created_at,): (DateTime<Utc>,) =
+        let (created_at,): (OffsetDateTime,) =
             sqlx::query_as("insert into contributions (id, user_id, amount) values ($1, $2, $3) returning created_at")
                 .bind(id)
                 .bind(user)
@@ -620,8 +629,10 @@ impl Store {
                 .await?;
         let mut stored = Vec::with_capacity(items.len());
         for item in items {
-            let row: Option<AssetRow> = sqlx::query_as(&format!(
-                "select {ASSET_COLUMNS} from assets where user_id = $1 and id = $2 for update"
+            let row: Option<AssetRow> = sqlx::query_as(concat!(
+                "select ",
+                asset_columns!(),
+                " from assets where user_id = $1 and id = $2 for update"
             ))
             .bind(user)
             .bind(item.asset_id)

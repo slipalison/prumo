@@ -4,41 +4,41 @@
 //! repositório (e o Gitleaks não tem o que reclamar).
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+use aws_lc_rs::rand::SystemRandom;
+use aws_lc_rs::rsa::{KeyPair, KeySize, PublicKeyComponents};
+use aws_lc_rs::signature::{KeyPair as _, RSA_PKCS1_SHA256};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
-use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use prumo::auth::{AccessAuthenticator, Authenticator};
-use rsa::pkcs1::EncodeRsaPrivateKey;
-use rsa::traits::PublicKeyParts;
-use rsa::RsaPrivateKey;
 use serde_json::{json, Value};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const AUD: &str = "aud-do-prumo";
 
+/// Par RSA gerado pelo aws-lc-rs (o mesmo provedor que o binario usa para
+/// conferir) e a JWK publica que o JWKS falso serve.
 struct Key {
     kid: String,
-    encoding: EncodingKey,
+    pair: KeyPair,
     jwk: Value,
 }
 
 fn key(kid: &str) -> Key {
-    let private = RsaPrivateKey::new(&mut rand::thread_rng(), 2048).unwrap();
-    let der = private.to_pkcs1_der().unwrap();
-    let public = private.to_public_key();
+    let pair = KeyPair::generate(KeySize::Rsa2048).unwrap();
+    let public = PublicKeyComponents::<Vec<u8>>::from(pair.public_key());
     Key {
         kid: kid.to_owned(),
-        encoding: EncodingKey::from_rsa_der(der.as_bytes()),
         jwk: json!({
             "kid": kid,
             "kty": "RSA",
             "alg": "RS256",
             "use": "sig",
-            "n": URL_SAFE_NO_PAD.encode(public.n().to_bytes_be()),
-            "e": URL_SAFE_NO_PAD.encode(public.e().to_bytes_be()),
+            "n": URL_SAFE_NO_PAD.encode(&public.n),
+            "e": URL_SAFE_NO_PAD.encode(&public.e),
         }),
+        pair,
     }
 }
 
@@ -49,10 +49,32 @@ fn now() -> i64 {
         .as_secs() as i64
 }
 
+/// Monta e assina um JWT RS256 a mao: `base64url(header).base64url(claims)`
+/// assinado com PKCS#1 v1.5 + SHA-256.
+fn jwt(key: &Key, header: Value, claims: &Value) -> String {
+    let signing_input = format!(
+        "{}.{}",
+        URL_SAFE_NO_PAD.encode(header.to_string()),
+        URL_SAFE_NO_PAD.encode(claims.to_string())
+    );
+    let mut signature = vec![0u8; key.pair.public_modulus_len()];
+    key.pair
+        .sign(
+            &RSA_PKCS1_SHA256,
+            &SystemRandom::new(),
+            signing_input.as_bytes(),
+            &mut signature,
+        )
+        .unwrap();
+    format!("{signing_input}.{}", URL_SAFE_NO_PAD.encode(signature))
+}
+
 fn sign(key: &Key, claims: Value) -> String {
-    let mut header = Header::new(Algorithm::RS256);
-    header.kid = Some(key.kid.clone());
-    encode(&header, &claims, &key.encoding).unwrap()
+    jwt(
+        key,
+        json!({ "alg": "RS256", "typ": "JWT", "kid": key.kid }),
+        &claims,
+    )
 }
 
 fn claims(server: &MockServer) -> Value {
@@ -169,12 +191,11 @@ async fn missing_or_malformed_tokens_never_reach_the_jwks() {
 
     // Assinado por alguém, mas sem `kid`: não há como escolher a chave.
     let key = key("k1");
-    let token = encode(
-        &Header::new(Algorithm::RS256),
+    let token = jwt(
+        &key,
+        json!({ "alg": "RS256", "typ": "JWT" }),
         &claims(&server),
-        &key.encoding,
-    )
-    .unwrap();
+    );
     assert_eq!(
         rejected(&auth, &with_header(&token)).await,
         "Credencial malformada."

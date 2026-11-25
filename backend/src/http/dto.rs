@@ -7,9 +7,9 @@
 use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 
-use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::domain::allocation::{ClassOutcome, Notice, Plan};
@@ -231,7 +231,8 @@ pub struct AssetDto {
     pub manual_price: Option<Decimal>,
     pub currency: String,
     pub price_source: &'static str,
-    pub quote_updated_at: Option<DateTime<Utc>>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub quote_updated_at: Option<OffsetDateTime>,
     #[serde(with = "decimal_out")]
     pub current_value: Decimal,
     #[serde(with = "decimal_out")]
@@ -291,7 +292,8 @@ impl ChecklistsDto {
 pub struct PortfolioDto {
     #[serde(with = "decimal_out")]
     pub total_value: Decimal,
-    pub quotes_updated_at: Option<DateTime<Utc>>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub quotes_updated_at: Option<OffsetDateTime>,
     pub classes: Vec<ClassDto>,
     pub assets: Vec<AssetDto>,
     pub checklists: ChecklistsDto,
@@ -479,7 +481,8 @@ impl From<&ContributionItem> for ContributionItemDto {
 #[derive(Debug, Serialize)]
 pub struct ContributionDto {
     pub id: Uuid,
-    pub created_at: DateTime<Utc>,
+    #[serde(with = "time::serde::rfc3339")]
+    pub created_at: OffsetDateTime,
     #[serde(with = "decimal_out")]
     pub amount: Decimal,
     #[serde(with = "decimal_out")]
