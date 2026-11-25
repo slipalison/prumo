@@ -19,7 +19,7 @@ use uuid::Uuid;
 use crate::domain::allocation::{round_cents, Targets};
 use crate::domain::asset_class::{AssetClass, Checklist, Market, UnitKind};
 use crate::domain::defaults;
-use crate::domain::ledger::{Kind, LedgerError};
+use crate::domain::ledger::{check_for_unit, Kind, LedgerError};
 use crate::live::Tick;
 use crate::quotes::Quote;
 
@@ -771,6 +771,13 @@ impl Store {
                     (item.quantity, item.unit_price)
                 }
             };
+            check_for_unit(
+                Kind::Buy,
+                quantity,
+                Some(unit_price),
+                asset.market().unit_kind(),
+            )
+            .map_err(|message| StoreError::Invalid(message.into()))?;
             let buy = NewTransaction {
                 asset_id: asset.id,
                 fields: TransactionFields::brl(Kind::Buy, date, quantity, Some(unit_price)),

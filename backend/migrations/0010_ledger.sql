@@ -1,6 +1,10 @@
 -- Livro de lançamentos: toda mudança de quantidade vira um lançamento datado,
 -- e a quantidade do ativo passa a ser a soma do livro.
 --
+-- Vem depois da 0008 (título do Tesouro) de propósito: a conta separa renda
+-- fixa por valor de título do Tesouro pela coluna `treasury`, e com número
+-- maior a ordem é a mesma num banco novo e em produção.
+--
 -- `assets.quantity`, `assets.cost_basis` e `assets.realized_gain` viram cache
 -- da posição, refeito do livro na mesma transação que grava, edita ou apaga um
 -- lançamento (`store/ledger.rs`). A carteira ao vivo lê o cache e não refaz o
@@ -65,7 +69,8 @@ alter table assets
 --
 -- 1. Cada item de aporte vira uma compra (`buy`, `source = 'plan'`) ligada ao
 --    aporte, na data do aporte (horário de Brasília) e com o preço do item. Em
---    renda fixa por valor a compra é o valor do item com preço 1. Item de
+--    renda fixa por valor a compra é o valor do item com preço 1; o título do
+--    Tesouro (`treasury`, da 0008) é por unidade, em centésimos. Item de
 --    ativo já removido não vira lançamento: não há posição para alimentar, e o
 --    histórico dele continua em `contribution_items`.
 -- 2. O que a pessoa digitou é a diferença `d = quantidade atual − Σ compras`:
@@ -85,9 +90,9 @@ alter table assets
 
 create temporary table ledger_bought on commit drop as
 select ci.asset_id,
-       sum(case when a.asset_class in ('fixed_income', 'intl_fixed_income') and not a.listed_on_b3
+       sum(case when a.asset_class in ('fixed_income', 'intl_fixed_income') and not a.listed_on_b3 and not a.treasury
                 then ci.value else ci.quantity end) as quantity,
-       sum(case when a.asset_class in ('fixed_income', 'intl_fixed_income') and not a.listed_on_b3
+       sum(case when a.asset_class in ('fixed_income', 'intl_fixed_income') and not a.listed_on_b3 and not a.treasury
                 then ci.value else ci.quantity * ci.unit_price end) as cost,
        min((c.created_at at time zone 'America/Sao_Paulo')::date) as first_date
   from contribution_items ci
@@ -112,9 +117,9 @@ insert into transactions
      source, contribution_id, created_at)
 select gen_random_uuid(), c.user_id, a.id, a.symbol, a.asset_class, a.display_name, 'buy',
        (c.created_at at time zone 'America/Sao_Paulo')::date,
-       case when a.asset_class in ('fixed_income', 'intl_fixed_income') and not a.listed_on_b3
+       case when a.asset_class in ('fixed_income', 'intl_fixed_income') and not a.listed_on_b3 and not a.treasury
             then ci.value else ci.quantity end,
-       case when a.asset_class in ('fixed_income', 'intl_fixed_income') and not a.listed_on_b3
+       case when a.asset_class in ('fixed_income', 'intl_fixed_income') and not a.listed_on_b3 and not a.treasury
             then 1 else ci.unit_price end,
        'plan', c.id, c.created_at
   from contribution_items ci

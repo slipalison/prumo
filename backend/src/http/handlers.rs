@@ -14,6 +14,7 @@ use super::dto::*;
 use super::{treasury, ApiJson, ApiPath, ApiQuery, AppState, CurrentUser};
 use crate::domain::allocation::{Targets, FULL_BP};
 use crate::domain::asset_class::{normalize_symbol, AssetClass, Checklist, Market, UnitKind};
+use crate::domain::ledger::{check_for_unit, Kind};
 use crate::domain::treasury::Bond;
 use crate::error::{ApiError, ApiResult};
 use crate::service;
@@ -88,7 +89,6 @@ fn b3_listing(class: AssetClass, requested: Option<bool>) -> ApiResult<bool> {
     }
 }
 
-const WHOLE_ONLY: &str = "Esse ativo so aceita quantidade inteira.";
 const NO_CEILING_BY_VALUE: &str =
     "Renda fixa por valor nao tem preco por unidade; o teto de preco nao se aplica.";
 const NO_OPENING: &str = "Sem quantidade nao ha custo de entrada para informar.";
@@ -232,9 +232,10 @@ pub async fn create_asset(
                 ));
             }
             let quantity = non_negative("A quantidade", body.quantity.unwrap_or_default())?;
-            if market.unit_kind() == UnitKind::Whole && quantity.fract() != Decimal::ZERO {
-                return Err(ApiError::validation(WHOLE_ONLY));
-            }
+            // Cota inteira na B3 e nos EUA, centésimos no Tesouro: a mesma
+            // regra que vale para cada lançamento do livro.
+            check_for_unit(Kind::Opening, quantity, None, market.unit_kind())
+                .map_err(ApiError::validation)?;
             let manual_price = body
                 .manual_price
                 .map(|p| positive("O preco manual", p))
@@ -329,9 +330,13 @@ pub async fn update_asset(
     };
     // Vale para a quantidade que fica: ligar a B3 num cripto com 0,5 unidade
     // pede a quantidade inteira junto.
-    if kind == UnitKind::Whole && quantity.unwrap_or(asset.quantity).fract() != Decimal::ZERO {
-        return Err(ApiError::validation(WHOLE_ONLY));
-    }
+    check_for_unit(
+        Kind::Adjustment,
+        quantity.unwrap_or(asset.quantity),
+        None,
+        kind,
+    )
+    .map_err(ApiError::validation)?;
     if kind == UnitKind::Value && body.manual_price.is_some_and(|p| p.is_some()) {
         return Err(ApiError::validation(
             "Renda fixa nao tem preco por unidade; informe o valor.",

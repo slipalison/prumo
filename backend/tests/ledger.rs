@@ -79,12 +79,13 @@ async fn assert_book_matches(store: &Store, pool: &PgPool) {
 // ---------------------------------------------------------------- migração --
 
 /// Produção tem ativos e aportes de antes do livro. Monta uma carteira
-/// fictícia no esquema 0003, aplica a 0004 e confere o que ela fez.
+/// fictícia no esquema de antes do livro (até a 0008, a do Tesouro, que já
+/// está no ar), aplica a 0010 e confere o que ela fez.
 #[tokio::test]
 async fn migration_turns_existing_data_into_a_ledger() {
     let (_container, pool) = bare_postgres().await;
     let migrator = sqlx::migrate!("./migrations");
-    migrator.run_to(3, &pool).await.unwrap();
+    migrator.run_to(9, &pool).await.unwrap();
 
     let user = Uuid::new_v4();
     let other = Uuid::new_v4();
@@ -179,14 +180,23 @@ async fn migration_turns_existing_data_into_a_ledger() {
             "1",
             "2026-01-10T15:00:00Z",
         ),
+        // Título do Tesouro: por unidade (centésimos), não por valor.
+        (
+            "bond",
+            user,
+            "fixed_income",
+            Some("TD-IPCA-20350515"),
+            "1.5",
+            "2026-01-10T15:00:00Z",
+        ),
     ];
     let mut ids: HashMap<&str, Uuid> = HashMap::new();
     for (label, owner, class, symbol, quantity, created) in assets {
         let id = Uuid::new_v4();
         ids.insert(label, id);
         sqlx::query(
-            "insert into assets (id, user_id, asset_class, symbol, display_name, quantity, listed_on_b3, created_at)
-             values ($1, $2, $3, $4, $5, $6::numeric, $7, $8::timestamptz)",
+            "insert into assets (id, user_id, asset_class, symbol, display_name, quantity, listed_on_b3, treasury, created_at)
+             values ($1, $2, $3, $4, $5, $6::numeric, $7, $8, $9::timestamptz)",
         )
         .bind(id)
         .bind(owner)
@@ -195,6 +205,7 @@ async fn migration_turns_existing_data_into_a_ledger() {
         .bind(format!("Ficticio {label}"))
         .bind(quantity)
         .bind(class == "br_reits" || class == "br_stocks")
+        .bind(label == "bond")
         .bind(created)
         .execute(&pool)
         .await
@@ -225,6 +236,7 @@ async fn migration_turns_existing_data_into_a_ledger() {
         (second, Some("gone"), "1000", "1", "1000"),
         (first, Some("late"), "10", "11", "110"),
         (second, Some("doomed"), "1", "20", "20"),
+        (second, Some("bond"), "0.35", "3000", "1050"),
         // Item de um ativo já removido: fica só em contribution_items.
         (second, None, "2", "30", "60"),
     ];
@@ -321,6 +333,19 @@ async fn migration_turns_existing_data_into_a_ledger() {
         ]
     );
 
+    // Título do Tesouro: compra de 0,35 título ao preço do item, e o resto
+    // (1,15) como saldo inicial — não o valor em reais a preço 1.
+    let bond = book("bond").await;
+    assert_eq!(
+        bond.iter()
+            .map(|t| (t.fields.kind, t.fields.quantity, t.fields.unit_price))
+            .collect::<Vec<_>>(),
+        [
+            (Kind::Opening, dec!(1.15), None),
+            (Kind::Buy, dec!(0.35), Some(dec!(3000)))
+        ]
+    );
+
     // Sem aporte: só o saldo inicial. Sem quantidade: livro vazio, custo zero.
     assert_eq!(book("btc").await.len(), 1);
     assert!(book("wish").await.is_empty());
@@ -368,8 +393,8 @@ async fn migration_turns_existing_data_into_a_ledger() {
 async fn migration_refuses_to_finish_with_a_wrong_book() {
     let (_container, pool) = bare_postgres().await;
     let migrator = sqlx::migrate!("./migrations");
-    migrator.run_to(3, &pool).await.unwrap();
-    let sql = include_str!("../migrations/0004_ledger.sql");
+    migrator.run_to(9, &pool).await.unwrap();
+    let sql = include_str!("../migrations/0010_ledger.sql");
     let check = &sql[sql.find("do $$").unwrap()..];
     let user = Uuid::new_v4();
     sqlx::query("insert into users (id, email) values ($1, 'trava@prumo.test')")
@@ -391,6 +416,38 @@ async fn migration_refuses_to_finish_with_a_wrong_book() {
     .unwrap();
     let error = sqlx::raw_sql(check).execute(&pool).await.unwrap_err();
     assert!(error.to_string().contains("livro nao bate"), "{error}");
+}
+
+/// O sqlx aplica uma versão pendente menor que a última aplicada: é o que
+/// acontece quando uma frente junta na `main` uma migração de número menor
+/// depois de outra já estar no ar. Aqui a 0003 entra depois da 0010.
+#[tokio::test]
+async fn a_lower_pending_migration_still_applies() {
+    let (_container, pool) = bare_postgres().await;
+    let mut without_0003 = sqlx::migrate!("./migrations");
+    without_0003.migrations = without_0003
+        .migrations
+        .iter()
+        .filter(|m| m.version != 3)
+        .cloned()
+        .collect::<Vec<_>>()
+        .into();
+    without_0003.run(&pool).await.unwrap();
+    Store::from_pool(pool.clone()).migrate().await.unwrap();
+    let versions: Vec<(i64,)> =
+        sqlx::query_as("select version from _sqlx_migrations order by installed_on, version")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(versions.last(), Some(&(3,)), "{versions:?}");
+    let (has_traded_at,): (bool,) = sqlx::query_as(
+        "select exists (select 1 from information_schema.columns
+                         where table_name = 'quotes' and column_name = 'traded_at')",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(has_traded_at);
 }
 
 // ---------------------------------------------------------------------- API --

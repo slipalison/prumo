@@ -913,8 +913,10 @@ médio. O código é `backend/src/domain/ledger.rs`.
   (resgate) e `adjustment` (atualização do saldo). Não há preço médio, só
   custo (o aplicado).
 - **Unidade:** onde a cota é inteira (B3 e EUA), a quantidade de todo
-  lançamento é inteira; cripto fora da B3 aceita fração. As mesmas regras de
-  `POST /assets`.
+  lançamento é inteira; no título do Tesouro, em centésimos (0,01 vale, 0,001
+  é `422`); cripto fora da B3 aceita fração. As mesmas regras valem em `POST
+  /assets`, no `PATCH` da quantidade e no "Já comprei". O título é por
+  unidade: tem preço médio, compra e venda como uma ação.
 - **Moeda:** `unit_price` e `fees` estão na moeda do lançamento (`currency`,
   padrão `BRL`). Em outra moeda, `fx_rate` (reais por 1 unidade da moeda, no
   dia) é obrigatório quando há preço. O custo, o preço médio e o lucro saem
@@ -925,7 +927,7 @@ médio. O código é `backend/src/domain/ledger.rs`.
   cadastro, ajuste da edição, "Já comprei") leva a data de hoje em Brasília.
 - **`source`:** `manual` (digitado), `plan` (o "Já comprei", com
   `contribution_id`), `b3_import` (importação, com `external_ref` único por
-  pessoa — reimportar não duplica) ou `migration` (criado pela migração 0004 a
+  pessoa — reimportar não duplica) ou `migration` (criado pela migração 0010 a
   partir dos dados de antes do livro).
 - **Ativo removido:** o livro dele fica como histórico, com `asset_id: null` e
   a foto de `symbol`, `asset_class` e `display_name`. Lançamento de ativo
@@ -1009,14 +1011,22 @@ máquina; carteira fictícia de 40 ativos e 20.080 lançamentos):
 O custo da leitura não cresce com o tamanho do livro; o da escrita cresce com
 o livro **daquele ativo**, que a escrita refaz inteiro.
 
-### De antes do livro (migração 0004)
+### De antes do livro (migração 0010)
+
+A migração é a `0010`, depois da `0008` (título do Tesouro), de propósito: a
+conta separa renda fixa por valor de título do Tesouro pela coluna
+`assets.treasury`, que só existe a partir da 0008. O sqlx aplicaria uma versão
+menor que a última aplicada (há teste disso), mas com número menor a 0004
+rodaria antes da 0008 num banco novo e depois dela em produção, com esquemas
+diferentes; com 0010 a ordem é a mesma nos dois.
 
 Antes do livro, a quantidade vinha do que a pessoa digitou e do "Já comprei"
 (`contribution_items`). A migração separa os dois, na mesma transação:
 
 1. Cada item de aporte vira um `buy` (`source: "plan"`, com o
    `contribution_id`), na data do aporte em Brasília e com o preço do item.
-   Em renda fixa por valor, o valor do item a preço 1. Item de ativo já
+   Em renda fixa por valor, o valor do item a preço 1; título do Tesouro é
+   por unidade (centésimos), como ação. Item de ativo já
    removido não vira lançamento (não há posição) e continua no histórico de
    aportes.
 2. A diferença `d = quantidade atual − Σ compras dos aportes` é o que a pessoa

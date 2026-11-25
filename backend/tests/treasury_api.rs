@@ -126,6 +126,7 @@ async fn treasury_bonds_from_the_table_to_the_plan() {
     search_suggests_the_titles(&app).await;
     a_title_is_registered_priced_and_validated(&app, &quotes).await;
     the_plan_buys_a_fraction_and_the_contribution_records_it(&db, &dir).await;
+    the_ledger_keeps_the_title_in_hundredths(&db, &dir).await;
     the_streamer_and_the_provider_leave_the_title_alone(&db, &dir, &quotes).await;
     leaving_the_table_keeps_what_a_portfolio_holds(&db, &app).await;
 }
@@ -399,6 +400,125 @@ async fn the_plan_buys_a_fraction_and_the_contribution_records_it(
     let asset = find(&portfolio.body["assets"], "id", &id);
     assert_eq!(asset["quantity"], 0.39);
     assert_eq!(asset["current_value"], 975.37);
+}
+
+/// O título no livro de lançamentos: saldo inicial com preço médio, compra e
+/// venda de fração em centésimos, o "Já comprei" e o PM que a venda não muda.
+async fn the_ledger_keeps_the_title_in_hundredths(db: &Database, dir: &tempfile_dir::Dir) {
+    let app = app(
+        &db.store,
+        "livro-tesouro@prumo.test",
+        FakeQuotes::with_market(),
+        &dir.path(),
+    );
+    let r = &app.router;
+    let created = post(
+        r,
+        "/api/v1/assets",
+        json!({ "asset_class": "fixed_income", "symbol": "TD-IPCA-20350515", "treasury": true, "quantity": 1.5, "average_price": 2400, "score_override": 6 }),
+    )
+    .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.text);
+    let bond = &created.body;
+    // 1,5 a R$ 2.400: custo 3.600; hoje 1,5 × 2.500,95 = 3.751,43.
+    assert_eq!(bond["average_price"], 2400.0);
+    assert_eq!(bond["cost_basis"], 3600.0);
+    assert_eq!(bond["unrealized_gain"], 151.43);
+    assert_eq!(bond["return_percent"], 4.21);
+    let id = bond["id"].as_str().unwrap().to_owned();
+    let book = get(r, &format!("/api/v1/transactions?asset_id={id}")).await;
+    assert_eq!(book.body[0]["kind"], "opening");
+    assert_eq!(book.body[0]["quantity"], 1.5);
+    // O saldo inicial vai para o começo do ano, antes do histórico.
+    let opening = book.body[0]["id"].as_str().unwrap().to_owned();
+    let moved = patch(
+        r,
+        &format!("/api/v1/transactions/{opening}"),
+        json!({ "trade_date": "2026-01-02" }),
+    )
+    .await;
+    assert_eq!(moved.status, StatusCode::OK, "{}", moved.text);
+
+    // Compra de 0,35 título: o PM pondera.
+    let buy = post(
+        r,
+        "/api/v1/transactions",
+        json!({ "asset_id": id, "kind": "buy", "trade_date": "2026-03-02", "quantity": 0.35, "unit_price": 2450 }),
+    )
+    .await;
+    assert_eq!(buy.status, StatusCode::CREATED, "{}", buy.text);
+    let asset = find(&get(r, "/api/v1/portfolio").await.body["assets"], "id", &id).clone();
+    assert_eq!(asset["quantity"], 1.85);
+    assert_eq!(asset["cost_basis"], 4457.5);
+    // 4.457,50 ÷ 1,85
+    assert_eq!(asset["average_price"], 2409.45945946);
+
+    // Venda de 0,5: o PM não muda; o lucro é 0,5 × (2.550 − PM).
+    let sell = post(
+        r,
+        "/api/v1/transactions",
+        json!({ "asset_id": id, "kind": "sell", "trade_date": "2026-03-10", "quantity": 0.5, "unit_price": 2550 }),
+    )
+    .await;
+    assert_eq!(sell.status, StatusCode::CREATED, "{}", sell.text);
+    let asset = find(&get(r, "/api/v1/portfolio").await.body["assets"], "id", &id).clone();
+    assert_eq!(asset["quantity"], 1.35);
+    assert_eq!(asset["average_price"], 2409.45945946);
+    assert_eq!(asset["realized_gain"], 70.27);
+
+    // Centésimo é o menor pedaço: 0,001 não entra, nem no livro, nem na
+    // quantidade da folha, nem no "Já comprei".
+    let thousandth = post(
+        r,
+        "/api/v1/transactions",
+        json!({ "asset_id": id, "kind": "buy", "trade_date": "2026-03-11", "quantity": 0.001, "unit_price": 2450 }),
+    )
+    .await;
+    assert_eq!(thousandth.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        thousandth.text.contains("centesimos"),
+        "{}",
+        thousandth.text
+    );
+    let sheet = patch(
+        r,
+        &format!("/api/v1/assets/{id}"),
+        json!({ "quantity": 1.355 }),
+    )
+    .await;
+    assert_eq!(sheet.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let fine = post(
+        r,
+        "/api/v1/contributions",
+        json!({ "amount": 10, "items": [{ "asset_id": id, "quantity": 0.001, "unit_price": 2500.95 }] }),
+    )
+    .await;
+    assert_eq!(fine.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let fresh = post(
+        r,
+        "/api/v1/assets",
+        json!({ "asset_class": "fixed_income", "symbol": "TD-SELIC-20290301", "treasury": true, "quantity": 0.005, "score_override": 5 }),
+    )
+    .await;
+    assert_eq!(fresh.status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // "Já comprei" de 0,39 título: compra no livro, ligada ao aporte.
+    let recorded = post(
+        r,
+        "/api/v1/contributions",
+        json!({ "amount": 1000, "items": [{ "asset_id": id, "quantity": 0.39, "unit_price": 2500.95 }] }),
+    )
+    .await;
+    assert_eq!(recorded.status, StatusCode::CREATED, "{}", recorded.text);
+    let newest = &get(r, &format!("/api/v1/transactions?asset_id={id}"))
+        .await
+        .body[0];
+    assert_eq!(newest["kind"], "buy");
+    assert_eq!(newest["source"], "plan");
+    assert_eq!(newest["quantity"], 0.39);
+    assert_eq!(newest["unit_price"], 2500.95);
+    let asset = find(&get(r, "/api/v1/portfolio").await.body["assets"], "id", &id).clone();
+    assert_eq!(asset["quantity"], 1.74);
 }
 
 async fn the_streamer_and_the_provider_leave_the_title_alone(

@@ -30,7 +30,7 @@ pub enum Source {
     Plan,
     /// Importação do extrato da B3.
     B3Import,
-    /// Criado pela migração 0004 a partir dos dados de antes do livro.
+    /// Criado pela migração 0010 a partir dos dados de antes do livro.
     Migration,
 }
 
