@@ -173,8 +173,11 @@ describe("Carteira ao vivo", () => {
     expect(await screen.findByText("Ao vivo")).toBeInTheDocument();
     // A carteira de exemplo tem ativo da B3: o atraso do dado gratuito aparece.
     expect(screen.getByText("B3 com 15 min de atraso")).toBeInTheDocument();
-    // 120.132,23 + 10 × (150 − 142)
-    expect(await screen.findByText(/R\$\s120\.212,23/)).toBeInTheDocument();
+    // 120.132,23 + 10 × (150 − 142). Pelo texto da região, e não pelo nó: o
+    // CountUp põe o valor final num span só para o leitor de tela enquanto
+    // conta e tira esse span quando assenta — o nó achado pode sair do
+    // documento antes da asserção (visto com a máquina carregada).
+    await waitFor(() => expect(screen.getByRole("region", { name: "Patrimônio" })).toHaveTextContent(/R\$\s120\.212,23/));
     const fiis = screen.getByRole("region", { name: "Fundos Imobiliários" });
     const knri = within(fiis).getByRole("button", { name: /KNRI11/ });
     expect(within(knri).getByText(/R\$\s1\.500,00/)).toBeInTheDocument();
