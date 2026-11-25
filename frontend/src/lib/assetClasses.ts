@@ -43,14 +43,24 @@ export function acceptsB3Listing(assetClass: AssetClass): boolean {
   return !isNativeB3(assetClass);
 }
 
-/** A unidade de um ativo: na B3 é cota inteira, seja qual for a classe. */
-export function unitOf(assetClass: AssetClass, listedOnB3: boolean): UnitKind {
+/**
+ * A unidade de um ativo: na B3 é cota inteira, seja qual for a classe; o
+ * título do Tesouro Direto é fração (de título), mesmo dentro de Renda Fixa.
+ */
+export function unitOf(assetClass: AssetClass, listedOnB3: boolean, treasury = false): UnitKind {
+  if (treasury) return "fraction";
   return listedOnB3 ? "unit" : CLASS_META[assetClass].unit;
 }
 
 /** O substantivo da unidade: ETF e BDR da B3 fora de Ações BR e FIIs são "cotas". */
-export function nounOf(assetClass: AssetClass, listedOnB3: boolean): [string, string] {
+export function nounOf(assetClass: AssetClass, listedOnB3: boolean, treasury = false): [string, string] {
+  if (treasury) return ["título", "títulos"];
   return listedOnB3 && acceptsB3Listing(assetClass) ? ["cota", "cotas"] : CLASS_META[assetClass].noun;
+}
+
+/** A chave de um título do Tesouro (`TD-IPCA-20350515`): não é um ticker que a pessoa leia. */
+export function isTreasuryKey(symbol: string | null | undefined): boolean {
+  return /^TD-[A-Z]+-\d{8}$/.test(symbol ?? "");
 }
 
 /**

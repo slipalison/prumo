@@ -19,6 +19,7 @@ import {
   defaultGoals,
   samplePlan,
   toPortfolio,
+  TREASURY_AT,
   type StoredAsset,
 } from "./fixtures";
 
@@ -55,13 +56,28 @@ export function resetDb(overrides: Partial<FakeDb> = {}): FakeDb {
 }
 
 const SYMBOLS: SymbolSuggestion[] = [
-  { symbol: "KNRI11", display_name: "Kinea Renda Imobiliária", exchange: "SAO", suggested_class: "br_reits", listed_on_b3: true },
-  { symbol: "KNCR11", display_name: "Kinea Rendimentos Imobiliários", exchange: "SAO", suggested_class: "br_reits", listed_on_b3: true },
-  { symbol: "ITSA4", display_name: "Itaúsa", exchange: "SAO", suggested_class: "br_stocks", listed_on_b3: true },
-  { symbol: "VOO", display_name: "Vanguard S&P 500 ETF", exchange: "PCX", suggested_class: "intl_stocks", listed_on_b3: false },
-  { symbol: "ETH", display_name: "Ethereum", exchange: "CCC", suggested_class: "crypto", listed_on_b3: false },
-  { symbol: "QBTC11", display_name: "QR CME CF Bitcoin Reference Rate", exchange: "SAO", suggested_class: "crypto", listed_on_b3: true },
+  { symbol: "KNRI11", display_name: "Kinea Renda Imobiliária", exchange: "SAO", suggested_class: "br_reits", listed_on_b3: true, treasury: false },
+  { symbol: "KNCR11", display_name: "Kinea Rendimentos Imobiliários", exchange: "SAO", suggested_class: "br_reits", listed_on_b3: true, treasury: false },
+  { symbol: "ITSA4", display_name: "Itaúsa", exchange: "SAO", suggested_class: "br_stocks", listed_on_b3: true, treasury: false },
+  { symbol: "VOO", display_name: "Vanguard S&P 500 ETF", exchange: "PCX", suggested_class: "intl_stocks", listed_on_b3: false, treasury: false },
+  { symbol: "ETH", display_name: "Ethereum", exchange: "CCC", suggested_class: "crypto", listed_on_b3: false, treasury: false },
+  { symbol: "QBTC11", display_name: "QR CME CF Bitcoin Reference Rate", exchange: "SAO", suggested_class: "crypto", listed_on_b3: true, treasury: false },
 ];
+
+/** Os títulos do Tesouro que a busca devolve (nome e preço de resgate de 19/11/2026). */
+export const BONDS = [
+  { symbol: "TD-SELIC-20290301", display_name: "Tesouro Selic 2029", price: 20305.65 },
+  { symbol: "TD-IPCA-20350515", display_name: "Tesouro IPCA+ 2035", price: 2500.95 },
+];
+
+const BOND_SUGGESTIONS: SymbolSuggestion[] = BONDS.map((b) => ({
+  symbol: b.symbol,
+  display_name: b.display_name,
+  exchange: "Tesouro Direto",
+  suggested_class: "fixed_income",
+  listed_on_b3: false,
+  treasury: true,
+}));
 
 const problem = (status: number, code: string, title: string, detail?: string) =>
   HttpResponse.json(
@@ -116,19 +132,21 @@ export const handlers = [
       return problem(409, "asset_already_exists", "Ativo já existe");
     }
     const listed = isNativeB3(body.asset_class) || body.listed_on_b3 === true;
-    const valueBased = isValueClass(body.asset_class) && !listed;
+    const bond = body.treasury === true ? BONDS.find((b) => b.symbol === symbol) : undefined;
+    const valueBased = isValueClass(body.asset_class) && !listed && body.treasury !== true;
     const stored: StoredAsset = {
       id: `new-${db.nextId++}`,
       asset_class: body.asset_class,
       symbol: valueBased ? null : symbol,
-      display_name: body.display_name ?? symbol ?? "Ativo",
+      display_name: bond?.display_name ?? body.display_name ?? symbol ?? "Ativo",
       quantity: valueBased ? (body.amount ?? 0) : (body.quantity ?? 0),
-      quote_price: valueBased ? 1 : 100,
+      quote_price: bond ? bond.price : valueBased ? 1 : 100,
       manual_price: valueBased ? 1 : (body.manual_price ?? null),
       currency: "BRL",
       score_override: body.score_override ?? null,
       answers: {},
       listed_on_b3: listed,
+      ...(body.treasury === true ? { treasury: true, quote_at: TREASURY_AT } : {}),
     };
     db.assets.push(stored);
     return HttpResponse.json(assetView(stored), { status: 201 });
@@ -232,7 +250,9 @@ export const handlers = [
   http.get("/api/v1/symbols", ({ request }) => {
     const query = (new URL(request.url).searchParams.get("query") ?? "").toUpperCase();
     return HttpResponse.json(
-      SYMBOLS.filter((s) => s.symbol.includes(query) || s.display_name.toUpperCase().includes(query)),
+      [...BOND_SUGGESTIONS, ...SYMBOLS].filter(
+        (s) => s.symbol.includes(query) || s.display_name.toUpperCase().includes(query),
+      ),
     );
   }),
 

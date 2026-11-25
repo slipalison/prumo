@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { renderApp } from "../../test/render";
+import { TREASURY_AT } from "../../test/fixtures";
 import { getDb, server } from "../../test/server";
 
 async function openPortfolio() {
@@ -92,6 +93,139 @@ describe("Carteira", () => {
       }),
     );
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull(), { timeout: 3000 });
+  });
+
+  it("cadastra um título do Tesouro Direto pela busca: o nome no campo, a chave no cadastro, fração e preço sozinho", async () => {
+    const { user } = await openPortfolio();
+    await user.click(screen.getByRole("button", { name: "Adicionar ativo" }));
+    const dialog = await screen.findByRole("dialog", { name: "Novo ativo" });
+    await user.type(within(dialog).getByRole("combobox", { name: "Ticker ou nome" }), "tesouro");
+    const option = await within(dialog).findByRole("option", { name: /Tesouro IPCA\+ 2035/ });
+    // A lista mostra o nome e de onde vem, não a chave.
+    expect(option).toHaveTextContent("Tesouro Direto");
+    expect(option).toHaveTextContent("Renda Fixa");
+    expect(option).not.toHaveTextContent("TD-IPCA");
+    await user.click(option);
+
+    expect(within(dialog).getByRole("combobox", { name: "Título do Tesouro Direto" })).toHaveValue("Tesouro IPCA+ 2035");
+    expect(within(dialog).getByRole("radio", { name: "Tesouro Direto" })).toHaveAttribute("aria-checked", "true");
+    expect(within(dialog).getByRole("radio", { name: /Renda Fixa$/ })).toHaveAttribute("aria-checked", "true");
+    // O título é fração: sem − e +, e a vírgula vale.
+    expect(within(dialog).queryByRole("button", { name: /Aumentar/ })).toBeNull();
+    expect(within(dialog).queryByRole("switch", { name: /Negociado na B3/ })).toBeNull();
+    const quantity = within(dialog).getByLabelText("Quantidade de títulos");
+    await user.clear(quantity);
+    await user.type(quantity, "0,35");
+    await user.click(within(dialog).getByRole("button", { name: "Adicionar à carteira" }));
+
+    await waitFor(() =>
+      expect(lastRequest("POST", "/api/v1/assets")?.body).toEqual({
+        asset_class: "fixed_income",
+        symbol: "TD-IPCA-20350515",
+        treasury: true,
+        quantity: 0.35,
+        score_override: 5,
+      }),
+    );
+    expect(await screen.findByText("Tesouro IPCA+ 2035 entrou na carteira.")).toBeInTheDocument();
+    const rf = screen.getByRole("region", { name: "Renda Fixa" });
+    // 0,35 × R$ 2.500,95: o preço veio da tabela, sem digitar.
+    expect(await within(rf).findByText(/0,35 títulos · R\$\s2\.500,95/)).toBeInTheDocument();
+    expect(within(rf).getByText("Tesouro Direto")).toBeInTheDocument();
+    expect(within(rf).queryByText(/TD-IPCA/)).toBeNull();
+  });
+
+  it("Renda Fixa tem dois jeitos: por valor ou Tesouro Direto, que só vale com um título escolhido", async () => {
+    const { user } = await openPortfolio();
+    await user.click(screen.getByRole("button", { name: "Adicionar ativo" }));
+    const dialog = await screen.findByRole("dialog", { name: "Novo ativo" });
+    expect(within(dialog).queryByRole("radiogroup", { name: "Como cadastrar a renda fixa" })).toBeNull();
+    await user.click(within(dialog).getByRole("radio", { name: /Renda Fixa$/ }));
+    expect(within(dialog).getByRole("radio", { name: /Por valor/ })).toHaveAttribute("aria-checked", "true");
+    expect(within(dialog).getByLabelText("Nome")).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("radio", { name: "Tesouro Direto" }));
+    expect(within(dialog).queryByLabelText("Nome")).toBeNull();
+    const combobox = within(dialog).getByRole("combobox", { name: "Título do Tesouro Direto" });
+    expect(within(dialog).getByText(/escolha o título na lista/)).toBeInTheDocument();
+    // Digitar sem escolher não cadastra: a chave vem da lista.
+    await user.type(combobox, "ipca");
+    await within(dialog).findAllByRole("option");
+    await user.keyboard("{Escape}");
+    expect(within(dialog).getByRole("button", { name: "Adicionar à carteira" })).toBeDisabled();
+    // A seta para baixo reabre a lista que o Esc fechou.
+    await user.keyboard("{ArrowDown}");
+    await user.click(await within(dialog).findByRole("option", { name: /Tesouro IPCA\+ 2035/ }));
+    expect(within(dialog).getByRole("button", { name: "Adicionar à carteira" })).toBeEnabled();
+    expect(within(dialog).queryByText(/escolha o título na lista/)).toBeNull();
+
+    // Voltar para "por valor" solta o título; trocar de classe também.
+    await user.click(within(dialog).getByRole("radio", { name: /Por valor/ }));
+    expect(within(dialog).getByLabelText("Nome")).toHaveValue("");
+    expect(within(dialog).queryByRole("combobox")).toBeNull();
+    await user.click(within(dialog).getByRole("radio", { name: "Tesouro Direto" }));
+    await user.type(within(dialog).getByRole("combobox", { name: "Título do Tesouro Direto" }), "selic");
+    await user.click(await within(dialog).findByRole("option", { name: /Tesouro Selic 2029/ }));
+    await user.click(within(dialog).getByRole("radio", { name: /Cripto/ }));
+    expect(within(dialog).queryByRole("radiogroup", { name: "Como cadastrar a renda fixa" })).toBeNull();
+    expect(within(dialog).getByRole("combobox", { name: "Ticker ou nome" })).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("Quantidade de títulos")).toBeNull();
+  });
+
+  it("um título escolhido na busca de outra classe leva a classe e o modo junto", async () => {
+    const { user } = await openPortfolio();
+    await user.click(screen.getByRole("button", { name: "Adicionar ativo" }));
+    const dialog = await screen.findByRole("dialog", { name: "Novo ativo" });
+    expect(within(dialog).getByRole("radio", { name: /Ações BR/ })).toHaveAttribute("aria-checked", "true");
+    await user.type(within(dialog).getByRole("combobox", { name: "Ticker ou nome" }), "selic");
+    await user.click(await within(dialog).findByRole("option", { name: /Tesouro Selic 2029/ }));
+    expect(within(dialog).getByRole("radio", { name: /Renda Fixa$/ })).toHaveAttribute("aria-checked", "true");
+    expect(within(dialog).getByRole("radio", { name: "Tesouro Direto" })).toHaveAttribute("aria-checked", "true");
+    // Escolher outro ativo que não é título volta ao modo comum.
+    const combobox = within(dialog).getByRole("combobox", { name: "Título do Tesouro Direto" });
+    await user.clear(combobox);
+    await user.type(combobox, "kncr");
+    await user.click(await within(dialog).findByRole("option", { name: /KNCR11/ }));
+    expect(within(dialog).getByRole("radio", { name: /FIIs/ })).toHaveAttribute("aria-checked", "true");
+    expect(within(dialog).getByRole("combobox", { name: "Ticker ou nome" })).toHaveValue("KNCR11");
+  });
+
+  it("título do Tesouro na carteira: nome, fração, data do preço e edição da quantidade", async () => {
+    getDb().assets.push({
+      id: "a-td",
+      asset_class: "fixed_income",
+      symbol: "TD-SELIC-20290301",
+      display_name: "Tesouro Selic 2029",
+      quantity: 0.5,
+      quote_price: 20305.65,
+      manual_price: null,
+      currency: "BRL",
+      score_override: 5,
+      answers: {},
+      listed_on_b3: false,
+      treasury: true,
+      quote_at: TREASURY_AT,
+    });
+    const { user } = await openPortfolio();
+    const rf = screen.getByRole("region", { name: "Renda Fixa" });
+    const row = within(rf).getByRole("button", { name: /Tesouro Selic 2029/ });
+    expect(row).toHaveTextContent("Tesouro Direto");
+    expect(row).toHaveTextContent(/0,5 títulos · R\$\s20\.305,65/);
+    expect(row).not.toHaveTextContent("TD-SELIC");
+    await user.click(row);
+
+    const dialog = await screen.findByRole("dialog", { name: "Tesouro Selic 2029" });
+    expect(within(dialog).getByText("Renda Fixa · Tesouro Direto")).toBeInTheDocument();
+    expect(within(dialog).getByText(/preço de resgate de 19\/11\/2026/)).toBeInTheDocument();
+    expect(within(dialog).queryByRole("switch", { name: /Negociado na B3/ })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: /Aumentar/ })).toBeNull();
+    const quantity = within(dialog).getByLabelText("Quantidade de títulos");
+    expect(quantity).toHaveValue("0,5");
+    await user.clear(quantity);
+    await user.type(quantity, "0,75");
+    await user.click(within(dialog).getByRole("button", { name: "Salvar" }));
+    await waitFor(() => expect(lastRequest("PATCH", "/api/v1/assets/a-td")?.body).toEqual({ quantity: 0.75 }));
+    expect(await within(rf).findByText(/0,75 títulos · R\$\s20\.305,65/)).toBeInTheDocument();
   });
 
   it("ticker digitado sem sugestão vale, com a classe adivinhada; duplicado avisa", async () => {

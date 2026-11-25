@@ -5,6 +5,7 @@ import { IconHistory } from "../../components/icons";
 import { Skeleton } from "../../components/Skeleton";
 import { formatDateTime } from "../../lib/format";
 import { useMoney } from "../../lib/privacy";
+import { assetName } from "../../lib/rating";
 
 export function ContributionHistory() {
   const contributions = useContributions();
@@ -39,7 +40,7 @@ export function ContributionHistory() {
               </div>
               <p className="history__items">
                 {contribution.items
-                  .map((item) => `${money.quantity(item.quantity, !Number.isInteger(item.quantity))} ${item.symbol ?? item.display_name}`)
+                  .map((item) => `${money.quantity(item.quantity, !Number.isInteger(item.quantity))} ${assetName(item)}`)
                   .join(" · ")}
               </p>
             </motion.li>

@@ -15,11 +15,17 @@ export type StoredAsset = {
   answers: Record<string, boolean>;
   /** Ausente = o mercado natural da classe (B3 em Ações BR e FIIs). */
   listed_on_b3?: boolean;
+  /** Título do Tesouro Direto: `symbol` é a chave, o preço vem da tabela diária. */
+  treasury?: boolean;
+  /** De quando é a cotação, se não for `QUOTES_AT` (o Tesouro: a data-base). */
+  quote_at?: string;
 };
 
 const nativeB3 = (assetClass: AssetClass) => assetClass === "br_stocks" || assetClass === "br_reits";
 
 export const QUOTES_AT = "2026-11-25T11:30:00Z";
+/** A data-base de um preço do Tesouro: a meia-noite de 19/11 em Brasília. */
+export const TREASURY_AT = "2026-11-19T03:00:00Z";
 
 export function defaultChecklists(): Checklists {
   return {
@@ -150,12 +156,13 @@ export function toAsset(stored: StoredAsset, checklists: Checklists, classTotal:
     symbol: stored.symbol,
     display_name: stored.display_name,
     listed_on_b3: stored.listed_on_b3 ?? nativeB3(stored.asset_class),
+    treasury: stored.treasury ?? false,
     quantity: stored.quantity,
     unit_price: price,
     manual_price: stored.manual_price,
     currency: stored.currency,
     price_source: stored.manual_price !== null ? "manual" : price === null ? "missing" : "quote",
-    quote_updated_at: stored.quote_price === null ? null : QUOTES_AT,
+    quote_updated_at: stored.quote_price === null ? null : (stored.quote_at ?? QUOTES_AT),
     current_value: round2(value),
     class_percent: classTotal > 0 ? round2((value / classTotal) * 100) : 0,
     ideal_class_percent: idealPercent,
@@ -212,6 +219,7 @@ export function samplePlan(amount = 6000): Plan {
         symbol: "ITSA4",
         display_name: "Itaúsa",
         listed_on_b3: true,
+        treasury: false,
         quantity: 243,
         unit_price: 11.2,
         value: 2721.6,
@@ -224,6 +232,7 @@ export function samplePlan(amount = 6000): Plan {
         symbol: "BTLG11",
         display_name: "BTG Pactual Logística",
         listed_on_b3: true,
+        treasury: false,
         quantity: 8,
         unit_price: 94.55,
         value: 756.4,
@@ -236,6 +245,7 @@ export function samplePlan(amount = 6000): Plan {
         symbol: "TRXF11",
         display_name: "TRX Real Estate",
         listed_on_b3: true,
+        treasury: false,
         quantity: 17,
         unit_price: 53.81,
         value: 914.77,
@@ -248,6 +258,7 @@ export function samplePlan(amount = 6000): Plan {
         symbol: "BTC",
         display_name: "Bitcoin",
         listed_on_b3: false,
+        treasury: false,
         quantity: 0.0045,
         unit_price: 345588.05,
         value: 1555.15,

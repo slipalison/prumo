@@ -12,13 +12,23 @@ type SymbolComboboxProps = {
   onChange: (text: string) => void;
   onSelect: (suggestion: SymbolSuggestion) => void;
   focusOnMount?: boolean;
+  label?: string;
+  placeholder?: string;
 };
 
 /**
  * Um campo só: digita o ticker ou o nome, a lista aparece, setas escolhem,
  * Enter confirma. Se a busca cair, o que foi digitado continua valendo.
  */
-export function SymbolCombobox({ id, value, onChange, onSelect, focusOnMount }: SymbolComboboxProps) {
+export function SymbolCombobox({
+  id,
+  value,
+  onChange,
+  onSelect,
+  focusOnMount,
+  label = "Ticker ou nome",
+  placeholder = "KNRI11, PETR4, BTC…",
+}: SymbolComboboxProps) {
   const listId = useId();
   const inputRef = useFocusOnMount<HTMLInputElement>(focusOnMount);
   const [open, setOpen] = useState(false);
@@ -59,7 +69,7 @@ export function SymbolCombobox({ id, value, onChange, onSelect, focusOnMount }: 
   return (
     <div className="combo">
       <label htmlFor={id} className="field__label">
-        Ticker ou nome
+        {label}
       </label>
       <div className="combo__field">
         <IconSearch className="combo__icon" />
@@ -75,7 +85,7 @@ export function SymbolCombobox({ id, value, onChange, onSelect, focusOnMount }: 
           autoComplete="off"
           autoCapitalize="characters"
           spellCheck={false}
-          placeholder="KNRI11, PETR4, BTC…"
+          placeholder={placeholder}
           ref={inputRef}
           data-autofocus={focusOnMount ? "" : undefined}
           value={value}
@@ -107,8 +117,9 @@ export function SymbolCombobox({ id, value, onChange, onSelect, focusOnMount }: 
                 if (event.key === "Enter") choose(suggestion);
               }}
             >
-              <span className="combo__symbol">{suggestion.symbol}</span>
-              <span className="combo__name">{suggestion.display_name}</span>
+              {/* A chave do título do Tesouro não é um ticker: a pessoa lê o nome. */}
+              <span className="combo__symbol">{suggestion.treasury ? suggestion.display_name : suggestion.symbol}</span>
+              <span className="combo__name">{suggestion.treasury ? suggestion.exchange : suggestion.display_name}</span>
               <span className="combo__class">
                 {CLASS_META[suggestion.suggested_class].shortLabel}
                 {suggestion.listed_on_b3 && acceptsB3Listing(suggestion.suggested_class) && " · B3"}

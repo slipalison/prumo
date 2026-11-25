@@ -88,6 +88,65 @@ describe("Aportar", () => {
     });
   });
 
+  it("título do Tesouro no plano: nome, fração de título e a quantidade fracionária no registro", async () => {
+    getDb().assets.push({
+      id: "a-td",
+      asset_class: "fixed_income",
+      symbol: "TD-IPCA-20350515",
+      display_name: "Tesouro IPCA+ 2035",
+      quantity: 0,
+      quote_price: 2500.95,
+      manual_price: null,
+      currency: "BRL",
+      score_override: 6,
+      answers: {},
+      treasury: true,
+    });
+    const bond = {
+      asset_id: "a-td",
+      asset_class: "fixed_income" as const,
+      symbol: "TD-IPCA-20350515",
+      display_name: "Tesouro IPCA+ 2035",
+      listed_on_b3: false,
+      treasury: true,
+      quantity: 0.39,
+      unit_price: 2500.95,
+      value: 975.37,
+      divisible: true,
+      class_percent_after: 100,
+    };
+    server.use(
+      http.post("/api/v1/plans", () =>
+        HttpResponse.json({ ...samplePlan(), invested: 975.37, change: 24.63, items: [bond], notices: [] }),
+      ),
+    );
+    const { user, input } = await openCalculator();
+    await user.type(input, "100000");
+    await user.click(screen.getByRole("button", { name: /Calcular/ }));
+    const result = await screen.findByRole("region", { name: "Resultado do aporte" });
+    // O cartão diz o nome do título, não a chave, e a compra em frações de título.
+    expect(within(result).getByText("Tesouro IPCA+ 2035")).toBeInTheDocument();
+    expect(within(result).queryByText(/TD-IPCA/)).toBeNull();
+    expect(within(result).getByText(/0,39 títulos × R\$\s2\.500,95/)).toBeInTheDocument();
+
+    await user.click(await screen.findByRole("button", { name: /Já comprei/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Registrar aporte" });
+    expect(within(dialog).getByText("Tesouro IPCA+ 2035")).toBeInTheDocument();
+    // Fração: o campo aceita vírgula e não tem − e +.
+    expect(within(dialog).queryByRole("button", { name: /Diminuir/ })).toBeNull();
+    const quantity = within(dialog).getByLabelText("Quantidade");
+    expect(quantity).toHaveValue("0,39");
+    await user.clear(quantity);
+    await user.type(quantity, "0,3");
+    await user.click(within(dialog).getByRole("button", { name: "Registrar aporte" }));
+    expect(await screen.findByRole("heading", { name: "Aporte registrado!" })).toBeInTheDocument();
+    const body = getDb().requests.find((r) => r.path === "/api/v1/contributions" && r.method === "POST")?.body as {
+      items: Array<{ asset_id: string; quantity: number; unit_price: number }>;
+    };
+    expect(body.items).toEqual([{ asset_id: "a-td", quantity: 0.3, unit_price: 2500.95 }]);
+    expect(getDb().assets.find((a) => a.id === "a-td")?.quantity).toBe(0.3);
+  });
+
   it("mostra o erro do registro sem fechar a folha", async () => {
     server.use(
       http.post("/api/v1/contributions", () =>

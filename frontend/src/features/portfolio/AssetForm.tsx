@@ -48,22 +48,32 @@ export function AssetForm({ initialClass, submitLabel = "Adicionar à carteira",
   // "Negociado na B3": segue o formato do ticker até a pessoa mexer na chave.
   const [listedOnB3, setListedOnB3] = useState(false);
   const [b3Touched, setB3Touched] = useState(false);
+  // Renda Fixa tem dois jeitos: por valor (CDB, LCI) ou um título do Tesouro
+  // Direto, que se escolhe na busca e leva a chave dele.
+  const [bondMode, setBondMode] = useState(false);
+  const [treasuryKey, setTreasuryKey] = useState<string | null>(null);
   const create = useCreateAsset();
 
   const meta = CLASS_META[assetClass];
-  const b3Choice = acceptsB3Listing(assetClass);
-  const onB3 = b3Choice ? listedOnB3 : true;
-  const unit = unitOf(assetClass, onB3);
+  const treasury = bondMode && assetClass === "fixed_income";
+  const b3Choice = acceptsB3Listing(assetClass) && !treasury;
+  const onB3 = treasury ? false : b3Choice ? listedOnB3 : true;
+  const unit = unitOf(assetClass, onB3, treasury);
   const valueBased = unit === "value";
   const needsManualScore = meta.checklist === null;
   // O campo de cota inteira mostra o número arredondado; é ele que vai.
   const units = unit === "fraction" ? quantity : Math.round(quantity);
-  const valid = valueBased ? displayName.trim().length > 0 : cleanSymbol(symbol).length > 0;
+  const valid = valueBased
+    ? displayName.trim().length > 0
+    : treasury
+      ? treasuryKey !== null
+      : cleanSymbol(symbol).length > 0;
 
   const handleSymbolChange = (text: string) => {
     setSymbol(text);
     setDisplayName("");
-    if (!classTouched) {
+    setTreasuryKey(null);
+    if (!classTouched && !bondMode) {
       const guess = guessClassFromSymbol(text);
       if (guess) setAssetClass(guess);
     }
@@ -71,11 +81,30 @@ export function AssetForm({ initialClass, submitLabel = "Adicionar à carteira",
   };
 
   const handleSelect = (suggestion: SymbolSuggestion) => {
-    setSymbol(suggestion.symbol);
+    // O campo mostra o nome do título; a chave (TD-IPCA-…) vai só no cadastro.
+    setSymbol(suggestion.treasury ? suggestion.display_name : suggestion.symbol);
     setDisplayName(suggestion.display_name);
     setAssetClass(suggestion.suggested_class);
     setListedOnB3(suggestion.listed_on_b3);
     setB3Touched(false);
+    setBondMode(suggestion.treasury);
+    setTreasuryKey(suggestion.treasury ? suggestion.symbol : null);
+  };
+
+  const chooseClass = (next: AssetClass) => {
+    setAssetClass(next);
+    setClassTouched(true);
+    if (next !== "fixed_income") {
+      setBondMode(false);
+      setTreasuryKey(null);
+    }
+  };
+
+  const chooseFixedIncomeMode = (bond: boolean) => {
+    setBondMode(bond);
+    setTreasuryKey(null);
+    setSymbol("");
+    setDisplayName("");
   };
 
   const submit = (event: FormEvent) => {
@@ -83,14 +112,16 @@ export function AssetForm({ initialClass, submitLabel = "Adicionar à carteira",
     if (!valid || create.isPending) return;
     const body: CreateAssetRequest = valueBased
       ? { asset_class: assetClass, display_name: displayName.trim(), amount, score_override: score }
-      : {
-          asset_class: assetClass,
-          symbol: cleanSymbol(symbol),
-          quantity: units,
-          ...(displayName ? { display_name: displayName } : {}),
-          ...(needsManualScore ? { score_override: score } : {}),
-          ...(b3Choice && onB3 ? { listed_on_b3: true } : {}),
-        };
+      : treasury && treasuryKey
+        ? { asset_class: assetClass, symbol: treasuryKey, treasury: true, quantity: units, score_override: score }
+        : {
+            asset_class: assetClass,
+            symbol: cleanSymbol(symbol),
+            quantity: units,
+            ...(displayName ? { display_name: displayName } : {}),
+            ...(needsManualScore ? { score_override: score } : {}),
+            ...(b3Choice && onB3 ? { listed_on_b3: true } : {}),
+          };
     create.mutate(body, { onSuccess: onCreated });
   };
 
@@ -107,10 +138,7 @@ export function AssetForm({ initialClass, submitLabel = "Adicionar à carteira",
               aria-checked={c === assetClass}
               className={cx("chip", c === assetClass && "is-active")}
               style={{ ["--chip-color" as string]: classColor(c) }}
-              onClick={() => {
-                setAssetClass(c);
-                setClassTouched(true);
-              }}
+              onClick={() => chooseClass(c)}
             >
               <span className="chip__dot" aria-hidden="true" />
               {CLASS_META[c].shortLabel}
@@ -118,6 +146,30 @@ export function AssetForm({ initialClass, submitLabel = "Adicionar à carteira",
           ))}
         </div>
       </fieldset>
+
+      {assetClass === "fixed_income" && (
+        <fieldset className="chips-field">
+          <legend className="field__label">Como cadastrar</legend>
+          <div className="chips" role="radiogroup" aria-label="Como cadastrar a renda fixa">
+            {[
+              { bond: false, label: "Por valor (CDB, LCI…)" },
+              { bond: true, label: "Tesouro Direto" },
+            ].map(({ bond, label }) => (
+              <button
+                key={label}
+                type="button"
+                role="radio"
+                aria-checked={bond === bondMode}
+                className={cx("chip", bond === bondMode && "is-active")}
+                style={{ ["--chip-color" as string]: classColor("fixed_income") }}
+                onClick={() => chooseFixedIncomeMode(bond)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      )}
 
       {b3Choice && (
         <div className="switch-row">
@@ -151,7 +203,7 @@ export function AssetForm({ initialClass, submitLabel = "Adicionar à carteira",
               id={ids.name}
               className="text-input"
               type="text"
-              placeholder="Tesouro IPCA+ 2035, CDB Banco X…"
+              placeholder="CDB Banco X, LCI Banco Y…"
               data-autofocus=""
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
@@ -162,15 +214,31 @@ export function AssetForm({ initialClass, submitLabel = "Adicionar à carteira",
         </>
       ) : (
         <>
-          <SymbolCombobox id={ids.symbol} value={symbol} onChange={handleSymbolChange} onSelect={handleSelect} focusOnMount />
-          {displayName && <p className="asset-form__picked">{displayName}</p>}
+          <SymbolCombobox
+            id={ids.symbol}
+            value={symbol}
+            onChange={handleSymbolChange}
+            onSelect={handleSelect}
+            focusOnMount
+            {...(treasury
+              ? { label: "Título do Tesouro Direto", placeholder: "Tesouro IPCA+, Selic, Prefixado…" }
+              : {})}
+          />
+          {treasury && treasuryKey === null && (
+            <p className="field__hint">Digite o tipo ou o ano e escolha o título na lista: o preço vem sozinho.</p>
+          )}
+          {displayName && !treasury && <p className="asset-form__picked">{displayName}</p>}
           <QuantityInput
             id={ids.quantity}
-            label="Quantidade"
+            label={treasury ? "Quantidade de títulos" : "Quantidade"}
             value={quantity}
             onChange={setQuantity}
             fractional={unit === "fraction"}
-            hint="Ainda não comprou? Deixe 0: ele entra na divisão do aporte pela nota."
+            hint={
+              treasury
+                ? "Pode ser fração, como 0,35. Ainda não comprou? Deixe 0: ele entra na divisão do aporte pela nota."
+                : "Ainda não comprou? Deixe 0: ele entra na divisão do aporte pela nota."
+            }
           />
         </>
       )}

@@ -1,6 +1,7 @@
 import type { Asset, AssetClass } from "../../api/types";
 import { Sheet } from "../../components/Sheet";
 import { useToast } from "../../components/toastContext";
+import { assetName } from "../../lib/rating";
 import { AssetForm } from "./AssetForm";
 
 type AddAssetSheetProps = {
@@ -18,7 +19,7 @@ export function AddAssetSheet({ open, initialClass, onClose, onCreated }: AddAss
         key={initialClass ?? "any"}
         initialClass={initialClass}
         onCreated={(asset) => {
-          toast({ tone: "success", message: `${asset.symbol ?? asset.display_name} entrou na carteira.` });
+          toast({ tone: "success", message: `${assetName(asset)} entrou na carteira.` });
           onCreated(asset);
         }}
       />

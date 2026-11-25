@@ -6,6 +6,7 @@ import {
   CLASS_META,
   classColor,
   guessClassFromSymbol,
+  isTreasuryKey,
   isValueBased,
   looksLikeB3Ticker,
   nounOf,
@@ -17,6 +18,7 @@ import {
   formatBRL,
   formatCompactBRL,
   formatDateTime,
+  formatDay,
   formatPercent,
   formatQuantity,
   formatRelative,
@@ -28,6 +30,7 @@ import { centsFromInput, formatMoneyInput, reaisFromInput } from "./moneyMask";
 import { createMoney, MASK_BRL, MASK_QUANTITY } from "./money";
 import { looksMissingB3Flag, noticeText, unitLine } from "./planText";
 import { HIDE_VALUES_KEY, readHideValues, saveHideValues } from "./privacy";
+import { assetName } from "./rating";
 import { hashSegments, navigate, parseRoute, parseSection } from "./route";
 import { answeredCount, answersDiff, checklistScore } from "./score";
 import { applyTheme, readThemePreference, saveThemePreference, THEME_KEY } from "./theme";
@@ -301,6 +304,29 @@ describe("planText", () => {
     const many = noticeText({ code: "assets_without_price", symbols: ["SUMIU3", "XYZW11"] }, [asset], shown);
     expect(many).toContain("Ficam fora da conta");
     expect(many).not.toContain("Negociado na B3");
+  });
+
+  it("título do Tesouro é fração de título, com nome e não com ticker", () => {
+    expect(unitOf("fixed_income", false)).toBe("value");
+    expect(unitOf("fixed_income", false, true)).toBe("fraction");
+    expect(nounOf("fixed_income", false, true)).toEqual(["título", "títulos"]);
+    expect(isTreasuryKey("TD-IPCA-20350515")).toBe(true);
+    expect(isTreasuryKey("TD-PREJS-20350101")).toBe(true);
+    for (const other of ["KNRI11", "TD-IPCA", "TD-IPCA-2035051", "td-ipca-20350515", "", null, undefined]) {
+      expect(isTreasuryKey(other)).toBe(false);
+    }
+    expect(assetName({ symbol: "TD-IPCA-20350515", display_name: "Tesouro IPCA+ 2035" })).toBe("Tesouro IPCA+ 2035");
+    expect(assetName({ symbol: "KNRI11", display_name: "Kinea" })).toBe("KNRI11");
+    expect(assetName({ symbol: null, display_name: "CDB Banco X" })).toBe("CDB Banco X");
+    expect(formatDay("2026-11-19T03:00:00Z")).toBe("19/11/2026");
+    // A meia-noite de Brasília ainda é o dia anterior em UTC: o dia certo é o de Brasília.
+    expect(formatDay("2026-11-20T02:59:00Z")).toBe("19/11/2026");
+    expect(formatDay("lixo")).toBe("");
+    const bond = { ...must(samplePlan().items[0]), asset_class: "fixed_income" as const, symbol: "TD-IPCA-20350515", display_name: "Tesouro IPCA+ 2035", listed_on_b3: false, treasury: true, divisible: true };
+    expect(nbsp(unitLine({ ...bond, quantity: 0.39, unit_price: 2500.95 }, shown))).toBe("0,39 títulos × R$ 2.500,95");
+    expect(nbsp(unitLine({ ...bond, quantity: 1, unit_price: 2500.95 }, shown))).toBe("1 título × R$ 2.500,95");
+    // Olho fechado: quantidade e preço mascarados, a unidade (o tipo de ativo) continua legível.
+    expect(unitLine({ ...bond, quantity: 0.39, unit_price: 2500.95 }, createMoney(true))).toBe(`${MASK_QUANTITY} títulos × ${MASK_BRL}`);
   });
 
   it("descreve a compra de cada item", () => {

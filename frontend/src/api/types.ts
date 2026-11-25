@@ -37,6 +37,11 @@ export type Asset = {
    * em Ações Nacionais e FIIs.
    */
   listed_on_b3: boolean;
+  /**
+   * Título do Tesouro Direto: `symbol` é a chave do título (`TD-IPCA-20350515`),
+   * a quantidade é fracionária e o preço de resgate vem da tabela do Tesouro.
+   */
+  treasury: boolean;
   quantity: number;
   /** Preço efetivo em reais (cotação ou manual). */
   unit_price: number | null;
@@ -103,6 +108,8 @@ export type CreateAssetRequest = {
   manual_price?: number | null;
   score_override?: number | null;
   listed_on_b3?: boolean;
+  /** Título do Tesouro Direto: `symbol` é a chave que `GET /symbols` devolve. */
+  treasury?: boolean;
 };
 
 export type UpdateAssetRequest = {
@@ -121,6 +128,7 @@ export type PlanItem = {
   symbol: string | null;
   display_name: string;
   listed_on_b3: boolean;
+  treasury: boolean;
   quantity: number;
   unit_price: number;
   value: number;
@@ -200,6 +208,8 @@ export type SymbolSuggestion = {
   exchange: string;
   suggested_class: AssetClass;
   listed_on_b3: boolean;
+  /** Título do Tesouro Direto: cadastre com `treasury: true`. */
+  treasury: boolean;
 };
 
 export type QuotesRefreshResult = {

@@ -9,6 +9,7 @@ import { Sheet } from "../../components/Sheet";
 import { nounOf, unitOf } from "../../lib/assetClasses";
 import { celebrate, originFrom } from "../../lib/celebrate";
 import { useMoney } from "../../lib/privacy";
+import { assetName } from "../../lib/rating";
 
 type ContributionSheetProps = {
   open: boolean;
@@ -70,14 +71,14 @@ function ContributionForm({ plan, onRegistered }: { plan: Plan; onRegistered: (c
     <div className="contribution-form">
       <ul className="contribution-form__list">
         {plan.items.map((item, index) => {
-          const unit = unitOf(item.asset_class, item.listed_on_b3);
-          const noun = nounOf(item.asset_class, item.listed_on_b3);
+          const unit = unitOf(item.asset_class, item.listed_on_b3, item.treasury);
+          const noun = nounOf(item.asset_class, item.listed_on_b3, item.treasury);
           const id = `${baseId}-${index}`;
           const set = (value: number) => setQuantities((current) => ({ ...current, [item.asset_id]: value }));
           return (
             <li key={item.asset_id} className="contribution-form__row">
               <div className="contribution-form__id">
-                <strong>{item.symbol ?? item.display_name}</strong>
+                <strong>{assetName(item)}</strong>
                 <span className="field__hint">{money.brl(valueOf(item))}</span>
               </div>
               {unit === "value" ? (

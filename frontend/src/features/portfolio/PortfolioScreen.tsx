@@ -18,7 +18,7 @@ import { formatPercent, plural } from "../../lib/format";
 import { countBelowIdeal, hasIdeal, readIdeal, type IdealReading } from "../../lib/ideal";
 import { useLiveStatus } from "../../lib/liveStatus";
 import { useMoney } from "../../lib/privacy";
-import { needsRating, ratingIntro } from "../../lib/rating";
+import { assetName, needsRating, ratingIntro } from "../../lib/rating";
 import { AddAssetSheet } from "./AddAssetSheet";
 import { ContributionHistory } from "./ContributionHistory";
 import { EditAssetSheet } from "./EditAssetSheet";
@@ -243,7 +243,7 @@ function ClassSection({ index, summary, assets, onEdit, onAdd }: ClassSectionPro
 function AssetRow({ asset, classAssets, onClick }: { asset: Asset; classAssets: Asset[]; onClick: () => void }) {
   const money = useMoney();
   const ideal = readIdeal(asset, classAssets);
-  const unit = unitOf(asset.asset_class, asset.listed_on_b3);
+  const unit = unitOf(asset.asset_class, asset.listed_on_b3, asset.treasury);
   const missingPrice = asset.price_source === "missing";
   const price = missingPrice || asset.unit_price === null ? "sem preço" : money.brl(asset.unit_price);
   // Quantidade 0 é ativo da lista, ainda não comprado: recebe aporte pela nota.
@@ -256,7 +256,9 @@ function AssetRow({ asset, classAssets, onClick }: { asset: Asset; classAssets: 
       : notOwned
         ? `Ainda não tem · ${price}`
         : `${money.quantity(asset.quantity, unit === "fraction")} ${
-            unit === "fraction" ? (asset.symbol ?? "") : plural(asset.quantity, nounOf(asset.asset_class, asset.listed_on_b3))
+            unit === "fraction" && !asset.treasury
+              ? (asset.symbol ?? "")
+              : plural(asset.quantity, nounOf(asset.asset_class, asset.listed_on_b3, asset.treasury))
           } · ${price}`;
   const b3Tag = asset.listed_on_b3 && acceptsB3Listing(asset.asset_class);
 
@@ -264,14 +266,16 @@ function AssetRow({ asset, classAssets, onClick }: { asset: Asset; classAssets: 
     <button type="button" className={cx("asset-row", notOwned && "asset-row--wish")} onClick={onClick}>
       <span className="asset-row__id">
         <span className="asset-row__symbol">
-          {asset.symbol ?? asset.display_name}
+          {assetName(asset)}
           {b3Tag && (
             <span className="asset-row__tag" title="Negociado na B3">
               B3
             </span>
           )}
         </span>
-        <span className="asset-row__name">{asset.symbol ? asset.display_name : quantityLine}</span>
+        <span className="asset-row__name">
+        {asset.treasury ? "Tesouro Direto" : asset.symbol ? asset.display_name : quantityLine}
+      </span>
       </span>
       <span className="asset-row__qty">{asset.symbol ? quantityLine : ""}</span>
       <span className="asset-row__value">

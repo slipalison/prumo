@@ -40,6 +40,19 @@ export function formatDateTime(iso: string): string {
   return Number.isNaN(date.getTime()) ? "" : dateFormat.format(date);
 }
 
+const dayFormat = new Intl.DateTimeFormat("pt-BR", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  timeZone: "America/Sao_Paulo",
+});
+
+/** `19/11/2026`, no dia de Brasília. Vazio se não for data. */
+export function formatDay(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? "" : dayFormat.format(date);
+}
+
 /** "agora há pouco", "há 12 min", "há 3 h", ou a data. */
 export function formatRelative(iso: string | null, now: Date = new Date()): string {
   if (!iso) return "nunca";

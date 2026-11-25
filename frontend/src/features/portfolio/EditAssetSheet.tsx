@@ -12,7 +12,7 @@ import { ScoreSlider } from "../../components/ScoreSlider";
 import { Sheet } from "../../components/Sheet";
 import { useToast } from "../../components/toastContext";
 import { acceptsB3Listing, CLASS_META, unitOf } from "../../lib/assetClasses";
-import { formatRelative } from "../../lib/format";
+import { formatDay, formatRelative } from "../../lib/format";
 import { useMoney } from "../../lib/privacy";
 import { assetName } from "../../lib/rating";
 import { answeredCount, answersDiff, checklistScore, type Answer } from "../../lib/score";
@@ -47,12 +47,15 @@ export function EditAssetSheet({ asset, portfolio, onClose, intro, onSaved }: Ed
 
 function sheetDescription(asset: Asset): string {
   const listed = asset.listed_on_b3 && acceptsB3Listing(asset.asset_class) ? " · B3" : "";
+  if (asset.treasury) return `${CLASS_META[asset.asset_class].label} · Tesouro Direto`;
   return `${asset.display_name} · ${CLASS_META[asset.asset_class].label}${listed}`;
 }
 
 function priceCaption(asset: Asset): string {
   if (asset.price_source === "manual") return "preço manual";
   if (asset.price_source === "missing") return "sem cotação";
+  // O Tesouro publica um preço por dia: a data-base diz de quando ele é.
+  if (asset.treasury && asset.quote_updated_at) return `preço de resgate de ${formatDay(asset.quote_updated_at)}`;
   return `cotação ${formatRelative(asset.quote_updated_at)}`;
 }
 
@@ -79,7 +82,7 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
   const questions = meta.checklist ? portfolio.checklists[meta.checklist] : [];
 
   const [listedOnB3, setListedOnB3] = useState(asset.listed_on_b3);
-  const unit = unitOf(asset.asset_class, listedOnB3);
+  const unit = unitOf(asset.asset_class, listedOnB3, asset.treasury);
   const valueBased = unit === "value";
   // Renda fixa por valor e renda fixa com ticker são cadastros diferentes: a
   // chave só aparece onde trocar de mercado mantém o ativo com ticker.
@@ -179,7 +182,14 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
       {valueBased ? (
         <MoneyInput id={ids.amount} label="Valor atual" value={quantity} onChange={setQuantity} />
       ) : (
-        <QuantityInput id={ids.quantity} label="Quantidade" value={quantity} onChange={setQuantity} fractional={unit === "fraction"} />
+        <QuantityInput
+          id={ids.quantity}
+          label={asset.treasury ? "Quantidade de títulos" : "Quantidade"}
+          value={quantity}
+          onChange={setQuantity}
+          fractional={unit === "fraction"}
+          {...(asset.treasury ? { hint: "Pode ser fração, como 0,35." } : {})}
+        />
       )}
     </>
   );

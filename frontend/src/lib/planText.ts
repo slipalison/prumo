@@ -45,12 +45,12 @@ export function noticeText(notice: PlanNotice, assets: Asset[], money: Money): s
   }
 }
 
-/** "17 cotas × R$ 53,81", "0,0045 BTC × R$ …" ou "Aplicar este valor". */
+/** "17 cotas × R$ 53,81", "0,0045 BTC × R$ …", "0,39 título × R$ …" ou "Aplicar este valor". */
 export function unitLine(item: PlanItem, money: Money): string {
-  const unit = unitOf(item.asset_class, item.listed_on_b3);
+  const unit = unitOf(item.asset_class, item.listed_on_b3, item.treasury);
   if (unit === "value") return "Aplicar este valor";
-  if (unit === "fraction") {
+  if (unit === "fraction" && !item.treasury) {
     return `${money.quantity(item.quantity, true)} ${item.symbol ?? ""} × ${money.brl(item.unit_price)}`;
   }
-  return `${money.quantity(item.quantity, false)} ${plural(item.quantity, nounOf(item.asset_class, item.listed_on_b3))} × ${money.brl(item.unit_price)}`;
+  return `${money.quantity(item.quantity, unit === "fraction")} ${plural(item.quantity, nounOf(item.asset_class, item.listed_on_b3, item.treasury))} × ${money.brl(item.unit_price)}`;
 }
