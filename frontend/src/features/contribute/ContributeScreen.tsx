@@ -1,6 +1,8 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { errorMessage } from "../../api/client";
+import { incomeKeys } from "../../api/incomeQueries";
 import { useContributions, usePlan } from "../../api/queries";
 import type { AssetClass, Plan, Portfolio } from "../../api/types";
 import { GlassCard } from "../../components/GlassCard";
@@ -14,6 +16,7 @@ import { formatBRL } from "../../lib/format";
 import { sumTargets, targetsFromClasses } from "../../lib/goals";
 import { useMoney } from "../../lib/privacy";
 import { needsRating, ratingIntro } from "../../lib/rating";
+import { CashSuggestion } from "../income/CashSuggestion";
 import { Onboarding } from "../onboarding/Onboarding";
 import { AddAssetSheet } from "../portfolio/AddAssetSheet";
 import { RateAssetSheet, type RatingTarget } from "../portfolio/RateAssetSheet";
@@ -80,6 +83,7 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
   const contributions = useContributions();
   const toast = useToast();
   const money = useMoney();
+  const queryClient = useQueryClient();
 
   const lastAmount = contributions.data?.[0]?.amount;
   const quick = lastAmount && !QUICK_AMOUNTS.includes(lastAmount) ? [...QUICK_AMOUNTS, lastAmount] : QUICK_AMOUNTS;
@@ -92,6 +96,13 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
       onSuccess: setPlan,
       onError: (error) => toast({ tone: "error", message: errorMessage(error) }),
     });
+  };
+
+  // O valor muda por digitação, chip ou proventos incluídos: o plano na tela
+  // deixa de valer em qualquer um dos três.
+  const changeAmount = (value: number) => {
+    setAmount(value);
+    if (plan) setPlan(null);
   };
 
   const submit = (event: FormEvent) => {
@@ -123,14 +134,12 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
             labelledBy={titleId}
             size="hero"
             value={amount}
-            onChange={(value) => {
-              setAmount(value);
-              if (plan) setPlan(null);
-            }}
+            onChange={changeAmount}
             focusOnMount
             screenFocus
             onEnter={() => calculate()}
           />
+          <CashSuggestion amount={amount} onChange={changeAmount} />
           <div className="quick" role="group" aria-label="Valores rápidos">
             {quick.map((value) => (
               <motion.button
@@ -223,6 +232,8 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
             setRegistered(true);
             setPlan(null);
             setAmount(0);
+            // O aporte novo zera a conta dos proventos "desde o último aporte".
+            void queryClient.invalidateQueries({ queryKey: incomeKeys.all });
             toast({ tone: "success", message: "Aporte registrado. A carteira já está atualizada." });
           }}
         />

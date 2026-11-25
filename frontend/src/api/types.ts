@@ -171,6 +171,8 @@ export type PlanItem = {
   value: number;
   divisible: boolean;
   class_percent_after: number;
+  /** Renda mensal que este item soma, estimada pelo histórico por cota; `null` sem histórico. */
+  estimated_monthly_income: number | null;
 };
 
 export type PlanClassStatus =
@@ -204,6 +206,17 @@ export type PlanNotice =
   | { code: "asset_above_ceiling"; asset_id: string; symbol: string; unit_price: number; max_price: number }
   | { code: "concentration_limit"; max_percent: number; asset_ids: string[]; symbols: string[]; amount: number };
 
+/** A renda mensal estimada da carteira antes e depois do aporte (estimativa, não extrato). */
+export type PlanIncome = {
+  /** `false` quando nenhum ativo tem histórico em cache ainda (o plano não espera o provedor). */
+  available: boolean;
+  /** Ativos que pagam provento e ficaram sem estimativa. */
+  missing: string[];
+  added_monthly: number;
+  before_monthly: number;
+  after_monthly: number;
+};
+
 export type Plan = {
   amount: number;
   invested: number;
@@ -214,6 +227,8 @@ export type Plan = {
   items: PlanItem[];
   classes: PlanClass[];
   notices: PlanNotice[];
+  /** `null` quando nenhum ativo da carteira paga provento (só renda fixa e cripto). */
+  income: PlanIncome | null;
 };
 
 export type ContributionItemRequest = {

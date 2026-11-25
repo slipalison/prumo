@@ -3,6 +3,8 @@ import type { Portfolio } from "../api/types";
 import { IconChart, IconCoins, IconSliders, IconWallet } from "../components/icons";
 import { ContributeScreen } from "../features/contribute/ContributeScreen";
 import { PerformanceScreen } from "../features/performance/PerformanceScreen";
+import { IconIncome } from "../features/income/IncomeIcon";
+import { IncomeScreen } from "../features/income/IncomeScreen";
 import { PortfolioScreen } from "../features/portfolio/PortfolioScreen";
 import { SettingsScreen } from "../features/settings/SettingsScreen";
 
@@ -23,6 +25,7 @@ export type AppRoute = {
 export const APP_ROUTES = [
   { id: "aportar", label: "Aportar", Icon: IconCoins, Screen: ContributeScreen },
   { id: "carteira", label: "Carteira", Icon: IconWallet, Screen: PortfolioScreen },
+  { id: "renda", label: "Renda", Icon: IconIncome, Screen: IncomeScreen },
   { id: "desempenho", label: "Desempenho", Icon: IconChart, Screen: PerformanceScreen },
   { id: "ajustes", label: "Ajustes", Icon: IconSliders, Screen: SettingsScreen },
 ] as const satisfies readonly AppRoute[];

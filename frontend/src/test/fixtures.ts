@@ -266,6 +266,7 @@ export function samplePlan(amount = 6000): Plan {
     unallocated: 0,
     total_before: 120132.23,
     total_after: 126080.15,
+    income: null,
     items: [
       {
         asset_id: "a-itsa",
@@ -279,6 +280,7 @@ export function samplePlan(amount = 6000): Plan {
         value: 2721.6,
         divisible: false,
         class_percent_after: 100,
+        estimated_monthly_income: null,
       },
       {
         asset_id: "a-btlg",
@@ -292,6 +294,7 @@ export function samplePlan(amount = 6000): Plan {
         value: 756.4,
         divisible: false,
         class_percent_after: 26.8,
+        estimated_monthly_income: null,
       },
       {
         asset_id: "a-trxf",
@@ -305,6 +308,7 @@ export function samplePlan(amount = 6000): Plan {
         value: 914.77,
         divisible: false,
         class_percent_after: 24.6,
+        estimated_monthly_income: null,
       },
       {
         asset_id: "a-btc",
@@ -318,6 +322,7 @@ export function samplePlan(amount = 6000): Plan {
         value: 1555.15,
         divisible: true,
         class_percent_after: 100,
+        estimated_monthly_income: null,
       },
     ],
     classes: [
