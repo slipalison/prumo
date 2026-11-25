@@ -257,7 +257,7 @@ async fn manual_events_are_calculated_filtered_and_owned(env: &Env, dir: &tempfi
     assert_eq!(reit.body["source"], "manual");
     assert_eq!(reit.body["symbol"], "KNRI11");
 
-    // JCP: 15% retido na fonte.
+    // JCP pago desde 2026: 17,5% retido na fonte (LC 224/2025).
     let jcp = post(
         &me.router,
         "/api/v1/income",
@@ -269,8 +269,8 @@ async fn manual_events_are_calculated_filtered_and_owned(env: &Env, dir: &tempfi
     .await;
     assert_eq!(jcp.status, StatusCode::CREATED, "{}", jcp.text);
     assert_eq!(jcp.body["gross"], 100.0);
-    assert_eq!(jcp.body["withholding"], 15.0);
-    assert_eq!(jcp.body["net"], 85.0);
+    assert_eq!(jcp.body["withholding"], 17.5);
+    assert_eq!(jcp.body["net"], 82.5);
     assert_eq!(jcp.body["status"], "upcoming");
     let jcp_id = jcp.body["id"].as_str().unwrap().to_owned();
 
@@ -470,6 +470,7 @@ async fn manual_events_are_calculated_filtered_and_owned(env: &Env, dir: &tempfi
                 quantity: dec!(10),
                 amounts: prumo::domain::income::amounts(
                     IncomeKind::ReitIncome,
+                    today(),
                     dec!(0.9),
                     dec!(10),
                     None,
@@ -572,27 +573,27 @@ async fn summary_sums_the_ledger(env: &Env, dir: &tempfile_dir::Dir) {
     }
     let summary = get(&me.router, "/api/v1/income/summary").await;
     let body = &summary.body;
-    // Recebido nos 12 meses: 10 + 10 + (40 − 6 de IR) = 54; o de 420 dias e o
-    // futuro ficam fora do total.
-    assert_eq!(money(&body["total_12m"]), dec!(54.00));
-    assert_eq!(money(&body["monthly_average"]), dec!(4.50));
+    // Recebido nos 12 meses: 10 + 10 + (40 − 7 de IR; JCP pago desde 2026 retém
+    // 17,5%) = 53; o de 420 dias e o futuro ficam fora do total.
+    assert_eq!(money(&body["total_12m"]), dec!(53.00));
+    assert_eq!(money(&body["monthly_average"]), dec!(4.42));
     assert_eq!(money(&body["upcoming_total"]), dec!(10.00));
     let months = body["months"].as_array().unwrap();
     assert_eq!(months.len(), 12);
     let received: Decimal = months.iter().map(|m| money(&m["received"])).sum();
     let upcoming_in_window: Decimal = months.iter().map(|m| money(&m["upcoming"])).sum();
-    assert_eq!(received, dec!(54.00));
+    assert_eq!(received, dec!(53.00));
     assert!(upcoming_in_window <= dec!(10.00));
     let payers = body["by_payer"].as_array().unwrap();
     // O maior pagador vem primeiro.
     assert_eq!(payers[0]["label"], "ITSA4");
-    assert_eq!(money(&payers[0]["total"]), dec!(34.00));
+    assert_eq!(money(&payers[0]["total"]), dec!(33.00));
     assert_eq!(payers[1]["label"], "KNRI11");
     assert_eq!(money(&payers[1]["total"]), dec!(20.00));
-    assert_eq!(money(&payers[0]["percent"]), dec!(62.96));
+    assert_eq!(money(&payers[0]["percent"]), dec!(62.26));
     let years = body["years"].as_array().unwrap();
     let all_time: Decimal = years.iter().map(|y| money(&y["total"])).sum();
-    assert_eq!(all_time, dec!(54.00) + dec!(10.00) + dec!(900.00));
+    assert_eq!(all_time, dec!(53.00) + dec!(10.00) + dec!(900.00));
     for year in years {
         let cells: Decimal = year["months"].as_array().unwrap().iter().map(money).sum();
         assert_eq!(cells, money(&year["total"]));
@@ -1024,8 +1025,14 @@ async fn store_keeps_one_event_per_external_ref(env: &Env) {
         pay_date: today(),
         amount_per_unit: dec!(1),
         quantity: dec!(10),
-        amounts: prumo::domain::income::amounts(IncomeKind::ReitIncome, dec!(1), dec!(10), None)
-            .unwrap(),
+        amounts: prumo::domain::income::amounts(
+            IncomeKind::ReitIncome,
+            today(),
+            dec!(1),
+            dec!(10),
+            None,
+        )
+        .unwrap(),
         source: IncomeSource::B3Import,
         external_ref: reference.map(str::to_owned),
     };

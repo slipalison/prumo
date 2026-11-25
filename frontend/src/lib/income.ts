@@ -1,7 +1,14 @@
 import type { IncomeKind, IncomeMonth, IncomePayer, IncomeStatus, YieldOnCost } from "../api/incomeTypes";
 
-/** IR retido na fonte sobre o JCP — a mesma regra do servidor. */
+/** IR retido na fonte sobre o JCP pago até 31/12/2025 — a mesma regra do servidor. */
 export const JCP_WITHHOLDING_RATE = 0.15;
+/** Desde 1/1/2026 (LC 224/2025): 17,5%. */
+export const JCP_WITHHOLDING_RATE_2026 = 0.175;
+
+/** A alíquota do JCP pela data de pagamento (`2026-03-02`). */
+export function jcpWithholdingRate(payDate: string): number {
+  return payDate >= "2026-01-01" ? JCP_WITHHOLDING_RATE_2026 : JCP_WITHHOLDING_RATE;
+}
 
 export const KIND_LABEL: Record<IncomeKind, string> = {
   dividend: "Dividendo",
@@ -59,9 +66,15 @@ export type Amounts = { gross: number; withholding: number; net: number };
  * Bruto, imposto retido e líquido de um provento — a prévia do formulário. O
  * servidor refaz a conta e é quem vale.
  */
-export function previewAmounts(kind: IncomeKind, perUnit: number, quantity: number, withholding?: number): Amounts {
+export function previewAmounts(
+  kind: IncomeKind,
+  perUnit: number,
+  quantity: number,
+  payDate: string,
+  withholding?: number,
+): Amounts {
   const gross = cents(perUnit * quantity);
-  const retained = withholding ?? (kind === "jcp" ? cents(gross * JCP_WITHHOLDING_RATE) : 0);
+  const retained = withholding ?? (kind === "jcp" ? cents(gross * jcpWithholdingRate(payDate)) : 0);
   return { gross, withholding: retained, net: cents(gross - retained) };
 }
 

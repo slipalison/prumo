@@ -16,17 +16,18 @@ import {
 const money = (value: number) => `R$ ${value.toFixed(2)}`;
 
 describe("previewAmounts", () => {
-  it("tira 15% de IR do JCP", () => {
-    expect(previewAmounts("jcp", 0.5, 1000)).toEqual({ gross: 500, withholding: 75, net: 425 });
+  it("tira 15% de IR do JCP pago até 2025 e 17,5% desde 2026", () => {
+    expect(previewAmounts("jcp", 0.5, 1000, "2025-12-31")).toEqual({ gross: 500, withholding: 75, net: 425 });
+    expect(previewAmounts("jcp", 0.5, 1000, "2026-01-02")).toEqual({ gross: 500, withholding: 87.5, net: 412.5 });
   });
 
   it("dividendo e rendimento de FII não têm IR retido", () => {
-    expect(previewAmounts("dividend", 1.1, 10)).toEqual({ gross: 11, withholding: 0, net: 11 });
-    expect(previewAmounts("reit_income", 0.93, 7)).toEqual({ gross: 6.51, withholding: 0, net: 6.51 });
+    expect(previewAmounts("dividend", 1.1, 10, "2026-03-02")).toEqual({ gross: 11, withholding: 0, net: 11 });
+    expect(previewAmounts("reit_income", 0.93, 7, "2026-03-02")).toEqual({ gross: 6.51, withholding: 0, net: 6.51 });
   });
 
   it("o IR informado vale mais que a regra do tipo", () => {
-    expect(previewAmounts("dividend", 2, 10, 6)).toEqual({ gross: 20, withholding: 6, net: 14 });
+    expect(previewAmounts("dividend", 2, 10, "2026-03-02", 6)).toEqual({ gross: 20, withholding: 6, net: 14 });
   });
 });
 

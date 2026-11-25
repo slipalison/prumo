@@ -32,7 +32,7 @@ function defaultKind(asset: Asset | undefined): IncomeKind {
 /**
  * Lançar um provento à mão: ativo, tipo, data de pagamento, valor por cota e
  * quantidade. A prévia mostra bruto, imposto retido e líquido (JCP perde 15%
- * na fonte); o servidor refaz a conta.
+ * na fonte até 2025 e 17,5% desde 2026); o servidor refaz a conta.
  */
 export function AddIncomeSheet({ open, onClose, assets, today, initialAssetId }: AddIncomeSheetProps) {
   const ids = { asset: useId(), pay: useId(), ex: useId(), unit: useId(), quantity: useId() };
@@ -87,7 +87,7 @@ export function AddIncomeSheet({ open, onClose, assets, today, initialAssetId }:
     (typedQuantity === null || typedQuantity > 0) &&
     payDate !== "" &&
     (exDate === "" || exDate <= payDate);
-  const preview = valid && effectiveQuantity !== null ? previewAmounts(kind, unitValue, effectiveQuantity) : null;
+  const preview = valid && effectiveQuantity !== null ? previewAmounts(kind, unitValue, effectiveQuantity, payDate) : null;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -228,7 +228,7 @@ export function AddIncomeSheet({ open, onClose, assets, today, initialAssetId }:
               <span className="field__hint">Preencha o valor para ver o líquido.</span>
             )}
           </div>
-          {kind === "jcp" && <p className="field__hint">JCP tem 15% de IR retido na fonte; o líquido já desconta.</p>}
+          {kind === "jcp" && <p className="field__hint">JCP tem IR retido na fonte (17,5% desde 2026; 15% até 2025); o líquido já desconta.</p>}
 
           {create.isError && (
             <p className="form-error" role="alert">

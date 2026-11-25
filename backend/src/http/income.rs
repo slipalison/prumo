@@ -384,12 +384,13 @@ fn build_fields(
     }
     let amount_per_unit = positive("O valor por cota", amount_per_unit)?;
     let quantity = positive("A quantidade", quantity)?;
-    let amounts =
-        amounts(kind, amount_per_unit, quantity, withholding).map_err(|error| match error {
+    let amounts = amounts(kind, pay_date, amount_per_unit, quantity, withholding).map_err(
+        |error| match error {
             AmountsError::WithholdingAboveGross => {
                 ApiError::validation("O imposto retido precisa ficar entre 0 e o valor bruto.")
             }
-        })?;
+        },
+    )?;
     if amounts.gross <= Decimal::ZERO {
         return Err(ApiError::validation(
             "O valor bruto do provento precisa ser de ao menos um centavo.",

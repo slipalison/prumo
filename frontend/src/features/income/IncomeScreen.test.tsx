@@ -270,11 +270,11 @@ describe("Renda: lançar provento", () => {
     await user.type(within(dialog).getByLabelText("Valor por cota (R$)"), "0,04");
     expect(within(dialog).getByText(/^Bruto/).parentElement).toHaveTextContent(/R\$\s100,00/);
 
-    // JCP: 15% retido na fonte.
+    // JCP pago em 2026: 17,5% retido na fonte (LC 224/2025).
     await user.click(within(dialog).getByRole("radio", { name: "JCP" }));
-    expect(within(dialog).getByText(/^IR retido/).parentElement).toHaveTextContent(/R\$\s15,00/);
-    expect(within(dialog).getByText(/^Líquido/).parentElement).toHaveTextContent(/R\$\s85,00/);
-    expect(within(dialog).getByText(/15% de IR retido na fonte/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/^IR retido/).parentElement).toHaveTextContent(/R\$\s17,50/);
+    expect(within(dialog).getByText(/^Líquido/).parentElement).toHaveTextContent(/R\$\s82,50/);
+    expect(within(dialog).getByText(/17,5% desde 2026/)).toBeInTheDocument();
 
     await user.clear(within(dialog).getByLabelText("Quantidade"));
     await user.type(within(dialog).getByLabelText("Quantidade"), "1000");

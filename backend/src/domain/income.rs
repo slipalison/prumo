@@ -14,8 +14,23 @@ use time::{Date, Duration, OffsetDateTime, UtcOffset};
 
 use super::allocation::{percent, round_cents};
 
-/// IR retido na fonte sobre o JCP: 15% do valor bruto.
+/// IR retido na fonte sobre o JCP pago até 31/12/2025: 15% do valor bruto
+/// (Lei 9.249/1995, art. 9º, § 2º, na redação até 2025).
 pub const JCP_WITHHOLDING_RATE: Decimal = Decimal::from_parts(15, 0, 0, false, 2);
+
+/// IR retido na fonte sobre o JCP pago desde 1/1/2026: 17,5% do bruto (Lei
+/// 9.249/1995, art. 9º, § 2º, na redação da LC 224/2025, art. 8º). A mesma
+/// alíquota da tabela do IR (`domain::tax::rules`), que o teste confere.
+pub const JCP_WITHHOLDING_RATE_2026: Decimal = Decimal::from_parts(175, 0, 0, false, 3);
+
+/// A alíquota do JCP pela data do pagamento.
+pub fn jcp_withholding_rate(pay_date: Date) -> Decimal {
+    if pay_date.year() >= 2026 {
+        JCP_WITHHOLDING_RATE_2026
+    } else {
+        JCP_WITHHOLDING_RATE
+    }
+}
 
 /// Quantos meses a janela de "renda dos últimos 12 meses" cobre.
 pub const WINDOW_MONTHS: usize = 12;
@@ -163,11 +178,12 @@ pub struct IncomeAmounts {
     pub net: Decimal,
 }
 
-/// O IR retido na fonte que a regra do tipo manda: 15% no JCP, nada no resto
-/// (dividendo e rendimento de FII são isentos para pessoa física).
-pub fn default_withholding(kind: IncomeKind, gross: Decimal) -> Decimal {
+/// O IR retido na fonte que a regra do tipo manda: no JCP, 15% até 2025 e
+/// 17,5% desde 2026 (pela data do pagamento); nada no resto (dividendo e
+/// rendimento de FII são isentos para pessoa física).
+pub fn default_withholding(kind: IncomeKind, gross: Decimal, pay_date: Date) -> Decimal {
     match kind {
-        IncomeKind::Jcp => round_cents(gross * JCP_WITHHOLDING_RATE),
+        IncomeKind::Jcp => round_cents(gross * jcp_withholding_rate(pay_date)),
         _ => Decimal::ZERO,
     }
 }
@@ -183,12 +199,13 @@ pub enum AmountsError {
 /// ou a da regra do tipo; não passa do bruto.
 pub fn amounts(
     kind: IncomeKind,
+    pay_date: Date,
     amount_per_unit: Decimal,
     quantity: Decimal,
     withholding: Option<Decimal>,
 ) -> Result<IncomeAmounts, AmountsError> {
     let gross = round_cents(amount_per_unit * quantity);
-    let withholding = withholding.unwrap_or_else(|| default_withholding(kind, gross));
+    let withholding = withholding.unwrap_or_else(|| default_withholding(kind, gross, pay_date));
     if withholding < Decimal::ZERO || withholding > gross {
         return Err(AmountsError::WithholdingAboveGross);
     }
@@ -419,6 +436,9 @@ pub fn goal_progress(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Um pagamento em 2025 (JCP a 15%).
+    const PAID_2025: Date = time::macros::date!(2025 - 06 - 02);
     use proptest::prelude::*;
     use rust_decimal_macros::dec;
     use time::macros::{date, datetime};
@@ -434,10 +454,43 @@ mod tests {
 
     #[test]
     fn jcp_is_taxed_fifteen_percent_at_source() {
-        let a = amounts(IncomeKind::Jcp, dec!(0.5), dec!(1000), None).unwrap();
+        let a = amounts(IncomeKind::Jcp, PAID_2025, dec!(0.5), dec!(1000), None).unwrap();
         assert_eq!(a.gross, dec!(500.00));
         assert_eq!(a.withholding, dec!(75.00));
         assert_eq!(a.net, dec!(425.00));
+    }
+
+    #[test]
+    fn jcp_paid_from_2026_is_taxed_seventeen_and_a_half_percent() {
+        let a = amounts(
+            IncomeKind::Jcp,
+            date!(2026 - 01 - 02),
+            dec!(0.5),
+            dec!(1000),
+            None,
+        )
+        .unwrap();
+        assert_eq!(a.withholding, dec!(87.50));
+        assert_eq!(a.net, dec!(412.50));
+        let last = amounts(
+            IncomeKind::Jcp,
+            date!(2025 - 12 - 31),
+            dec!(0.5),
+            dec!(1000),
+            None,
+        )
+        .unwrap();
+        assert_eq!(last.withholding, dec!(75.00));
+        // A mesma alíquota da tabela do IR em cada ano que ela cobre.
+        for year in crate::domain::tax::rules::covered_years() {
+            let rules = crate::domain::tax::rules::rules_for(year).unwrap();
+            let paid = Date::from_calendar_date(year, time::Month::June, 1).unwrap();
+            assert_eq!(
+                jcp_withholding_rate(paid),
+                rules.interest_on_equity_rate.value,
+                "{year}"
+            );
+        }
     }
 
     #[test]
@@ -448,7 +501,7 @@ mod tests {
             IncomeKind::Amortization,
             IncomeKind::Other,
         ] {
-            let a = amounts(kind, dec!(1.1), dec!(10), None).unwrap();
+            let a = amounts(kind, PAID_2025, dec!(1.1), dec!(10), None).unwrap();
             assert_eq!(
                 (a.gross, a.withholding, a.net),
                 (dec!(11.00), dec!(0), dec!(11.00))
@@ -458,26 +511,59 @@ mod tests {
 
     #[test]
     fn explicit_withholding_replaces_the_rule_but_not_past_the_gross() {
-        let a = amounts(IncomeKind::Dividend, dec!(2), dec!(10), Some(dec!(6))).unwrap();
+        let a = amounts(
+            IncomeKind::Dividend,
+            PAID_2025,
+            dec!(2),
+            dec!(10),
+            Some(dec!(6)),
+        )
+        .unwrap();
         assert_eq!(
             (a.gross, a.withholding, a.net),
             (dec!(20.00), dec!(6), dec!(14.00))
         );
         assert_eq!(
-            amounts(IncomeKind::Dividend, dec!(2), dec!(10), Some(dec!(20.01))),
+            amounts(
+                IncomeKind::Dividend,
+                PAID_2025,
+                dec!(2),
+                dec!(10),
+                Some(dec!(20.01))
+            ),
             Err(AmountsError::WithholdingAboveGross)
         );
         assert_eq!(
-            amounts(IncomeKind::Dividend, dec!(2), dec!(10), Some(dec!(-1))),
+            amounts(
+                IncomeKind::Dividend,
+                PAID_2025,
+                dec!(2),
+                dec!(10),
+                Some(dec!(-1))
+            ),
             Err(AmountsError::WithholdingAboveGross)
         );
-        let all = amounts(IncomeKind::Dividend, dec!(2), dec!(10), Some(dec!(20))).unwrap();
+        let all = amounts(
+            IncomeKind::Dividend,
+            PAID_2025,
+            dec!(2),
+            dec!(10),
+            Some(dec!(20)),
+        )
+        .unwrap();
         assert_eq!(all.net, dec!(0));
     }
 
     #[test]
     fn gross_rounds_to_cents() {
-        let a = amounts(IncomeKind::ReitIncome, dec!(0.9333), dec!(7), None).unwrap();
+        let a = amounts(
+            IncomeKind::ReitIncome,
+            PAID_2025,
+            dec!(0.9333),
+            dec!(7),
+            None,
+        )
+        .unwrap();
         assert_eq!(a.gross, dec!(6.53));
     }
 
@@ -689,7 +775,7 @@ mod tests {
         ) {
             let kind = IncomeKind::ALL[kind];
             let per_unit = Decimal::new(cents, 2);
-            let a = amounts(kind, per_unit, Decimal::ONE, None).unwrap();
+            let a = amounts(kind, PAID_2025, per_unit, Decimal::ONE, None).unwrap();
             prop_assert_eq!(a.net + a.withholding, a.gross);
             prop_assert!(a.withholding <= a.gross);
             prop_assert!(a.net >= Decimal::ZERO);
