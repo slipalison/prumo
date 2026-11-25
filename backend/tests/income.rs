@@ -224,7 +224,6 @@ async fn income_contract() {
     estimate_in_other_currency_and_unavailable_provider(&env, &dir).await;
     income_goal_crud_and_progress(&env, &dir).await;
     plan_shows_the_income_it_adds(&env, &dir).await;
-    cash_suggestion_counts_since_the_last_contribution(&env, &dir).await;
     store_keeps_one_event_per_external_ref(&env).await;
 }
 
@@ -893,88 +892,6 @@ async fn plan_shows_the_income_it_adds(env: &Env, dir: &tempfile_dir::Dir) {
     assert_eq!(
         plain.body["items"][0]["estimated_monthly_income"],
         Value::Null
-    );
-}
-
-async fn cash_suggestion_counts_since_the_last_contribution(env: &Env, dir: &tempfile_dir::Dir) {
-    let me = person(env, "renda-caixa@prumo.test", dir);
-    let before = get(&me.router, "/api/v1/income/cash-suggestion").await;
-    assert_eq!(before.status, StatusCode::OK);
-    assert_eq!(
-        before.body,
-        json!({ "amount": 0.0, "count": 0, "since": null })
-    );
-
-    let knri = add_asset(
-        &me,
-        json!({ "asset_class": "br_reits", "symbol": "KNRI11", "quantity": 10 }),
-    )
-    .await;
-    // Provento antes de qualquer aporte: sem aporte registrado não há de onde contar.
-    post(
-        &me.router,
-        "/api/v1/income",
-        json!({ "asset_id": knri, "kind": "reit_income", "pay_date": days_from_today(-60), "amount_per_unit": 1 }),
-    )
-    .await;
-    let contribution = post(
-        &me.router,
-        "/api/v1/contributions",
-        json!({ "amount": 1000, "items": [{ "asset_id": knri, "quantity": 5, "unit_price": 142 }] }),
-    )
-    .await;
-    assert_eq!(
-        contribution.status,
-        StatusCode::CREATED,
-        "{}",
-        contribution.text
-    );
-    let none = get(&me.router, "/api/v1/income/cash-suggestion").await;
-    assert_eq!(none.body["amount"], 0.0);
-    assert_eq!(none.body["since"], iso(today()).as_str());
-
-    // O aporte foi há 20 dias: o que caiu depois entra; o do próprio dia, o
-    // anterior e o ainda a receber, não.
-    let user = env
-        .store
-        .ensure_user("renda-caixa@prumo.test")
-        .await
-        .unwrap();
-    sqlx::query(
-        "update contributions set created_at = now() - interval '20 days' where user_id = $1",
-    )
-    .bind(user)
-    .execute(&env.pool)
-    .await
-    .unwrap();
-    for (days, per_unit) in [
-        (-25, 7.0),
-        (-20, 3.0),
-        (-10, 2.0),
-        (-1, 1.5),
-        (0, 0.5),
-        (5, 9.0),
-    ] {
-        post(
-            &me.router,
-            "/api/v1/income",
-            json!({ "asset_id": knri, "kind": "reit_income", "pay_date": days_from_today(days), "amount_per_unit": per_unit, "quantity": 10 }),
-        )
-        .await;
-    }
-    let cash = get(&me.router, "/api/v1/income/cash-suggestion").await;
-    // (−10) 20 + (−1) 15 + (hoje) 5.
-    assert_eq!(cash.body["amount"], 40.0, "{}", cash.text);
-    assert_eq!(cash.body["count"], 3);
-    assert_eq!(cash.body["since"], days_from_today(-20).as_str());
-
-    // Outra pessoa não soma o que não é dela.
-    let other = person(env, "renda-caixa-outra@prumo.test", dir);
-    assert_eq!(
-        get(&other.router, "/api/v1/income/cash-suggestion")
-            .await
-            .body["amount"],
-        0.0
     );
 }
 

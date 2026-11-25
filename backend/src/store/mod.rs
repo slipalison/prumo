@@ -5,6 +5,7 @@
 //! `impl Store`): o submódulo enxerga o `pool` e este arquivo não cresce.
 
 mod allocation;
+mod cash;
 pub mod health;
 pub mod sectors;
 
@@ -27,6 +28,8 @@ mod performance;
 mod treasury;
 
 pub use performance::{JobLock, Snapshot, SnapshotPoint};
+
+pub use cash::{CashReport, RECENT_SHOWN};
 
 mod income;
 
@@ -158,6 +161,8 @@ pub struct Contribution {
     pub id: Uuid,
     pub created_at: OffsetDateTime,
     pub amount: Decimal,
+    /// Quanto do aporte veio do caixa (o resto é dinheiro de fora).
+    pub cash_used: Decimal,
     pub items: Vec<ContributionItem>,
 }
 
@@ -198,6 +203,7 @@ struct ContributionRow {
     id: Uuid,
     created_at: OffsetDateTime,
     amount: Decimal,
+    cash_used: Decimal,
 }
 
 #[derive(FromRow)]
@@ -755,22 +761,31 @@ impl Store {
 
     /// Registra o aporte e grava cada item como compra no livro (ligada ao
     /// aporte, datada hoje), numa transação.
+    ///
+    /// `cash_used` é a parte do aporte que veio do caixa (`0` se nenhuma): o
+    /// saldo é conferido na mesma transação e baixa por esse valor. O resto
+    /// do `amount` é dinheiro de fora e não toca o caixa.
     pub async fn record_contribution(
         &self,
         user: Uuid,
         amount: Decimal,
+        cash_used: Decimal,
         items: &[NewContributionItem],
     ) -> Result<Contribution, StoreError> {
         let mut tx = self.pool.begin().await?;
         let id = Uuid::new_v4();
+        let date = ledger::today(&mut tx).await?;
+        if cash_used > Decimal::ZERO {
+            cash::reserve(&mut tx, user, round_cents(amount), cash_used, date).await?;
+        }
         let (created_at,): (OffsetDateTime,) =
-            sqlx::query_as("insert into contributions (id, user_id, amount) values ($1, $2, $3) returning created_at")
+            sqlx::query_as("insert into contributions (id, user_id, amount, cash_used) values ($1, $2, $3, $4) returning created_at")
                 .bind(id)
                 .bind(user)
                 .bind(amount)
+                .bind(cash_used)
                 .fetch_one(&mut *tx)
                 .await?;
-        let date = ledger::today(&mut tx).await?;
         let mut stored = Vec::with_capacity(items.len());
         for item in items {
             let asset = ledger::lock_asset(&mut tx, user, item.asset_id)
@@ -837,13 +852,14 @@ impl Store {
             id,
             created_at,
             amount,
+            cash_used,
             items: stored,
         })
     }
 
     pub async fn contributions(&self, user: Uuid) -> Result<Vec<Contribution>, StoreError> {
         let rows: Vec<ContributionRow> = sqlx::query_as(
-            "select id, created_at, amount from contributions where user_id = $1
+            "select id, created_at, amount, cash_used from contributions where user_id = $1
               order by created_at desc, id limit 200",
         )
         .bind(user)
@@ -878,6 +894,7 @@ impl Store {
                 id: r.id,
                 created_at: r.created_at,
                 amount: r.amount,
+                cash_used: r.cash_used,
             })
             .collect())
     }

@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use super::dto::*;
 use super::{treasury, ApiJson, ApiPath, ApiQuery, AppState, CurrentUser};
-use crate::domain::allocation::{Targets, FULL_BP};
+use crate::domain::allocation::{round_cents, Targets, FULL_BP};
 use crate::domain::asset_class::{normalize_symbol, AssetClass, Checklist, Market, UnitKind};
 use crate::domain::income::today_in_brazil;
 use crate::domain::ledger::{check_for_unit, Kind};
@@ -477,6 +477,10 @@ pub async fn record_contribution(
     ApiJson(body): ApiJson<ContributionRequest>,
 ) -> ApiResult<impl IntoResponse> {
     let amount = non_negative("O valor do aporte", body.amount)?;
+    let cash_used = round_cents(non_negative(
+        "O caixa usado",
+        body.cash_used.unwrap_or(Decimal::ZERO),
+    )?);
     if body.items.is_empty() {
         return Err(ApiError::validation(
             "O aporte precisa de pelo menos um item.",
@@ -498,7 +502,7 @@ pub async fn record_contribution(
     }
     let contribution = state
         .store
-        .record_contribution(user.id, amount, &items)
+        .record_contribution(user.id, amount, cash_used, &items)
         .await?;
     Ok((
         StatusCode::CREATED,

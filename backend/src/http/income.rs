@@ -11,18 +11,22 @@ use time::{Date, OffsetDateTime};
 use uuid::Uuid;
 
 use super::dto::{decimal, decimal_out, optional_decimal, PlanDto};
+use super::yoc::{PortfolioYieldDto, YieldDto, YieldReport};
 use super::{ApiJson, ApiPath, ApiQuery, AppState, CurrentUser};
 use crate::domain::allocation::round_cents;
 use crate::domain::asset_class::UnitKind;
+use crate::domain::entitlement::{quantity_on, record_date};
 use crate::domain::income::{
-    amounts, cash_cutoff, goal_progress, summarize, today_in_brazil, AmountsError, Entry,
-    GoalProgress, IncomeKind, IncomeSource, IncomeStatus, IncomeSummary, ProgressBasis,
-    WINDOW_MONTHS,
+    amounts, goal_progress, summarize, today_in_brazil, AmountsError, Entry, GoalProgress,
+    IncomeKind, IncomeSource, IncomeStatus, IncomeSummary, ProgressBasis, WINDOW_MONTHS,
 };
+use crate::domain::yoc::asset_yield;
 use crate::error::{ApiError, ApiResult};
 use crate::income::PortfolioIncome;
 use crate::service;
-use crate::store::{IncomeEvent, IncomeFields, IncomeFilter, NewIncomeEvent, Objective};
+use crate::store::{
+    Asset, IncomeEvent, IncomeFields, IncomeFilter, NewIncomeEvent, Objective, StoreError,
+};
 
 time::serde::format_description!(iso_date, Date, "[year]-[month]-[day]");
 
@@ -91,6 +95,17 @@ pub struct UpdateIncomeRequest {
     pub quantity: Option<Decimal>,
     #[serde(default, deserialize_with = "optional_decimal")]
     pub withholding: Option<Decimal>,
+}
+
+/// `GET /income/entitlement`: quantas cotas davam direito a um provento.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EntitlementQuery {
+    pub asset: Uuid,
+    #[serde(default, with = "iso_date::option")]
+    pub ex_date: Option<Date>,
+    #[serde(default, with = "iso_date::option")]
+    pub pay_date: Option<Date>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -168,6 +183,8 @@ pub struct PayerDto {
     pub total: Decimal,
     #[serde(with = "decimal_out")]
     pub percent: Decimal,
+    /// Renda de 12 meses do pagador sobre o custo do ativo.
+    pub yield_on_cost: YieldDto,
 }
 
 #[derive(Debug, Serialize)]
@@ -205,6 +222,10 @@ pub struct EstimateAssetDto {
     pub per_unit_12m: Decimal,
     #[serde(with = "decimal_out")]
     pub monthly: Decimal,
+    /// O que a posição teria rendido em 12 meses (bruto), com as cotas que o
+    /// livro tinha na data com de cada dividendo — não as de hoje.
+    #[serde(with = "decimal_out::option")]
+    pub trailing_12m: Option<Decimal>,
 }
 
 /// A estimativa de renda mensal da carteira, a partir do histórico por cota.
@@ -254,19 +275,20 @@ pub struct IncomeSummaryDto {
     pub years: Vec<YearDto>,
     pub upcoming: Vec<IncomeEventDto>,
     pub estimate: EstimateDto,
+    /// Yield on cost da carteira: renda de 12 meses ÷ custo.
+    pub yield_on_cost: PortfolioYieldDto,
     pub goal: Option<GoalDto>,
 }
 
 #[derive(Debug, Serialize)]
-pub struct CashSuggestionDto {
-    /// Líquido recebido desde o último aporte registrado.
+pub struct EntitlementDto {
+    /// As cotas do livro na data com (`1` em renda fixa por valor).
     #[serde(with = "decimal_out")]
-    pub amount: Decimal,
-    /// Quantos pagamentos formam o valor.
-    pub count: i64,
-    /// O dia do último aporte (Brasília); `null` sem aporte registrado.
-    #[serde(with = "iso_date::option")]
-    pub since: Option<Date>,
+    pub quantity: Decimal,
+    /// A data com usada: o dia anterior à data ex, ou, sem ela, o pagamento
+    /// (no máximo hoje).
+    #[serde(with = "iso_date")]
+    pub record_date: Date,
 }
 
 /// A renda estimada que o aporte soma, no `POST /plans`.
@@ -345,7 +367,7 @@ fn pay_date_in_range(date: Date) -> ApiResult<Date> {
     Ok(date)
 }
 
-fn entry(event: &IncomeEvent) -> Entry {
+pub(super) fn entry(event: &IncomeEvent) -> Entry {
     Entry {
         pay_date: event.pay_date,
         net: event.net,
@@ -457,6 +479,30 @@ async fn goal_for(state: &AppState, user: Uuid, objective: Objective) -> ApiResu
     .await
 }
 
+/// As cotas que davam direito ao provento: a posição do livro na data com. Em
+/// renda fixa por valor não há cota, e o valor recebido é "1 × valor".
+async fn entitled_quantity(
+    state: &AppState,
+    user: Uuid,
+    asset: &Asset,
+    ex_date: Option<Date>,
+    pay_date: Option<Date>,
+) -> ApiResult<EntitlementDto> {
+    let (today, _) = today_and_now();
+    let on = record_date(ex_date, pay_date.unwrap_or(today), today);
+    let quantity = match asset.market().unit_kind() {
+        UnitKind::Value => Decimal::ONE,
+        UnitKind::Whole | UnitKind::Fractional | UnitKind::Hundredth => {
+            let entries = state.store.asset_entries(user, asset.id).await?;
+            quantity_on(&entries, on).map_err(StoreError::Ledger)?
+        }
+    };
+    Ok(EntitlementDto {
+        quantity,
+        record_date: on,
+    })
+}
+
 // --------------------------------------------------------------- handlers --
 
 pub async fn list(
@@ -503,17 +549,28 @@ pub async fn create(
         .asset(user.id, body.asset_id)
         .await?
         .ok_or_else(ApiError::not_found)?;
-    // Renda fixa por valor não tem cota: o valor recebido é "1 × valor".
-    let default_quantity = match asset.market().unit_kind() {
-        UnitKind::Value => Decimal::ONE,
-        UnitKind::Whole | UnitKind::Fractional | UnitKind::Hundredth => asset.quantity,
+    let quantity = match body.quantity {
+        Some(quantity) => quantity,
+        None => {
+            // Sem quantidade, vale a do livro na data com.
+            let entitled =
+                entitled_quantity(&state, user.id, &asset, body.ex_date, Some(body.pay_date))
+                    .await?;
+            if entitled.quantity <= Decimal::ZERO {
+                return Err(ApiError::validation(format!(
+                    "Voce nao tinha cotas desse ativo na data com ({}). Informe a quantidade se mesmo assim recebeu.",
+                    entitled.record_date
+                )));
+            }
+            entitled.quantity
+        }
     };
     let fields = build_fields(
         body.kind,
         body.ex_date,
         body.pay_date,
         body.amount_per_unit,
-        body.quantity.unwrap_or(default_quantity),
+        quantity,
         body.withholding,
     )?;
     let new = NewIncomeEvent {
@@ -589,7 +646,11 @@ pub async fn summary(
     let (today, now) = today_and_now();
     let (summary, ledger) = summary_of(&state, user.id, today).await?;
     let view = service::portfolio(&state.store, user.id).await?;
-    let estimate = state.income.estimate(&view, today).await;
+    let estimate = state
+        .income
+        .estimate_with_ledger(user.id, &view, today)
+        .await;
+    let yields = YieldReport::build(&view, &summary, &estimate);
 
     let goal = match state.store.income_goal(user.id).await? {
         Some(objective) => Some(
@@ -617,6 +678,7 @@ pub async fn summary(
                 quantity: a.asset.quantity,
                 per_unit_12m: e.per_unit_12m,
                 monthly: e.monthly,
+                trailing_12m: e.trailing_12m,
             })
         })
         .collect();
@@ -650,11 +712,18 @@ pub async fn summary(
         by_payer: summary
             .by_payer
             .iter()
-            .map(|p| PayerDto {
-                asset_id: p.key.parse().ok(),
-                label: p.label.clone(),
-                total: p.total,
-                percent: p.percent,
+            .map(|p| {
+                let asset_id: Option<Uuid> = p.key.parse().ok();
+                // Pagador sem ativo na carteira (removido): sem posição, sem custo.
+                let fallback = asset_yield(p.total, None, Decimal::ZERO, None);
+                let y = asset_id.and_then(|id| yields.of(id)).unwrap_or(&fallback);
+                PayerDto {
+                    asset_id,
+                    label: p.label.clone(),
+                    total: p.total,
+                    percent: p.percent,
+                    yield_on_cost: YieldDto::from(y),
+                }
             })
             .collect(),
         years: summary
@@ -673,34 +742,26 @@ pub async fn summary(
             assets: estimated_assets,
             missing: estimate.missing,
         },
+        yield_on_cost: PortfolioYieldDto::from(&yields.portfolio),
         goal,
     }))
 }
 
-/// Os proventos líquidos recebidos desde o último aporte, para o campo do
-/// aporte oferecer somá-los ao valor. O motor não muda: só o valor de entrada.
-pub async fn cash_suggestion(
+/// Quantas cotas davam direito a um provento: a posição do livro na data com.
+/// A tela usa para mostrar, antes de lançar, a quantidade que o servidor vai usar.
+pub async fn entitlement(
     State(state): State<AppState>,
     user: CurrentUser,
-) -> ApiResult<Json<CashSuggestionDto>> {
-    let (today, _) = today_and_now();
-    let Some(last) = state.store.last_contribution_at(user.id).await? else {
-        return Ok(Json(CashSuggestionDto {
-            amount: Decimal::ZERO,
-            count: 0,
-            since: None,
-        }));
-    };
-    let since = cash_cutoff(last);
-    let (amount, count) = state
+    ApiQuery(query): ApiQuery<EntitlementQuery>,
+) -> ApiResult<Json<EntitlementDto>> {
+    let asset = state
         .store
-        .income_received_between(user.id, since, today)
-        .await?;
-    Ok(Json(CashSuggestionDto {
-        amount,
-        count,
-        since: Some(since),
-    }))
+        .asset(user.id, query.asset)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    Ok(Json(
+        entitled_quantity(&state, user.id, &asset, query.ex_date, query.pay_date).await?,
+    ))
 }
 
 pub async fn get_goal(

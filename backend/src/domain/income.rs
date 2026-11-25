@@ -416,13 +416,6 @@ pub fn goal_progress(
     }
 }
 
-/// A data a partir da qual os proventos entram na sugestão de caixa do aporte:
-/// o dia (de Brasília) do último aporte registrado. Pagamento no próprio dia do
-/// aporte não conta; só os dos dias seguintes.
-pub fn cash_cutoff(last_contribution_at: OffsetDateTime) -> Date {
-    today_in_brazil(last_contribution_at)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -685,19 +678,6 @@ mod tests {
         );
         assert!(!goal_progress(dec!(1000), dec!(0), dec!(5000)).reached);
         assert!(!goal_progress(dec!(0), dec!(0), dec!(0)).reached);
-    }
-
-    #[test]
-    fn cash_starts_the_day_after_the_last_contribution_in_brazil() {
-        // 23h de Brasília do dia 24 já é dia 25 em UTC.
-        assert_eq!(
-            cash_cutoff(datetime!(2026-11-25 02:00 UTC)),
-            date!(2026 - 11 - 24)
-        );
-        assert_eq!(
-            cash_cutoff(datetime!(2026-11-25 15:00 UTC)),
-            date!(2026 - 11 - 25)
-        );
     }
 
     proptest! {

@@ -2,6 +2,7 @@
 
 mod allocation;
 mod b3_import;
+mod cash;
 pub mod dto;
 mod handlers;
 mod health;
@@ -10,7 +11,9 @@ mod ledger;
 mod live;
 mod ops;
 mod performance;
+mod profit;
 mod treasury;
+mod yoc;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -261,7 +264,9 @@ pub fn public_router(state: AppState, static_dir: &str) -> Router {
         )
         .route("/income", get(income::list).post(income::create))
         .route("/income/summary", get(income::summary))
-        .route("/income/cash-suggestion", get(income::cash_suggestion))
+        .route("/income/entitlement", get(income::entitlement))
+        .route("/income/yield-on-cost", get(yoc::show))
+        .route("/cash", get(cash::show))
         .route(
             "/income/goal",
             get(income::get_goal)

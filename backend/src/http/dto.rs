@@ -13,6 +13,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use super::income::PlanIncomeDto;
+use super::profit::ProfitDto;
 use crate::domain::allocation::{ClassOutcome, Notice, Plan};
 use crate::domain::asset_class::{AssetClass, Checklist};
 use crate::domain::scoring::ScoreSource;
@@ -173,6 +174,10 @@ pub struct ContributionItemRequest {
 pub struct ContributionRequest {
     #[serde(deserialize_with = "decimal")]
     pub amount: Decimal,
+    /// Quanto do aporte veio do caixa (ver `GET /cash`). Ausente = nada: o
+    /// aporte inteiro é dinheiro de fora.
+    #[serde(default, deserialize_with = "optional_decimal")]
+    pub cash_used: Option<Decimal>,
     pub items: Vec<ContributionItemRequest>,
 }
 
@@ -350,6 +355,8 @@ pub struct PortfolioDto {
     pub quotes_updated_at: Option<OffsetDateTime>,
     pub classes: Vec<ClassDto>,
     pub assets: Vec<AssetDto>,
+    /// Lucro total: ganho de capital + proventos recebidos (docs/api.md § Lucro total).
+    pub profit: ProfitDto,
     pub checklists: ChecklistsDto,
 }
 
@@ -360,6 +367,7 @@ impl From<&PortfolioView> for PortfolioDto {
             quotes_updated_at: p.quotes_updated_at,
             classes: p.classes.iter().map(ClassDto::from).collect(),
             assets: p.assets.iter().map(AssetDto::from).collect(),
+            profit: ProfitDto::from(&p.profit),
             checklists: ChecklistsDto::from_questions(&p.questions),
         }
     }
@@ -375,6 +383,8 @@ pub struct LivePricesDto {
     pub quotes_updated_at: Option<OffsetDateTime>,
     pub classes: Vec<ClassDto>,
     pub assets: Vec<LiveAssetDto>,
+    /// Muda com o preço (o ganho não realizado): o total ao vivo sai daqui.
+    pub profit: ProfitDto,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -421,6 +431,7 @@ impl From<&PortfolioView> for LivePricesDto {
                     return_percent: a.performance.return_percent,
                 })
                 .collect(),
+            profit: ProfitDto::from(&p.profit),
         }
     }
 }
@@ -650,6 +661,9 @@ pub struct ContributionDto {
     pub created_at: OffsetDateTime,
     #[serde(with = "decimal_out")]
     pub amount: Decimal,
+    /// A parte do aporte que saiu do caixa.
+    #[serde(with = "decimal_out")]
+    pub cash_used: Decimal,
     #[serde(with = "decimal_out")]
     pub invested: Decimal,
     pub items: Vec<ContributionItemDto>,
@@ -661,6 +675,7 @@ impl From<&Contribution> for ContributionDto {
             id: c.id,
             created_at: c.created_at,
             amount: c.amount,
+            cash_used: c.cash_used,
             invested: c.items.iter().map(|i| i.value).sum(),
             items: c.items.iter().map(ContributionItemDto::from).collect(),
         }

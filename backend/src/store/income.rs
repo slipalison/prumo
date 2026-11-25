@@ -348,39 +348,6 @@ impl Store {
         Ok(done.rows_affected() == 1)
     }
 
-    /// Quando foi o último aporte registrado.
-    pub async fn last_contribution_at(
-        &self,
-        user: Uuid,
-    ) -> Result<Option<OffsetDateTime>, StoreError> {
-        let (at,): (Option<OffsetDateTime>,) =
-            sqlx::query_as("select max(created_at) from contributions where user_id = $1")
-                .bind(user)
-                .fetch_one(&self.pool)
-                .await?;
-        Ok(at)
-    }
-
-    /// O líquido já recebido e quantos pagamentos são, com data de pagamento
-    /// depois de `after` e até `today`.
-    pub async fn income_received_between(
-        &self,
-        user: Uuid,
-        after: Date,
-        today: Date,
-    ) -> Result<(Decimal, i64), StoreError> {
-        let (total, count): (Option<Decimal>, i64) = sqlx::query_as(
-            "select sum(net), count(*) from income_events
-              where user_id = $1 and pay_date > $2 and pay_date <= $3",
-        )
-        .bind(user)
-        .bind(after)
-        .bind(today)
-        .fetch_one(&self.pool)
-        .await?;
-        Ok((total.unwrap_or(Decimal::ZERO), count))
-    }
-
     /// A meta de renda mensal da pessoa, se houver.
     pub async fn income_goal(&self, user: Uuid) -> Result<Option<Objective>, StoreError> {
         let row: Option<ObjectiveRow> = sqlx::query_as(concat!(

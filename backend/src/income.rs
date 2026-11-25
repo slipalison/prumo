@@ -22,7 +22,9 @@ use time::{Date, OffsetDateTime};
 use uuid::Uuid;
 
 use crate::dividends::{DisabledDividends, DividendError, DividendProvider};
+use crate::domain::allocation::round_cents;
 use crate::domain::asset_class::Market;
+use crate::domain::entitlement::trailing_income;
 use crate::domain::income::{monthly_estimate, trailing_per_unit, DividendPoint};
 use crate::quotes::fx_symbol;
 use crate::service::PortfolioView;
@@ -51,6 +53,11 @@ pub struct AssetIncome {
     pub per_unit_12m: Decimal,
     /// Renda mensal estimada com a quantidade atual, em reais.
     pub monthly: Decimal,
+    /// O que a posição teria rendido nos últimos 12 meses, em reais e bruto,
+    /// com as cotas que o livro tinha na data com de cada dividendo (e não as
+    /// de hoje). `None` quando a estimativa foi pedida sem o livro, ou o livro
+    /// não fecha.
+    pub trailing_12m: Option<Decimal>,
 }
 
 /// A estimativa da carteira inteira.
@@ -106,7 +113,39 @@ impl IncomeService {
 
     /// Estima a renda mensal de cada ativo que paga dividendo, **só com o que
     /// está no cache**: não fala com o provedor. `today` é o dia de Brasília.
+    /// Sem o livro: `trailing_12m` fica vazio.
     pub async fn estimate(&self, view: &PortfolioView, today: Date) -> PortfolioIncome {
+        self.estimate_with(None, view, today).await
+    }
+
+    /// Como [`IncomeService::estimate`], e ainda calcula `trailing_12m` de cada
+    /// ativo com a quantidade que o livro de `user` tinha na data com.
+    pub async fn estimate_with_ledger(
+        &self,
+        user: Uuid,
+        view: &PortfolioView,
+        today: Date,
+    ) -> PortfolioIncome {
+        self.estimate_with(Some(user), view, today).await
+    }
+
+    async fn estimate_with(
+        &self,
+        user: Option<Uuid>,
+        view: &PortfolioView,
+        today: Date,
+    ) -> PortfolioIncome {
+        let ledgers = match user {
+            Some(user) => self
+                .store
+                .entries_by_asset(user)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(error = %error, "livro ilegivel para a estimativa");
+                    HashMap::new()
+                }),
+            None => HashMap::new(),
+        };
         let payers: Vec<(Uuid, Decimal, String)> = view
             .assets
             .iter()
@@ -167,6 +206,16 @@ impl IncomeService {
                 .collect();
             let per_unit_12m = (trailing_per_unit(&points, today) * rate).round_dp(8);
             let monthly = monthly_estimate(per_unit_12m, quantity);
+            let trailing_12m = user.and_then(|_| {
+                let entries = ledgers.get(&asset_id).map_or(&[][..], Vec::as_slice);
+                match trailing_income(&points, today, entries) {
+                    Ok(gross) => Some(round_cents(gross * rate)),
+                    Err(error) => {
+                        tracing::error!(error = %error, "livro nao fecha na estimativa");
+                        None
+                    }
+                }
+            });
             income.monthly_total += monthly;
             income.updated_at = Some(
                 income
@@ -179,6 +228,7 @@ impl IncomeService {
                     asset_id,
                     per_unit_12m,
                     monthly,
+                    trailing_12m,
                 },
             );
         }

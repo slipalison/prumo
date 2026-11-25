@@ -11,7 +11,9 @@ use uuid::Uuid;
 
 use crate::domain::allocation::{self, class_index, percent, round_cents, Holding, Plan, Targets};
 use crate::domain::asset_class::{AssetClass, Market, UnitKind};
+use crate::domain::income::today_in_brazil;
 use crate::domain::ledger::{self, Performance, Position};
+use crate::domain::profit::{total_profit, AssetProfit, TotalProfit};
 use crate::domain::scoring::{self, ScoreSource};
 use crate::domain::sector::{reference_key, SectorInfo, SectorSource};
 use crate::live::LiveQuotes;
@@ -75,6 +77,8 @@ pub struct PortfolioView {
     pub classes: Vec<ClassView>,
     pub assets: Vec<AssetView>,
     pub questions: Vec<Question>,
+    /// Ganho de capital (realizado e não realizado) mais os proventos recebidos.
+    pub profit: TotalProfit,
 }
 
 impl AssetView {
@@ -312,6 +316,19 @@ pub async fn portfolio(store: &Store, user: Uuid) -> Result<PortfolioView, Store
         })
         .collect();
     let quotes_updated_at = views.iter().filter_map(|v| v.quote_updated_at).min();
+    let (income_received, removed_assets) = store
+        .profit_inputs(user, today_in_brazil(OffsetDateTime::now_utc()))
+        .await?;
+    let profit_assets: Vec<AssetProfit> = views
+        .iter()
+        .map(|v| AssetProfit {
+            asset_id: v.asset.id,
+            label: v.label(),
+            quantity: v.asset.quantity,
+            performance: v.performance,
+        })
+        .collect();
+    let profit = total_profit(&profit_assets, income_received, removed_assets);
 
     Ok(PortfolioView {
         total_value,
@@ -320,6 +337,7 @@ pub async fn portfolio(store: &Store, user: Uuid) -> Result<PortfolioView, Store
         classes,
         assets: views,
         questions,
+        profit,
     })
 }
 
