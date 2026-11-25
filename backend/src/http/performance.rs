@@ -64,12 +64,23 @@ fn percent(fraction: Decimal) -> f64 {
     money(to_percent(fraction, PERCENT_DP))
 }
 
+/// A data da marca de "sujo", se a série da pessoa espera ser refeita.
+async fn rebuilding_since(state: &AppState, user: uuid::Uuid) -> ApiResult<Option<String>> {
+    Ok(state
+        .store
+        .dirty_since(user)
+        .await?
+        .map(|dirty| day(dirty.since)))
+}
+
 #[derive(Debug, Serialize)]
 pub struct NetWorthPointDto {
     date: String,
     market_value: f64,
     invested: f64,
     gain: f64,
+    /// Proventos recebidos desde o começo da série.
+    income: f64,
     partial: bool,
 }
 
@@ -80,6 +91,7 @@ impl From<&NetWorthPoint> for NetWorthPointDto {
             market_value: money(p.market_value),
             invested: money(p.invested),
             gain: money(p.gain),
+            income: money(p.income),
             partial: p.partial,
         }
     }
@@ -89,6 +101,9 @@ impl From<&NetWorthPoint> for NetWorthPointDto {
 pub struct NetWorthResponse {
     period: &'static str,
     starts_on: Option<String>,
+    /// O livro mudou no passado e a série está sendo refeita desde esta data:
+    /// os números ainda são os de antes da mudança.
+    rebuilding_since: Option<String>,
     points: Vec<NetWorthPointDto>,
 }
 
@@ -104,6 +119,7 @@ pub async fn net_worth(
     Ok(Json(NetWorthResponse {
         period: period.as_str(),
         starts_on: points.first().map(|p| day(p.date)),
+        rebuilding_since: rebuilding_since(&state, user.id).await?,
         points: worth.iter().map(NetWorthPointDto::from).collect(),
     }))
 }
@@ -201,6 +217,8 @@ pub struct YearDto {
 pub struct PerformanceResponse {
     period: &'static str,
     starts_on: Option<String>,
+    /// Ver [`NetWorthResponse::rebuilding_since`].
+    rebuilding_since: Option<String>,
     window: Option<WindowDto>,
     return_percent: Option<f64>,
     benchmarks: Vec<BenchmarkDto>,
@@ -224,6 +242,7 @@ pub async fn performance(
     Ok(Json(PerformanceResponse {
         period: period.as_str(),
         starts_on: report.starts_on.map(day),
+        rebuilding_since: rebuilding_since(&state, user.id).await?,
         window: report.window.map(WindowDto::from),
         return_percent: report.window.map(|w| percent(w.ret)),
         benchmarks: report

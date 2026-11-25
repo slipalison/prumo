@@ -1,5 +1,6 @@
 //! Desempenho contra um Postgres de verdade: a tarefa diária (idempotente,
-//! uma réplica por vez), o fluxo dos aportes, as rotas e o dono. Carteira
+//! uma réplica por vez), o fluxo dos aportes, as rotas e o dono. A série sai do
+//! livro: o saldo inicial do cadastro é datado no dia simulado. Carteira
 //! fictícia.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -11,9 +12,12 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use axum::http::StatusCode;
 use common::*;
+use prumo::domain::treasury::Bond;
 use prumo::history::{HistoryError, HistoryProvider, IndexCode, Series};
 use prumo::performance::{local_date, Performance, JOB_LOCK_KEY};
 use prumo::quotes::Quote;
+use prumo::treasury::history::TreasuryHistory;
+use prumo::treasury::FeedError;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde_json::{json, Value};
@@ -64,6 +68,41 @@ impl HistoryProvider for FakeHistory {
             .unwrap()
             .push((symbol.to_owned(), from, to));
         Ok(window(self.closes.lock().unwrap().get(symbol), from, to))
+    }
+}
+
+/// Histórico do Tesouro em memória: guarda o que foi pedido.
+#[derive(Default)]
+struct FakeBonds {
+    asked: Mutex<Vec<(Bond, Date)>>,
+}
+
+#[async_trait]
+impl TreasuryHistory for FakeBonds {
+    async fn history(
+        &self,
+        wanted: &std::collections::BTreeMap<Bond, Date>,
+    ) -> Result<std::collections::BTreeMap<Bond, Series>, FeedError> {
+        let mut asked = self.asked.lock().unwrap();
+        asked.extend(wanted.iter().map(|(b, d)| (*b, *d)));
+        Ok(wanted.keys().map(|b| (*b, Series::new())).collect())
+    }
+}
+
+/// Leva todos os lançamentos do ativo para `date`: o cadastro de hoje vira um
+/// saldo inicial no dia que o teste simula.
+async fn backdate(router: &axum::Router, asset_id: &str, date: Date) {
+    let list = get(router, &format!("/api/v1/transactions?asset_id={asset_id}")).await;
+    assert_eq!(list.status, StatusCode::OK, "{}", list.text);
+    for item in list.body.as_array().unwrap() {
+        let id = item["id"].as_str().unwrap();
+        let moved = patch(
+            router,
+            &format!("/api/v1/transactions/{id}"),
+            json!({ "trade_date": date.to_string() }),
+        )
+        .await;
+        assert_eq!(moved.status, StatusCode::OK, "{}", moved.text);
     }
 }
 
@@ -125,6 +164,8 @@ async fn daily_job_is_idempotent_and_separates_flow_from_return(
             .collect(),
     );
     let job = Performance::new(db.store.clone(), history.clone());
+    backdate(&app.router, knri.body["id"].as_str().unwrap(), day1).await;
+    backdate(&app.router, cdb.body["id"].as_str().unwrap(), day1).await;
 
     let first = job.run_daily(day1_at).await.unwrap();
     assert!(first.ran);
@@ -179,12 +220,12 @@ async fn daily_job_is_idempotent_and_separates_flow_from_return(
     let expected = (dec!(2520) / dec!(2420)).round_dp(12);
     assert_eq!(rows[1].3, expected);
 
-    // Incremental: o segundo dia só pediu o que faltava de KNRI11.
+    // Incremental: o primeiro pedido começa no lançamento mais antigo; a
+    // segunda rodada do dia 1 não pede nada, e a do dia 2 só o dia novo.
     let requests = history.requests.lock().unwrap().clone();
     let knri_requests: Vec<_> = requests.iter().filter(|r| r.0 == "KNRI11.SA").collect();
-    // A segunda rodada do dia 1 e a do dia 2 já não pedem nada.
     assert_eq!(knri_requests.len(), 2, "{knri_requests:?}");
-    assert_eq!(knri_requests[0].1, day1 - Duration::days(7));
+    assert_eq!(knri_requests[0].1, day1);
     assert_eq!(knri_requests[1].1, day1 + Duration::days(1));
     let symbol = ["KNRI11.SA".to_owned()];
     assert_eq!(
@@ -222,8 +263,10 @@ async fn daily_job_is_idempotent_and_separates_flow_from_return(
     assert_eq!(points[1]["market_value"], 3260.0);
     assert_eq!(points[1]["invested"], 3160.0);
     assert_eq!(points[1]["gain"], 100.0);
+    assert_eq!(points[1]["income"], 0.0);
     assert_eq!(points[1]["partial"], false);
     assert_eq!(worth.body["starts_on"], Value::String(day1.to_string()));
+    assert_eq!(worth.body["rebuilding_since"], Value::Null);
 
     let perf = get(
         &app.router,
@@ -354,8 +397,10 @@ async fn rejects_unknown_period_and_index(db: &Database, dir: &tempfile_dir::Dir
 }
 
 /// Título do Tesouro (`TD-...`) não existe no Yahoo: o job não pede histórico
-/// dele, e a foto usa o preço de resgate do dia guardado em `quotes` (vindo do
-/// CSV do Tesouro). O aporte nele é fluxo pela quantidade, não por valor.
+/// dele lá. Hoje vale o preço de resgate do dia guardado em `quotes`; o
+/// passado vem do histórico do Tesouro, pedido uma vez só, e, sem ele, do que
+/// a foto daquele dia guardou. O aporte nele é fluxo pela quantidade, não por
+/// valor.
 async fn treasury_title_is_valued_by_its_daily_quote(db: &Database, dir: &tempfile_dir::Dir) {
     let email = "tesouro-desempenho@exemplo.com";
     let symbol = "TD-IPCA-20350515";
@@ -380,9 +425,15 @@ async fn treasury_title_is_valued_by_its_daily_quote(db: &Database, dir: &tempfi
     assert_eq!(bond.status, StatusCode::CREATED, "{}", bond.text);
 
     let history = Arc::new(FakeHistory::default());
-    let job = Performance::new(db.store.clone(), history.clone());
+    let bonds = Arc::new(FakeBonds::default());
+    let job =
+        Performance::new(db.store.clone(), history.clone()).with_treasury_history(bonds.clone());
     let day1_at = OffsetDateTime::now_utc() - Duration::days(1);
+    let day1 = local_date(day1_at);
+    backdate(&app.router, bond.body["id"].as_str().unwrap(), day1).await;
     job.run_daily(day1_at).await.unwrap();
+    // No dia 1 o título só precisa do preço de hoje: nada de tabela.
+    assert!(bonds.asked.lock().unwrap().is_empty());
 
     let id = bond.body["id"].as_str().unwrap();
     let contribution = post(
@@ -415,5 +466,11 @@ async fn treasury_title_is_valued_by_its_daily_quote(db: &Database, dir: &tempfi
         asked.iter().all(|(s, _, _)| !s.starts_with("TD-")),
         "{asked:?}"
     );
-    assert!(db.store.last_price_date(symbol).await.unwrap().is_none());
+    // O histórico do título foi pedido desde o dia 1, uma vez: a fonte não
+    // tinha nada, e a marca de cobertura evita pedir de novo.
+    let bond_key = Bond::from_symbol(symbol).unwrap();
+    assert_eq!(bonds.asked.lock().unwrap().clone(), vec![(bond_key, day1)]);
+    job.run_daily(OffsetDateTime::now_utc()).await.unwrap();
+    assert_eq!(bonds.asked.lock().unwrap().len(), 1);
+    assert_eq!(snapshot_rows(db, email).await.len(), 2);
 }

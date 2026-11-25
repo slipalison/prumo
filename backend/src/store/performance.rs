@@ -9,8 +9,7 @@ use time::{Date, OffsetDateTime};
 use uuid::Uuid;
 
 use super::{Store, StoreError};
-use crate::domain::asset_class::UnitKind;
-use crate::domain::performance::{Position, Purchase, Quota};
+use crate::domain::performance::{Position, Quota};
 use crate::history::{IndexCode, Series};
 
 /// A foto de um dia.
@@ -19,6 +18,8 @@ pub struct Snapshot {
     pub date: Date,
     pub market_value: Decimal,
     pub net_flow: Decimal,
+    /// Proventos líquidos recebidos no dia: retorno, não aporte.
+    pub income: Decimal,
     pub quota: Quota,
     pub positions: Vec<Position>,
     pub taken_at: OffsetDateTime,
@@ -30,6 +31,7 @@ pub struct SnapshotPoint {
     pub date: Date,
     pub market_value: Decimal,
     pub net_flow: Decimal,
+    pub income: Decimal,
     pub quota_value: Decimal,
 }
 
@@ -38,6 +40,7 @@ struct SnapshotRow {
     date: Date,
     market_value: Decimal,
     net_flow: Decimal,
+    income: Decimal,
     quota_value: Decimal,
     quotas: Decimal,
     positions: String,
@@ -54,6 +57,7 @@ impl TryFrom<SnapshotRow> for Snapshot {
             date: row.date,
             market_value: row.market_value,
             net_flow: row.net_flow,
+            income: row.income,
             quota: Quota {
                 quotas: row.quotas.normalize(),
                 value: row.quota_value.normalize(),
@@ -253,7 +257,7 @@ impl Store {
         date: Date,
     ) -> Result<Option<Snapshot>, StoreError> {
         let row: Option<SnapshotRow> = sqlx::query_as(
-            "select date, market_value, net_flow, quota_value, quotas, positions::text as positions, taken_at
+            "select date, market_value, net_flow, income, quota_value, quotas, positions::text as positions, taken_at
                from portfolio_snapshots where user_id = $1 and date < $2
               order by date desc limit 1",
         )
@@ -264,39 +268,74 @@ impl Store {
         Ok(row.map(Snapshot::try_from).transpose()?)
     }
 
-    /// Grava a foto do dia, ou refaz a que já existe (a tarefa é idempotente).
-    pub async fn upsert_snapshot(&self, user: Uuid, snapshot: &Snapshot) -> Result<(), StoreError> {
-        let positions = serde_json::to_string(&snapshot.positions)
-            .map_err(|e| StoreError::Invalid(format!("posicoes da foto: {e}")))?;
+    /// Troca a série da pessoa a partir de `from` pelos dias dados, numa
+    /// transação: some tudo de `from` em diante e entra o que foi refeito. Com
+    /// `starts_on`, some também o que ficou antes do começo da série (o
+    /// lançamento mais antigo foi apagado ou mudou de data).
+    pub async fn replace_snapshots(
+        &self,
+        user: Uuid,
+        starts_on: Option<Date>,
+        from: Date,
+        days: &[Snapshot],
+    ) -> Result<(), StoreError> {
+        let mut tx = self.pool.begin().await?;
         sqlx::query(
-            "insert into portfolio_snapshots
-                (user_id, date, market_value, net_flow, quota_value, quotas, positions, taken_at)
-             values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
-             on conflict (user_id, date) do update set
-                market_value = excluded.market_value,
-                net_flow = excluded.net_flow,
-                quota_value = excluded.quota_value,
-                quotas = excluded.quotas,
-                positions = excluded.positions,
-                taken_at = excluded.taken_at",
+            "delete from portfolio_snapshots
+              where user_id = $1 and (date >= $2 or ($3::date is not null and date < $3))",
         )
         .bind(user)
-        .bind(snapshot.date)
-        .bind(snapshot.market_value)
-        .bind(snapshot.net_flow)
-        .bind(snapshot.quota.value)
-        .bind(snapshot.quota.quotas)
-        .bind(positions)
-        .bind(snapshot.taken_at)
-        .execute(&self.pool)
+        .bind(from)
+        .bind(starts_on)
+        .execute(&mut *tx)
         .await?;
+        // Em lotes: anos de série cabem, sem estourar o limite de parâmetros.
+        for chunk in days.chunks(1000) {
+            let mut positions = Vec::with_capacity(chunk.len());
+            for day in chunk {
+                positions.push(
+                    serde_json::to_string(&day.positions)
+                        .map_err(|e| StoreError::Invalid(format!("posicoes da foto: {e}")))?,
+                );
+            }
+            let column = |f: fn(&Snapshot) -> Decimal| chunk.iter().map(f).collect::<Vec<_>>();
+            sqlx::query(
+                "insert into portfolio_snapshots
+                    (user_id, date, market_value, net_flow, income, quota_value, quotas, positions, taken_at)
+                 select $1, d, mv, nf, inc, qv, q, p::jsonb, t
+                   from unnest($2::date[], $3::numeric[], $4::numeric[], $5::numeric[], $6::numeric[],
+                               $7::numeric[], $8::text[], $9::timestamptz[])
+                     as x (d, mv, nf, inc, qv, q, p, t)",
+            )
+            .bind(user)
+            .bind(chunk.iter().map(|d| d.date).collect::<Vec<_>>())
+            .bind(column(|d| d.market_value))
+            .bind(column(|d| d.net_flow))
+            .bind(column(|d| d.income))
+            .bind(column(|d| d.quota.value))
+            .bind(column(|d| d.quota.quotas))
+            .bind(&positions)
+            .bind(chunk.iter().map(|d| d.taken_at).collect::<Vec<_>>())
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Apaga a série inteira da pessoa (o livro ficou vazio).
+    pub async fn clear_snapshots(&self, user: Uuid) -> Result<(), StoreError> {
+        sqlx::query("delete from portfolio_snapshots where user_id = $1")
+            .bind(user)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
     /// A série inteira da pessoa, em ordem.
     pub async fn snapshot_points(&self, user: Uuid) -> Result<Vec<SnapshotPoint>, StoreError> {
-        let rows: Vec<(Date, Decimal, Decimal, Decimal)> = sqlx::query_as(
-            "select date, market_value, net_flow, quota_value from portfolio_snapshots
+        let rows: Vec<(Date, Decimal, Decimal, Decimal, Decimal)> = sqlx::query_as(
+            "select date, market_value, net_flow, income, quota_value from portfolio_snapshots
               where user_id = $1 order by date",
         )
         .bind(user)
@@ -305,49 +344,12 @@ impl Store {
         Ok(rows
             .into_iter()
             .map(
-                |(date, market_value, net_flow, quota_value)| SnapshotPoint {
+                |(date, market_value, net_flow, income, quota_value)| SnapshotPoint {
                     date,
                     market_value,
                     net_flow,
+                    income,
                     quota_value: quota_value.normalize(),
-                },
-            )
-            .collect())
-    }
-
-    /// O que os aportes registrados compraram em `(after, until]`, por item.
-    /// Num ativo por valor, a quantidade comprada é o próprio valor.
-    pub async fn purchases_between(
-        &self,
-        user: Uuid,
-        after: OffsetDateTime,
-        until: OffsetDateTime,
-    ) -> Result<Vec<Purchase>, StoreError> {
-        let rows: Vec<(Uuid, Decimal, Decimal, String, bool, bool)> = sqlx::query_as(
-            "select i.asset_id, i.quantity, i.value, a.asset_class, a.listed_on_b3, a.treasury
-               from contribution_items i
-               join contributions c on c.id = i.contribution_id
-               join assets a on a.id = i.asset_id
-              where c.user_id = $1 and c.created_at > $2 and c.created_at <= $3",
-        )
-        .bind(user)
-        .bind(after)
-        .bind(until)
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(rows
-            .into_iter()
-            .map(
-                |(asset_id, quantity, value, class, listed_on_b3, treasury)| {
-                    let by_value = crate::domain::asset_class::AssetClass::parse(&class)
-                        .is_some_and(|c| {
-                            c.market_of(listed_on_b3, treasury).unit_kind() == UnitKind::Value
-                        });
-                    Purchase {
-                        asset_id,
-                        quantity: if by_value { value } else { quantity },
-                        value,
-                    }
                 },
             )
             .collect())

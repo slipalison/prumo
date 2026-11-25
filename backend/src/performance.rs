@@ -1,15 +1,19 @@
-//! Desempenho: a tarefa diária (fechamentos, foto da carteira, índices) e o
-//! que as telas de patrimônio e rentabilidade leem. A regra está em
-//! [`crate::domain::performance`]; o método e os limites, em
-//! `docs/desempenho.md`.
+//! Desempenho: a série da carteira (refeita a partir do livro), a tarefa
+//! diária (fechamentos, foto do dia, índices), a reconstrução em segundo plano
+//! quando o livro muda no passado, e o que as telas de patrimônio e
+//! rentabilidade leem. A regra está em [`crate::domain::performance`] e
+//! [`crate::domain::retro`]; o método e os limites, em `docs/desempenho.md`.
 //!
-//! Com duas réplicas, as duas agendam a tarefa no mesmo horário. Quem roda é
-//! quem pega o advisory lock [`JOB_LOCK_KEY`] (`pg_try_advisory_lock`); a outra
-//! vê o lock ocupado e pula. Mesmo que as duas rodassem uma depois da outra, a
-//! foto é um `upsert` por (pessoa, dia) e os caches só inserem data nova: a
-//! segunda rodada refaz o mesmo resultado, sem duplicar.
+//! Com duas réplicas, as duas agendam a tarefa diária no mesmo horário e as
+//! duas olham as marcas de "sujo" a cada [`REBUILD_EVERY`]. Quem roda é quem
+//! pega o advisory lock [`JOB_LOCK_KEY`] (`pg_try_advisory_lock`); a outra vê o
+//! lock ocupado e pula. O lock é o mesmo para as duas tarefas: a diária e a
+//! reconstrução nunca escrevem a série ao mesmo tempo. Mesmo que rodassem uma
+//! depois da outra, a série de um trecho é sempre a mesma conta sobre o mesmo
+//! livro e os caches só inserem data nova: a segunda rodada refaz o mesmo
+//! resultado, sem duplicar.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
 use rust_decimal::Decimal;
@@ -17,24 +21,31 @@ use time::macros::offset;
 use time::{Date, Duration, OffsetDateTime, Time, UtcOffset};
 use uuid::Uuid;
 
-use crate::domain::asset_class::UnitKind;
+use crate::domain::asset_class::{Market, UnitKind};
 use crate::domain::performance::{
-    self as rules, Accrued, Period, Position, QuotaPoint, Versus, Window, YearRow,
+    self as rules, Accrued, Period, QuotaPoint, Versus, Window, YearRow,
 };
-use crate::history::{HistoryProvider, IndexCode};
+use crate::domain::retro::{self, AssetHistory, Series, Start};
+use crate::domain::treasury::Bond;
+use crate::history::{HistoryError, HistoryProvider, IndexCode};
 use crate::quotes::fx_symbol;
-use crate::service::{self, PortfolioView};
-use crate::store::{Snapshot, Store, StoreError};
+use crate::service::{self, AssetView, PriceSource};
+use crate::store::{DirtySeries, Snapshot, Store, StoreError};
+use crate::treasury::history::{DisabledTreasuryHistory, TreasuryHistory};
 
-/// Número do advisory lock da tarefa diária ("PRUMO" + migração 0006).
+/// Número do advisory lock da tarefa diária e da reconstrução ("PRUMO" +
+/// migração 0006).
 pub const JOB_LOCK_KEY: i64 = 0x50_52_55_4d_4f_06;
 /// Horário de Brasília (sem horário de verão desde 2019).
 pub const BRASILIA: UtcOffset = offset!(-3);
-/// Primeiro download de um símbolo: uma semana para trás basta, a série da
-/// carteira nasce hoje (a retroativa vem com o livro de lançamentos).
-const PRICE_LOOKBACK_DAYS: i64 = 7;
 /// Os índices começam um pouco antes da primeira foto, para haver base.
 const INDEX_LOOKBACK_DAYS: i64 = 10;
+/// De quanto em quanto tempo a reconstrução confere as marcas de "sujo".
+pub const REBUILD_EVERY: std::time::Duration = std::time::Duration::from_secs(10);
+/// Quanto a marca precisa ter de idade para ser atendida: a importação da B3
+/// grava centenas de lançamentos em sequência, e a série é refeita uma vez só,
+/// depois que ela termina.
+pub const REBUILD_SETTLE: Duration = Duration::seconds(3);
 
 /// O dia em Brasília.
 pub fn local_date(now: OffsetDateTime) -> Date {
@@ -61,24 +72,72 @@ pub fn past_todays_run(now: OffsetDateTime, at: Time) -> bool {
 pub struct JobReport {
     /// `false`: outra réplica estava com o lock.
     pub ran: bool,
+    /// Pessoas com a série atualizada.
     pub snapshots: usize,
     pub failed: usize,
     pub prices: usize,
     pub indexes: usize,
 }
 
+/// O que uma rodada da reconstrução fez.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RebuildReport {
+    /// `false`: outra réplica estava com o lock.
+    pub ran: bool,
+    /// Séries refeitas.
+    pub users: usize,
+    /// Dias gravados, somando todas.
+    pub days: usize,
+    pub failed: usize,
+    pub prices: usize,
+}
+
+/// O que um símbolo precisa de histórico: desde quando e de quem é.
+#[derive(Debug, Default)]
+struct Need {
+    from: Option<Date>,
+    market: Option<Market>,
+    holders: BTreeSet<Uuid>,
+}
+
+impl Need {
+    fn add(&mut self, from: Date, market: Market, user: Uuid) {
+        self.from = Some(self.from.map_or(from, |f| f.min(from)));
+        self.market.get_or_insert(market);
+        self.holders.insert(user);
+    }
+}
+
+/// Um título do Tesouro que precisa de histórico.
+struct BondNeed {
+    symbol: String,
+    from: Date,
+    holders: BTreeSet<Uuid>,
+}
+
 pub struct Performance {
     store: Store,
     history: Arc<dyn HistoryProvider>,
+    treasury: Arc<dyn TreasuryHistory>,
 }
 
 impl Performance {
     pub fn new(store: Store, history: Arc<dyn HistoryProvider>) -> Self {
-        Self { store, history }
+        Self {
+            store,
+            history,
+            treasury: Arc::new(DisabledTreasuryHistory),
+        }
     }
 
-    /// A tarefa do dia: fechamentos dos ativos, a foto de cada carteira e os
-    /// índices. Só roda com o lock; sem ele, volta `ran: false`.
+    /// O histórico dos títulos do Tesouro (o CSV do Tesouro Transparente).
+    pub fn with_treasury_history(mut self, treasury: Arc<dyn TreasuryHistory>) -> Self {
+        self.treasury = treasury;
+        self
+    }
+
+    /// A tarefa do dia: fechamentos dos ativos, a série de cada carteira até
+    /// hoje e os índices. Só roda com o lock; sem ele, volta `ran: false`.
     pub async fn run_daily(&self, now: OffsetDateTime) -> Result<JobReport, StoreError> {
         let Some(lock) = self.store.try_job_lock(JOB_LOCK_KEY).await? else {
             tracing::info!("tarefa diaria de desempenho ja esta rodando em outra replica");
@@ -97,12 +156,12 @@ impl Performance {
             ..JobReport::default()
         };
         for user in self.store.snapshot_users().await? {
-            match take_snapshot(&self.store, user, now).await {
-                Ok(Some(_)) => report.snapshots += 1,
-                Ok(None) => {}
+            match self.daily_series(user, today, now).await {
+                Ok(true) => report.snapshots += 1,
+                Ok(false) => {}
                 Err(error) => {
                     report.failed += 1;
-                    tracing::error!(error = %error, "foto da carteira nao gravada");
+                    tracing::error!(error = %error, "serie da carteira nao gravada");
                 }
             }
         }
@@ -110,45 +169,248 @@ impl Performance {
         Ok(report)
     }
 
-    /// Baixa o que falta do fechamento de cada símbolo cotado de alguma
-    /// carteira (e do câmbio das moedas deles). Devolve quantos dias entraram.
-    /// Só o que vem do Yahoo: título do Tesouro (`TD-...`) não existe lá, e o
-    /// preço do dia dele já está em `quotes`, vindo do CSV do Tesouro.
-    async fn sync_prices(&self, today: Date) -> Result<usize, StoreError> {
-        let mut symbols: BTreeSet<String> = self
-            .store
-            .tracked_symbols()
-            .await?
+    /// A série da pessoa até hoje: do dia seguinte à última foto (a de hoje é
+    /// sempre refeita) ou desde a marca de "sujo", o que vier primeiro.
+    async fn daily_series(
+        &self,
+        user: Uuid,
+        today: Date,
+        now: OffsetDateTime,
+    ) -> Result<bool, StoreError> {
+        let dirty = self.store.dirty_since(user).await?;
+        let next = match self.store.last_snapshot_date(user).await? {
+            Some(last) => Some(last + Duration::days(1)),
+            None => self.store.first_trade_date(user).await?,
+        };
+        let since = [next, dirty.map(|d| d.since)]
             .into_iter()
-            .filter(|(market, _)| market.from_provider())
-            .filter_map(|(market, symbol)| market.quote_symbol(&symbol))
-            .collect();
-        let listed: Vec<String> = symbols.iter().cloned().collect();
-        symbols.extend(
-            self.store
-                .quote_currencies(&listed)
-                .await?
-                .iter()
-                .filter(|c| c.as_str() != "BRL")
-                .map(|c| fx_symbol(c)),
-        );
-        let mut stored = 0;
-        for symbol in symbols {
-            let from = match self.store.last_price_date(&symbol).await? {
-                Some(last) => last + Duration::days(1),
-                None => today - Duration::days(PRICE_LOOKBACK_DAYS),
-            };
-            if from > today {
+            .flatten()
+            .min()
+            .map(|d| d.min(today));
+        let written = match since {
+            Some(since) => rebuild_series(&self.store, user, since, today, now).await? > 0,
+            None => false,
+        };
+        if let Some(dirty) = dirty {
+            self.store.clear_dirty(&dirty).await?;
+        }
+        Ok(written)
+    }
+
+    /// Refaz as séries marcadas como sujas há pelo menos [`REBUILD_SETTLE`],
+    /// cada uma desde a própria marca até a última foto (ou ontem). Antes,
+    /// baixa o preço que falta. Só roda com o lock.
+    pub async fn run_pending(&self, now: OffsetDateTime) -> Result<RebuildReport, StoreError> {
+        if self
+            .store
+            .dirty_series(now - REBUILD_SETTLE)
+            .await?
+            .is_empty()
+        {
+            return Ok(RebuildReport {
+                ran: true,
+                ..RebuildReport::default()
+            });
+        }
+        let Some(lock) = self.store.try_job_lock(JOB_LOCK_KEY).await? else {
+            return Ok(RebuildReport::default());
+        };
+        let report = self.rebuild_locked(now).await;
+        lock.release().await;
+        report
+    }
+
+    async fn rebuild_locked(&self, now: OffsetDateTime) -> Result<RebuildReport, StoreError> {
+        let today = local_date(now);
+        let mut report = RebuildReport {
+            ran: true,
+            // O preço antigo que chegar agora marca quem o tem; a lista de
+            // sujos é lida depois, já com essas marcas.
+            prices: self.sync_prices(today).await?,
+            ..RebuildReport::default()
+        };
+        for dirty in self.store.dirty_series(now - REBUILD_SETTLE).await? {
+            match self.rebuild_dirty(&dirty, today, now).await {
+                Ok(days) => {
+                    report.users += 1;
+                    report.days += days;
+                }
+                Err(error) => {
+                    report.failed += 1;
+                    tracing::error!(error = %error, "serie da carteira nao refeita");
+                }
+            }
+        }
+        if report.users > 0 {
+            // A série pode ter passado a começar mais cedo.
+            self.sync_indexes(today).await?;
+        }
+        Ok(report)
+    }
+
+    async fn rebuild_dirty(
+        &self,
+        dirty: &DirtySeries,
+        today: Date,
+        now: OffsetDateTime,
+    ) -> Result<usize, StoreError> {
+        let yesterday = today - Duration::days(1);
+        // A foto de hoje só existe depois do fechamento; antes dele, hoje é a
+        // foto parcial que a rota calcula na hora.
+        let end = self
+            .store
+            .last_snapshot_date(dirty.user)
+            .await?
+            .map_or(yesterday, |last| last.max(yesterday));
+        let days = rebuild_series(&self.store, dirty.user, dirty.since, end, now).await?;
+        self.store.clear_dirty(dirty).await?;
+        Ok(days)
+    }
+
+    /// O histórico de preço de cada ativo com livro, desde o lançamento mais
+    /// antigo dele, e o do câmbio da moeda dele. Para cada símbolo baixa só o
+    /// que falta: para trás, antes do que já foi pedido; para a frente, depois
+    /// do último dia guardado. Preço que chega para um dia que já passou marca
+    /// como suja, dali em diante, a série de quem tem o ativo. Devolve quantos
+    /// dias entraram.
+    async fn sync_prices(&self, today: Date) -> Result<usize, StoreError> {
+        let mut needs: BTreeMap<String, Need> = BTreeMap::new();
+        for held in self.store.held_symbols().await? {
+            if held.manual_price {
                 continue;
             }
-            match self.history.closes(&symbol, from, today).await {
+            if let Some(symbol) = held.market.quote_symbol(&held.symbol) {
+                needs
+                    .entry(symbol)
+                    .or_default()
+                    .add(held.first_trade, held.market, held.user);
+            }
+        }
+        let listed: Vec<String> = needs.keys().cloned().collect();
+        let currencies = self.store.quote_currency_of(&listed).await?;
+        let mut fx: BTreeMap<String, Need> = BTreeMap::new();
+        for (symbol, need) in &needs {
+            let (Some(from), Some(market)) = (need.from, need.market) else {
+                continue;
+            };
+            let currency = currencies
+                .get(symbol)
+                .map_or_else(|| default_currency(market).to_owned(), Clone::clone);
+            if currency == "BRL" {
+                continue;
+            }
+            let rate = fx.entry(fx_symbol(&currency)).or_default();
+            for user in &need.holders {
+                rate.add(from, Market::Us, *user);
+            }
+        }
+        let mut stored = 0;
+        let mut bonds: BTreeMap<Bond, BondNeed> = BTreeMap::new();
+        for (symbol, need) in needs.into_iter().chain(fx) {
+            let Some(from) = need.from else { continue };
+            if need.market == Some(Market::Treasury) {
+                // O preço de hoje é a cotação do dia; a tabela só é baixada
+                // quando falta dia de antes do que já está guardado.
+                let covered = self.store.price_covered_from(&symbol).await?;
+                if from < today && covered.is_none_or(|c| from < c) {
+                    if let Some(bond) = Bond::from_symbol(&symbol) {
+                        bonds.insert(
+                            bond,
+                            BondNeed {
+                                symbol,
+                                from,
+                                holders: need.holders,
+                            },
+                        );
+                    }
+                }
+                continue;
+            }
+            stored += self
+                .sync_symbol(&symbol, from, &need.holders, today)
+                .await?;
+        }
+        stored += self.sync_bonds(bonds, today).await?;
+        Ok(stored)
+    }
+
+    async fn sync_symbol(
+        &self,
+        symbol: &str,
+        from: Date,
+        holders: &BTreeSet<Uuid>,
+        today: Date,
+    ) -> Result<usize, StoreError> {
+        let covered = self.store.price_covered_from(symbol).await?;
+        let last = self.store.last_price_date(symbol).await?;
+        // (de, até, para trás): o pedido para trás marca até onde a fonte já
+        // foi consultada, mesmo que ela não tenha dado tão antigo.
+        let mut ranges = Vec::new();
+        match covered {
+            None => ranges.push((from, today, true)),
+            Some(covered) => {
+                if from < covered {
+                    ranges.push((from, covered - Duration::days(1), true));
+                }
+                let next = last.map_or(covered, |l| l + Duration::days(1));
+                ranges.push((next.max(from), today, false));
+            }
+        }
+        let holders: Vec<Uuid> = holders.iter().copied().collect();
+        let mut stored = 0;
+        for (start, end, backward) in ranges.into_iter().filter(|(s, e, _)| s <= e) {
+            match self.history.closes(symbol, start, end).await {
                 Ok(closes) => {
                     stored += closes.len();
-                    self.store.insert_prices(&symbol, &closes).await?;
+                    self.store.insert_prices(symbol, &closes).await?;
+                    if backward {
+                        self.store.set_price_coverage(symbol, start).await?;
+                    }
+                    if let Some((first, _)) = closes.first().filter(|(d, _)| *d < today) {
+                        self.store.mark_dirty(&holders, *first).await?;
+                    }
+                }
+                Err(HistoryError::NotFound) if backward => {
+                    // A fonte não conhece o símbolo: não adianta pedir de novo.
+                    self.store.set_price_coverage(symbol, start).await?;
                 }
                 Err(error) => {
                     tracing::warn!(symbol = %symbol, error = %error, "fechamentos nao baixados");
                 }
+            }
+        }
+        Ok(stored)
+    }
+
+    /// O histórico dos títulos do Tesouro que faltam: um download só da
+    /// tabela, para todos.
+    async fn sync_bonds(
+        &self,
+        bonds: BTreeMap<Bond, BondNeed>,
+        today: Date,
+    ) -> Result<usize, StoreError> {
+        if bonds.is_empty() {
+            return Ok(0);
+        }
+        let wanted: BTreeMap<Bond, Date> = bonds.iter().map(|(b, n)| (*b, n.from)).collect();
+        let history = match self.treasury.history(&wanted).await {
+            Ok(history) => history,
+            Err(error) => {
+                tracing::warn!(error = %error, "historico do tesouro nao baixado");
+                return Ok(0);
+            }
+        };
+        let mut stored = 0;
+        for (bond, need) in bonds {
+            let series: Series = history.get(&bond).cloned().unwrap_or_default();
+            stored += series.len();
+            self.store.insert_prices(&need.symbol, &series).await?;
+            self.store
+                .set_price_coverage(&need.symbol, need.from)
+                .await?;
+            if let Some((first, _)) = series.first().filter(|(d, _)| *d < today) {
+                let holders: Vec<Uuid> = need.holders.into_iter().collect();
+                self.store.mark_dirty(&holders, *first).await?;
             }
         }
         Ok(stored)
@@ -221,52 +483,187 @@ impl Performance {
             }
         })
     }
-}
 
-/// As posições da carteira no dia: o fechamento de `price_history` quando
-/// existe para a data (com o câmbio do mesmo dia), senão o preço que a tela
-/// mostra (cotação de agora ou preço manual). Título do Tesouro usa sempre a
-/// cotação do dia em `quotes` (o preço de resgate do Tesouro Transparente).
-fn positions(view: &PortfolioView, closes: &HashMap<String, Decimal>) -> Vec<Position> {
-    view.assets
-        .iter()
-        .map(|a| {
-            let market = a.asset.market();
-            if market.unit_kind() == UnitKind::Value {
-                return Position {
-                    asset_id: a.asset.id,
-                    by_value: true,
-                    quantity: a.asset.quantity,
-                    unit_price: None,
-                };
-            }
-            let close = a
-                .asset
-                .symbol
-                .as_deref()
-                .filter(|_| a.asset.manual_price.is_none() && market.from_provider())
-                .and_then(|s| market.quote_symbol(s))
-                .and_then(|s| closes.get(&s).copied())
-                .and_then(|close| {
-                    if a.currency == "BRL" {
-                        Some(close)
-                    } else {
-                        closes
-                            .get(&fx_symbol(&a.currency))
-                            .map(|fx| (close * fx).round_dp(8))
+    /// A reconstrução em segundo plano: a cada `every`, refaz as séries com
+    /// marca de "sujo". A rodada sem marca é uma consulta só.
+    pub fn spawn_rebuilds(
+        self: Arc<Self>,
+        every: std::time::Duration,
+    ) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(every);
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                ticker.tick().await;
+                match self.run_pending(OffsetDateTime::now_utc()).await {
+                    Ok(report) if report.users > 0 || report.failed > 0 => tracing::info!(
+                        users = report.users,
+                        days = report.days,
+                        failed = report.failed,
+                        prices = report.prices,
+                        "serie do desempenho refeita"
+                    ),
+                    Ok(_) => {}
+                    Err(error) => {
+                        tracing::error!(error = %error, "reconstrucao do desempenho falhou");
                     }
-                });
-            Position {
-                asset_id: a.asset.id,
-                by_value: false,
-                quantity: a.asset.quantity,
-                unit_price: close.or(a.unit_price).filter(|p| *p > Decimal::ZERO),
+                }
             }
         })
-        .collect()
+    }
 }
 
-/// A foto de agora, sem gravar. `None` para quem nunca teve ativo nem série.
+/// A moeda de um símbolo antes de ele ter cotação guardada.
+fn default_currency(market: Market) -> &'static str {
+    match market {
+        Market::Us | Market::Crypto => "USD",
+        Market::B3 | Market::Treasury | Market::Manual => "BRL",
+    }
+}
+
+/// O símbolo do histórico de preço do ativo. `None` para quem não tem preço de
+/// mercado: renda fixa por valor e ativo com preço manual (o manual vence a
+/// cotação, como na tela).
+fn price_symbol(view: &AssetView) -> Option<String> {
+    if view.asset.manual_price.is_some() {
+        return None;
+    }
+    let market = view.asset.market();
+    view.asset
+        .symbol
+        .as_deref()
+        .and_then(|s| market.quote_symbol(s))
+}
+
+/// A moeda do histórico do ativo: a da cotação ou, sem cotação ainda, a do
+/// mercado.
+fn price_currency(view: &AssetView) -> String {
+    if view.price_source == PriceSource::Missing && view.currency == "BRL" {
+        default_currency(view.asset.market()).to_owned()
+    } else {
+        view.currency.clone()
+    }
+}
+
+/// Os dias de `from` a `to` da série da pessoa, calculados e não gravados.
+/// `previous` é a foto do dia anterior a `from` (sem ela, `from` abre a série).
+/// No dia de hoje, o ativo sem fechamento vale pelo preço que a tela mostra
+/// (cotação do momento ou preço manual).
+async fn compute_days(
+    store: &Store,
+    user: Uuid,
+    from: Date,
+    to: Date,
+    previous: Option<&Snapshot>,
+    now: OffsetDateTime,
+) -> Result<Vec<Snapshot>, StoreError> {
+    if from > to {
+        return Ok(Vec::new());
+    }
+    let today = local_date(now);
+    let view = service::portfolio(store, user).await?;
+    let mut entries = store.ledger_entries(user).await?;
+    let mut symbols: BTreeSet<String> = BTreeSet::new();
+    for asset in &view.assets {
+        if let Some(symbol) = price_symbol(asset) {
+            symbols.insert(symbol);
+            let currency = price_currency(asset);
+            if currency != "BRL" {
+                symbols.insert(fx_symbol(&currency));
+            }
+        }
+    }
+    let symbols: Vec<String> = symbols.into_iter().collect();
+    let closes = store.price_series(&symbols, from, to).await?;
+    let stored = store.snapshot_prices(user, from, to).await?;
+    let income = store.received_income(user, from, to).await?;
+    let empty = Series::new();
+    let assets: Vec<AssetHistory> = view
+        .assets
+        .iter()
+        .filter_map(|a| {
+            let entries = entries.remove(&a.asset.id)?;
+            let by_value = a.asset.market().unit_kind() == UnitKind::Value;
+            let market_prices = price_symbol(a).map_or_else(Series::new, |symbol| {
+                let currency = price_currency(a);
+                let fx = (currency != "BRL")
+                    .then(|| closes.get(&fx_symbol(&currency)).unwrap_or(&empty));
+                retro::in_reais(closes.get(&symbol).unwrap_or(&empty), fx)
+            });
+            let mut prices =
+                retro::merge_prices(&market_prices, stored.get(&a.asset.id).unwrap_or(&empty));
+            if to == today && !by_value && prices.last().is_none_or(|(d, _)| *d < today) {
+                if let Some(live) = a.unit_price.filter(|p| *p > Decimal::ZERO) {
+                    prices.push((today, live));
+                }
+            }
+            Some(AssetHistory {
+                asset_id: a.asset.id,
+                by_value,
+                entries,
+                prices,
+                fallback_price: if by_value { None } else { a.asset.manual_price },
+            })
+        })
+        .collect();
+    let start = previous.map(|p| Start {
+        quota: p.quota,
+        positions: &p.positions,
+    });
+    Ok(retro::rebuild(&assets, &income, start, from, to)
+        .into_iter()
+        .map(|day| Snapshot {
+            date: day.date,
+            market_value: day.market_value,
+            net_flow: day.net_flow,
+            income: day.income,
+            quota: day.quota,
+            positions: day.positions,
+            taken_at: now,
+        })
+        .collect())
+}
+
+/// Refaz e grava a série da pessoa de `since` até `end`. Continua da foto
+/// anterior a `since` quando ela existe; senão (ou se o livro passou a começar
+/// antes), refaz desde o primeiro lançamento. O que ficou antes do primeiro
+/// lançamento sai. Devolve quantos dias gravou.
+pub async fn rebuild_series(
+    store: &Store,
+    user: Uuid,
+    since: Date,
+    end: Date,
+    now: OffsetDateTime,
+) -> Result<usize, StoreError> {
+    let Some(first) = store.first_trade_date(user).await? else {
+        store.clear_snapshots(user).await?;
+        return Ok(0);
+    };
+    let mut from = since.max(first);
+    let previous = if from > first {
+        store
+            .snapshot_before(user, from)
+            .await?
+            .filter(|p| p.date >= first)
+    } else {
+        None
+    };
+    match &previous {
+        None => from = first,
+        // Buraco na série (a tarefa ficou dias sem rodar): continua do dia
+        // seguinte à última foto.
+        Some(p) => from = from.min(p.date + Duration::days(1)),
+    }
+    let days = compute_days(store, user, from, end, previous.as_ref(), now).await?;
+    store
+        .replace_snapshots(user, Some(first), from, &days)
+        .await?;
+    Ok(days.len())
+}
+
+/// A foto de hoje, sem gravar: a série desde a última foto até hoje, com o
+/// preço do momento onde ainda não há fechamento. `None` para quem não tem
+/// livro nem série.
 pub async fn compute_snapshot(
     store: &Store,
     user: Uuid,
@@ -274,51 +671,15 @@ pub async fn compute_snapshot(
 ) -> Result<Option<Snapshot>, StoreError> {
     let today = local_date(now);
     let previous = store.snapshot_before(user, today).await?;
-    let view = service::portfolio(store, user).await?;
-    if view.assets.is_empty() && previous.is_none() {
-        return Ok(None);
-    }
-    let symbols: Vec<String> = view.quote_symbols().into_iter().collect();
-    let closes = store.closes_on(&symbols, today).await?;
-    let positions = positions(&view, &closes);
-    let market_value = rules::market_value(&positions);
-    let (net_flow, quota) = match &previous {
-        None => (
-            market_value,
-            rules::advance(None, market_value, market_value),
-        ),
-        Some(previous) => {
-            let purchases = store
-                .purchases_between(user, previous.taken_at, now)
-                .await?;
-            let flow = rules::net_flow(&previous.positions, &positions, &purchases);
-            (
-                flow,
-                rules::advance(Some(previous.quota), market_value, flow),
-            )
-        }
+    let from = match &previous {
+        Some(p) => p.date + Duration::days(1),
+        None => match store.first_trade_date(user).await? {
+            Some(first) => first,
+            None => return Ok(None),
+        },
     };
-    Ok(Some(Snapshot {
-        date: today,
-        market_value,
-        net_flow,
-        quota,
-        positions,
-        taken_at: now,
-    }))
-}
-
-/// A foto do dia, gravada (ou refeita, se já existia).
-pub async fn take_snapshot(
-    store: &Store,
-    user: Uuid,
-    now: OffsetDateTime,
-) -> Result<Option<Snapshot>, StoreError> {
-    let snapshot = compute_snapshot(store, user, now).await?;
-    if let Some(snapshot) = &snapshot {
-        store.upsert_snapshot(user, snapshot).await?;
-    }
-    Ok(snapshot)
+    let mut days = compute_days(store, user, from, today, previous.as_ref(), now).await?;
+    Ok(days.pop())
 }
 
 /// Um ponto da série que a tela lê.
@@ -327,6 +688,7 @@ pub struct SeriesPoint {
     pub date: Date,
     pub market_value: Decimal,
     pub net_flow: Decimal,
+    pub income: Decimal,
     pub quota_value: Decimal,
     /// A foto de hoje calculada na hora, antes da tarefa do fechamento.
     pub partial: bool,
@@ -346,6 +708,7 @@ pub async fn series(
             date: p.date,
             market_value: p.market_value,
             net_flow: p.net_flow,
+            income: p.income,
             quota_value: p.quota_value,
             partial: false,
         })
@@ -357,6 +720,7 @@ pub async fn series(
                 date: snapshot.date,
                 market_value: snapshot.market_value,
                 net_flow: snapshot.net_flow,
+                income: snapshot.income,
                 quota_value: snapshot.quota.value,
                 partial: true,
             });
@@ -380,10 +744,13 @@ fn quota_points(points: &[SeriesPoint]) -> Vec<QuotaPoint> {
 pub struct NetWorthPoint {
     pub date: Date,
     pub market_value: Decimal,
-    /// A soma dos fluxos desde o começo da série (a primeira foto entra
-    /// inteira como aplicado).
+    /// A soma dos fluxos desde o começo da série: o que a pessoa pôs menos o
+    /// que tirou.
     pub invested: Decimal,
+    /// Patrimônio − aplicado: o ganho de preço (o provento não está nele).
     pub gain: Decimal,
+    /// Proventos recebidos desde o começo da série.
+    pub income: Decimal,
     pub partial: bool,
 }
 
@@ -394,15 +761,18 @@ pub fn net_worth(points: &[SeriesPoint], period: Period, today: Date) -> Vec<Net
     };
     let from = window(points, period, today).map_or(first.date, |w| w.from);
     let mut invested = Decimal::ZERO;
+    let mut income = Decimal::ZERO;
     let mut out = Vec::new();
     for p in points {
         invested += p.net_flow;
+        income += p.income;
         if p.date >= from {
             out.push(NetWorthPoint {
                 date: p.date,
                 market_value: p.market_value,
                 invested,
                 gain: p.market_value - invested,
+                income,
                 partial: p.partial,
             });
         }
@@ -615,6 +985,7 @@ mod tests {
             date,
             market_value,
             net_flow,
+            income: Decimal::ZERO,
             quota_value: quota,
             partial: false,
         }

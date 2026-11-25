@@ -39,6 +39,7 @@ use crate::quotes::{QuoteError, QuoteProvider, SymbolMatch, YahooProvider};
 use crate::sectors::SectorService;
 use crate::service::QuoteService;
 use crate::store::Store;
+use crate::treasury::history::{DisabledTreasuryHistory, TreasuryHistory};
 use crate::treasury::{TransparenteFeed, TreasurySync};
 
 #[derive(Debug, thiserror::Error)]
@@ -109,12 +110,22 @@ pub async fn run(config: Config) -> Result<(), StartError> {
         }
     };
     if let Some(at) = config.snapshot_at {
-        let history: Arc<dyn HistoryProvider> = if config.quotes_enabled {
-            Arc::new(PublicHistory::new(http.clone()))
-        } else {
-            Arc::new(DisabledHistory)
-        };
-        Arc::new(performance::Performance::new(store.clone(), history)).spawn(at);
+        let (history, bonds): (Arc<dyn HistoryProvider>, Arc<dyn TreasuryHistory>) =
+            if config.quotes_enabled {
+                (
+                    Arc::new(PublicHistory::new(http.clone())),
+                    Arc::new(TransparenteFeed::new(http.clone())),
+                )
+            } else {
+                (Arc::new(DisabledHistory), Arc::new(DisabledTreasuryHistory))
+            };
+        let performance = Arc::new(
+            performance::Performance::new(store.clone(), history).with_treasury_history(bonds),
+        );
+        Arc::clone(&performance).spawn(at);
+        // A série refeita quando o livro muda no passado (importação da B3,
+        // lançamento antigo editado ou apagado).
+        performance.spawn_rebuilds(performance::REBUILD_EVERY);
     }
     let (provider, dividends): (Arc<dyn QuoteProvider>, Arc<dyn DividendProvider>) =
         if config.quotes_enabled {

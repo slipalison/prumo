@@ -10,6 +10,11 @@
 //! O Tesouro divulga uma vez por dia útil e o preço não muda fora disso, então
 //! o Prumo baixa a tabela no máximo uma vez a cada [`MAX_AGE`]. A explicação e
 //! os limites estão em `docs/tesouro.md`.
+//!
+//! O histórico de cada título (o preço de todos os dias, para a série
+//! retroativa do Desempenho) sai do mesmo arquivo: ver [`history`].
+
+pub mod history;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -21,6 +26,7 @@ use serde::Deserialize;
 use time::macros::offset;
 use time::{Date, OffsetDateTime, Time, UtcOffset};
 
+use crate::domain::asset_class::Market;
 use crate::domain::treasury::{unique_names, Bond, BondKind};
 use crate::live::LiveQuotes;
 use crate::quotes::Quote;
@@ -335,7 +341,24 @@ impl TransparenteFeed {
             .ok_or_else(|| FeedError::Malformed("o CKAN nao lista um recurso CSV".into()))
     }
 
-    async fn read_csv(&self, path: &str, today: Date) -> Result<Parsed, FeedError> {
+    /// O caminho do CSV: o que o CKAN informa ou, se ele falhar, o conhecido.
+    async fn csv_path(&self) -> String {
+        match self.discover_csv_path().await {
+            Ok(path) => path,
+            Err(error) => {
+                tracing::warn!(error = %error, "ckan nao disse onde esta o csv do tesouro, usando o endereco conhecido");
+                KNOWN_CSV_PATH.to_owned()
+            }
+        }
+    }
+
+    /// Baixa o CSV em fluxo e entrega cada linha a `line`, sem guardar o
+    /// arquivo: são uns 15 MB, e quem lê guarda só o que precisa.
+    async fn for_each_line(
+        &self,
+        path: &str,
+        mut line: impl FnMut(&str) -> Result<(), FeedError>,
+    ) -> Result<(), FeedError> {
         let mut response = self
             .http
             .get(format!("{}{path}", self.base))
@@ -344,7 +367,6 @@ impl TransparenteFeed {
             .await
             .and_then(reqwest::Response::error_for_status)
             .map_err(|e| FeedError::Unavailable(e.to_string()))?;
-        let mut board = PriceBoard::new(today);
         // O arquivo chega em pedaços que não respeitam o fim de linha: o que
         // sobra do pedaço espera o próximo.
         let mut pending: Vec<u8> = Vec::new();
@@ -355,13 +377,20 @@ impl TransparenteFeed {
         {
             pending.extend_from_slice(&chunk);
             while let Some(end) = pending.iter().position(|b| *b == b'\n') {
-                let line: Vec<u8> = pending.drain(..=end).collect();
-                board.push_line(&String::from_utf8_lossy(&line))?;
+                let bytes: Vec<u8> = pending.drain(..=end).collect();
+                line(&String::from_utf8_lossy(&bytes))?;
             }
         }
         if !pending.is_empty() {
-            board.push_line(&String::from_utf8_lossy(&pending))?;
+            line(&String::from_utf8_lossy(&pending))?;
         }
+        Ok(())
+    }
+
+    async fn read_csv(&self, path: &str, today: Date) -> Result<Parsed, FeedError> {
+        let mut board = PriceBoard::new(today);
+        self.for_each_line(path, |line| board.push_line(line))
+            .await?;
         board.finish()
     }
 }
@@ -369,13 +398,7 @@ impl TransparenteFeed {
 #[async_trait]
 impl TreasuryFeed for TransparenteFeed {
     async fn latest_prices(&self, today: Date) -> Result<Vec<BondPrice>, FeedError> {
-        let path = match self.discover_csv_path().await {
-            Ok(path) => path,
-            Err(error) => {
-                tracing::warn!(error = %error, "ckan nao disse onde esta o csv do tesouro, usando o endereco conhecido");
-                KNOWN_CSV_PATH.to_owned()
-            }
-        };
+        let path = self.csv_path().await;
         let parsed = self.read_csv(&path, today).await?;
         if !parsed.unknown_titles.is_empty() {
             tracing::warn!(titles = ?parsed.unknown_titles, "tipos de titulo do tesouro que o prumo nao conhece");
@@ -453,6 +476,25 @@ impl TreasurySync {
                 )
                 .await?;
             symbols.push(symbol);
+        }
+        // O preço do dia de cada título que alguma carteira guarda vai também
+        // para o histórico: a série do Desempenho anda para a frente sem baixar
+        // a tabela de novo (o passado vem de [`history`], uma vez só).
+        let held: BTreeSet<String> = self
+            .store
+            .tracked_symbols()
+            .await?
+            .into_iter()
+            .filter(|(market, _)| *market == Market::Treasury)
+            .map(|(_, symbol)| symbol)
+            .collect();
+        for price in prices.iter().filter(|p| held.contains(&p.bond.symbol())) {
+            self.store
+                .insert_prices(
+                    &price.bond.symbol(),
+                    &vec![(price.base_date, price.redemption_price)],
+                )
+                .await?;
         }
         let pruned = self.store.prune_treasury(&symbols).await?;
         let report = SyncReport {

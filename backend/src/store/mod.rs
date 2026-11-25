@@ -25,9 +25,11 @@ use crate::live::Tick;
 use crate::quotes::Quote;
 
 mod performance;
+mod retro;
 mod treasury;
 
 pub use performance::{JobLock, Snapshot, SnapshotPoint};
+pub use retro::{DirtySeries, HeldSymbol};
 
 pub use cash::{CashReport, RECENT_SHOWN};
 

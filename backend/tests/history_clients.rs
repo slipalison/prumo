@@ -1,5 +1,7 @@
 //! Os clientes do BCB (SGS) e do `chart` do Yahoo contra respostas gravadas
-//! com `curl` em 25/11/2026 (`tests/fixtures/history/`).
+//! com `curl` em 25/11/2026 (`tests/fixtures/history/`). `yahoo_aapl_split.json`
+//! é `AAPL` de 26/08 a 04/09/2020 com `events=split`: o desdobro de 4 para 1 em
+//! 31/08/2020, com os fechamentos de antes já divididos por 4.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use prumo::history::bcb::BcbClient;
@@ -17,6 +19,7 @@ const TOO_WIDE: &str = include_str!("fixtures/history/bcb_406_window.json");
 const BVSP: &str = include_str!("fixtures/history/yahoo_bvsp.json");
 const KNRI11: &str = include_str!("fixtures/history/yahoo_knri11.json");
 const UNKNOWN: &str = include_str!("fixtures/history/yahoo_404.json");
+const AAPL_SPLIT: &str = include_str!("fixtures/history/yahoo_aapl_split.json");
 
 fn json(status: u16, body: &str) -> ResponseTemplate {
     ResponseTemplate::new(status).set_body_raw(body.as_bytes().to_vec(), "application/json")
@@ -216,6 +219,44 @@ async fn yahoo_unknown_symbol_and_null_closes() {
         yahoo.closes("FORA", from, to).await,
         Err(HistoryError::Unavailable(_))
     ));
+}
+
+/// O Yahoo divide o passado pelo fator de cada desdobramento; o cliente pede
+/// os eventos até hoje (só assim vem o desdobro que caiu depois da janela) e
+/// devolve o fechamento real de cada dia.
+#[tokio::test]
+async fn yahoo_undoes_the_split_adjustment() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v8/finance/chart/AAPL"))
+        .and(query_param("events", "split"))
+        .respond_with(json(200, AAPL_SPLIT))
+        .mount(&server)
+        .await;
+    let yahoo = YahooHistory::with_base(reqwest::Client::new(), &server.uri());
+    let now = datetime!(2026-11-25 22:00 UTC);
+    let closes = yahoo
+        .closes_at("AAPL", date!(2020 - 08 - 27), date!(2020 - 08 - 31), now)
+        .await
+        .unwrap();
+    assert_eq!(
+        closes,
+        vec![
+            // 125,01 e 124,8075 ajustados: 500,04 e 499,23 no dia.
+            (date!(2020 - 08 - 27), dec!(500.04000856)),
+            (date!(2020 - 08 - 28), dec!(499.230011)),
+            // No dia do desdobro o preço já é o novo.
+            (date!(2020 - 08 - 31), dec!(129.03999329)),
+        ]
+    );
+    let requests = server.received_requests().await.unwrap();
+    let period2: i64 = requests[0]
+        .url
+        .query_pairs()
+        .find(|(k, _)| k == "period2")
+        .map(|(_, v)| v.parse().unwrap())
+        .unwrap();
+    assert!(period2 > now.unix_timestamp(), "{period2}");
 }
 
 /// O provedor público junta os dois: índice do SGS e Ibovespa do Yahoo.

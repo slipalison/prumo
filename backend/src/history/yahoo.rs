@@ -11,6 +11,19 @@
 //! - o pregão de hoje vem com o preço do momento, e pode haver `null` em dia
 //!   sem negócio: os dois ficam de fora;
 //! - símbolo inexistente responde `404` com `{"chart":{"result":null,...}}`.
+//!
+//! Com `events=split` (medido com `curl` em 25/11/2026, `AAPL` e `ITSA4.SA`):
+//!
+//! - `events.splits` traz cada evento com `date` (abertura do pregão do dia
+//!   do evento), `numerator` e `denominator` (`4:1`; a bonificação da B3 vem
+//!   como desdobramento, `105:100`);
+//! - o `close` de **todos** os dias antes do evento já vem dividido pelo fator,
+//!   mas o evento só aparece se cair dentro de `period1..period2`. Por isso o
+//!   pedido vai sempre até hoje: só assim os eventos depois da janela, que
+//!   ajustaram os preços dela, vêm junto.
+//!
+//! O cliente devolve o fechamento **real** do dia (o que se pagava naquele
+//! dia), com o ajuste desfeito — ver `docs/desempenho.md`.
 
 use std::time::Duration;
 
@@ -19,6 +32,7 @@ use serde::Deserialize;
 use time::{Date, OffsetDateTime, UtcOffset};
 
 use super::{HistoryError, Series};
+use crate::domain::retro::unadjust_splits;
 
 pub struct YahooHistory {
     http: reqwest::Client,
@@ -41,6 +55,22 @@ struct ChartResult {
     #[serde(default)]
     timestamp: Vec<i64>,
     indicators: Indicators,
+    #[serde(default)]
+    events: Option<Events>,
+}
+
+#[derive(Deserialize)]
+struct Events {
+    /// Chave = o mesmo `date` em texto.
+    #[serde(default)]
+    splits: std::collections::BTreeMap<String, Split>,
+}
+
+#[derive(Deserialize)]
+struct Split {
+    date: i64,
+    numerator: f64,
+    denominator: f64,
 }
 
 #[derive(Deserialize)]
@@ -85,8 +115,9 @@ impl YahooHistory {
         }
     }
 
-    /// Fechamentos de `from` a `to`, inclusive. O pregão que ainda não fechou
-    /// fica de fora: o preço dele muda até o fim do dia.
+    /// Fechamentos reais de `from` a `to`, inclusive (o ajuste de
+    /// desdobramento desfeito). O pregão que ainda não fechou fica de fora: o
+    /// preço dele muda até o fim do dia.
     pub async fn closes(&self, symbol: &str, from: Date, to: Date) -> Result<Series, HistoryError> {
         self.closes_at(symbol, from, to, OffsetDateTime::now_utc())
             .await
@@ -103,7 +134,12 @@ impl YahooHistory {
         let unavailable = |e: &dyn std::fmt::Display| HistoryError::Unavailable(e.to_string());
         // Margem de um dia nas pontas: a data do pregão é no fuso da bolsa.
         let period1 = (from - time::Duration::days(1)).midnight().assume_utc();
-        let period2 = (to + time::Duration::days(2)).midnight().assume_utc();
+        // Até hoje, nem que a janela acabe antes: os desdobramentos depois dela
+        // só vêm se estiverem no período pedido.
+        let period2 = (to + time::Duration::days(2))
+            .max(now.date() + time::Duration::days(1))
+            .midnight()
+            .assume_utc();
         let url = format!(
             "{}/v8/finance/chart/{}",
             self.base,
@@ -116,6 +152,7 @@ impl YahooHistory {
                 ("period1", period1.unix_timestamp().to_string()),
                 ("period2", period2.unix_timestamp().to_string()),
                 ("interval", "1d".to_owned()),
+                ("events", "split".to_owned()),
             ])
             .timeout(Duration::from_secs(15))
             .send()
@@ -169,7 +206,24 @@ impl YahooHistory {
             .collect();
         out.sort_by_key(|(date, _)| *date);
         out.dedup_by_key(|(date, _)| *date);
-        Ok(out)
+        let splits: Vec<(Date, Decimal)> = result
+            .events
+            .map(|e| e.splits.into_values().collect::<Vec<_>>())
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|split| {
+                let date = OffsetDateTime::from_unix_timestamp(split.date)
+                    .ok()?
+                    .to_offset(offset)
+                    .date();
+                let factor = Decimal::try_from(split.numerator).ok()?
+                    / Decimal::try_from(split.denominator)
+                        .ok()
+                        .filter(|d| *d > Decimal::ZERO)?;
+                Some((date, factor))
+            })
+            .collect();
+        Ok(unadjust_splits(&out, &splits))
     }
 }
 
