@@ -160,13 +160,15 @@ impl LiveQuotes {
 
     /// O que assinar: todo símbolo de ativo que já tem cotação no banco, mais o
     /// câmbio das moedas que aparecem. Sem cotação o streamer não teria moeda
-    /// para o preço — esse símbolo espera o `chart`.
+    /// para o preço — esse símbolo espera o `chart`. O título do Tesouro fica
+    /// de fora: o preço dele vem da tabela diária, não de bolsa.
     async fn wanted(&self) -> Result<BTreeSet<String>, StoreError> {
         let symbols: Vec<String> = self
             .store
             .tracked_symbols()
             .await?
             .into_iter()
+            .filter(|(market, _)| market.from_provider())
             .filter_map(|(market, symbol)| market.quote_symbol(&symbol))
             .collect::<BTreeSet<_>>()
             .into_iter()

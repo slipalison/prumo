@@ -1,11 +1,13 @@
 //! As sete classes de ativo e o que cada uma decide: checklist e mercado. O
-//! mercado (B3, EUA, cripto ou valor informado) decide a unidade e o símbolo no
-//! provedor de cotações.
+//! mercado (B3, EUA, cripto, Tesouro Direto ou valor informado) decide a
+//! unidade e o símbolo na fonte de cotações.
 //!
 //! A classe diz o que o ativo **é** para a carteira; o mercado, onde ele é
 //! **negociado**. Quase sempre andam juntos, mas um ETF de bitcoin da B3 é
 //! cripto na carteira e ação na bolsa — por isso as classes que não são da B3
-//! aceitam um ativo marcado como negociado lá (ETF, BDR).
+//! aceitam um ativo marcado como negociado lá (ETF, BDR). O título do Tesouro
+//! Direto é Renda Fixa na carteira e tem mercado próprio: o preço vem da tabela
+//! diária do Tesouro, não de bolsa.
 
 use serde::{Deserialize, Serialize};
 
@@ -39,6 +41,9 @@ pub enum Market {
     Us,
     /// Cripto, cotada em dólar.
     Crypto,
+    /// Título do Tesouro Direto, em reais, cotado pelo preço de resgate do dia
+    /// (tabela do Tesouro Transparente, não do Yahoo).
+    Treasury,
     /// Sem cotação: a pessoa informa o valor (renda fixa).
     Manual,
 }
@@ -50,6 +55,9 @@ pub enum UnitKind {
     Whole,
     /// Fração com até 8 casas (cripto).
     Fractional,
+    /// Fração de centésimos de título, como o Tesouro Direto vende: 0,01 é o
+    /// menor pedaço.
+    Hundredth,
     /// Não há unidade: a pessoa informa o valor (renda fixa).
     Value,
 }
@@ -127,6 +135,21 @@ impl AssetClass {
             self.native_market()
         }
     }
+
+    /// Se a classe aceita título do Tesouro Direto (só Renda Fixa).
+    pub fn accepts_treasury(self) -> bool {
+        self == AssetClass::FixedIncome
+    }
+
+    /// O mercado de um ativo com as duas marcas: título do Tesouro vence a
+    /// B3 (a restrição do banco impede as duas juntas).
+    pub fn market_of(self, listed_on_b3: bool, treasury: bool) -> Market {
+        if treasury {
+            Market::Treasury
+        } else {
+            self.market(listed_on_b3)
+        }
+    }
 }
 
 impl Market {
@@ -134,11 +157,21 @@ impl Market {
         match self {
             Market::B3 | Market::Us => UnitKind::Whole,
             Market::Crypto => UnitKind::Fractional,
+            Market::Treasury => UnitKind::Hundredth,
             Market::Manual => UnitKind::Value,
         }
     }
 
-    /// Símbolo no provedor de cotações. `None` para o que não tem cotação.
+    /// Se o preço vem do provedor de cotações (`chart` e streamer ao vivo). O
+    /// Tesouro muda 1x por dia e vem da tabela do Tesouro: fica fora da
+    /// atualização do provedor e da assinatura do streamer.
+    pub fn from_provider(self) -> bool {
+        matches!(self, Market::B3 | Market::Us | Market::Crypto)
+    }
+
+    /// Símbolo na fonte de cotações. `None` para o que não tem cotação. No
+    /// Tesouro é a própria chave do título (`TD-IPCA-20350515`), a mesma da
+    /// tabela `quotes`.
     pub fn quote_symbol(self, symbol: &str) -> Option<String> {
         match self {
             Market::B3 => Some(format!("{symbol}.SA")),
@@ -146,6 +179,7 @@ impl Market {
             // O Yahoo nao cota cripto em reais (`BTC-BRL` responde 404, medido em
             // 25/11/2026): vem em dolar e o cambio `USDBRL=X` converte.
             Market::Crypto => Some(format!("{symbol}-USD")),
+            Market::Treasury => Some(symbol.to_owned()),
             Market::Manual => None,
         }
     }
@@ -220,7 +254,24 @@ mod tests {
         assert_eq!(Market::B3.unit_kind(), UnitKind::Whole);
         assert_eq!(Market::Us.unit_kind(), UnitKind::Whole);
         assert_eq!(Market::Crypto.unit_kind(), UnitKind::Fractional);
+        assert_eq!(Market::Treasury.unit_kind(), UnitKind::Hundredth);
         assert_eq!(Market::Manual.unit_kind(), UnitKind::Value);
+    }
+
+    #[test]
+    fn the_treasury_mark_wins_over_the_b3_one_and_only_fixed_income_takes_it() {
+        for class in AssetClass::ALL {
+            assert_eq!(class.accepts_treasury(), class == AssetClass::FixedIncome);
+            assert_eq!(class.market_of(false, true), Market::Treasury);
+            assert_eq!(class.market_of(true, true), Market::Treasury);
+            assert_eq!(class.market_of(true, false), Market::B3);
+            assert_eq!(class.market_of(false, false), class.native_market());
+        }
+        assert!(Market::B3.from_provider());
+        assert!(Market::Us.from_provider());
+        assert!(Market::Crypto.from_provider());
+        assert!(!Market::Treasury.from_provider());
+        assert!(!Market::Manual.from_provider());
     }
 
     #[test]
@@ -245,6 +296,11 @@ mod tests {
         );
         assert_eq!(Market::Us.quote_symbol("O").as_deref(), Some("O"));
         assert_eq!(Market::Manual.quote_symbol("X"), None);
+        // O título é cotado pela própria chave, sem sufixo de provedor.
+        assert_eq!(
+            Market::Treasury.quote_symbol("TD-IPCA-20350515").as_deref(),
+            Some("TD-IPCA-20350515")
+        );
         // Um ETF de bitcoin da B3 é cripto na carteira e `.SA` no provedor.
         assert_eq!(
             AssetClass::Crypto

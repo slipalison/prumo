@@ -15,7 +15,8 @@
 //!    classe depois do aporte, e o dinheiro vai na proporção do que falta a
 //!    cada ativo.
 //! 5. Cota e ação são inteiras (arredonda para baixo); cripto tem 8 casas;
-//!    renda fixa vai em centavos.
+//!    título do Tesouro Direto vai em centésimos de título; renda fixa por
+//!    valor vai em centavos.
 //! 6. O troco do arredondamento passa por uma rodada gulosa: compra mais uma
 //!    unidade do ativo mais atrasado enquanto isso aproximar a carteira da meta
 //!    (falta > meio preço); o que não couber em unidade vai para o ativo
@@ -479,6 +480,10 @@ fn purchasable(kind: UnitKind, budget: Decimal, price: Decimal) -> (Decimal, Dec
             let qty = (budget / price).round_dp_with_strategy(8, RoundingStrategy::ToZero);
             (qty, floor_cents(qty * price))
         }
+        UnitKind::Hundredth => {
+            let qty = (budget / price).round_dp_with_strategy(2, RoundingStrategy::ToZero);
+            (qty, floor_cents(qty * price))
+        }
         UnitKind::Value => {
             let value = floor_cents(budget);
             (value, value)
@@ -536,6 +541,7 @@ fn floor_cents(value: Decimal) -> Decimal {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::asset_class::Market;
     use rust_decimal_macros::dec;
 
     fn holding(
@@ -724,6 +730,41 @@ mod tests {
             Some(dec!(1))
         );
         assert_eq!(plan.change, dec!(50));
+    }
+
+    /// O mesmo ativo como título do Tesouro Direto: centésimos de título.
+    fn as_treasury(holding: Holding) -> Holding {
+        Holding {
+            unit: Market::Treasury.unit_kind(),
+            ..holding
+        }
+    }
+
+    #[test]
+    fn a_treasury_bond_is_bought_in_hundredths_of_a_bond() {
+        use AssetClass::*;
+        let holdings = vec![
+            as_treasury(holding(
+                FixedIncome,
+                "IPCA",
+                dec!(0),
+                Some(dec!(4248.81)),
+                5,
+            )),
+            holding(BrStocks, "ITSA4", dec!(1000), Some(dec!(10)), 5),
+        ];
+        let mut targets = Targets::default();
+        targets.set(FixedIncome, 5000);
+        targets.set(BrStocks, 5000);
+        let plan = plan(dec!(1000), targets, &holdings);
+        assert_money_adds_up(&plan);
+        let bond = item(&plan, &holdings, "IPCA").expect("o titulo recebe");
+        // R$ 1.000 a R$ 4.248,81 o título: 0,23 título (0,2353… para baixo),
+        // R$ 977,22. O que não coube em centésimo de título volta como troco.
+        assert_eq!(bond.quantity, dec!(0.23));
+        assert_eq!(bond.value, dec!(977.22));
+        assert!(bond.divisible);
+        assert_eq!(plan.change, dec!(22.78));
     }
 
     #[test]
@@ -973,25 +1014,32 @@ mod tests {
                 prop::option::weighted(0.9, 1u32..200_000),
                 0u8..11,
                 prop::bool::weighted(0.2),
+                prop::bool::weighted(0.3),
             )
-                .prop_map(|(class, value_cents, price_cents, score, listed_on_b3)| {
-                    let class = AssetClass::ALL[class];
-                    let unit = class.market(listed_on_b3).unit_kind();
-                    let price = match unit {
-                        UnitKind::Value => Some(Decimal::ONE),
-                        _ => price_cents.map(|c| Decimal::new(i64::from(c), 2)),
-                    };
-                    Holding {
-                        unit,
-                        ..holding(
-                            class,
-                            "X",
-                            Decimal::new(i64::from(value_cents), 2),
-                            price,
-                            score,
-                        )
-                    }
-                })
+                .prop_map(
+                    |(class, value_cents, price_cents, score, listed_on_b3, treasury)| {
+                        let class = AssetClass::ALL[class];
+                        // Título do Tesouro só existe em Renda Fixa (restrição do banco).
+                        let treasury = treasury && class.accepts_treasury();
+                        let unit = class
+                            .market_of(listed_on_b3 && !treasury, treasury)
+                            .unit_kind();
+                        let price = match unit {
+                            UnitKind::Value => Some(Decimal::ONE),
+                            _ => price_cents.map(|c| Decimal::new(i64::from(c), 2)),
+                        };
+                        Holding {
+                            unit,
+                            ..holding(
+                                class,
+                                "X",
+                                Decimal::new(i64::from(value_cents), 2),
+                                price,
+                                score,
+                            )
+                        }
+                    },
+                )
         }
 
         fn arb_targets() -> impl Strategy<Value = Targets> {

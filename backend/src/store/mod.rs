@@ -18,6 +18,8 @@ use crate::domain::defaults;
 use crate::live::Tick;
 use crate::quotes::Quote;
 
+mod treasury;
+
 static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
 #[derive(Debug, thiserror::Error)]
@@ -44,11 +46,14 @@ pub struct Asset {
     /// Negociado na B3 (ETF, BDR) mesmo numa classe de fora dela. Sempre
     /// verdadeiro em Ações Nacionais e FIIs.
     pub listed_on_b3: bool,
+    /// Título do Tesouro Direto: o símbolo é a chave do título e o preço vem da
+    /// tabela diária do Tesouro. Só em Renda Fixa.
+    pub treasury: bool,
 }
 
 impl Asset {
     pub fn market(&self) -> Market {
-        self.asset_class.market(self.listed_on_b3)
+        self.asset_class.market_of(self.listed_on_b3, self.treasury)
     }
 }
 
@@ -61,6 +66,7 @@ pub struct NewAsset {
     pub manual_price: Option<Decimal>,
     pub score_override: Option<u8>,
     pub listed_on_b3: bool,
+    pub treasury: bool,
 }
 
 /// Campos ausentes ficam como estão; `Some(None)` limpa.
@@ -141,6 +147,7 @@ struct AssetRow {
     manual_price: Option<Decimal>,
     score_override: Option<i16>,
     listed_on_b3: bool,
+    treasury: bool,
 }
 
 #[derive(FromRow)]
@@ -183,7 +190,7 @@ struct ContributionItemRow {
 /// aceita SQL estático (`&'static str`), e a lista é a única parte repetida.
 macro_rules! asset_columns {
     () => {
-        "id, asset_class, symbol, display_name, quantity, manual_price, score_override, listed_on_b3"
+        "id, asset_class, symbol, display_name, quantity, manual_price, score_override, listed_on_b3, treasury"
     };
 }
 
@@ -205,6 +212,7 @@ impl TryFrom<AssetRow> for Asset {
             manual_price: row.manual_price.map(|p| p.normalize()),
             score_override: row.score_override.and_then(|s| u8::try_from(s).ok()),
             listed_on_b3: row.listed_on_b3,
+            treasury: row.treasury,
         })
     }
 }
@@ -232,7 +240,7 @@ fn is_unique_violation(error: &sqlx::Error) -> bool {
 pub fn unit_value(unit: UnitKind, quantity: Decimal, unit_price: Decimal) -> Decimal {
     match unit {
         UnitKind::Value => quantity,
-        UnitKind::Whole | UnitKind::Fractional => quantity * unit_price,
+        UnitKind::Whole | UnitKind::Fractional | UnitKind::Hundredth => quantity * unit_price,
     }
 }
 
@@ -356,8 +364,8 @@ impl Store {
     }
 
     pub async fn insert_asset(&self, user: Uuid, new: &NewAsset) -> Result<Asset, StoreError> {
-        let result: Result<AssetRow, sqlx::Error> = sqlx::query_as(concat!("insert into assets (id, user_id, asset_class, symbol, display_name, quantity, manual_price, score_override, listed_on_b3)
-             values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning ", asset_columns!(), ""))
+        let result: Result<AssetRow, sqlx::Error> = sqlx::query_as(concat!("insert into assets (id, user_id, asset_class, symbol, display_name, quantity, manual_price, score_override, listed_on_b3, treasury)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning ", asset_columns!(), ""))
         .bind(Uuid::new_v4())
         .bind(user)
         .bind(new.asset_class.as_str())
@@ -367,6 +375,7 @@ impl Store {
         .bind(new.manual_price)
         .bind(new.score_override.map(i16::from))
         .bind(new.listed_on_b3)
+        .bind(new.treasury)
         .fetch_one(&self.pool)
         .await;
         match result {
@@ -688,15 +697,15 @@ impl Store {
 
     /// Mercado e símbolo de todos os ativos cotáveis, de todas as carteiras.
     pub async fn tracked_symbols(&self) -> Result<Vec<(Market, String)>, StoreError> {
-        let rows: Vec<(String, bool, String)> = sqlx::query_as(
-            "select distinct asset_class, listed_on_b3, symbol from assets where symbol is not null",
+        let rows: Vec<(String, bool, bool, String)> = sqlx::query_as(
+            "select distinct asset_class, listed_on_b3, treasury, symbol from assets where symbol is not null",
         )
         .fetch_all(&self.pool)
         .await?;
         let tracked: BTreeSet<(Market, String)> = rows
             .into_iter()
-            .filter_map(|(class, listed_on_b3, symbol)| {
-                AssetClass::parse(&class).map(|c| (c.market(listed_on_b3), symbol))
+            .filter_map(|(class, listed_on_b3, treasury, symbol)| {
+                AssetClass::parse(&class).map(|c| (c.market_of(listed_on_b3, treasury), symbol))
             })
             .collect();
         Ok(tracked.into_iter().collect())
@@ -741,7 +750,7 @@ impl Store {
             }
             let added = match asset.market().unit_kind() {
                 UnitKind::Value => value,
-                UnitKind::Whole | UnitKind::Fractional => item.quantity,
+                UnitKind::Whole | UnitKind::Fractional | UnitKind::Hundredth => item.quantity,
             };
             sqlx::query(
                 "update assets set quantity = quantity + $2, updated_at = now() where id = $1",

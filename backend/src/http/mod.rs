@@ -4,6 +4,7 @@ pub mod dto;
 mod handlers;
 mod live;
 mod ops;
+mod treasury;
 
 use std::collections::HashMap;
 use std::sync::Arc;

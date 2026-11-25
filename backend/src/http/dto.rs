@@ -108,6 +108,10 @@ pub struct CreateAssetRequest {
     pub score_override: Option<i64>,
     #[serde(default)]
     pub listed_on_b3: Option<bool>,
+    /// Título do Tesouro Direto: `symbol` é a chave do título (`TD-IPCA-20350515`,
+    /// a que `GET /symbols` devolve).
+    #[serde(default)]
+    pub treasury: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -228,6 +232,7 @@ pub struct AssetDto {
     pub symbol: Option<String>,
     pub display_name: String,
     pub listed_on_b3: bool,
+    pub treasury: bool,
     #[serde(with = "decimal_out")]
     pub quantity: Decimal,
     #[serde(with = "decimal_out::option")]
@@ -258,6 +263,7 @@ impl From<&AssetView> for AssetDto {
             symbol: a.asset.symbol.clone(),
             display_name: a.asset.display_name.clone(),
             listed_on_b3: a.asset.listed_on_b3,
+            treasury: a.asset.treasury,
             quantity: a.asset.quantity,
             unit_price: a.unit_price,
             manual_price: a.asset.manual_price,
@@ -385,6 +391,7 @@ pub struct PlanItemDto {
     pub symbol: Option<String>,
     pub display_name: String,
     pub listed_on_b3: bool,
+    pub treasury: bool,
     #[serde(with = "decimal_out")]
     pub quantity: Decimal,
     #[serde(with = "decimal_out")]
@@ -496,6 +503,7 @@ impl PlanDto {
                     symbol: asset.and_then(|a| a.symbol.clone()),
                     display_name: asset.map(|a| a.display_name.clone()).unwrap_or_default(),
                     listed_on_b3: asset.is_some_and(|a| a.listed_on_b3),
+                    treasury: asset.is_some_and(|a| a.treasury),
                     quantity: item.quantity,
                     unit_price: item.unit_price,
                     value: item.value,
@@ -576,6 +584,9 @@ pub struct SymbolDto {
     pub exchange: String,
     pub suggested_class: AssetClass,
     pub listed_on_b3: bool,
+    /// Título do Tesouro Direto: quem escolhe a sugestão cadastra com
+    /// `treasury: true`.
+    pub treasury: bool,
 }
 
 #[derive(Debug, Serialize)]

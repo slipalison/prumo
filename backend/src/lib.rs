@@ -1,8 +1,8 @@
 //! Prumo — mantém a carteira no eixo.
 //!
 //! `domain` tem as regras puras (classes, nota, o motor do aporte); `store` o
-//! Postgres; `quotes` o provedor de cotações; `service` junta os três; `http`
-//! expõe a API e os estáticos.
+//! Postgres; `quotes` o provedor de cotações; `treasury` a tabela diária do
+//! Tesouro Direto; `service` junta tudo; `http` expõe a API e os estáticos.
 
 pub mod auth;
 pub mod config;
@@ -14,6 +14,7 @@ pub mod quotes;
 pub mod service;
 pub mod store;
 pub mod telemetry;
+pub mod treasury;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -28,6 +29,7 @@ use crate::live::LiveQuotes;
 use crate::quotes::{QuoteError, QuoteProvider, SymbolMatch, YahooProvider};
 use crate::service::QuoteService;
 use crate::store::Store;
+use crate::treasury::{TransparenteFeed, TreasurySync};
 
 #[derive(Debug, thiserror::Error)]
 pub enum StartError {
@@ -94,7 +96,7 @@ pub async fn run(config: Config) -> Result<(), StartError> {
         }
     };
     let provider: Arc<dyn QuoteProvider> = if config.quotes_enabled {
-        Arc::new(YahooProvider::new(http))
+        Arc::new(YahooProvider::new(http.clone()))
     } else {
         Arc::new(DisabledQuotes)
     };
@@ -106,6 +108,13 @@ pub async fn run(config: Config) -> Result<(), StartError> {
     ));
     if config.quotes_enabled {
         Arc::clone(&quotes).spawn_refresher(config.quotes_refresh);
+        // O preço do Tesouro Direto: uma tabela por dia, fora do streamer.
+        Arc::new(TreasurySync::new(
+            store.clone(),
+            Arc::new(TransparenteFeed::new(http.clone())),
+            Arc::clone(&live),
+        ))
+        .spawn(treasury::CHECK_EVERY, treasury::MAX_AGE);
         if config.quotes_stream {
             live.spawn(LIVE_FLUSH_EVERY, LIVE_TRACK_EVERY);
             tokio::spawn(YahooStreamer::default().run(live.symbols(), live.ticks()));

@@ -11,9 +11,10 @@ use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use super::dto::*;
-use super::{ApiJson, ApiPath, ApiQuery, AppState, CurrentUser};
+use super::{treasury, ApiJson, ApiPath, ApiQuery, AppState, CurrentUser};
 use crate::domain::allocation::{Targets, FULL_BP};
 use crate::domain::asset_class::{normalize_symbol, AssetClass, Checklist, Market, UnitKind};
+use crate::domain::treasury::Bond;
 use crate::error::{ApiError, ApiResult};
 use crate::service;
 use crate::store::{AssetPatch, NewAsset, NewContributionItem, StoreError};
@@ -88,6 +89,12 @@ fn b3_listing(class: AssetClass, requested: Option<bool>) -> ApiResult<bool> {
 
 const WHOLE_ONLY: &str = "Esse ativo so aceita quantidade inteira.";
 
+/// O nome de um ativo cotado quando nem o usuário nem a cotação dão um: o
+/// título do Tesouro se chama pelo tipo e o ano; o resto, pelo símbolo.
+fn fallback_name(symbol: &str) -> String {
+    Bond::from_symbol(symbol).map_or_else(|| symbol.to_owned(), |bond| bond.name())
+}
+
 fn checklist(value: &str) -> ApiResult<Checklist> {
     Checklist::parse(value).ok_or_else(ApiError::not_found)
 }
@@ -161,8 +168,17 @@ pub async fn create_asset(
 ) -> ApiResult<impl IntoResponse> {
     let class = body.asset_class;
     let score_override = body.score_override.map(score_value).transpose()?;
-    let listed_on_b3 = b3_listing(class, body.listed_on_b3)?;
-    let market = class.market(listed_on_b3);
+    let treasury = body.treasury.unwrap_or(false);
+    if treasury && !class.accepts_treasury() {
+        return Err(ApiError::validation(
+            "Titulo do Tesouro so cabe em Renda Fixa.",
+        ));
+    }
+    if treasury && body.listed_on_b3 == Some(true) {
+        return Err(ApiError::validation("Titulo do Tesouro nao e da B3."));
+    }
+    let listed_on_b3 = !treasury && b3_listing(class, body.listed_on_b3)?;
+    let market = class.market_of(listed_on_b3, treasury);
     let new = match market.unit_kind() {
         UnitKind::Value => {
             let display_name = text(
@@ -185,14 +201,20 @@ pub async fn create_asset(
                 manual_price: None,
                 score_override,
                 listed_on_b3,
+                treasury,
             }
         }
-        UnitKind::Whole | UnitKind::Fractional => {
+        UnitKind::Whole | UnitKind::Fractional | UnitKind::Hundredth => {
             let symbol = body
                 .symbol
                 .as_deref()
                 .and_then(normalize_symbol)
                 .ok_or_else(|| ApiError::validation("Informe um simbolo valido, como KNRI11."))?;
+            if treasury && !Bond::is_symbol(&symbol) {
+                return Err(ApiError::validation(
+                    "Escolha o titulo na busca: a chave dele tem a forma TD-IPCA-20350515.",
+                ));
+            }
             let quantity = non_negative("A quantidade", body.quantity.unwrap_or_default())?;
             if market.unit_kind() == UnitKind::Whole && quantity.fract() != Decimal::ZERO {
                 return Err(ApiError::validation(WHOLE_ONLY));
@@ -211,7 +233,7 @@ pub async fn create_asset(
                 Some(name) => text("O nome", name, 120)?,
                 None => quote
                     .and_then(|q| q.name)
-                    .unwrap_or_else(|| symbol.clone())
+                    .unwrap_or_else(|| fallback_name(&symbol))
                     .chars()
                     .take(120)
                     .collect(),
@@ -224,6 +246,7 @@ pub async fn create_asset(
                 manual_price,
                 score_override,
                 listed_on_b3,
+                treasury,
             }
         }
     };
@@ -243,11 +266,14 @@ pub async fn update_asset(
         .asset(user.id, id)
         .await?
         .ok_or_else(ApiError::not_found)?;
+    if asset.treasury && body.listed_on_b3 == Some(true) {
+        return Err(ApiError::validation("Titulo do Tesouro nao e da B3."));
+    }
     let listed_on_b3 = match body.listed_on_b3 {
         None => asset.listed_on_b3,
         requested => b3_listing(asset.asset_class, requested)?,
     };
-    let market = asset.asset_class.market(listed_on_b3);
+    let market = asset.asset_class.market_of(listed_on_b3, asset.treasury);
     let kind = market.unit_kind();
     // Renda fixa por valor não tem ticker, e com ticker não tem valor
     // informado: trocar um pelo outro é outro ativo, não uma edição.
@@ -441,27 +467,26 @@ pub async fn symbols(
             "A busca precisa ter de 1 a 40 caracteres.",
         ));
     }
-    let matches = state
-        .quotes
-        .provider()
-        .search(term)
-        .await
-        .map_err(|error| {
+    // Os títulos do Tesouro vêm do banco e vão na frente; o provedor completa.
+    // Se ele cair e o Tesouro já respondeu, a pessoa ainda escolhe o título.
+    let mut found = treasury::suggestions(&state.store, term).await?;
+    match state.quotes.provider().search(term).await {
+        Ok(matches) => found.extend(matches.into_iter().map(|m| SymbolDto {
+            symbol: m.symbol,
+            display_name: m.display_name,
+            exchange: m.exchange,
+            suggested_class: m.suggested_class,
+            listed_on_b3: m.listed_on_b3,
+            treasury: false,
+        })),
+        Err(error) => {
             tracing::warn!(error = %error, "busca de simbolo falhou");
-            ApiError::quote_provider_unavailable()
-        })?;
-    Ok(Json(
-        matches
-            .into_iter()
-            .map(|m| SymbolDto {
-                symbol: m.symbol,
-                display_name: m.display_name,
-                exchange: m.exchange,
-                suggested_class: m.suggested_class,
-                listed_on_b3: m.listed_on_b3,
-            })
-            .collect(),
-    ))
+            if found.is_empty() {
+                return Err(ApiError::quote_provider_unavailable());
+            }
+        }
+    }
+    Ok(Json(found))
 }
 
 pub async fn refresh_quotes(

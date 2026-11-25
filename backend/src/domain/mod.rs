@@ -4,3 +4,4 @@ pub mod allocation;
 pub mod asset_class;
 pub mod defaults;
 pub mod scoring;
+pub mod treasury;

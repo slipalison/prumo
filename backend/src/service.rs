@@ -76,11 +76,12 @@ impl AssetView {
         Holding {
             asset_id: self.asset.id,
             asset_class: self.asset.asset_class,
-            label: self
-                .asset
-                .symbol
-                .clone()
-                .unwrap_or_else(|| self.asset.display_name.clone()),
+            // O aviso do plano cita o ativo pelo nome que a pessoa lê: o
+            // símbolo do título do Tesouro é uma chave, não um ticker.
+            label: match &self.asset.symbol {
+                Some(symbol) if !self.asset.treasury => symbol.clone(),
+                _ => self.asset.display_name.clone(),
+            },
             value: self.current_value,
             unit_price: self.unit_price,
             unit: self.asset.market().unit_kind(),
@@ -317,14 +318,24 @@ impl QuoteService {
     }
 
     /// Cota um ativo agora, para ele já aparecer com preço. Falha não é erro
-    /// para quem chama: o ativo fica sem preço até a próxima rodada.
+    /// para quem chama: o ativo fica sem preço até a próxima rodada. O título
+    /// do Tesouro não tem o que buscar: o preço do dia já está no banco, posto
+    /// pela rodada diária.
     pub async fn quote_now(&self, market: Market, symbol: &str) -> Option<Quote> {
+        if !market.from_provider() {
+            return self.stored_quote(market, symbol).await;
+        }
         let report = self.refresh(&[(market, symbol.to_owned())]).await;
         if report.refreshed == 0 {
             return None;
         }
         // Símbolo novo no banco: o streamer passa a acompanhar já.
         self.live.resync();
+        self.stored_quote(market, symbol).await
+    }
+
+    /// A cotação que o banco guarda do ativo, sem ir à rede.
+    async fn stored_quote(&self, market: Market, symbol: &str) -> Option<Quote> {
         let provider_symbol = market.quote_symbol(symbol)?;
         let stored = self.store.quotes(&[provider_symbol]).await.ok()?;
         stored.into_values().next().map(|q| Quote {
@@ -337,12 +348,16 @@ impl QuoteService {
     }
 
     /// Atualiza os símbolos dados e o câmbio das moedas que aparecerem, e
-    /// avisa quem acompanha a carteira ao vivo.
+    /// avisa quem acompanha a carteira ao vivo. O título do Tesouro fica de
+    /// fora: quem o atualiza é a rodada diária de [`crate::treasury`].
     pub async fn refresh(&self, targets: &[(Market, String)]) -> RefreshReport {
         let mut report = RefreshReport::default();
         let mut currencies = BTreeSet::new();
         let mut stored = BTreeSet::new();
         for (market, symbol) in targets {
+            if !market.from_provider() {
+                continue;
+            }
             let Some(provider_symbol) = market.quote_symbol(symbol) else {
                 continue;
             };
@@ -429,6 +444,7 @@ mod tests {
             manual_price: manual,
             score_override: None,
             listed_on_b3: class.native_market() == Market::B3,
+            treasury: false,
         }
     }
 
