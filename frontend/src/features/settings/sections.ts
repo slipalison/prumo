@@ -3,6 +3,7 @@ import type { Portfolio } from "../../api/types";
 import { CriteriaScreen } from "../criteria/CriteriaScreen";
 import { GoalsScreen } from "../goals/GoalsScreen";
 import { HealthScreen } from "../health/HealthScreen";
+import { ImportB3Screen } from "../importB3/ImportB3Screen";
 
 export type SettingsSection = {
   /** O trecho do endereço: `#/ajustes/<id>`. */
@@ -20,4 +21,5 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { id: "metas", label: "Metas por classe", Component: GoalsScreen },
   { id: "criterios", label: "Critérios", Component: CriteriaScreen },
   { id: "saude", label: "Saúde da carteira", Component: HealthScreen },
+  { id: "importar-b3", label: "Importar da B3", Component: ImportB3Screen },
 ];

@@ -178,6 +178,11 @@ Os arquivos são a carteira inteira da pessoa:
   nome de corretora. Um teste captura o log de um envio e confere;
 - erro de leitura **não ecoa conteúdo**: diz só o tipo do problema;
 - a prévia não grava nada em banco;
+- a leitura de cada arquivo roda **isolada** (`catch_unwind`), com `panic = "unwind"`
+  no perfil de release: um pânico da dependência que abre o `.xlsx` não derruba o
+  processo, vira `422 unreadable_file` com só o nome do arquivo. Dentro da leitura
+  o gancho de pânico registra apenas o local no código, nunca a mensagem, que
+  às vezes cita o dado;
 - a rota exige autenticação (`401` sem credencial) e a resposta sai com
   `Cache-Control: no-store`.
 

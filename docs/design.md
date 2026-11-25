@@ -288,8 +288,9 @@ Responde "estou ganhando do CDI?". Método e limites em
   linhas que não entendi e as deixadas de fora de propósito.
 - O botão **Importar** fica desligado, com o texto "Chega na próxima versão":
   a tela não finge que grava.
-- Está na barra como "Importar da B3" por enquanto; a reorganização da
-  navegação a leva para Ajustes.
+- É uma seção de Ajustes (`#/ajustes/importar-b3`). Quantidades e valores da
+  prévia seguem o olho de ocultar valores, inclusive para o leitor de tela, e o
+  texto cru das linhas não entendidas (que traz valores) também some.
 
 ### Histórico
 

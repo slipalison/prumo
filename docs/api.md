@@ -121,6 +121,7 @@ Ativo com nota 0 não recebe aporte.
 | `targets_must_sum_100` | 422 | metas que não somam 100 |
 | `asset_already_exists` | 409 | mesmo símbolo duas vezes na mesma classe |
 | `not_found` | 404 | id que não existe ou não é da pessoa |
+| `unreadable_file` | 422 | planilha que quebrou o leitor no servidor (só `POST /imports/b3/preview`; o detalhe cita só o nome do arquivo) |
 | `payload_too_large` | 413 | envio de planilhas acima de 10 MiB (só `POST /imports/b3/preview`) |
 | `quote_provider_unavailable` | 502 | busca de símbolo sem resposta do provedor |
 | `internal` | 500 | o resto (detalhe genérico; o log tem o porquê) |
@@ -817,7 +818,9 @@ e quantidade são número JSON.
   `reason_code`.
 
 Erros: `401` sem credencial; `413 payload_too_large` acima de 10 MiB; `422`
-sem arquivo, com mais de 10 arquivos ou fora de `multipart/form-data`.
+sem arquivo, com mais de 10 arquivos ou fora de `multipart/form-data`;
+`422 unreadable_file` se a leitura de um arquivo entrar em pânico (o arquivo
+é entrada não confiável; o erro cita só o nome dele, e nada de dentro).
 
 ## Operacional (porta interna 9090)
 

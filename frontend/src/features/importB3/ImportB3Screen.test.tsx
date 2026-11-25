@@ -234,7 +234,7 @@ const xlsx = (name: string, size = 2048) => {
 };
 
 async function openImport() {
-  const rendered = renderApp("importar");
+  const rendered = renderApp("ajustes/importar-b3");
   await screen.findByRole("heading", { name: "Importar da B3" });
   return rendered;
 }
@@ -252,9 +252,11 @@ const fileItem = (name: string): HTMLElement => {
 const fileInput = () => screen.getByLabelText<HTMLInputElement>("Escolher planilhas da B3");
 
 describe("Importar da B3", () => {
-  it("abre pela navegação e explica como baixar as planilhas, sem imagem de terceiros", async () => {
+  it("é uma seção de Ajustes e explica como baixar as planilhas, sem imagem de terceiros", async () => {
     const { user } = await openImport();
-    expect(document.title).toBe("Importar da B3 · Prumo");
+    expect(document.title).toBe("Ajustes · Prumo");
+    const sections = screen.getByRole("navigation", { name: "Seções de Ajustes" });
+    expect(within(sections).getByRole("link", { name: "Importar da B3" })).toHaveAttribute("aria-current", "page");
     const how = screen.getByRole("region", { name: "Como baixar as planilhas" });
     expect(within(how).getByText(/investidor\.b3\.com\.br/)).toBeInTheDocument();
     expect(within(how).getAllByRole("listitem").length).toBeGreaterThanOrEqual(4);
@@ -263,9 +265,47 @@ describe("Importar da B3", () => {
     expect(screen.getByText("Escolha ao menos uma planilha .xlsx.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Importar" })).toBeNull();
 
-    await user.click(screen.getByRole("link", { name: "Carteira" }));
-    await user.click(screen.getByRole("link", { name: "Importar da B3" }));
+    await user.click(within(sections).getByRole("link", { name: "Metas por classe" }));
+    await screen.findByRole("heading", { name: "Quanto você quer em cada classe?" });
+    await user.click(within(sections).getByRole("link", { name: "Importar da B3" }));
     expect(await screen.findByRole("heading", { name: "Importar da B3" })).toBeInTheDocument();
+  });
+
+  it("com o olho fechado, a prévia não mostra quantidade nem valor, nem para o leitor de tela", async () => {
+    server.use(http.post(PREVIEW_URL, () => HttpResponse.json(preview())));
+    const { user } = await openImport();
+    await user.upload(fileInput(), xlsx("negociacao.xlsx"));
+    await user.click(screen.getByRole("button", { name: "Ler planilhas" }));
+    await screen.findByRole("region", { name: "O que entraria" });
+    await user.click(screen.getByRole("button", { name: "Ver 5 linhas de PETR4" }));
+    expect(document.body).toHaveTextContent("R$ 3.150,50");
+
+    await user.click(screen.getByRole("button", { name: "Ocultar valores" }));
+
+    const summary = screen.getByRole("region", { name: "O que entraria" });
+    const unrecognized = screen.getByRole("region", { name: /Linhas que não entendi/ });
+    const heard: string[] = [];
+    for (const root of [summary, unrecognized]) {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) heard.push(node.textContent ?? "");
+      for (const element of root.querySelectorAll("[aria-label],[title]")) {
+        heard.push(element.getAttribute("aria-label") ?? "", element.getAttribute("title") ?? "");
+      }
+    }
+    const text = heard.join(" | ");
+    // Nenhum R$ com número, nenhuma quantidade, nenhuma linha crua da planilha.
+    expect(text).not.toMatch(/R\$\s*\d/);
+    for (const leak of ["3.150,50", "1.700,00", "213,75", "216,00", "15.000,00", "63,75", "150,50", "105", "Opção de Compra sobre Ações"]) {
+      expect(text).not.toContain(leak);
+    }
+    expect(text).toContain("R$ ••••");
+    expect(text).toContain("Conteúdo da linha oculto.");
+    // O que não é valor segue legível: ativo, classe, datas e tipos.
+    expect(within(summary).getByText("PETR4")).toBeInTheDocument();
+    expect(within(summary).getByText(/05\/01\/2026 · Compra \(fracionário\)/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Ocultar valores" }));
+    expect(document.body).toHaveTextContent("R$ 3.150,50");
   });
 
   it("envia as planilhas em multipart e mostra a prévia agrupada por ativo", async () => {
@@ -453,6 +493,28 @@ describe("Importar da B3", () => {
     expect(await screen.findByText(/Os arquivos passam de 10 MB juntos/)).toBeInTheDocument();
     expect(fileItem("negociacao.xlsx")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Ler planilhas" })).toBeEnabled();
+  });
+
+  it("arquivo que quebrou o leitor no servidor vira aviso, sem derrubar a tela", async () => {
+    server.use(
+      http.post(PREVIEW_URL, () =>
+        HttpResponse.json(
+          {
+            type: "urn:prumo:error:unreadable_file",
+            title: "Arquivo ilegivel",
+            status: 422,
+            code: "unreadable_file",
+            detail: "Nao consegui ler este arquivo (quebrada.xlsx).",
+          },
+          { status: 422, headers: { "Content-Type": "application/problem+json" } },
+        ),
+      ),
+    );
+    const { user } = await openImport();
+    await user.upload(fileInput(), xlsx("quebrada.xlsx"));
+    await user.click(screen.getByRole("button", { name: "Ler planilhas" }));
+    expect(await screen.findByText(/Não consegui ler um dos arquivos/)).toBeInTheDocument();
+    expect(fileItem("quebrada.xlsx")).toBeInTheDocument();
   });
 
   it("413 sem corpo também vira o aviso de tamanho", async () => {

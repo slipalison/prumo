@@ -97,19 +97,51 @@ pub async fn preview(
     }
 
     // Abrir xlsx é CPU: fora do executor async.
-    let preview = tokio::task::spawn_blocking(move || {
-        let (names, outcomes): (Vec<String>, Vec<FileOutcome>) = files
-            .into_iter()
-            .map(|(name, bytes)| (name, outcome_of(&bytes)))
-            .unzip();
-        build_preview(names, outcomes)
-    })
-    .await
-    .map_err(|_| {
-        tracing::error!("a leitura das planilhas da B3 foi interrompida");
-        ApiError::internal()
-    })?;
+    let preview = tokio::task::spawn_blocking(move || read_all(files, outcome_of))
+        .await
+        .map_err(|_| {
+            tracing::error!("a leitura das planilhas da B3 foi interrompida");
+            ApiError::internal()
+        })?
+        .map_err(|unreadable| unreadable_file(&unreadable.name))?;
     Ok(Json(preview))
+}
+
+/// Um arquivo cuja leitura entrou em pânico. Guarda só o nome que a pessoa
+/// deu ao arquivo, nunca conteúdo.
+#[derive(Debug, PartialEq, Eq)]
+struct PanickedFile {
+    name: String,
+}
+
+/// 422: o arquivo é entrada não confiável e quebrou o leitor. A mensagem não
+/// cita nada de dentro dele.
+fn unreadable_file(name: &str) -> ApiError {
+    ApiError {
+        status: StatusCode::UNPROCESSABLE_ENTITY,
+        code: "unreadable_file",
+        title: "Arquivo ilegivel",
+        detail: format!("Nao consegui ler este arquivo ({name}). Baixe de novo na Area do Investidor ou tire-o do envio."),
+    }
+}
+
+/// Lê todos os arquivos, cada um **isolado**: um pânico do leitor (da
+/// dependência que abre o `.xlsx` ou das regras) não passa daqui. `reader` é
+/// injetado para o teste poder entrar em pânico de propósito.
+fn read_all<R>(files: Vec<(String, Vec<u8>)>, reader: R) -> Result<Preview, PanickedFile>
+where
+    R: Fn(&[u8]) -> FileOutcome,
+{
+    let mut names = Vec::with_capacity(files.len());
+    let mut outcomes = Vec::with_capacity(files.len());
+    for (name, bytes) in files {
+        match b3_xlsx::isolate(|| reader(&bytes)) {
+            Ok(outcome) => outcomes.push(outcome),
+            Err(b3_xlsx::ReaderPanic) => return Err(PanickedFile { name }),
+        }
+        names.push(name);
+    }
+    Ok(build_preview(names, outcomes))
 }
 
 fn outcome_of(bytes: &[u8]) -> FileOutcome {
@@ -139,6 +171,61 @@ mod tests {
             display_name(&"x".repeat(300)).chars().count(),
             MAX_NAME_CHARS
         );
+    }
+
+    fn file(name: &str, bytes: &[u8]) -> (String, Vec<u8>) {
+        (name.to_owned(), bytes.to_vec())
+    }
+
+    #[test]
+    fn a_reader_that_panics_is_contained_and_names_only_the_file() {
+        // Um leitor que panica com o "conteúdo" do arquivo na mensagem.
+        let reader = |bytes: &[u8]| -> FileOutcome {
+            if bytes.starts_with(b"BOOM") {
+                panic!("conteudo secreto {}", String::from_utf8_lossy(bytes));
+            }
+            FileOutcome::Unreadable("not_xlsx", "nao e xlsx".to_owned())
+        };
+        let ok = read_all(vec![file("a.xlsx", b"ok")], reader).unwrap();
+        assert_eq!(ok.files.len(), 1);
+
+        // O pânico do segundo arquivo não passa; o erro cita só o nome.
+        let panicked = read_all(
+            vec![file("a.xlsx", b"ok"), file("b.xlsx", b"BOOM 3000 PETR4")],
+            reader,
+        )
+        .unwrap_err();
+        assert_eq!(
+            panicked,
+            PanickedFile {
+                name: "b.xlsx".to_owned()
+            }
+        );
+
+        let error = unreadable_file(&panicked.name);
+        assert_eq!(error.status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(error.code, "unreadable_file");
+        assert!(error.detail.contains("b.xlsx"));
+        assert!(!error.detail.contains("secreto") && !error.detail.contains("PETR4"));
+
+        // E o processo segue vivo: a próxima leitura funciona normalmente.
+        assert!(read_all(vec![file("c.xlsx", b"ok")], reader).is_ok());
+    }
+
+    #[test]
+    fn the_real_reader_survives_garbage_of_every_shape() {
+        for bytes in [
+            &b""[..],
+            b"PK\x03\x04",
+            b"PK\x03\x04\x14\x00\x00\x00\x08\x00garbage-garbage-garbage",
+            &[0xFF; 4096],
+        ] {
+            let preview = read_all(vec![file("x.xlsx", bytes)], outcome_of).unwrap();
+            assert_eq!(
+                preview.files[0].status,
+                crate::domain::b3_import::FileStatus::Unreadable
+            );
+        }
     }
 
     #[test]

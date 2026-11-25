@@ -8,10 +8,14 @@
 //! `calamine`), em vez de montar a grade densa da aba: uma planilha com uma
 //! célula perdida em `XFD1048576` custaria dezenas de gigabytes na grade, e
 //! aqui custa uma célula. Os tetos abaixo existem para que arquivo malicioso ou
-//! absurdo vire erro e não esgote a memória (o binário de produção aborta em
-//! pânico).
+//! absurdo vire erro e não esgote a memória. E como o arquivo é entrada não
+//! confiável, a leitura roda isolada ([`isolate`]): um pânico da dependência
+//! vira erro daquele envio, não derruba o processo.
 
+use std::cell::Cell;
 use std::io::Cursor;
+use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::Once;
 
 use calamine::{DataRef, Reader, Xlsx};
 use rust_decimal::Decimal;
@@ -177,4 +181,106 @@ fn text_cell(text: &str) -> RawCell {
         return RawCell::Empty;
     }
     RawCell::Text(trimmed.chars().take(MAX_CELL_CHARS).collect())
+}
+
+/// O leitor entrou em pânico. Não carrega nada: nem mensagem, nem dado.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReaderPanic;
+
+thread_local! {
+    /// A thread está lendo um arquivo de terceiros: o gancho de pânico não
+    /// pode escrever a mensagem, que às vezes cita o dado (um `unwrap` em
+    /// `Err("...")` mostra o texto da célula).
+    static QUIET: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Instala, uma vez, um gancho que só se cala dentro de [`isolate`]: lá
+/// registra o local do pânico (arquivo e linha do código, nunca dado); fora
+/// dele, repassa ao gancho anterior, e o resto do app panica como sempre.
+fn install_quiet_hook() {
+    static INSTALL: Once = Once::new();
+    INSTALL.call_once(|| {
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            if QUIET.with(Cell::get) {
+                let location = info
+                    .location()
+                    .map_or_else(String::new, |at| format!("{}:{}", at.file(), at.line()));
+                tracing::error!(%location, "a leitura de uma planilha da B3 entrou em panico");
+            } else {
+                previous(info);
+            }
+        }));
+    });
+}
+
+/// Roda `work` sem deixar um pânico dele sair. O `AssertUnwindSafe` vale
+/// porque o que `work` toca é só a cópia dos bytes do arquivo, descartada se
+/// ele entrar em pânico.
+pub fn isolate<T>(work: impl FnOnce() -> T) -> Result<T, ReaderPanic> {
+    install_quiet_hook();
+    QUIET.with(|quiet| quiet.set(true));
+    let result = catch_unwind(AssertUnwindSafe(work));
+    QUIET.with(|quiet| quiet.set(false));
+    result.map_err(|_| ReaderPanic)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Write;
+    use std::sync::{Arc, Mutex};
+
+    use super::*;
+
+    #[derive(Clone, Default)]
+    struct Capture(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for Capture {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Capture {
+        type Writer = Capture;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    #[test]
+    fn isolate_returns_the_value_or_a_bare_marker() {
+        assert_eq!(isolate(|| 7), Ok(7));
+        let failed: Result<u8, ReaderPanic> = isolate(|| panic!("dado secreto 12345"));
+        assert_eq!(failed, Err(ReaderPanic));
+        // Depois de um pânico a thread volta ao normal e isola de novo.
+        assert_eq!(isolate(|| "de novo"), Ok("de novo"));
+        assert!(!QUIET.with(Cell::get));
+    }
+
+    #[test]
+    fn the_panic_is_logged_with_the_place_and_never_the_message() {
+        let capture = Capture::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .with_ansi(false)
+            .with_writer(capture.clone())
+            .finish();
+        let _guard = tracing::subscriber::set_default(subscriber);
+        let failed: Result<(), ReaderPanic> = isolate(|| panic!("dado secreto 12345 PETR4"));
+        assert_eq!(failed, Err(ReaderPanic));
+        let logged = String::from_utf8_lossy(&capture.0.lock().unwrap()).into_owned();
+        assert!(logged.contains("entrou em panico"), "{logged}");
+        assert!(logged.contains("b3_xlsx.rs"), "o local do panico: {logged}");
+        assert!(
+            !logged.contains("secreto") && !logged.contains("PETR4") && !logged.contains("12345"),
+            "{logged}"
+        );
+    }
 }

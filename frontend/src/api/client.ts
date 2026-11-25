@@ -29,6 +29,7 @@ const FRIENDLY: Partial<Record<string, string>> = {
   asset_already_exists: "Esse ativo já está na sua carteira.",
   not_found: "Não encontrei esse item. Ele pode ter sido removido.",
   quote_provider_unavailable: "A busca de cotações não respondeu agora. Tente de novo em instantes.",
+  unreadable_file: "Não consegui ler um dos arquivos. Tire-o da lista (ou baixe de novo na Área do Investidor) e tente outra vez.",
   payload_too_large: "Os arquivos passam de 10 MB juntos. Envie menos arquivos ou um período menor.",
   internal: INTERNAL,
   network: NETWORK,

@@ -6,7 +6,8 @@ import { GlassCard } from "../../components/GlassCard";
 import { MagneticButton } from "../../components/MagneticButton";
 import { useToast } from "../../components/toastContext";
 import { CLASS_META } from "../../lib/assetClasses";
-import { formatBRL, formatQuantity, plural } from "../../lib/format";
+import { plural } from "../../lib/format";
+import { useMoney } from "../../lib/privacy";
 import {
   CLASS_BASIS_HINT,
   EVENT_KIND_LABEL,
@@ -181,6 +182,7 @@ function FileResult({ report }: { report: B3FileReport }) {
 }
 
 function PreviewResult({ preview }: { preview: B3Preview }) {
+  const money = useMoney();
   const { summary } = preview;
   const nothing = summary.assets === 0;
   return (
@@ -229,7 +231,7 @@ function PreviewResult({ preview }: { preview: B3Preview }) {
               <li key={`${row.file}-${row.sheet}-${row.line}`}>
                 {preview.files[row.file]?.name ?? "arquivo"} · linha {row.line}:{" "}
                 {reasonText(row.reason_code, row.reason)}
-                <span className="import-list__text">{row.text}</span>
+                <span className="import-list__text">{money.hidden ? "Conteúdo da linha oculto." : row.text}</span>
               </li>
             ))}
           </ul>
@@ -299,6 +301,7 @@ function AssetsTable({ assets }: { assets: B3AssetGroup[] }) {
 const orDash = (value: number, text: string) => (value > 0 ? text : "—");
 
 function AssetRows({ asset, expanded, onToggle }: { asset: B3AssetGroup; expanded: boolean; onToggle: () => void }) {
+  const money = useMoney();
   const { totals } = asset;
   const detailId = useId();
   const lines = asset.trades.length + asset.events.length + asset.income.length;
@@ -321,15 +324,15 @@ function AssetRows({ asset, expanded, onToggle }: { asset: B3AssetGroup; expande
         <td>
           {orDash(
             totals.bought_quantity,
-            `${formatQuantity(totals.bought_quantity, true)} · ${formatBRL(totals.bought_value)}`,
+            `${money.quantity(totals.bought_quantity, true)} · ${money.brl(totals.bought_value)}`,
           )}
         </td>
         <td>
-          {orDash(totals.sold_quantity, `${formatQuantity(totals.sold_quantity, true)} · ${formatBRL(totals.sold_value)}`)}
+          {orDash(totals.sold_quantity, `${money.quantity(totals.sold_quantity, true)} · ${money.brl(totals.sold_value)}`)}
         </td>
-        <td>{asset.trades.length > 0 ? formatQuantity(totals.net_quantity, true) : "—"}</td>
-        <td>{orDash(totals.income_received, formatBRL(totals.income_received))}</td>
-        <td>{orDash(totals.income_provisioned, formatBRL(totals.income_provisioned))}</td>
+        <td>{asset.trades.length > 0 ? money.quantity(totals.net_quantity, true) : "—"}</td>
+        <td>{orDash(totals.income_received, money.brl(totals.income_received))}</td>
+        <td>{orDash(totals.income_provisioned, money.brl(totals.income_provisioned))}</td>
         <td>
           <button
             type="button"
@@ -352,22 +355,22 @@ function AssetRows({ asset, expanded, onToggle }: { asset: B3AssetGroup; expande
               {asset.trades.map((trade) => (
                 <li key={trade.external_ref}>
                   {formatIsoDate(trade.date)} · {trade.side === "buy" ? "Compra" : "Venda"}
-                  {trade.market === "fractional" ? " (fracionário)" : ""} · {formatQuantity(trade.quantity, true)} ×{" "}
-                  {formatBRL(trade.unit_price)} = {formatBRL(trade.total)}
+                  {trade.market === "fractional" ? " (fracionário)" : ""} · {money.quantity(trade.quantity, true)} ×{" "}
+                  {money.brl(trade.unit_price)} = {money.brl(trade.total)}
                 </li>
               ))}
               {asset.events.map((event) => (
                 <li key={event.external_ref}>
                   {formatIsoDate(event.date)} · {EVENT_KIND_LABEL[event.kind]} (
                   {event.direction === "credit" ? "entrada" : "saída"})
-                  {event.quantity !== null ? ` · ${formatQuantity(event.quantity, true)}` : ""}
-                  {event.value !== null ? ` · ${formatBRL(event.value)}` : ""}
+                  {event.quantity !== null ? ` · ${money.quantity(event.quantity, true)}` : ""}
+                  {event.value !== null ? ` · ${money.brl(event.value)}` : ""}
                 </li>
               ))}
               {asset.income.map((income) => (
                 <li key={income.external_ref}>
                   {formatIsoDate(income.date)} · {INCOME_KIND_LABEL[income.kind]} ·{" "}
-                  {income.status === "received" ? "recebido" : "a receber"} · {formatBRL(income.net_amount)}
+                  {income.status === "received" ? "recebido" : "a receber"} · {money.brl(income.net_amount)}
                 </li>
               ))}
             </ul>

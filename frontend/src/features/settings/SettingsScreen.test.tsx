@@ -33,6 +33,7 @@ describe("Navegação e Ajustes", () => {
       "Metas por classe",
       "Critérios",
       "Saúde da carteira",
+      "Importar da B3",
     ]);
     expect(within(sections).getByRole("link", { name: "Metas por classe" })).toHaveAttribute("aria-current", "page");
     expect(within(sections).getByRole("link", { name: "Critérios" })).not.toHaveAttribute("aria-current");

@@ -82,5 +82,10 @@ dbg_macro = "deny"
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
-panic = "abort"
+# `unwind`, e nao `abort`: o Prumo le planilha de terceiros (o `.xlsx` da B3) com
+# uma dependencia (`calamine`) que pode entrar em panico com arquivo malformado.
+# Com `abort` esse arquivo derrubaria o processo inteiro; com `unwind` a leitura
+# roda dentro de `catch_unwind` (`b3_xlsx::isolate`) e o panico vira um erro
+# daquele envio.
+panic = "unwind"
 
