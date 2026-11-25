@@ -105,12 +105,18 @@ em cota inteira e cotado em reais.
 Arredondar para baixo deixa troco. Em vez de devolvê-lo, uma rodada gulosa:
 
 1. Entre os ativos de unidade inteira com preço ≤ troco, compra **mais uma
-   unidade** do que estiver mais atrás da meta — **desde que** isso o aproxime
-   da meta (o que falta a ele é maior que meio preço). Repete.
+   unidade** do que estiver mais atrás da meta — **desde que** isso aproxime da
+   meta o ativo **e a classe dele** (o que falta a cada um é maior que meio
+   preço). Repete.
 2. Quando nenhuma unidade inteira couber, o resto vai para o ativo
    **fracionável** (cripto, título do Tesouro, renda fixa por valor) mais
-   atrasado, até o que falta a ele.
+   atrasado, até o que falta a ele e à classe dele.
 3. O que sobrar depois disso é `change`.
+
+A conferência da classe fecha uma brecha: um ativo pode estar abaixo da
+própria fatia numa classe que, somada, já passou da meta (um FII recém-
+cadastrado ao lado de um que pesa demais). Olhando só o ativo, o troco ia para
+ele e a classe acima da meta aparecia "recebendo".
 
 ## O que o resultado garante
 
@@ -119,6 +125,8 @@ Conferido por teste de propriedade (300 carteiras aleatórias a cada execução)
 - `amount = invested + change + unallocated`, ao centavo.
 - Ativo com nota 0 ou sem preço nunca recebe.
 - Nenhum ativo passa da própria meta por mais de meia unidade.
+- Classe acima da meta não recebe nada; a que recebe passa da meta por no
+  máximo meia unidade de cada item.
 
 E por dois cenários fixos (carteira fictícia de R$ 120 mil):
 

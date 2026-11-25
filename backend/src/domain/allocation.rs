@@ -309,39 +309,55 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding]) -> Plan {
         })
         .collect();
     let mut pool = amount - unallocated - planned_value.iter().copied().sum::<Decimal>();
+    let mut class_planned = [Decimal::ZERO; 7];
+    for (i, holding) in holdings.iter().enumerate() {
+        class_planned[class_index(holding.asset_class)] += planned_value[i];
+    }
     for _ in 0..MAX_LEFTOVER_STEPS {
         if pool < CENT {
             break;
         }
         let deficit = |i: usize| ideal[i] - holdings[i].value - planned_value[i];
-        // Primeiro uma unidade inteira, se ela aproxima o ativo da meta.
+        // O que ainda falta na classe do ativo: o troco também não leva a
+        // classe além da meta (nem dá nada à classe que já passou dela).
+        let class_deficit = |i: usize| {
+            let c = class_index(holdings[i].asset_class);
+            classes[c].target_value - classes[c].current - class_planned[c]
+        };
+        // Primeiro uma unidade inteira, se ela aproxima o ativo e a classe da meta.
         let whole = (0..holdings.len())
             .filter(|&i| holdings[i].is_eligible() && holdings[i].unit == UnitKind::Whole)
             .filter_map(|i| holdings[i].price().map(|p| (i, p)))
-            .filter(|&(i, price)| price <= pool && deficit(i) * Decimal::TWO > price)
+            .filter(|&(i, price)| {
+                price <= pool
+                    && deficit(i) * Decimal::TWO > price
+                    && class_deficit(i) * Decimal::TWO > price
+            })
             .max_by(|a, b| deficit(a.0).cmp(&deficit(b.0)));
         if let Some((i, price)) = whole {
             planned_qty[i] += Decimal::ONE;
             planned_value[i] += price;
+            class_planned[class_index(holdings[i].asset_class)] += price;
             pool -= price;
             continue;
         }
         // Senão, o que cabe no fracionável mais atrasado.
         let fractional = (0..holdings.len())
             .filter(|&i| holdings[i].is_eligible() && holdings[i].unit != UnitKind::Whole)
-            .filter(|&i| deficit(i) >= CENT)
+            .filter(|&i| deficit(i) >= CENT && class_deficit(i) >= CENT)
             .max_by(|&a, &b| deficit(a).cmp(&deficit(b)));
         let Some(i) = fractional else { break };
         let Some(price) = holdings[i].price() else {
             break;
         };
-        let budget = pool.min(deficit(i));
+        let budget = pool.min(deficit(i)).min(class_deficit(i));
         let (qty, value) = purchasable(holdings[i].unit, budget, price);
         if value <= Decimal::ZERO {
             break;
         }
         planned_qty[i] += qty;
         planned_value[i] += value;
+        class_planned[class_index(holdings[i].asset_class)] += value;
         pool -= value;
     }
 
@@ -767,6 +783,29 @@ mod tests {
         assert_eq!(plan.change, dec!(22.78));
     }
 
+    /// A rodada do troco olhava só a fatia do ativo: um FII recém-cadastrado
+    /// numa classe muito acima da meta recebia o troco inteiro, e a classe
+    /// "acima da meta" aparecia recebendo. O troco agora também respeita o que
+    /// falta na classe.
+    #[test]
+    fn change_never_goes_to_a_class_above_target() {
+        use AssetClass::*;
+        let holdings = vec![
+            holding(BrReits, "CHEIO11", dec!(100000), Some(dec!(100)), 5),
+            holding(BrReits, "NOVO11", Decimal::ZERO, Some(dec!(10)), 5),
+            holding(BrStocks, "CARO3", Decimal::ZERO, Some(dec!(3000)), 5),
+        ];
+        let mut targets = Targets::default();
+        targets.set(BrReits, 5000);
+        targets.set(BrStocks, 5000);
+        let plan = plan(dec!(1000), targets, &holdings);
+        assert_money_adds_up(&plan);
+        assert!(plan.items.is_empty(), "{:#?}", plan.items);
+        assert_eq!(plan.change, dec!(1000));
+        assert_eq!(class(&plan, BrReits).status, ClassStatus::AboveTarget);
+        assert_eq!(class(&plan, BrStocks).status, ClassStatus::BelowTarget);
+    }
+
     #[test]
     fn fixed_income_takes_cents_and_zero_score_takes_nothing() {
         use AssetClass::*;
@@ -1063,6 +1102,47 @@ mod tests {
             })
         }
 
+        /// Classe que já passou da meta não recebe nada; a que recebe para na
+        /// meta, com folga de meia unidade por item (a rodada do troco só
+        /// compra a unidade que aproxima da meta).
+        fn assert_classes_never_pass_their_target(
+            plan: &Plan,
+            targets: Targets,
+            holdings: &[Holding],
+            amount: Decimal,
+        ) -> Result<(), TestCaseError> {
+            let total: Decimal = holdings.iter().map(|h| h.value).sum::<Decimal>() + amount;
+            for class in AssetClass::ALL {
+                let current: Decimal = holdings
+                    .iter()
+                    .filter(|h| h.asset_class == class)
+                    .map(|h| h.value)
+                    .sum();
+                let target =
+                    total * Decimal::from(targets.get(class)) / Decimal::from(targets.sum().max(1));
+                let items: Vec<&PlanItem> = plan
+                    .items
+                    .iter()
+                    .filter(|i| i.asset_class == class)
+                    .collect();
+                let added: Decimal = items.iter().map(|i| i.value).sum();
+                if current >= target {
+                    prop_assert!(items.is_empty(), "{class:?} acima da meta recebeu {added}");
+                }
+                let slack: Decimal = items
+                    .iter()
+                    .map(|i| i.unit_price / Decimal::TWO)
+                    .sum::<Decimal>()
+                    + CENT;
+                prop_assert!(
+                    added == Decimal::ZERO || current + added <= target + slack,
+                    "{class:?} passou da meta: {} > {target}",
+                    current + added
+                );
+            }
+            Ok(())
+        }
+
         proptest! {
             #![proptest_config(ProptestConfig::with_cases(300))]
 
@@ -1119,6 +1199,7 @@ mod tests {
                         "{} passou da meta: {} > {}", h.label, h.value + item.value, ideal
                     );
                 }
+                assert_classes_never_pass_their_target(&plan, targets, &holdings, amount)?;
             }
         }
     }
