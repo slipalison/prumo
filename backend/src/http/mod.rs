@@ -1,5 +1,6 @@
 //! Rotas, estado e extratores.
 
+mod allocation;
 pub mod dto;
 mod handlers;
 mod health;
@@ -236,6 +237,10 @@ pub fn public_router(state: AppState, static_dir: &str) -> Router {
         .route("/quotes/refresh", post(handlers::refresh_quotes))
         .route("/history/net-worth", get(performance::net_worth))
         .route("/performance", get(performance::performance))
+        .route(
+            "/settings/allocation",
+            get(allocation::settings).put(allocation::save_settings),
+        )
         .fallback(|| async { ApiError::not_found() })
         .layer(RequestBodyLimitLayer::new(64 * 1024))
         .layer(SetResponseHeaderLayer::overriding(

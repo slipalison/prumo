@@ -94,6 +94,7 @@ impl AssetView {
             unit_price: self.unit_price,
             unit: self.asset.market().unit_kind(),
             score: self.score,
+            max_price: self.asset.max_price,
         }
     }
 }
@@ -263,7 +264,11 @@ pub async fn portfolio(store: &Store, user: Uuid) -> Result<PortfolioView, Store
         let i = class_index(view.asset.asset_class);
         class_values[i] += view.current_value;
         class_counts[i] += 1;
-        class_eligible[i] |= view.score > 0 && view.unit_price.is_some_and(|p| p > Decimal::ZERO);
+        // Como o motor vê: nota, preço e preço até o teto da pessoa.
+        class_eligible[i] |= view.score > 0
+            && view.unit_price.is_some_and(|p| {
+                p > Decimal::ZERO && view.asset.max_price.is_none_or(|max| p <= max)
+            });
     }
     let holdings: Vec<Holding> = views.iter().map(AssetView::holding).collect();
     let ideal = allocation::ideal_class_percents(&holdings);
@@ -309,7 +314,8 @@ pub async fn plan(
 ) -> Result<(Plan, PortfolioView), StoreError> {
     let view = portfolio(store, user).await?;
     let holdings: Vec<Holding> = view.assets.iter().map(AssetView::holding).collect();
-    let plan = allocation::plan(amount, view.targets, &holdings);
+    let limits = store.allocation_limits(user).await?;
+    let plan = allocation::plan(amount, view.targets, &holdings, limits);
     Ok((plan, view))
 }
 
@@ -472,6 +478,7 @@ mod tests {
             score_override: None,
             listed_on_b3: class.native_market() == Market::B3,
             treasury: false,
+            max_price: None,
         }
     }
 

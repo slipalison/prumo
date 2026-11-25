@@ -112,6 +112,8 @@ pub struct CreateAssetRequest {
     /// a que `GET /symbols` devolve).
     #[serde(default)]
     pub treasury: Option<bool>,
+    #[serde(default, deserialize_with = "optional_decimal")]
+    pub max_price: Option<Decimal>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -131,6 +133,8 @@ pub struct UpdateAssetRequest {
     pub answers: Option<HashMap<Uuid, Option<bool>>>,
     #[serde(default)]
     pub listed_on_b3: Option<bool>,
+    #[serde(default, deserialize_with = "patch_decimal")]
+    pub max_price: Option<Option<Decimal>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -239,6 +243,8 @@ pub struct AssetDto {
     pub unit_price: Option<Decimal>,
     #[serde(with = "decimal_out::option")]
     pub manual_price: Option<Decimal>,
+    #[serde(with = "decimal_out::option")]
+    pub max_price: Option<Decimal>,
     pub currency: String,
     pub price_source: &'static str,
     #[serde(with = "time::serde::rfc3339::option")]
@@ -272,6 +278,7 @@ impl From<&AssetView> for AssetDto {
             quantity: a.asset.quantity,
             unit_price: a.unit_price,
             manual_price: a.asset.manual_price,
+            max_price: a.asset.max_price,
             currency: a.currency.clone(),
             price_source: a.price_source.as_str(),
             quote_updated_at: a.quote_updated_at,
@@ -454,6 +461,22 @@ pub enum NoticeDto {
         symbols: Vec<String>,
     },
     NoTargets,
+    AssetAboveCeiling {
+        asset_id: Uuid,
+        symbol: String,
+        #[serde(with = "decimal_out")]
+        unit_price: Decimal,
+        #[serde(with = "decimal_out")]
+        max_price: Decimal,
+    },
+    ConcentrationLimit {
+        #[serde(with = "decimal_out")]
+        max_percent: Decimal,
+        asset_ids: Vec<Uuid>,
+        symbols: Vec<String>,
+        #[serde(with = "decimal_out")]
+        amount: Decimal,
+    },
 }
 
 impl From<&Notice> for NoticeDto {
@@ -475,6 +498,27 @@ impl From<&Notice> for NoticeDto {
                 symbols: labels.clone(),
             },
             Notice::NoTargets => NoticeDto::NoTargets,
+            Notice::AssetAboveCeiling {
+                asset_id,
+                label,
+                price,
+                max_price,
+            } => NoticeDto::AssetAboveCeiling {
+                asset_id: *asset_id,
+                symbol: label.clone(),
+                unit_price: *price,
+                max_price: *max_price,
+            },
+            Notice::ConcentrationLimit {
+                max_percent,
+                assets,
+                amount,
+            } => NoticeDto::ConcentrationLimit {
+                max_percent: *max_percent,
+                asset_ids: assets.iter().map(|(id, _)| *id).collect(),
+                symbols: assets.iter().map(|(_, label)| label.clone()).collect(),
+                amount: *amount,
+            },
         }
     }
 }
@@ -636,6 +680,11 @@ mod tests {
         assert_eq!(value.manual_price, Some(Some(dec!(9.5))));
         assert_eq!(value.score_override, Some(Some(7)));
         assert_eq!(value.quantity, Some(dec!(3)));
+        let ceiling: UpdateAssetRequest = serde_json::from_str(r#"{"max_price": 30.5}"#).unwrap();
+        assert_eq!(ceiling.max_price, Some(Some(dec!(30.5))));
+        let cleared: UpdateAssetRequest = serde_json::from_str(r#"{"max_price": null}"#).unwrap();
+        assert_eq!(cleared.max_price, Some(None));
+        assert_eq!(absent.max_price, None);
     }
 
     #[test]
@@ -662,5 +711,29 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(json["code"], "assets_without_score");
+        let id = Uuid::new_v4();
+        let json = serde_json::to_value(NoticeDto::from(&Notice::AssetAboveCeiling {
+            asset_id: id,
+            label: "XPTO3".into(),
+            price: dec!(32.5),
+            max_price: dec!(30),
+        }))
+        .unwrap();
+        assert_eq!(json["code"], "asset_above_ceiling");
+        assert_eq!(json["asset_id"], id.to_string());
+        assert_eq!(json["symbol"], "XPTO3");
+        assert_eq!(json["unit_price"], 32.5);
+        assert_eq!(json["max_price"], 30.0);
+        let json = serde_json::to_value(NoticeDto::from(&Notice::ConcentrationLimit {
+            max_percent: dec!(15),
+            assets: vec![(id, "XPTO3".into())],
+            amount: dec!(120.5),
+        }))
+        .unwrap();
+        assert_eq!(json["code"], "concentration_limit");
+        assert_eq!(json["max_percent"], 15.0);
+        assert_eq!(json["asset_ids"][0], id.to_string());
+        assert_eq!(json["symbols"][0], "XPTO3");
+        assert_eq!(json["amount"], 120.5);
     }
 }

@@ -88,6 +88,8 @@ fn b3_listing(class: AssetClass, requested: Option<bool>) -> ApiResult<bool> {
 }
 
 const WHOLE_ONLY: &str = "Esse ativo so aceita quantidade inteira.";
+const NO_CEILING_BY_VALUE: &str =
+    "Renda fixa por valor nao tem preco por unidade; o teto de preco nao se aplica.";
 
 /// O nome de um ativo cotado quando nem o usuário nem a cotação dão um: o
 /// título do Tesouro se chama pelo tipo e o ano; o resto, pelo símbolo.
@@ -193,6 +195,9 @@ pub async fn create_asset(
                     "Renda fixa nao tem preco por unidade; informe o valor.",
                 ));
             }
+            if body.max_price.is_some() {
+                return Err(ApiError::validation(NO_CEILING_BY_VALUE));
+            }
             NewAsset {
                 asset_class: class,
                 symbol: None,
@@ -202,6 +207,7 @@ pub async fn create_asset(
                 score_override,
                 listed_on_b3,
                 treasury,
+                max_price: None,
             }
         }
         UnitKind::Whole | UnitKind::Fractional | UnitKind::Hundredth => {
@@ -222,6 +228,10 @@ pub async fn create_asset(
             let manual_price = body
                 .manual_price
                 .map(|p| positive("O preco manual", p))
+                .transpose()?;
+            let max_price = body
+                .max_price
+                .map(|p| positive("O teto de preco", p))
                 .transpose()?;
             let quote = state.quotes.quote_now(market, &symbol).await;
             let display_name = match body
@@ -247,6 +257,7 @@ pub async fn create_asset(
                 score_override,
                 listed_on_b3,
                 treasury,
+                max_price,
             }
         }
     };
@@ -301,6 +312,9 @@ pub async fn update_asset(
             "Renda fixa nao tem preco por unidade; informe o valor.",
         ));
     }
+    if kind == UnitKind::Value && body.max_price.is_some_and(|p| p.is_some()) {
+        return Err(ApiError::validation(NO_CEILING_BY_VALUE));
+    }
     let patch = AssetPatch {
         listed_on_b3: body.listed_on_b3.map(|_| listed_on_b3),
         quantity,
@@ -316,6 +330,10 @@ pub async fn update_asset(
         score_override: body
             .score_override
             .map(|s| s.map(score_value).transpose())
+            .transpose()?,
+        max_price: body
+            .max_price
+            .map(|p| p.map(|v| positive("O teto de preco", v)).transpose())
             .transpose()?,
     };
     state

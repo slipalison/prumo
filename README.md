@@ -13,6 +13,10 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   com o motivo. Detalhes em [`docs/alocacao.md`](docs/alocacao.md).
 - **A lista do que você quer ter** — ativo cadastrado com quantidade 0 já
   entra na divisão pela nota: é assim que uma classe vazia passa a receber.
+- **Teto de preço e limite por ativo** — guarda-corpos opcionais seus: acima
+  do teto que você define, o ativo fica fora do aporte; com o limite, nenhum
+  ativo passa de X% da carteira, e o excedente vai para os outros da classe.
+  Preço médio não entra na conta: o Prumo não compra mais só porque caiu.
 - **Negociado na B3** — um ETF de bitcoin conta em Cripto, um BDR ou ETF de
   S&P 500 em Ações Internacionais, cotados na B3 em cota inteira.
 - **Atual × ideal por ativo** — a Carteira mostra, em cada ativo, quanto ele é

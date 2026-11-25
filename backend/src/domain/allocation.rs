@@ -5,27 +5,37 @@
 //! 1. `N` = patrimônio atual + aporte. A meta de cada classe é `meta% × N`, e o
 //!    que falta nela (`gap`) é a meta menos o que já existe, com piso em zero.
 //! 2. O aporte vai para as classes que podem recebê-lo (ao menos um ativo com
-//!    nota e preço), na proporção do que falta em cada uma, **com teto no que
-//!    falta** — nunca além da meta.
+//!    nota, preço e preço até o teto da pessoa), na proporção do que falta em
+//!    cada uma, **com teto no que falta** — nunca além da meta. Com o limite
+//!    de concentração ligado, a classe também não recebe mais do que cabe nos
+//!    ativos dela sem passar do limite; o que não coube vai para as outras
+//!    classes que ainda estão abaixo da meta.
 //! 3. Como `Σ metas = N`, a soma do que falta é sempre ≥ o aporte. Só sobra
 //!    dinheiro depois de encher as classes elegíveis se alguma classe abaixo da
 //!    meta não tiver para onde mandar — e essa sobra volta como `unallocated`,
-//!    com o aviso dizendo qual classe precisa de um ativo.
+//!    com o aviso dizendo o motivo.
 //! 4. Dentro da classe, a meta de cada ativo é a fatia `nota / Σ notas` da
 //!    classe depois do aporte, e o dinheiro vai na proporção do que falta a
-//!    cada ativo.
+//!    cada ativo. Com o limite, quem bate nele fica nele e o resto da classe é
+//!    redividido pela nota entre os outros.
 //! 5. Cota e ação são inteiras (arredonda para baixo); cripto tem 8 casas;
 //!    título do Tesouro Direto vai em centésimos de título; renda fixa por
 //!    valor vai em centavos.
 //! 6. O troco do arredondamento passa por uma rodada gulosa: compra mais uma
-//!    unidade do ativo mais atrasado enquanto isso aproximar a carteira da meta
-//!    (falta > meio preço); o que não couber em unidade vai para o ativo
-//!    fracionável mais atrasado. O que sobra é `change`.
+//!    unidade do ativo mais atrasado enquanto isso aproximar o ativo e a classe
+//!    da meta (falta > meio preço) sem passar do limite; o que não couber em
+//!    unidade vai para o ativo fracionável mais atrasado. O que sobra é
+//!    `change`.
+//!
+//! Preço médio, rentabilidade e "caiu, compra mais" não entram em nenhum passo.
 
 use rust_decimal::{Decimal, RoundingStrategy};
 use uuid::Uuid;
 
 use super::asset_class::{AssetClass, UnitKind};
+
+#[cfg(test)]
+mod legacy;
 
 /// 100% em pontos-base.
 pub const FULL_BP: u32 = 10_000;
@@ -52,6 +62,9 @@ pub struct Holding {
     /// bitcoin da B3 é cota inteira dentro de Criptomoedas).
     pub unit: UnitKind,
     pub score: u8,
+    /// Teto de preço da pessoa, em reais por unidade. Acima dele o ativo fica
+    /// fora deste aporte.
+    pub max_price: Option<Decimal>,
 }
 
 impl Holding {
@@ -59,9 +72,29 @@ impl Holding {
         self.unit_price.filter(|p| *p > Decimal::ZERO)
     }
 
-    fn is_eligible(&self) -> bool {
+    /// Tem nota e preço, mas o preço passou do teto da pessoa.
+    fn above_ceiling(&self) -> bool {
+        matches!((self.price(), self.max_price), (Some(price), Some(max)) if price > max)
+    }
+
+    /// Tem fatia na composição-alvo: nota e preço. O teto não tira a fatia.
+    fn has_slice(&self) -> bool {
         self.score > 0 && self.price().is_some()
     }
+
+    /// Recebe neste aporte: tem fatia e o preço de hoje está até o teto.
+    fn is_eligible(&self) -> bool {
+        self.has_slice() && !self.above_ceiling()
+    }
+}
+
+/// Os guarda-corpos que a pessoa liga. O padrão é tudo desligado, e desligado
+/// o motor dá exatamente o resultado de sempre.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Limits {
+    /// Nenhum ativo passa desta fatia de `N` (a carteira depois do aporte), em
+    /// pontos-base.
+    pub max_asset_bp: Option<u32>,
 }
 
 /// Meta de cada classe em pontos-base, na ordem de [`AssetClass::ALL`].
@@ -118,6 +151,10 @@ pub enum BlockReason {
     Unrated,
     /// Há ativo com nota, mas sem preço (cotação falhou ou símbolo errado).
     Unpriced,
+    /// Os ativos com nota e preço estão todos acima do teto de preço da pessoa.
+    AboveCeiling,
+    /// Os ativos que receberiam já estão no limite de concentração.
+    ConcentrationLimit,
 }
 
 impl BlockReason {
@@ -126,6 +163,8 @@ impl BlockReason {
             BlockReason::NoAssets => "no_assets",
             BlockReason::Unrated => "unrated",
             BlockReason::Unpriced => "unpriced",
+            BlockReason::AboveCeiling => "above_ceiling",
+            BlockReason::ConcentrationLimit => "concentration_limit",
         }
     }
 }
@@ -146,6 +185,21 @@ pub enum Notice {
         labels: Vec<String>,
     },
     NoTargets,
+    /// O preço passou do teto da pessoa: o ativo fica fora deste aporte.
+    AssetAboveCeiling {
+        asset_id: Uuid,
+        label: String,
+        price: Decimal,
+        max_price: Decimal,
+    },
+    /// O limite de concentração mudou o plano: `assets` pararam nele (o que
+    /// iria para eles foi para os outros da classe), e `amount` ficou sem
+    /// destino por causa dele.
+    ConcentrationLimit {
+        max_percent: Decimal,
+        assets: Vec<(Uuid, String)>,
+        amount: Decimal,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -189,28 +243,53 @@ struct ClassState {
     current: Decimal,
     target_value: Decimal,
     gap: Decimal,
+    /// Tem ativo com nota, preço e preço até o teto.
+    candidates: bool,
+    /// Pode receber neste aporte: tem candidatos e, com o limite ligado,
+    /// espaço neles.
     eligible: bool,
     score_sum: Decimal,
-    /// Valor dos ativos que não recebem (sem nota ou sem preço): ocupam espaço
-    /// na classe, e a fatia dos elegíveis é o que sobra da meta.
+    /// Valor dos ativos que não recebem (sem nota, sem preço ou acima do teto):
+    /// ocupam espaço na classe, e a fatia dos elegíveis é o que sobra da meta.
     ineligible_value: Decimal,
+    /// Com o limite ligado: quanto cabe nos candidatos sem nenhum passar dele.
+    capacity: Option<Decimal>,
     allocation: Decimal,
 }
 
+impl ClassState {
+    /// O máximo que a classe recebe: o que falta nela e, com o limite, o que
+    /// cabe nos ativos dela.
+    fn ceiling(&self) -> Decimal {
+        self.capacity.map_or(self.gap, |c| c.min(self.gap))
+    }
+}
+
 /// Calcula o plano de compra para `amount` reais.
-pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding]) -> Plan {
+pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding], limits: Limits) -> Plan {
     let amount = floor_cents(amount.max(Decimal::ZERO));
     let total: Decimal = holdings.iter().map(|h| h.value).sum();
     let grand_total = total + amount;
     let bp_sum = targets.sum();
+    // O limite de concentração em reais: a fatia máxima de um ativo em `N`.
+    let asset_cap = limits
+        .max_asset_bp
+        .map(|bp| grand_total * Decimal::from(bp) / Decimal::from(FULL_BP));
+    // Até onde a fatia de um ativo pode ir: o limite, ou o que ele já vale
+    // (o motor não vende quem já passou).
+    let share_cap = |h: &Holding| asset_cap.map(|cap| cap.max(h.value));
 
     let mut classes = [ClassState::default(); 7];
     for holding in holdings {
         let state = &mut classes[class_index(holding.asset_class)];
         state.current += holding.value;
         if holding.is_eligible() {
-            state.eligible = true;
+            state.candidates = true;
             state.score_sum += Decimal::from(holding.score);
+            if let Some(cap) = asset_cap {
+                *state.capacity.get_or_insert(Decimal::ZERO) +=
+                    (cap - holding.value).max(Decimal::ZERO);
+            }
         } else {
             state.ineligible_value += holding.value;
         }
@@ -223,44 +302,79 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding]) -> Plan {
             grand_total * Decimal::from(targets.get(class)) / Decimal::from(bp_sum)
         };
         state.gap = (state.target_value - state.current).max(Decimal::ZERO);
+        state.eligible = state.candidates && state.capacity.is_none_or(|c| c >= CENT);
     }
 
-    // Passo 2 e 3: entre classes, proporcional ao que falta, com teto no que falta.
-    let receivable: Decimal = classes.iter().filter(|c| c.eligible).map(|c| c.gap).sum();
-    let mut unallocated = Decimal::ZERO;
-    if receivable > Decimal::ZERO {
-        if amount <= receivable {
-            for state in classes.iter_mut().filter(|c| c.eligible) {
-                state.allocation = amount * state.gap / receivable;
-            }
-        } else {
-            for state in classes.iter_mut().filter(|c| c.eligible) {
-                state.allocation = state.gap;
-            }
-            unallocated = amount - receivable;
+    // Passo 2 e 3: entre classes, proporcional ao que falta, com teto no que
+    // falta (e no que cabe sob o limite). A classe que bate no que cabe sai da
+    // rodada, e o resto é redividido entre as outras pelo que ainda falta.
+    let mut pool = amount;
+    for _ in 0..=AssetClass::ALL.len() {
+        let open: Vec<usize> = (0..classes.len())
+            .filter(|&c| classes[c].eligible && classes[c].ceiling() > classes[c].allocation)
+            .collect();
+        let receivable: Decimal = open
+            .iter()
+            .map(|&c| classes[c].gap - classes[c].allocation)
+            .sum();
+        if receivable <= Decimal::ZERO || pool <= Decimal::ZERO {
+            break;
         }
-    } else {
-        unallocated = amount;
+        let fits = pool <= receivable;
+        let mut spent = Decimal::ZERO;
+        let mut capped = false;
+        for &c in &open {
+            let state = &mut classes[c];
+            let missing = state.gap - state.allocation;
+            let share = if fits {
+                pool * missing / receivable
+            } else {
+                missing
+            };
+            let room = state.ceiling() - state.allocation;
+            // Sem limite o teto é o que falta, e a divisão já não passa dele.
+            let give = if state.capacity.is_some() && share > room {
+                capped = true;
+                room
+            } else {
+                share
+            };
+            state.allocation += give;
+            spent += give;
+        }
+        if !capped {
+            pool = if fits {
+                Decimal::ZERO
+            } else {
+                pool - receivable
+            };
+            break;
+        }
+        pool -= spent;
     }
-    unallocated = round_cents(unallocated);
+    let unallocated = round_cents(pool.max(Decimal::ZERO));
 
     // Passo 4: dentro da classe, proporcional ao que falta a cada ativo.
     let mut desired = vec![Decimal::ZERO; holdings.len()];
+    let mut at_limit: Vec<usize> = Vec::new();
     for class in AssetClass::ALL {
         let state = classes[class_index(class)];
         if state.allocation <= Decimal::ZERO || state.score_sum <= Decimal::ZERO {
             continue;
         }
         let eligible_after = state.current + state.allocation - state.ineligible_value;
-        let members: Vec<usize> = (0..holdings.len())
-            .filter(|&i| holdings[i].asset_class == class && holdings[i].is_eligible())
-            .collect();
+        let members = eligible_members(holdings, class);
+        let shares = capped_shares(
+            eligible_after,
+            state.score_sum,
+            &members,
+            holdings,
+            share_cap,
+        );
         let gaps: Vec<Decimal> = members
             .iter()
-            .map(|&i| {
-                let share = slice(eligible_after, holdings[i].score, state.score_sum);
-                (share - holdings[i].value).max(Decimal::ZERO)
-            })
+            .zip(&shares)
+            .map(|(&i, share)| (*share - holdings[i].value).max(Decimal::ZERO))
             .collect();
         let gap_sum: Decimal = gaps.iter().copied().sum();
         for (slot, &i) in members.iter().enumerate() {
@@ -269,11 +383,18 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding]) -> Plan {
             } else {
                 // Inalcançável quando Σ metas = N (ver o cabeçalho), mas se a
                 // conta escorregar no arredondamento o excedente segue a nota.
-                gaps[slot]
+                let spread = gaps[slot]
                     + (state.allocation - gap_sum).max(Decimal::ZERO)
                         * Decimal::from(holdings[i].score)
-                        / state.score_sum
+                        / state.score_sum;
+                match asset_cap {
+                    Some(cap) => spread.min((cap - holdings[i].value).max(Decimal::ZERO)),
+                    None => spread,
+                }
             };
+            if share_cap(&holdings[i]).is_some_and(|cap| shares[slot] >= cap) {
+                at_limit.push(i);
+            }
         }
     }
 
@@ -292,22 +413,21 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding]) -> Plan {
         planned_value[i] = value;
     }
 
-    // Passo 6: o troco do arredondamento.
-    let ideal: Vec<Decimal> = holdings
-        .iter()
-        .map(|h| {
-            let state = classes[class_index(h.asset_class)];
-            if h.is_eligible() && state.score_sum > Decimal::ZERO {
-                slice(
-                    (state.target_value - state.ineligible_value).max(Decimal::ZERO),
-                    h.score,
-                    state.score_sum,
-                )
-            } else {
-                Decimal::ZERO
-            }
-        })
-        .collect();
+    // Passo 6: o troco do arredondamento. A meta de cada ativo é a fatia dele
+    // na meta da classe, com o mesmo limite do passo 4.
+    let mut ideal = vec![Decimal::ZERO; holdings.len()];
+    for class in AssetClass::ALL {
+        let state = classes[class_index(class)];
+        if state.score_sum <= Decimal::ZERO {
+            continue;
+        }
+        let members = eligible_members(holdings, class);
+        let base = (state.target_value - state.ineligible_value).max(Decimal::ZERO);
+        let shares = capped_shares(base, state.score_sum, &members, holdings, share_cap);
+        for (&i, share) in members.iter().zip(shares) {
+            ideal[i] = share;
+        }
+    }
     let mut pool = amount - unallocated - planned_value.iter().copied().sum::<Decimal>();
     let mut class_planned = [Decimal::ZERO; 7];
     for (i, holding) in holdings.iter().enumerate() {
@@ -324,6 +444,9 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding]) -> Plan {
             let c = class_index(holdings[i].asset_class);
             classes[c].target_value - classes[c].current - class_planned[c]
         };
+        // O que ainda cabe no ativo sob o limite. Aqui não há meia unidade de
+        // folga: o limite é teto duro.
+        let limit_room = |i: usize| asset_cap.map(|cap| cap - holdings[i].value - planned_value[i]);
         // Primeiro uma unidade inteira, se ela aproxima o ativo e a classe da meta.
         let whole = (0..holdings.len())
             .filter(|&i| holdings[i].is_eligible() && holdings[i].unit == UnitKind::Whole)
@@ -332,6 +455,7 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding]) -> Plan {
                 price <= pool
                     && deficit(i) * Decimal::TWO > price
                     && class_deficit(i) * Decimal::TWO > price
+                    && limit_room(i).is_none_or(|room| price <= room)
             })
             .max_by(|a, b| deficit(a.0).cmp(&deficit(b.0)));
         if let Some((i, price)) = whole {
@@ -344,13 +468,20 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding]) -> Plan {
         // Senão, o que cabe no fracionável mais atrasado.
         let fractional = (0..holdings.len())
             .filter(|&i| holdings[i].is_eligible() && holdings[i].unit != UnitKind::Whole)
-            .filter(|&i| deficit(i) >= CENT && class_deficit(i) >= CENT)
+            .filter(|&i| {
+                deficit(i) >= CENT
+                    && class_deficit(i) >= CENT
+                    && limit_room(i).is_none_or(|room| room >= CENT)
+            })
             .max_by(|&a, &b| deficit(a).cmp(&deficit(b)));
         let Some(i) = fractional else { break };
         let Some(price) = holdings[i].price() else {
             break;
         };
-        let budget = pool.min(deficit(i)).min(class_deficit(i));
+        let mut budget = pool.min(deficit(i)).min(class_deficit(i));
+        if let Some(room) = limit_room(i) {
+            budget = budget.min(room);
+        }
         let (qty, value) = purchasable(holdings[i].unit, budget, price);
         if value <= Decimal::ZERO {
             break;
@@ -422,6 +553,11 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding]) -> Plan {
         })
         .collect();
 
+    let mut notices = notices(targets, &classes, holdings);
+    if let Some(bp) = limits.max_asset_bp {
+        notices.extend(limit_notice(bp, &classes, holdings, &at_limit, unallocated));
+    }
+
     Plan {
         amount,
         invested: round_cents(invested),
@@ -431,8 +567,102 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding]) -> Plan {
         total_after: round_cents(total_after),
         items,
         classes: outcomes,
-        notices: notices(targets, &classes, holdings),
+        notices,
     }
+}
+
+/// Os ativos da classe que podem receber, na ordem da carteira.
+fn eligible_members(holdings: &[Holding], class: AssetClass) -> Vec<usize> {
+    (0..holdings.len())
+        .filter(|&i| holdings[i].asset_class == class && holdings[i].is_eligible())
+        .collect()
+}
+
+/// Divide `base` entre os `members` pela nota, sem a fatia de ninguém passar
+/// do próprio teto (`cap`). Quem bate no teto fica nele, e o resto é
+/// redividido pela nota entre os outros — o excedente vai para os outros
+/// ativos da classe.
+///
+/// Sem teto (`cap` sempre `None`) é a conta de sempre, a [`slice`] de cada um.
+fn capped_shares(
+    base: Decimal,
+    score_sum: Decimal,
+    members: &[usize],
+    holdings: &[Holding],
+    cap: impl Fn(&Holding) -> Option<Decimal>,
+) -> Vec<Decimal> {
+    let scores: Vec<Decimal> = members
+        .iter()
+        .map(|&i| Decimal::from(holdings[i].score))
+        .collect();
+    let caps: Vec<Option<Decimal>> = members.iter().map(|&i| cap(&holdings[i])).collect();
+    let mut fixed = vec![false; members.len()];
+    let mut free_base = base;
+    let mut free_sum = score_sum;
+    // Cada volta fixa ao menos um membro, ou para. Quem é fixado leva menos do
+    // que a divisão lhe daria, então a fatia dos outros só cresce e ninguém
+    // fixado antes volta a caber.
+    for _ in 0..=members.len() {
+        if free_sum <= Decimal::ZERO {
+            break;
+        }
+        let mut changed = false;
+        for slot in 0..members.len() {
+            if let (false, Some(cap)) = (fixed[slot], caps[slot]) {
+                if slice(free_base, holdings[members[slot]].score, free_sum) > cap {
+                    fixed[slot] = true;
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+        free_base = base;
+        free_sum = score_sum;
+        for slot in (0..members.len()).filter(|&s| fixed[s]) {
+            free_base -= caps[slot].unwrap_or(Decimal::ZERO);
+            free_sum -= scores[slot];
+        }
+    }
+    (0..members.len())
+        .map(|slot| match caps[slot] {
+            Some(cap) if fixed[slot] => cap,
+            _ if free_sum > Decimal::ZERO => {
+                slice(free_base, holdings[members[slot]].score, free_sum)
+            }
+            _ => Decimal::ZERO,
+        })
+        .collect()
+}
+
+/// O aviso do limite: quem parou nele e o que ficou sem destino por causa
+/// dele — o que ainda faltava nas classes que pararam no que cabia nos ativos
+/// (as bloqueadas pelo limite já têm o próprio aviso).
+fn limit_notice(
+    bp: u32,
+    classes: &[ClassState; 7],
+    holdings: &[Holding],
+    at_limit: &[usize],
+    unallocated: Decimal,
+) -> Option<Notice> {
+    let short: Decimal = classes
+        .iter()
+        .filter(|c| c.eligible && c.capacity.is_some_and(|cap| cap < c.gap))
+        .map(|c| (c.gap - c.allocation).max(Decimal::ZERO))
+        .sum();
+    let amount = round_cents(short.min(unallocated));
+    if at_limit.is_empty() && amount < CENT {
+        return None;
+    }
+    Some(Notice::ConcentrationLimit {
+        max_percent: percent(Decimal::from(bp), Decimal::from(FULL_BP)),
+        assets: at_limit
+            .iter()
+            .map(|&i| (holdings[i].asset_id, holdings[i].label.clone()))
+            .collect(),
+        amount,
+    })
 }
 
 fn notices(targets: Targets, classes: &[ClassState; 7], holdings: &[Holding]) -> Vec<Notice> {
@@ -443,13 +673,16 @@ fn notices(targets: Targets, classes: &[ClassState; 7], holdings: &[Holding]) ->
     for class in AssetClass::ALL {
         let state = classes[class_index(class)];
         if targets.get(class) > 0 && !state.eligible && state.gap >= CENT {
-            let mut members = holdings
-                .iter()
-                .filter(|h| h.asset_class == class)
-                .peekable();
-            let reason = if members.peek().is_none() {
+            let members: Vec<&Holding> =
+                holdings.iter().filter(|h| h.asset_class == class).collect();
+            let reason = if members.is_empty() {
                 BlockReason::NoAssets
-            } else if members.any(|h| h.score > 0) {
+            } else if state.candidates {
+                // Tem quem receberia, mas todos já estão no limite.
+                BlockReason::ConcentrationLimit
+            } else if members.iter().any(|h| h.score > 0 && h.above_ceiling()) {
+                BlockReason::AboveCeiling
+            } else if members.iter().any(|h| h.score > 0) {
                 // Tem nota e a classe segue bloqueada: falta o preço.
                 BlockReason::Unpriced
             } else {
@@ -459,6 +692,18 @@ fn notices(targets: Targets, classes: &[ClassState; 7], holdings: &[Holding]) ->
                 asset_class: class,
                 amount: round_cents(state.gap),
                 reason,
+            });
+        }
+    }
+    for holding in holdings.iter().filter(|h| h.score > 0) {
+        if let (true, Some(price), Some(max_price)) =
+            (holding.above_ceiling(), holding.price(), holding.max_price)
+        {
+            out.push(Notice::AssetAboveCeiling {
+                asset_id: holding.asset_id,
+                label: holding.label.clone(),
+                price,
+                max_price,
             });
         }
     }
@@ -518,18 +763,23 @@ fn slice(base: Decimal, score: u8, score_sum: Decimal) -> Decimal {
 /// do passo 4, em percentual de 0 a 100, na ordem de `holdings`.
 ///
 /// Ativo sem nota ou sem preço fica em 0 (não recebe, então não tem fatia), e
-/// numa classe com ao menos um ativo elegível a soma dos ideais é 100. Sem
-/// elegível, todos ficam em 0. O valor sai sem arredondar; quem exibe arredonda.
+/// numa classe com ao menos um ativo com fatia a soma dos ideais é 100. Sem
+/// nenhum, todos ficam em 0. O valor sai sem arredondar; quem exibe arredonda.
+///
+/// É a composição-alvo pela nota, e o teto de preço não entra: ele é filtro
+/// temporário de compra (o ativo sai deste aporte, não da carteira que a
+/// pessoa quer ter). Quem está acima do teto mantém o ideal dele, e a Carteira
+/// mostra o selo "acima do teto" para explicar por que não recebe agora.
 pub fn ideal_class_percents(holdings: &[Holding]) -> Vec<Decimal> {
     let mut score_sums = [Decimal::ZERO; 7];
-    for holding in holdings.iter().filter(|h| h.is_eligible()) {
+    for holding in holdings.iter().filter(|h| h.has_slice()) {
         score_sums[class_index(holding.asset_class)] += Decimal::from(holding.score);
     }
     holdings
         .iter()
         .map(|holding| {
             let score_sum = score_sums[class_index(holding.asset_class)];
-            if holding.is_eligible() && score_sum > Decimal::ZERO {
+            if holding.has_slice() && score_sum > Decimal::ZERO {
                 slice(HUNDRED, holding.score, score_sum)
             } else {
                 Decimal::ZERO
@@ -575,6 +825,7 @@ mod tests {
             unit_price: price,
             unit: class.native_market().unit_kind(),
             score,
+            max_price: None,
         }
     }
 
@@ -637,7 +888,7 @@ mod tests {
     #[test]
     fn six_thousand_goes_to_crypto_and_the_lagging_reits_and_almost_nothing_is_left() {
         let holdings = sample_portfolio();
-        let plan = plan(dec!(6000), sample_targets(), &holdings);
+        let plan = plan(dec!(6000), sample_targets(), &holdings, Limits::default());
         assert_money_adds_up(&plan);
 
         // O troco do arredondamento passa pela rodada gulosa e o resto cai no
@@ -685,7 +936,7 @@ mod tests {
     #[test]
     fn a_big_contribution_never_overshoots_and_reports_what_has_nowhere_to_go() {
         let holdings = sample_portfolio();
-        let plan = plan(dec!(200000), sample_targets(), &holdings);
+        let plan = plan(dec!(200000), sample_targets(), &holdings, Limits::default());
         assert_money_adds_up(&plan);
 
         // As duas classes elegíveis param na meta (com folga de uma cota), e o
@@ -719,7 +970,7 @@ mod tests {
     #[test]
     fn without_targets_nothing_is_bought() {
         let holdings = sample_portfolio();
-        let plan = plan(dec!(1000), Targets::default(), &holdings);
+        let plan = plan(dec!(1000), Targets::default(), &holdings, Limits::default());
         assert_money_adds_up(&plan);
         assert!(plan.items.is_empty());
         assert_eq!(plan.unallocated, dec!(1000));
@@ -739,13 +990,36 @@ mod tests {
         ];
         let mut targets = Targets::default();
         targets.set(BrReits, FULL_BP);
-        let plan = plan(dec!(150), targets, &holdings);
+        let plan = plan(dec!(150), targets, &holdings, Limits::default());
         assert_money_adds_up(&plan);
         assert_eq!(
             item(&plan, &holdings, "B11").map(|i| i.quantity),
             Some(dec!(1))
         );
         assert_eq!(plan.change, dec!(50));
+    }
+
+    /// A rodada do troco olhava só a fatia do ativo: um FII recém-cadastrado
+    /// numa classe muito acima da meta recebia o troco inteiro, e a classe
+    /// "acima da meta" aparecia recebendo. O troco agora também respeita o que
+    /// falta na classe.
+    #[test]
+    fn change_never_goes_to_a_class_above_target() {
+        use AssetClass::*;
+        let holdings = vec![
+            holding(BrReits, "CHEIO11", dec!(100000), Some(dec!(100)), 5),
+            holding(BrReits, "NOVO11", Decimal::ZERO, Some(dec!(10)), 5),
+            holding(BrStocks, "CARO3", Decimal::ZERO, Some(dec!(3000)), 5),
+        ];
+        let mut targets = Targets::default();
+        targets.set(BrReits, 5000);
+        targets.set(BrStocks, 5000);
+        let plan = plan(dec!(1000), targets, &holdings, Limits::default());
+        assert_money_adds_up(&plan);
+        assert!(plan.items.is_empty(), "{:#?}", plan.items);
+        assert_eq!(plan.change, dec!(1000));
+        assert_eq!(class(&plan, BrReits).status, ClassStatus::AboveTarget);
+        assert_eq!(class(&plan, BrStocks).status, ClassStatus::BelowTarget);
     }
 
     /// O mesmo ativo como título do Tesouro Direto: centésimos de título.
@@ -772,7 +1046,7 @@ mod tests {
         let mut targets = Targets::default();
         targets.set(FixedIncome, 5000);
         targets.set(BrStocks, 5000);
-        let plan = plan(dec!(1000), targets, &holdings);
+        let plan = plan(dec!(1000), targets, &holdings, Limits::default());
         assert_money_adds_up(&plan);
         let bond = item(&plan, &holdings, "IPCA").expect("o titulo recebe");
         // R$ 1.000 a R$ 4.248,81 o título: 0,23 título (0,2353… para baixo),
@@ -781,29 +1055,6 @@ mod tests {
         assert_eq!(bond.value, dec!(977.22));
         assert!(bond.divisible);
         assert_eq!(plan.change, dec!(22.78));
-    }
-
-    /// A rodada do troco olhava só a fatia do ativo: um FII recém-cadastrado
-    /// numa classe muito acima da meta recebia o troco inteiro, e a classe
-    /// "acima da meta" aparecia recebendo. O troco agora também respeita o que
-    /// falta na classe.
-    #[test]
-    fn change_never_goes_to_a_class_above_target() {
-        use AssetClass::*;
-        let holdings = vec![
-            holding(BrReits, "CHEIO11", dec!(100000), Some(dec!(100)), 5),
-            holding(BrReits, "NOVO11", Decimal::ZERO, Some(dec!(10)), 5),
-            holding(BrStocks, "CARO3", Decimal::ZERO, Some(dec!(3000)), 5),
-        ];
-        let mut targets = Targets::default();
-        targets.set(BrReits, 5000);
-        targets.set(BrStocks, 5000);
-        let plan = plan(dec!(1000), targets, &holdings);
-        assert_money_adds_up(&plan);
-        assert!(plan.items.is_empty(), "{:#?}", plan.items);
-        assert_eq!(plan.change, dec!(1000));
-        assert_eq!(class(&plan, BrReits).status, ClassStatus::AboveTarget);
-        assert_eq!(class(&plan, BrStocks).status, ClassStatus::BelowTarget);
     }
 
     #[test]
@@ -817,7 +1068,7 @@ mod tests {
         let mut targets = Targets::default();
         targets.set(FixedIncome, 5000);
         targets.set(BrStocks, 5000);
-        let plan = plan(dec!(333.33), targets, &holdings);
+        let plan = plan(dec!(333.33), targets, &holdings, Limits::default());
         assert_money_adds_up(&plan);
         let rf = item(&plan, &holdings, "Tesouro").expect("renda fixa recebe");
         assert!(rf.divisible);
@@ -835,7 +1086,7 @@ mod tests {
     #[test]
     fn zero_amount_is_a_diagnosis_and_negative_amount_is_zero() {
         let holdings = sample_portfolio();
-        let plan = plan(dec!(-10), sample_targets(), &holdings);
+        let plan = plan(dec!(-10), sample_targets(), &holdings, Limits::default());
         assert_money_adds_up(&plan);
         assert_eq!(plan.amount, Decimal::ZERO);
         assert!(plan.items.is_empty());
@@ -856,7 +1107,7 @@ mod tests {
         let mut targets = Targets::default();
         targets.set(BrStocks, 8000);
         targets.set(Crypto, 2000);
-        let plan = plan(dec!(1000), targets, &holdings);
+        let plan = plan(dec!(1000), targets, &holdings, Limits::default());
         assert_money_adds_up(&plan);
         assert_eq!(
             item(&plan, &holdings, "WEGE3").map(|i| i.quantity),
@@ -884,7 +1135,7 @@ mod tests {
         targets.set(FixedIncome, 2000);
         let concentrated = vec![holding(BrStocks, "WEGE3", dec!(100000), Some(dec!(50)), 8)];
 
-        let blocked = plan(dec!(5000), targets, &concentrated);
+        let blocked = plan(dec!(5000), targets, &concentrated, Limits::default());
         assert!(blocked.items.is_empty());
         assert_eq!(blocked.unallocated, dec!(5000));
         assert!(blocked.notices.contains(&Notice::ClassBlocked {
@@ -915,7 +1166,7 @@ mod tests {
                 5,
             ),
         ]);
-        let plan = plan(dec!(5000), targets, &listed);
+        let plan = plan(dec!(5000), targets, &listed, Limits::default());
         assert_money_adds_up(&plan);
         assert_eq!(plan.unallocated, Decimal::ZERO);
         assert!(plan.change < dec!(50), "troco {}", plan.change);
@@ -948,7 +1199,7 @@ mod tests {
             holding(Crypto, "QBTC11", Decimal::ZERO, None, 6),
             holding(Crypto, "ZERO", Decimal::ZERO, Some(dec!(10)), 0),
         ];
-        let plan = plan(dec!(1000), targets, &holdings);
+        let plan = plan(dec!(1000), targets, &holdings, Limits::default());
         let reason = |class: AssetClass| {
             plan.notices.iter().find_map(|n| match n {
                 Notice::ClassBlocked {
@@ -990,6 +1241,22 @@ mod tests {
         assert_eq!(ideal[5], dec!(100));
     }
 
+    /// O ideal é a composição-alvo pela nota; o teto é filtro de compra deste
+    /// aporte. Acima do teto, o ativo não recebe, mas a fatia dele continua.
+    #[test]
+    fn the_ceiling_does_not_change_the_ideal_percent() {
+        use AssetClass::*;
+        let free = vec![
+            holding(BrStocks, "CARA3", dec!(500), Some(dec!(32.50)), 8),
+            holding(BrStocks, "BOA3", dec!(500), Some(dec!(20)), 4),
+        ];
+        let mut capped = free.clone();
+        capped[0].max_price = Some(dec!(30));
+        assert!(capped[0].above_ceiling() && !capped[0].is_eligible());
+        assert_eq!(ideal_class_percents(&capped), ideal_class_percents(&free));
+        assert_eq!(ideal_class_percents(&capped)[0].round_dp(2), dec!(66.67));
+    }
+
     #[test]
     fn ideal_percent_is_zero_when_nothing_in_the_class_can_receive() {
         use AssetClass::*;
@@ -1017,7 +1284,7 @@ mod tests {
         ];
         let mut targets = Targets::default();
         targets.set(BrReits, FULL_BP);
-        let plan = plan(dec!(300), targets, &holdings);
+        let plan = plan(dec!(300), targets, &holdings, Limits::default());
         let ideal = ideal_class_percents(&holdings);
         let spendable = dec!(300);
         for (i, label) in ["A", "B"].into_iter().enumerate() {
@@ -1040,6 +1307,262 @@ mod tests {
         assert_eq!(ClassStatus::AboveTarget.as_str(), "above_target");
         assert_eq!(ClassStatus::BelowTarget.as_str(), "below_target");
         assert_eq!(ClassStatus::NoTarget.as_str(), "no_target");
+    }
+
+    fn with_ceiling(holding: Holding, max_price: Decimal) -> Holding {
+        Holding {
+            max_price: Some(max_price),
+            ..holding
+        }
+    }
+
+    fn limit(percent: u32) -> Limits {
+        Limits {
+            max_asset_bp: Some(percent * 100),
+        }
+    }
+
+    fn reason_of(plan: &Plan, class: AssetClass) -> Option<BlockReason> {
+        plan.notices.iter().find_map(|n| match n {
+            Notice::ClassBlocked {
+                asset_class,
+                reason,
+                ..
+            } if *asset_class == class => Some(*reason),
+            _ => None,
+        })
+    }
+
+    /// Carteira fictícia de R$ 10.000 do exemplo de `docs/alocacao.md`: metade
+    /// em renda fixa (na meta), metade em ações abaixo da meta, e a nota 8 de
+    /// AAAA3 puxando quase todo o aporte para ele.
+    fn limit_example() -> (Vec<Holding>, Targets) {
+        use AssetClass::*;
+        let holdings = vec![
+            holding(FixedIncome, "Tesouro", dec!(6000), Some(Decimal::ONE), 5),
+            holding(BrStocks, "AAAA3", dec!(2000), Some(dec!(10)), 8),
+            holding(BrStocks, "BBBB3", dec!(2000), Some(dec!(10)), 2),
+        ];
+        let mut targets = Targets::default();
+        targets.set(BrStocks, 5000);
+        targets.set(FixedIncome, 5000);
+        (holdings, targets)
+    }
+
+    #[test]
+    fn an_asset_above_its_ceiling_sits_out_and_says_why() {
+        use AssetClass::*;
+        let holdings = vec![
+            with_ceiling(
+                holding(BrStocks, "CARA3", dec!(500), Some(dec!(32.50)), 8),
+                dec!(30),
+            ),
+            with_ceiling(
+                holding(BrStocks, "BOA3", dec!(500), Some(dec!(20)), 4),
+                dec!(25),
+            ),
+        ];
+        let mut targets = Targets::default();
+        targets.set(BrStocks, FULL_BP);
+        let first = plan(dec!(1000), targets, &holdings, Limits::default());
+        assert_money_adds_up(&first);
+        assert!(item(&first, &holdings, "CARA3").is_none());
+        // Fora da divisão, CARA3 ainda ocupa o espaço dele: BOA3 vai a
+        // R$ 2.000 − R$ 500 = R$ 1.500, e recebe o aporte inteiro.
+        assert_eq!(
+            item(&first, &holdings, "BOA3").map(|i| i.quantity),
+            Some(dec!(50))
+        );
+        assert!(first.notices.contains(&Notice::AssetAboveCeiling {
+            asset_id: holdings[0].asset_id,
+            label: "CARA3".into(),
+            price: dec!(32.50),
+            max_price: dec!(30),
+        }));
+        // Preço igual ao teto ainda compra.
+        let at = vec![with_ceiling(
+            holding(BrStocks, "CARA3", dec!(500), Some(dec!(30)), 8),
+            dec!(30),
+        )];
+        let plan = plan(dec!(300), targets, &at, Limits::default());
+        assert_eq!(
+            item(&plan, &at, "CARA3").map(|i| i.quantity),
+            Some(dec!(10))
+        );
+        assert!(!plan
+            .notices
+            .iter()
+            .any(|n| matches!(n, Notice::AssetAboveCeiling { .. })));
+    }
+
+    #[test]
+    fn a_class_with_every_asset_above_the_ceiling_is_blocked_and_the_money_goes_elsewhere() {
+        use AssetClass::*;
+        let holdings = vec![
+            with_ceiling(
+                holding(BrReits, "CARO11", dec!(100), Some(dec!(120)), 6),
+                dec!(100),
+            ),
+            holding(BrReits, "SEMNOTA11", dec!(100), Some(dec!(90)), 0),
+            holding(FixedIncome, "Tesouro", dec!(800), Some(Decimal::ONE), 5),
+        ];
+        let mut targets = Targets::default();
+        targets.set(BrReits, 5000);
+        targets.set(FixedIncome, 5000);
+        let plan = plan(dec!(1000), targets, &holdings, Limits::default());
+        assert_money_adds_up(&plan);
+        assert_eq!(reason_of(&plan, BrReits), Some(BlockReason::AboveCeiling));
+        assert_eq!(class(&plan, BrReits).status, ClassStatus::Blocked);
+        // A renda fixa vai até a meta dela (R$ 1.000); o resto não tem destino.
+        assert_eq!(class(&plan, FixedIncome).allocated, dec!(200));
+        assert_eq!(plan.unallocated, dec!(800));
+        assert_eq!(BlockReason::AboveCeiling.as_str(), "above_ceiling");
+    }
+
+    #[test]
+    fn the_limit_sends_the_excess_to_the_other_assets_of_the_class() {
+        let (holdings, targets) = limit_example();
+        let units = |plan: &Plan, label: &str| item(plan, &holdings, label).map(|i| i.quantity);
+
+        // Sem limite: AAAA3 vai a R$ 4.000, um terço da carteira.
+        let free = plan(dec!(2000), targets, &holdings, Limits::default());
+        assert_eq!(units(&free, "AAAA3"), Some(dec!(200)));
+        assert_eq!(units(&free, "BBBB3"), None);
+
+        // Com 30% (R$ 3.600): AAAA3 para no limite e o resto da classe vai
+        // para BBBB3, que chega a R$ 2.400.
+        let capped = plan(dec!(2000), targets, &holdings, limit(30));
+        assert_money_adds_up(&capped);
+        assert_eq!(units(&capped, "AAAA3"), Some(dec!(160)));
+        assert_eq!(units(&capped, "BBBB3"), Some(dec!(40)));
+        assert_eq!(capped.unallocated, Decimal::ZERO);
+        assert!(capped.notices.contains(&Notice::ConcentrationLimit {
+            max_percent: dec!(30),
+            assets: vec![(holdings[1].asset_id, "AAAA3".into())],
+            amount: Decimal::ZERO,
+        }));
+    }
+
+    #[test]
+    fn what_fits_nowhere_under_the_limit_is_left_over_with_the_reason() {
+        let (holdings, targets) = limit_example();
+        // Com 20% (R$ 2.400 de R$ 12.000), cada ação só cabe mais R$ 400; a
+        // renda fixa já está na meta. R$ 1.200 ficam sem destino.
+        let plan = plan(dec!(2000), targets, &holdings, limit(20));
+        assert_money_adds_up(&plan);
+        assert_eq!(class(&plan, AssetClass::BrStocks).allocated, dec!(800));
+        assert_eq!(plan.unallocated, dec!(1200));
+        let Some(Notice::ConcentrationLimit { amount, assets, .. }) = plan
+            .notices
+            .iter()
+            .find(|n| matches!(n, Notice::ConcentrationLimit { .. }))
+        else {
+            unreachable!("sem o aviso do limite: {:#?}", plan.notices)
+        };
+        assert_eq!(*amount, dec!(1200));
+        assert_eq!(assets.len(), 2);
+    }
+
+    #[test]
+    fn what_a_class_cannot_take_under_the_limit_goes_to_another_class_below_target() {
+        use AssetClass::*;
+        let (mut holdings, _) = limit_example();
+        holdings.push(holding(Crypto, "BTC", Decimal::ZERO, Some(dec!(300000)), 7));
+        let mut targets = Targets::default();
+        targets.set(BrStocks, 5000);
+        targets.set(FixedIncome, 4000);
+        targets.set(Crypto, 1000);
+        // N = 12.000: ações faltam 2.000 mas só cabem 800 sob 20%; cripto
+        // falta 1.200. Proporcional, cripto levaria 750; com o que as ações
+        // não comportam, cripto vai até a meta dela.
+        let plan = plan(dec!(2000), targets, &holdings, limit(20));
+        assert_money_adds_up(&plan);
+        assert_eq!(class(&plan, BrStocks).allocated, dec!(800));
+        assert!(class(&plan, Crypto).allocated > dec!(1199));
+        assert!(plan.unallocated < dec!(1));
+    }
+
+    #[test]
+    fn a_class_whose_assets_are_all_at_the_limit_is_blocked() {
+        use AssetClass::*;
+        let holdings = vec![
+            holding(BrStocks, "GRANDE3", dec!(5000), Some(dec!(10)), 8),
+            holding(FixedIncome, "Tesouro", dec!(5000), Some(Decimal::ONE), 5),
+        ];
+        let mut targets = Targets::default();
+        targets.set(BrStocks, 8000);
+        targets.set(FixedIncome, 2000);
+        let plan = plan(dec!(1000), targets, &holdings, limit(30));
+        assert_money_adds_up(&plan);
+        assert_eq!(
+            reason_of(&plan, BrStocks),
+            Some(BlockReason::ConcentrationLimit)
+        );
+        assert_eq!(class(&plan, BrStocks).status, ClassStatus::Blocked);
+        assert!(plan.items.is_empty());
+        assert_eq!(
+            BlockReason::ConcentrationLimit.as_str(),
+            "concentration_limit"
+        );
+    }
+
+    /// Teto e limite valem para título do Tesouro também, e o centésimo de
+    /// título arredonda para baixo sob o limite.
+    #[test]
+    fn ceiling_and_limit_apply_to_treasury_bonds_in_hundredths() {
+        use AssetClass::*;
+        let bond = as_treasury(holding(
+            FixedIncome,
+            "IPCA",
+            Decimal::ZERO,
+            Some(dec!(4248.81)),
+            5,
+        ));
+        let holdings = vec![
+            bond.clone(),
+            holding(BrStocks, "ITSA4", dec!(1000), Some(dec!(10)), 5),
+        ];
+        let mut targets = Targets::default();
+        targets.set(FixedIncome, 5000);
+        targets.set(BrStocks, 5000);
+        // N = 2.000; 40% = R$ 800. A renda fixa falta R$ 1.000 e só cabem 800.
+        let capped = plan(dec!(1000), targets, &holdings, limit(40));
+        assert_money_adds_up(&capped);
+        let bought = item(&capped, &holdings, "IPCA").expect("o titulo recebe");
+        // R$ 800 a R$ 4.248,81: 0,18 título (0,1882… para baixo), R$ 764,78.
+        assert_eq!(bought.quantity, dec!(0.18));
+        assert_eq!(bought.value, dec!(764.78));
+        assert_eq!(capped.unallocated, dec!(200));
+
+        let above = vec![with_ceiling(bond, dec!(4000)), holdings[1].clone()];
+        let blocked = plan(dec!(1000), targets, &above, Limits::default());
+        assert!(blocked.items.is_empty());
+        assert_eq!(
+            reason_of(&blocked, FixedIncome),
+            Some(BlockReason::AboveCeiling)
+        );
+    }
+
+    #[test]
+    fn the_change_round_never_crosses_the_limit() {
+        use AssetClass::*;
+        // N = 1.000; 50% = R$ 500 por ativo. Sem limite, a segunda cota de
+        // UNICA3 (R$ 600, meia cota acima da meta) sairia do troco; com o
+        // limite, não: ali não há folga de meia unidade.
+        let holdings = vec![
+            holding(BrStocks, "UNICA3", Decimal::ZERO, Some(dec!(300)), 8),
+            holding(BrReits, "CARO11", Decimal::ZERO, Some(dec!(900)), 5),
+        ];
+        let mut targets = Targets::default();
+        targets.set(BrStocks, 5000);
+        targets.set(BrReits, 5000);
+        let units = |plan: &Plan| item(plan, &holdings, "UNICA3").map(|i| i.quantity);
+        let free = plan(dec!(1000), targets, &holdings, Limits::default());
+        assert_eq!(units(&free), Some(dec!(2)));
+        let capped = plan(dec!(1000), targets, &holdings, limit(50));
+        assert_money_adds_up(&capped);
+        assert_eq!(units(&capped), Some(dec!(1)));
+        assert_eq!(capped.change, dec!(700));
     }
 
     mod properties {
@@ -1143,6 +1666,54 @@ mod tests {
             Ok(())
         }
 
+        /// Teto de preço em metade dos ativos com cotação, ora abaixo, ora
+        /// acima do preço (de 50% a 150% dele).
+        fn arb_holding_with_ceiling() -> impl Strategy<Value = Holding> {
+            (arb_holding(), prop::option::weighted(0.5, 50u32..150)).prop_map(|(h, factor)| {
+                let max_price = match (h.unit, h.price(), factor) {
+                    (UnitKind::Value, _, _) | (_, None, _) | (_, _, None) => None,
+                    (_, Some(price), Some(f)) => {
+                        Some((price * Decimal::from(f) / HUNDRED).round_dp(2).max(CENT))
+                    }
+                };
+                Holding { max_price, ..h }
+            })
+        }
+
+        /// Limite de 1% a 100%, às vezes desligado.
+        fn arb_limits() -> impl Strategy<Value = Limits> {
+            prop::option::weighted(0.85, 100u32..=FULL_BP)
+                .prop_map(|max_asset_bp| Limits { max_asset_bp })
+        }
+
+        fn assert_common_invariants(
+            plan: &Plan,
+            targets: Targets,
+            holdings: &[Holding],
+            amount: Decimal,
+        ) -> Result<(), TestCaseError> {
+            prop_assert_eq!(plan.amount, plan.invested + plan.change + plan.unallocated);
+            prop_assert!(plan.change >= Decimal::ZERO);
+            prop_assert!(plan.unallocated >= Decimal::ZERO);
+            for item in &plan.items {
+                let h = holdings
+                    .iter()
+                    .find(|h| h.asset_id == item.asset_id)
+                    .expect("item de um ativo");
+                prop_assert!(h.score > 0, "nota zero recebeu");
+                prop_assert!(item.value > Decimal::ZERO);
+                // Com teto, nenhum ativo acima do teto recebe.
+                prop_assert!(
+                    h.max_price.is_none_or(|max| item.unit_price <= max),
+                    "{} acima do teto recebeu: {} > {:?}",
+                    h.label,
+                    item.unit_price,
+                    h.max_price
+                );
+            }
+            assert_classes_never_pass_their_target(plan, targets, holdings, amount)
+        }
+
         proptest! {
             #![proptest_config(ProptestConfig::with_cases(300))]
 
@@ -1157,14 +1728,14 @@ mod tests {
                         .filter(|&i| holdings[i].asset_class == class)
                         .collect();
                     let sum: Decimal = members.iter().map(|&i| ideal[i]).sum();
-                    if members.iter().any(|&i| holdings[i].is_eligible()) {
+                    if members.iter().any(|&i| holdings[i].has_slice()) {
                         prop_assert!((sum - HUNDRED).abs() < dec!(0.000001), "soma {sum}");
                     } else {
                         prop_assert_eq!(sum, Decimal::ZERO);
                     }
                     for &i in &members {
                         prop_assert!(ideal[i] >= Decimal::ZERO && ideal[i] <= HUNDRED);
-                        if !holdings[i].is_eligible() {
+                        if !holdings[i].has_slice() {
                             prop_assert_eq!(ideal[i], Decimal::ZERO);
                         }
                     }
@@ -1173,20 +1744,18 @@ mod tests {
 
             #[test]
             fn money_always_adds_up_and_nobody_overshoots(
-                holdings in prop::collection::vec(arb_holding(), 0..12),
+                holdings in prop::collection::vec(arb_holding_with_ceiling(), 0..12),
                 targets in arb_targets(),
                 amount_cents in 0u32..10_000_000,
             ) {
                 let amount = Decimal::new(i64::from(amount_cents), 2);
-                let plan = plan(amount, targets, &holdings);
-                prop_assert_eq!(plan.amount, plan.invested + plan.change + plan.unallocated);
-                prop_assert!(plan.change >= Decimal::ZERO);
-                prop_assert!(plan.unallocated >= Decimal::ZERO);
+                let plan = plan(amount, targets, &holdings, Limits::default());
+                assert_common_invariants(&plan, targets, &holdings, amount)?;
                 for item in &plan.items {
                     let h = holdings.iter().find(|h| h.asset_id == item.asset_id).expect("item de um ativo");
-                    prop_assert!(h.score > 0, "nota zero recebeu");
-                    prop_assert!(item.value > Decimal::ZERO);
                     // Nenhum ativo passa da própria meta por mais de meia unidade.
+                    // Quem está acima do teto ocupa espaço na classe, como quem
+                    // não tem nota ou preço.
                     let total: Decimal = holdings.iter().map(|h| h.value).sum::<Decimal>() + amount;
                     let same_class = || holdings.iter().filter(|o| o.asset_class == h.asset_class);
                     let state_sum: Decimal = same_class().filter(|o| o.is_eligible()).map(|o| Decimal::from(o.score)).sum();
@@ -1199,7 +1768,63 @@ mod tests {
                         "{} passou da meta: {} > {}", h.label, h.value + item.value, ideal
                     );
                 }
-                assert_classes_never_pass_their_target(&plan, targets, &holdings, amount)?;
+            }
+
+            /// O limite é teto duro: a conta arredonda sempre para baixo (cota
+            /// inteira, 8 casas, centavo) e o troco só compra a unidade que
+            /// cabe inteira sob ele. A única folga é o centavo do valor
+            /// arredondado do item. Quem já estava acima do limite antes do
+            /// aporte não recebe (o motor não vende).
+            #[test]
+            fn with_a_limit_no_asset_ends_above_it(
+                holdings in prop::collection::vec(arb_holding_with_ceiling(), 0..12),
+                targets in arb_targets(),
+                limits in arb_limits(),
+                amount_cents in 0u32..10_000_000,
+            ) {
+                let amount = Decimal::new(i64::from(amount_cents), 2);
+                let plan = plan(amount, targets, &holdings, limits);
+                assert_common_invariants(&plan, targets, &holdings, amount)?;
+                let Some(bp) = limits.max_asset_bp else { return Ok(()) };
+                let n: Decimal = holdings.iter().map(|h| h.value).sum::<Decimal>() + amount;
+                let cap = n * Decimal::from(bp) / Decimal::from(FULL_BP);
+                for item in &plan.items {
+                    let h = holdings.iter().find(|h| h.asset_id == item.asset_id).expect("item de um ativo");
+                    prop_assert!(
+                        h.value + item.value <= cap + CENT,
+                        "{} passou do limite: {} > {}", h.label, h.value + item.value, cap
+                    );
+                }
+            }
+
+            /// Sem teto e sem limite, o motor dá o mesmo plano, centavo por
+            /// centavo e aviso por aviso, que o motor de antes das duas regras.
+            #[test]
+            fn without_ceiling_or_limit_nothing_changes(
+                holdings in prop::collection::vec(arb_holding(), 0..12),
+                targets in arb_targets(),
+                amount_cents in 0u32..10_000_000,
+            ) {
+                let amount = Decimal::new(i64::from(amount_cents), 2);
+                prop_assert_eq!(
+                    plan(amount, targets, &holdings, Limits::default()),
+                    legacy::plan(amount, targets, &holdings)
+                );
+            }
+
+            /// Limite de 100% não corta ninguém: nenhum ativo passa da carteira
+            /// inteira.
+            #[test]
+            fn a_limit_of_one_hundred_percent_changes_nothing(
+                holdings in prop::collection::vec(arb_holding_with_ceiling(), 0..12),
+                targets in arb_targets(),
+                amount_cents in 0u32..10_000_000,
+            ) {
+                let amount = Decimal::new(i64::from(amount_cents), 2);
+                let full = Limits { max_asset_bp: Some(FULL_BP) };
+                let mut limited = plan(amount, targets, &holdings, full);
+                limited.notices.retain(|n| !matches!(n, Notice::ConcentrationLimit { amount, .. } if amount.is_zero()));
+                prop_assert_eq!(limited, plan(amount, targets, &holdings, Limits::default()));
             }
         }
     }

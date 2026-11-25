@@ -167,6 +167,7 @@ A tela inteira numa chamada.
       "quantity": 10,
       "unit_price": 142.0,
       "manual_price": null,
+      "max_price": 150.0,
       "currency": "BRL",
       "price_source": "quote",
       "quote_updated_at": "2026-11-25T12:00:00Z",
@@ -189,7 +190,12 @@ A tela inteira numa chamada.
 }
 ```
 
-- `eligible`: a classe tem pelo menos um ativo com nota > 0 e preço > 0.
+- `eligible`: a classe tem pelo menos um ativo com nota > 0, preço > 0 e
+  preço até o `max_price` dele (quando há). O limite de concentração não
+  entra aqui: ele depende do valor do aporte e aparece no plano.
+- `max_price`: o teto de preço da pessoa, em reais por unidade (`null` = sem
+  teto). Com o preço acima dele, o ativo fica fora do aporte
+  ([`alocacao.md`](alocacao.md#teto-de-preço-por-ativo-max_price)).
 - `price_source`: `quote` (cotação automática), `manual` (`manual_price`
   vence a cotação) ou `missing` (sem preço — vale 0 e não recebe aporte).
 - `unit_price` já vem em reais. `currency` é a moeda da cotação original.
@@ -292,8 +298,10 @@ Título do Tesouro Direto (ver [Título do Tesouro Direto](#título-do-tesouro-d
 { "asset_class": "fixed_income", "symbol": "TD-IPCA-20350515", "treasury": true, "quantity": 0.35, "score_override": 6 }
 ```
 
-Opcionais em todos: `display_name`, `manual_price` (só por unidade),
-`score_override`, `listed_on_b3`, `treasury`. `quantity`/`amount` ausente vale
+Opcionais em todos: `display_name`, `manual_price` e `max_price` (só por
+unidade; em renda fixa por valor são `422`), `score_override`, `listed_on_b3`,
+`treasury`. `max_price` é o teto de preço da pessoa, em reais por unidade,
+maior que zero; vale também para título do Tesouro. `quantity`/`amount` ausente vale
 0. Na B3 e nas ações americanas a quantidade é inteira. O símbolo é normalizado para
 maiúsculas, sem `.SA`. Responde
 `201` com o ativo no mesmo formato de `portfolio.assets[]`. Mesmo símbolo na
@@ -310,12 +318,14 @@ Qualquer subconjunto de:
   "display_name": "Kinea Renda",
   "manual_price": null,
   "score_override": null,
+  "max_price": 30,
   "answers": { "4c1e…": true, "9a77…": null },
   "listed_on_b3": true
 }
 ```
 
-`null` em `manual_price`/`score_override` limpa o campo. Em `answers`, `true`/
+`null` em `manual_price`/`score_override`/`max_price` limpa o campo.
+`max_price` maior que zero; em renda fixa por valor, `422`. Em `answers`, `true`/
 `false` grava e `null` apaga a resposta. Trocar `listed_on_b3` cota o ativo no
 mercado novo na hora; se a unidade passa a ser inteira, a quantidade que fica
 (a enviada ou a atual) tem de ser inteira. Responde `200` com o ativo.
@@ -390,14 +400,46 @@ Calcula, não grava.
   mas o valor não chegou a comprar uma unidade), `on_target`, `above_target`,
   `blocked` (abaixo da meta sem ativo elegível) ou `no_target` (meta 0).
 - `divisible`: o item aceita fração (cripto fora da B3, renda fixa por valor).
-- `notices[].code`: `class_blocked` (com `asset_class`, `amount` = quanto
-  falta na classe e `reason`: `no_assets` — nenhum ativo cadastrado —,
-  `unrated` — há ativos, nenhum com nota — ou `unpriced` — há ativo com nota,
-  mas sem preço), `assets_without_price` (com `symbols`),
-  `assets_without_score` (com `symbols`) e `no_targets` (nenhuma meta
-  definida — nada é comprado).
+- `notices[].code`:
+  - `class_blocked`, com `asset_class`, `amount` (quanto falta na classe) e
+    `reason`: `no_assets` (nenhum ativo cadastrado), `unrated` (há ativos,
+    nenhum com nota), `unpriced` (há ativo com nota, mas sem preço),
+    `above_ceiling` (os com nota e preço estão acima do `max_price`) ou
+    `concentration_limit` (os que receberiam já estão no limite por ativo);
+  - `assets_without_price` e `assets_without_score`, com `symbols`;
+  - `no_targets`: nenhuma meta definida, nada é comprado;
+  - `asset_above_ceiling`: o ativo ficou fora deste aporte porque o preço passou
+    do teto da pessoa.
+    `{ "code": "asset_above_ceiling", "asset_id": "…", "symbol": "XPTO3", "unit_price": 32.5, "max_price": 30.0 }`;
+  - `concentration_limit`: o limite por ativo mudou o plano. `symbols` (e
+    `asset_ids`, na mesma ordem) chegaram no limite, e o que iria para eles
+    foi para os outros ativos da classe ou para outras classes; `amount` é o
+    que ficou sem destino por causa do limite (0 quando tudo coube).
+    `{ "code": "concentration_limit", "max_percent": 15.0, "asset_ids": ["…"], "symbols": ["XPTO3"], "amount": 0 }`.
 
 O algoritmo está em [`alocacao.md`](alocacao.md).
+
+### `GET /api/v1/settings/allocation`
+
+Os guarda-corpos do motor que a pessoa liga. Sem nada salvo, tudo desligado.
+
+```json
+{ "max_asset_percent": 15.0 }
+```
+
+- `max_asset_percent`: nenhum ativo passa desta fatia da carteira **depois do
+  aporte** (de 0,01 a 100); `null` = sem limite. Detalhes em
+  [`alocacao.md`](alocacao.md#limite-de-concentração-max_asset_percent).
+
+### `PUT /api/v1/settings/allocation`
+
+```json
+{ "max_asset_percent": 15 }
+```
+
+O campo é obrigatório: um número de 0,01 a 100, com até duas casas, ou `null`
+para desligar. Fora disso, `422 validation_failed`. Responde `200` no formato
+do `GET`. O próximo `POST /plans` já usa o valor novo.
 
 ### `POST /api/v1/contributions`
 

@@ -117,7 +117,11 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
    - Cartões: ticker em destaque, nome, "**12 cotas** × R$ 53,81", valor.
    - Rosca antes → depois e as barras por classe com o pedaço dourado.
    - Avisos em linguagem simples ("Ações Internacionais está abaixo da meta,
-     mas você não tem nenhum ativo lá — R$ 37.800 ficaram sem destino").
+     mas você não tem nenhum ativo lá — R$ 37.800 ficaram sem destino"), cada
+     um com a ação que resolve. "XPTO3 está a R$ 32,50, acima do seu teto de
+     R$ 30,00" abre a folha do ativo, onde o teto está; "XPTO3 chegou no seu
+     limite de 15% da carteira" (e a classe bloqueada pelo limite) leva ao
+     controle do limite.
    - Botão **"Já comprei"** → registra o aporte (com chance de ajustar
      quantidades antes) → confete.
 6. Carteira vazia: o prumo balançando e um convite de um toque para montar a
@@ -148,8 +152,15 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
   renda fixa: nome + valor, ou "Tesouro Direto" (busca pelo nome, quantidade
   fracionária, preço automático).
 - Tocar num ativo abre a folha de edição: quantidade com stepper, preço manual
-  opcional, o checklist (perguntas com sim/não/sem resposta) e a nota ao vivo;
-  ou o controle de nota manual (0–10) para cripto e renda fixa. Remover fica no
+  opcional, **teto de preço** opcional, o checklist (perguntas com sim/não/sem
+  resposta) e a nota ao vivo; ou o controle de nota manual (0–10) para cripto e
+  renda fixa.
+- Teto de preço: uma chave "Teto de preço" com a explicação curta ("Seu
+  critério: acima deste preço o ativo fica fora do aporte até voltar. Não é
+  preço justo de ninguém.") e, ligada, o campo "Pagar no máximo, por unidade".
+  Com o preço de hoje acima do teto digitado, um aviso com ícone e texto diz
+  "Hoje está a R$ X, acima do teto: fica fora do aporte". Renda fixa por valor
+  não tem a chave. Remover fica no
   fim, discreto, com confirmação na própria folha (nunca `window.confirm`).
 
 ### 3. Ajustes › Metas por classe
@@ -160,6 +171,13 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
 - Anel de soma: mostra o total; fica verde e "estala" (pulso) ao chegar em
   100%. Botão **Salvar** só habilita em 100%; botão **Equilibrar** distribui o
   que falta/sobra proporcionalmente.
+- Embaixo, o cartão **Limite por ativo**, com o próprio **Salvar limite** (não
+  depende das metas fecharem 100%): uma chave "Limitar a concentração" que diz
+  o estado salvo ("Desligado: cada ativo recebe pela nota, sem teto." / "Ligado
+  em 15% da carteira.") e, ligada, um controle deslizante de 1% a 100% (começa
+  em 20%). O texto explica que o que passaria vai para os outros ativos da
+  classe e que o motor nunca vende. Quando a navegação ganhar **Ajustes**, o
+  cartão vai junto com as Metas.
 
 ### 4. Ajustes › Critérios
 
@@ -294,6 +312,9 @@ junto do tema) mascara os valores em todas as telas e fica salvo no
   desenho (`aria-hidden`), e o texto ao lado diz os dois números.
 - Na navegação e nas seções de Ajustes, a atual leva `aria-current="page"`.
 - Alvos de toque ≥ 44px.
+- Cor nunca sozinha: os avisos do teto e do limite são frase com ícone; o
+  estado da chave do limite também vem escrito. O controle do limite anuncia
+  o valor como "15% da carteira" (`aria-valuetext`).
 
 ## Texto
 

@@ -4,6 +4,7 @@
 //! Cada área nova mora num submódulo (`store/<area>.rs`, com o próprio
 //! `impl Store`): o submódulo enxerga o `pool` e este arquivo não cresce.
 
+mod allocation;
 pub mod health;
 pub mod sectors;
 
@@ -55,6 +56,8 @@ pub struct Asset {
     /// Título do Tesouro Direto: o símbolo é a chave do título e o preço vem da
     /// tabela diária do Tesouro. Só em Renda Fixa.
     pub treasury: bool,
+    /// Teto de preço da pessoa, em reais: acima dele o ativo fica fora do aporte.
+    pub max_price: Option<Decimal>,
 }
 
 impl Asset {
@@ -73,6 +76,7 @@ pub struct NewAsset {
     pub score_override: Option<u8>,
     pub listed_on_b3: bool,
     pub treasury: bool,
+    pub max_price: Option<Decimal>,
 }
 
 /// Campos ausentes ficam como estão; `Some(None)` limpa.
@@ -83,6 +87,7 @@ pub struct AssetPatch {
     pub display_name: Option<String>,
     pub manual_price: Option<Option<Decimal>>,
     pub score_override: Option<Option<u8>>,
+    pub max_price: Option<Option<Decimal>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -154,6 +159,7 @@ struct AssetRow {
     score_override: Option<i16>,
     listed_on_b3: bool,
     treasury: bool,
+    max_price: Option<Decimal>,
 }
 
 #[derive(FromRow)]
@@ -196,7 +202,7 @@ struct ContributionItemRow {
 /// aceita SQL estático (`&'static str`), e a lista é a única parte repetida.
 macro_rules! asset_columns {
     () => {
-        "id, asset_class, symbol, display_name, quantity, manual_price, score_override, listed_on_b3, treasury"
+        "id, asset_class, symbol, display_name, quantity, manual_price, score_override, listed_on_b3, treasury, max_price"
     };
 }
 
@@ -219,6 +225,7 @@ impl TryFrom<AssetRow> for Asset {
             score_override: row.score_override.and_then(|s| u8::try_from(s).ok()),
             listed_on_b3: row.listed_on_b3,
             treasury: row.treasury,
+            max_price: row.max_price.map(|p| p.normalize()),
         })
     }
 }
@@ -370,8 +377,8 @@ impl Store {
     }
 
     pub async fn insert_asset(&self, user: Uuid, new: &NewAsset) -> Result<Asset, StoreError> {
-        let result: Result<AssetRow, sqlx::Error> = sqlx::query_as(concat!("insert into assets (id, user_id, asset_class, symbol, display_name, quantity, manual_price, score_override, listed_on_b3, treasury)
-             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning ", asset_columns!(), ""))
+        let result: Result<AssetRow, sqlx::Error> = sqlx::query_as(concat!("insert into assets (id, user_id, asset_class, symbol, display_name, quantity, manual_price, score_override, listed_on_b3, treasury, max_price)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning ", asset_columns!(), ""))
         .bind(Uuid::new_v4())
         .bind(user)
         .bind(new.asset_class.as_str())
@@ -382,6 +389,7 @@ impl Store {
         .bind(new.score_override.map(i16::from))
         .bind(new.listed_on_b3)
         .bind(new.treasury)
+        .bind(new.max_price)
         .fetch_one(&self.pool)
         .await;
         match result {
@@ -404,6 +412,7 @@ impl Store {
                 manual_price = case when $5 then $6 else manual_price end,
                 score_override = case when $7 then $8 else score_override end,
                 listed_on_b3 = coalesce($9, listed_on_b3),
+                max_price = case when $10 then $11 else max_price end,
                 updated_at = now()
              where user_id = $1 and id = $2
              returning ",
@@ -419,6 +428,8 @@ impl Store {
         .bind(patch.score_override.is_some())
         .bind(patch.score_override.flatten().map(i16::from))
         .bind(patch.listed_on_b3)
+        .bind(patch.max_price.is_some())
+        .bind(patch.max_price.flatten())
         .fetch_optional(&self.pool)
         .await?;
         Ok(row.map(Asset::try_from).transpose()?)
