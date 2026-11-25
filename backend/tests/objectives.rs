@@ -483,25 +483,25 @@ async fn return_premise_comes_from_the_best_source(db: &Database, dir: &tempfile
     let id = db.store.ensure_user(&me.email).await.unwrap();
     let start = today() - Duration::days(400);
     let end = today() - Duration::days(1);
-    for (date, value) in [(start, dec!(100)), (end, dec!(112))] {
-        db.store
-            .upsert_snapshot(
-                id,
-                &Snapshot {
-                    date,
-                    market_value: dec!(1000),
-                    net_flow: dec!(0),
-                    quota: Quota {
-                        quotas: dec!(10),
-                        value,
-                    },
-                    positions: Vec::new(),
-                    taken_at: OffsetDateTime::now_utc(),
-                },
-            )
-            .await
-            .unwrap();
-    }
+    let days: Vec<Snapshot> = [(start, dec!(100)), (end, dec!(112))]
+        .into_iter()
+        .map(|(date, value)| Snapshot {
+            date,
+            market_value: dec!(1000),
+            net_flow: dec!(0),
+            income: dec!(0),
+            quota: Quota {
+                quotas: dec!(10),
+                value,
+            },
+            positions: Vec::new(),
+            taken_at: OffsetDateTime::now_utc(),
+        })
+        .collect();
+    db.store
+        .replace_snapshots(id, None, start, &days)
+        .await
+        .unwrap();
     let measured = post(
         &me.router,
         "/api/v1/objectives",
