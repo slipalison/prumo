@@ -31,6 +31,20 @@ origem do `values.yaml`; quem o cluster lê é a do GitOps, e o CI reescreve
 5. **`apps/prumo/values.yaml` no GitOps**, com a tag da primeira imagem e o AUD.
 6. **`app: prumo` no `ci.yml`** — dali em diante o CI escreve a tag sozinho.
 
+## O que aconteceu no primeiro deploy (2026-11-25)
+
+Passos 1, 3, 4, 5 e 6 feitos (homelab-gitops#47). O passo 2, a aplicação no
+Access, ainda não existe: até lá a regra do gateway e o `CF_ACCESS_AUD` têm um
+valor que não é AUD de nada, e o host responde **403** de fora (medido).
+
+**Armadilha do chart `app` 0.8.0 em app novo:** o `Database` vem na onda 1 e o
+`Rollout` na onda 0. O ArgoCD espera o Rollout ficar saudável antes da onda 1,
+e o Rollout não fica saudável sem o banco — impasse (`waiting for healthy state
+of argoproj.io/Rollout/prumo`, com o pod em `database "prumo" does not exist`).
+Os apps antigos não viram porque o banco deles já existia. Destravado aplicando
+uma vez, à mão, o `Database` renderizado pelo próprio chart; o ArgoCD o adotou.
+A correção é no `slipalison/helm-charts` (role e banco antes do workload).
+
 ## Como saber que está no ar
 
 ```bash

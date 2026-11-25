@@ -71,10 +71,11 @@ jobs:
       versionar: true
       versao_inicial: "0.1.0"
 
-      # Nome do diretório em homelab-gitops/apps/. Vazio desliga o deploy:
-      # o values.yaml do GitOps só pode entrar DEPOIS da primeira imagem existir
-      # (tag inexistente prende o Rollout em Degraded).
-      app: ""
+      # Nome do diretório em homelab-gitops/apps/: a cada push na main o job
+      # `publicar` reescreve `image.tag` lá. Ligado depois da primeira imagem
+      # (sha-6a9de5a) e do apps/prumo/values.yaml (homelab-gitops#47) — tag
+      # inexistente prenderia o Rollout em Degraded.
+      app: prumo
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       GITOPS_SSH_KEY: ${{ secrets.GITOPS_SSH_KEY }}
