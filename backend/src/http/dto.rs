@@ -1,0 +1,574 @@
+//! O JSON da API: o que entra e o que sai.
+//!
+//! Dinheiro sai como número JSON (o navegador soma e formata) e entra como
+//! número convertido pela representação decimal — `0.1` vira `0.1` exato, não
+//! o `0.1000000000000000055…` do ponto flutuante.
+
+use std::collections::{BTreeMap, HashMap};
+use std::str::FromStr;
+
+use chrono::{DateTime, Utc};
+use rust_decimal::Decimal;
+use serde::{Deserialize, Deserializer, Serialize};
+use uuid::Uuid;
+
+use crate::domain::allocation::{ClassOutcome, Notice, Plan};
+use crate::domain::asset_class::{AssetClass, Checklist};
+use crate::domain::scoring::ScoreSource;
+use crate::service::{AssetView, ClassView, PortfolioView};
+use crate::store::{Contribution, ContributionItem, Question};
+
+mod decimal_out {
+    use rust_decimal::prelude::ToPrimitive;
+    use rust_decimal::Decimal;
+    use serde::Serializer;
+
+    pub fn serialize<S: Serializer>(value: &Decimal, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_f64(value.to_f64().unwrap_or(0.0))
+    }
+
+    pub mod option {
+        use super::*;
+
+        pub fn serialize<S: Serializer>(
+            value: &Option<Decimal>,
+            serializer: S,
+        ) -> Result<S::Ok, S::Error> {
+            match value {
+                Some(v) => super::serialize(v, serializer),
+                None => serializer.serialize_none(),
+            }
+        }
+    }
+}
+
+/// Número JSON (ou texto numérico) → `Decimal` exato.
+fn parse_number(value: serde_json::Value) -> Result<Decimal, String> {
+    let text = match value {
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::String(s) => s,
+        other => return Err(format!("esperado numero, veio {other}")),
+    };
+    Decimal::from_str(text.trim())
+        .or_else(|_| Decimal::from_scientific(text.trim()))
+        .map_err(|_| format!("numero invalido: {text}"))
+}
+
+pub fn decimal<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Decimal, D::Error> {
+    parse_number(serde_json::Value::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+}
+
+pub fn optional_decimal<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Decimal>, D::Error> {
+    match Option::<serde_json::Value>::deserialize(deserializer)? {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(value) => parse_number(value)
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+    }
+}
+
+/// Três estados: ausente (`None`), `null` (`Some(None)`) e valor (`Some(Some)`).
+pub fn patch_decimal<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Option<Decimal>>, D::Error> {
+    optional_decimal(deserializer).map(Some)
+}
+
+pub fn patch_i64<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Option<i64>>, D::Error> {
+    Option::<i64>::deserialize(deserializer).map(Some)
+}
+
+// ---------------------------------------------------------------- entrada --
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GoalsRequest {
+    pub targets: HashMap<AssetClass, serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreateAssetRequest {
+    pub asset_class: AssetClass,
+    #[serde(default)]
+    pub symbol: Option<String>,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default, deserialize_with = "optional_decimal")]
+    pub quantity: Option<Decimal>,
+    #[serde(default, deserialize_with = "optional_decimal")]
+    pub amount: Option<Decimal>,
+    #[serde(default, deserialize_with = "optional_decimal")]
+    pub manual_price: Option<Decimal>,
+    #[serde(default)]
+    pub score_override: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateAssetRequest {
+    #[serde(default, deserialize_with = "optional_decimal")]
+    pub quantity: Option<Decimal>,
+    #[serde(default, deserialize_with = "optional_decimal")]
+    pub amount: Option<Decimal>,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default, deserialize_with = "patch_decimal")]
+    pub manual_price: Option<Option<Decimal>>,
+    #[serde(default, deserialize_with = "patch_i64")]
+    pub score_override: Option<Option<i64>>,
+    #[serde(default)]
+    pub answers: Option<HashMap<Uuid, Option<bool>>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QuestionRequest {
+    pub prompt: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlanRequest {
+    #[serde(deserialize_with = "decimal")]
+    pub amount: Decimal,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContributionItemRequest {
+    pub asset_id: Uuid,
+    #[serde(deserialize_with = "decimal")]
+    pub quantity: Decimal,
+    #[serde(deserialize_with = "decimal")]
+    pub unit_price: Decimal,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContributionRequest {
+    #[serde(deserialize_with = "decimal")]
+    pub amount: Decimal,
+    pub items: Vec<ContributionItemRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SymbolQuery {
+    pub query: String,
+}
+
+// ------------------------------------------------------------------ saída --
+
+#[derive(Debug, Serialize)]
+pub struct InfoResponse {
+    pub version: String,
+    pub commit: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MeResponse {
+    pub email: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct QuestionDto {
+    pub id: Uuid,
+    pub position: i32,
+    pub prompt: String,
+}
+
+impl From<&Question> for QuestionDto {
+    fn from(q: &Question) -> Self {
+        Self {
+            id: q.id,
+            position: q.position,
+            prompt: q.prompt.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct ClassDto {
+    pub asset_class: AssetClass,
+    #[serde(with = "decimal_out")]
+    pub target_percent: Decimal,
+    #[serde(with = "decimal_out")]
+    pub current_value: Decimal,
+    #[serde(with = "decimal_out")]
+    pub current_percent: Decimal,
+    pub asset_count: usize,
+    pub eligible: bool,
+}
+
+impl From<&ClassView> for ClassDto {
+    fn from(c: &ClassView) -> Self {
+        Self {
+            asset_class: c.asset_class,
+            target_percent: c.target_percent,
+            current_value: c.current_value,
+            current_percent: c.current_percent,
+            asset_count: c.asset_count,
+            eligible: c.eligible,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct AssetDto {
+    pub id: Uuid,
+    pub asset_class: AssetClass,
+    pub symbol: Option<String>,
+    pub display_name: String,
+    #[serde(with = "decimal_out")]
+    pub quantity: Decimal,
+    #[serde(with = "decimal_out::option")]
+    pub unit_price: Option<Decimal>,
+    #[serde(with = "decimal_out::option")]
+    pub manual_price: Option<Decimal>,
+    pub currency: String,
+    pub price_source: &'static str,
+    pub quote_updated_at: Option<DateTime<Utc>>,
+    #[serde(with = "decimal_out")]
+    pub current_value: Decimal,
+    #[serde(with = "decimal_out")]
+    pub class_percent: Decimal,
+    pub score: u8,
+    pub score_source: ScoreSource,
+    pub score_override: Option<u8>,
+    pub answers: BTreeMap<Uuid, bool>,
+}
+
+impl From<&AssetView> for AssetDto {
+    fn from(a: &AssetView) -> Self {
+        Self {
+            id: a.asset.id,
+            asset_class: a.asset.asset_class,
+            symbol: a.asset.symbol.clone(),
+            display_name: a.asset.display_name.clone(),
+            quantity: a.asset.quantity,
+            unit_price: a.unit_price,
+            manual_price: a.asset.manual_price,
+            currency: a.currency.clone(),
+            price_source: a.price_source.as_str(),
+            quote_updated_at: a.quote_updated_at,
+            current_value: a.current_value,
+            class_percent: a.class_percent,
+            score: a.score,
+            score_source: a.score_source,
+            score_override: a.asset.score_override,
+            answers: a.answers.iter().map(|(k, v)| (*k, *v)).collect(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChecklistsDto {
+    pub stocks: Vec<QuestionDto>,
+    pub real_estate: Vec<QuestionDto>,
+}
+
+impl ChecklistsDto {
+    pub fn from_questions(questions: &[Question]) -> Self {
+        let of = |c: Checklist| {
+            questions
+                .iter()
+                .filter(|q| q.checklist == c)
+                .map(QuestionDto::from)
+                .collect()
+        };
+        Self {
+            stocks: of(Checklist::Stocks),
+            real_estate: of(Checklist::RealEstate),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct PortfolioDto {
+    #[serde(with = "decimal_out")]
+    pub total_value: Decimal,
+    pub quotes_updated_at: Option<DateTime<Utc>>,
+    pub classes: Vec<ClassDto>,
+    pub assets: Vec<AssetDto>,
+    pub checklists: ChecklistsDto,
+}
+
+impl From<&PortfolioView> for PortfolioDto {
+    fn from(p: &PortfolioView) -> Self {
+        Self {
+            total_value: p.total_value,
+            quotes_updated_at: p.quotes_updated_at,
+            classes: p.classes.iter().map(ClassDto::from).collect(),
+            assets: p.assets.iter().map(AssetDto::from).collect(),
+            checklists: ChecklistsDto::from_questions(&p.questions),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct GoalsResponse {
+    pub targets: BTreeMap<AssetClass, f64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PlanItemDto {
+    pub asset_id: Uuid,
+    pub asset_class: AssetClass,
+    pub symbol: Option<String>,
+    pub display_name: String,
+    #[serde(with = "decimal_out")]
+    pub quantity: Decimal,
+    #[serde(with = "decimal_out")]
+    pub unit_price: Decimal,
+    #[serde(with = "decimal_out")]
+    pub value: Decimal,
+    pub divisible: bool,
+    #[serde(with = "decimal_out")]
+    pub class_percent_after: Decimal,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PlanClassDto {
+    pub asset_class: AssetClass,
+    #[serde(with = "decimal_out")]
+    pub target_percent: Decimal,
+    #[serde(with = "decimal_out")]
+    pub percent_before: Decimal,
+    #[serde(with = "decimal_out")]
+    pub percent_after: Decimal,
+    #[serde(with = "decimal_out")]
+    pub allocated: Decimal,
+    pub status: &'static str,
+}
+
+impl From<&ClassOutcome> for PlanClassDto {
+    fn from(c: &ClassOutcome) -> Self {
+        Self {
+            asset_class: c.asset_class,
+            target_percent: c.target_percent,
+            percent_before: c.percent_before,
+            percent_after: c.percent_after,
+            allocated: c.allocated,
+            status: c.status.as_str(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "code", rename_all = "snake_case")]
+pub enum NoticeDto {
+    ClassBlocked {
+        asset_class: AssetClass,
+        #[serde(with = "decimal_out")]
+        amount: Decimal,
+    },
+    AssetsWithoutPrice {
+        symbols: Vec<String>,
+    },
+    AssetsWithoutScore {
+        symbols: Vec<String>,
+    },
+    NoTargets,
+}
+
+impl From<&Notice> for NoticeDto {
+    fn from(n: &Notice) -> Self {
+        match n {
+            Notice::ClassBlocked {
+                asset_class,
+                amount,
+            } => NoticeDto::ClassBlocked {
+                asset_class: *asset_class,
+                amount: *amount,
+            },
+            Notice::AssetsWithoutPrice { labels } => NoticeDto::AssetsWithoutPrice {
+                symbols: labels.clone(),
+            },
+            Notice::AssetsWithoutScore { labels } => NoticeDto::AssetsWithoutScore {
+                symbols: labels.clone(),
+            },
+            Notice::NoTargets => NoticeDto::NoTargets,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct PlanDto {
+    #[serde(with = "decimal_out")]
+    pub amount: Decimal,
+    #[serde(with = "decimal_out")]
+    pub invested: Decimal,
+    #[serde(with = "decimal_out")]
+    pub change: Decimal,
+    #[serde(with = "decimal_out")]
+    pub unallocated: Decimal,
+    #[serde(with = "decimal_out")]
+    pub total_before: Decimal,
+    #[serde(with = "decimal_out")]
+    pub total_after: Decimal,
+    pub items: Vec<PlanItemDto>,
+    pub classes: Vec<PlanClassDto>,
+    pub notices: Vec<NoticeDto>,
+}
+
+impl PlanDto {
+    pub fn new(plan: &Plan, view: &PortfolioView) -> Self {
+        let mut items: Vec<PlanItemDto> = plan
+            .items
+            .iter()
+            .map(|item| {
+                let asset = view.asset(item.asset_id).map(|a| &a.asset);
+                PlanItemDto {
+                    asset_id: item.asset_id,
+                    asset_class: item.asset_class,
+                    symbol: asset.and_then(|a| a.symbol.clone()),
+                    display_name: asset.map(|a| a.display_name.clone()).unwrap_or_default(),
+                    quantity: item.quantity,
+                    unit_price: item.unit_price,
+                    value: item.value,
+                    divisible: item.divisible,
+                    class_percent_after: item.class_percent_after,
+                }
+            })
+            .collect();
+        items.sort_by_key(|i| std::cmp::Reverse(i.value));
+        Self {
+            amount: plan.amount,
+            invested: plan.invested,
+            change: plan.change,
+            unallocated: plan.unallocated,
+            total_before: plan.total_before,
+            total_after: plan.total_after,
+            items,
+            classes: plan.classes.iter().map(PlanClassDto::from).collect(),
+            notices: plan.notices.iter().map(NoticeDto::from).collect(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct ContributionItemDto {
+    pub asset_id: Option<Uuid>,
+    pub symbol: Option<String>,
+    pub display_name: String,
+    #[serde(with = "decimal_out")]
+    pub quantity: Decimal,
+    #[serde(with = "decimal_out")]
+    pub unit_price: Decimal,
+    #[serde(with = "decimal_out")]
+    pub value: Decimal,
+}
+
+impl From<&ContributionItem> for ContributionItemDto {
+    fn from(i: &ContributionItem) -> Self {
+        Self {
+            asset_id: i.asset_id,
+            symbol: i.symbol.clone(),
+            display_name: i.display_name.clone(),
+            quantity: i.quantity,
+            unit_price: i.unit_price,
+            value: i.value,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct ContributionDto {
+    pub id: Uuid,
+    pub created_at: DateTime<Utc>,
+    #[serde(with = "decimal_out")]
+    pub amount: Decimal,
+    #[serde(with = "decimal_out")]
+    pub invested: Decimal,
+    pub items: Vec<ContributionItemDto>,
+}
+
+impl From<&Contribution> for ContributionDto {
+    fn from(c: &Contribution) -> Self {
+        Self {
+            id: c.id,
+            created_at: c.created_at,
+            amount: c.amount,
+            invested: c.items.iter().map(|i| i.value).sum(),
+            items: c.items.iter().map(ContributionItemDto::from).collect(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct SymbolDto {
+    pub symbol: String,
+    pub display_name: String,
+    pub exchange: String,
+    pub suggested_class: AssetClass,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RefreshDto {
+    pub refreshed: usize,
+    pub failed: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_decimal_macros::dec;
+
+    #[test]
+    fn numbers_become_exact_decimals() {
+        let plan: PlanRequest = serde_json::from_str(r#"{"amount": 6000.10}"#).unwrap();
+        assert_eq!(plan.amount, dec!(6000.10));
+        let plan: PlanRequest = serde_json::from_str(r#"{"amount": "0.1"}"#).unwrap();
+        assert_eq!(plan.amount, dec!(0.1));
+        let plan: PlanRequest = serde_json::from_str(r#"{"amount": 1e3}"#).unwrap();
+        assert_eq!(plan.amount, dec!(1000));
+        assert!(serde_json::from_str::<PlanRequest>(r#"{"amount": true}"#).is_err());
+        assert!(serde_json::from_str::<PlanRequest>(r#"{"amount": "abc"}"#).is_err());
+        assert!(serde_json::from_str::<PlanRequest>(r#"{"amount": 1, "extra": 2}"#).is_err());
+    }
+
+    #[test]
+    fn patch_distinguishes_absent_null_and_value() {
+        let absent: UpdateAssetRequest = serde_json::from_str("{}").unwrap();
+        assert_eq!(absent.manual_price, None);
+        assert_eq!(absent.score_override, None);
+        let null: UpdateAssetRequest =
+            serde_json::from_str(r#"{"manual_price": null, "score_override": null}"#).unwrap();
+        assert_eq!(null.manual_price, Some(None));
+        assert_eq!(null.score_override, Some(None));
+        let value: UpdateAssetRequest =
+            serde_json::from_str(r#"{"manual_price": 9.5, "score_override": 7, "quantity": 3}"#)
+                .unwrap();
+        assert_eq!(value.manual_price, Some(Some(dec!(9.5))));
+        assert_eq!(value.score_override, Some(Some(7)));
+        assert_eq!(value.quantity, Some(dec!(3)));
+    }
+
+    #[test]
+    fn notices_carry_their_code() {
+        let json = serde_json::to_value(NoticeDto::from(&Notice::ClassBlocked {
+            asset_class: AssetClass::IntlStocks,
+            amount: dec!(145921.30),
+        }))
+        .unwrap();
+        assert_eq!(json["code"], "class_blocked");
+        assert_eq!(json["asset_class"], "intl_stocks");
+        assert_eq!(json["amount"], 145921.3);
+        let json = serde_json::to_value(NoticeDto::from(&Notice::NoTargets)).unwrap();
+        assert_eq!(json["code"], "no_targets");
+        let json = serde_json::to_value(NoticeDto::from(&Notice::AssetsWithoutPrice {
+            labels: vec!["X".into()],
+        }))
+        .unwrap();
+        assert_eq!(json["symbols"][0], "X");
+        let json = serde_json::to_value(NoticeDto::from(&Notice::AssetsWithoutScore {
+            labels: vec!["Y".into()],
+        }))
+        .unwrap();
+        assert_eq!(json["code"], "assets_without_score");
+    }
+}

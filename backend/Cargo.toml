@@ -1,0 +1,79 @@
+[package]
+name = "prumo"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.98"
+publish = false
+description = "Prumo: metas por classe, nota por checklist e a sugestao de aporte que leva a carteira ao equilibrio"
+license = "MIT"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "prumo"
+path = "src/main.rs"
+
+[dependencies]
+async-trait = "0.1"
+axum = { version = "0.8", features = ["macros"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
+jsonwebtoken = { version = "10", default-features = false, features = ["aws_lc_rs"] }
+# Mesmo provedor criptografico do basalto. No Windows o aws-lc-sys pede NASM
+# para compilar; `prebuilt-nasm` usa os objetos que o proprio projeto publica, e
+# no Linux (imagem e CI) a feature nao muda nada. A alternativa pura em Rust
+# (`rust_crypto`) puxaria a crate `rsa`, que tem o RUSTSEC-2023-0071 sem
+# correcao — aqui ela so existe como dependencia de teste, para gerar chave.
+aws-lc-rs = { version = "1", features = ["prebuilt-nasm"] }
+metrics = "0.24"
+metrics-exporter-prometheus = { version = "0.17", default-features = false }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "json", "http2"] }
+rust_decimal = { version = "1", features = ["serde-with-float", "maths"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "macros", "migrate", "uuid", "chrono", "rust_decimal"] }
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time", "net"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["fs", "trace", "timeout", "limit", "compression-gzip", "set-header"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+
+[dev-dependencies]
+http-body-util = "0.1"
+proptest = { version = "1", default-features = false, features = ["std"] }
+rsa = { version = "0.9", features = ["pem"] }
+rust_decimal_macros = "1"
+testcontainers = "0.25"
+testcontainers-modules = { version = "0.13", features = ["postgres"] }
+wiremock = "0.6"
+base64 = "0.22"
+rand = "0.8"
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)', 'cfg(coverage_nightly)'] }
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+
+# A chave RSA dos testes do Access nasce em tempo de teste; sem otimizar estas
+# duas crates, gerar uma chave de 2048 bits em perfil de debug leva dezenas de
+# segundos (e mais ainda instrumentado pelo llvm-cov).
+[profile.dev.package.rsa]
+opt-level = 3
+
+[profile.dev.package.num-bigint-dig]
+opt-level = 3

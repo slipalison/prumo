@@ -1,0 +1,447 @@
+//! Um handler por rota. Validação aqui; regra de negócio em `service` e `domain`.
+
+use std::collections::HashMap;
+
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
+use axum::Json;
+use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
+use uuid::Uuid;
+
+use super::dto::*;
+use super::{ApiJson, ApiPath, ApiQuery, AppState, CurrentUser};
+use crate::domain::allocation::{Targets, FULL_BP};
+use crate::domain::asset_class::{normalize_symbol, AssetClass, Checklist, UnitKind};
+use crate::error::{ApiError, ApiResult};
+use crate::service;
+use crate::store::{AssetPatch, NewAsset, NewContributionItem, StoreError};
+
+/// Teto de valores aceitos (10^15), para número absurdo não virar overflow de `numeric`.
+fn max_money() -> Decimal {
+    Decimal::new(1_000_000_000_000_000, 0)
+}
+
+impl From<StoreError> for ApiError {
+    fn from(error: StoreError) -> Self {
+        match error {
+            StoreError::Duplicate => {
+                ApiError::asset_already_exists("Esse simbolo ja esta nesta classe.")
+            }
+            StoreError::NotFound => ApiError::not_found(),
+            StoreError::Invalid(detail) => ApiError::validation(detail),
+            StoreError::Db(error) => error.into(),
+        }
+    }
+}
+
+fn non_negative(name: &str, value: Decimal) -> ApiResult<Decimal> {
+    if value < Decimal::ZERO || value > max_money() {
+        return Err(ApiError::validation(format!(
+            "{name} precisa estar entre 0 e 10^15."
+        )));
+    }
+    Ok(value)
+}
+
+fn positive(name: &str, value: Decimal) -> ApiResult<Decimal> {
+    if value <= Decimal::ZERO || value > max_money() {
+        return Err(ApiError::validation(format!(
+            "{name} precisa ser maior que zero."
+        )));
+    }
+    Ok(value)
+}
+
+fn score_value(value: i64) -> ApiResult<u8> {
+    u8::try_from(value)
+        .ok()
+        .filter(|v| *v <= 10)
+        .ok_or_else(|| ApiError::validation("A nota vai de 0 a 10."))
+}
+
+fn text(name: &str, value: &str, max: usize) -> ApiResult<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || trimmed.chars().count() > max {
+        return Err(ApiError::validation(format!(
+            "{name} precisa ter de 1 a {max} caracteres."
+        )));
+    }
+    Ok(trimmed.to_owned())
+}
+
+fn checklist(value: &str) -> ApiResult<Checklist> {
+    Checklist::parse(value).ok_or_else(ApiError::not_found)
+}
+
+async fn asset_response(state: &AppState, user: Uuid, id: Uuid) -> ApiResult<AssetDto> {
+    let view = service::portfolio(&state.store, user).await?;
+    view.asset(id)
+        .map(AssetDto::from)
+        .ok_or_else(ApiError::not_found)
+}
+
+pub async fn info(State(state): State<AppState>) -> Json<InfoResponse> {
+    Json(InfoResponse {
+        version: state.info.version.clone(),
+        commit: state.info.commit.clone(),
+    })
+}
+
+pub async fn me(user: CurrentUser) -> Json<MeResponse> {
+    Json(MeResponse { email: user.email })
+}
+
+pub async fn portfolio(
+    State(state): State<AppState>,
+    user: CurrentUser,
+) -> ApiResult<Json<PortfolioDto>> {
+    let view = service::portfolio(&state.store, user.id).await?;
+    Ok(Json(PortfolioDto::from(&view)))
+}
+
+pub async fn set_goals(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    ApiJson(body): ApiJson<GoalsRequest>,
+) -> ApiResult<Json<GoalsResponse>> {
+    let mut targets = Targets::default();
+    for (class, raw) in body.targets {
+        let percent = match raw {
+            serde_json::Value::Number(n) => n.to_string().parse::<Decimal>().ok(),
+            _ => None,
+        }
+        .filter(|p| *p >= Decimal::ZERO && *p <= Decimal::ONE_HUNDRED && p.scale() <= 2)
+        .ok_or_else(|| {
+            ApiError::validation(format!(
+                "Meta de {} precisa estar entre 0 e 100.",
+                class.label()
+            ))
+        })?;
+        let bp = (percent * Decimal::ONE_HUNDRED).to_u32().unwrap_or(0);
+        targets.set(class, bp);
+    }
+    if targets.sum() != FULL_BP {
+        let sum = Decimal::from(targets.sum()) / Decimal::ONE_HUNDRED;
+        return Err(ApiError::targets_must_sum_100(format!(
+            "A soma enviada foi {}%.",
+            sum.normalize()
+        )));
+    }
+    state.store.set_goals(user.id, targets).await?;
+    let response = AssetClass::ALL
+        .into_iter()
+        .map(|c| (c, f64::from(targets.get(c)) / 100.0))
+        .collect();
+    Ok(Json(GoalsResponse { targets: response }))
+}
+
+pub async fn create_asset(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    ApiJson(body): ApiJson<CreateAssetRequest>,
+) -> ApiResult<impl IntoResponse> {
+    let class = body.asset_class;
+    let score_override = body.score_override.map(score_value).transpose()?;
+    let new = match class.unit_kind() {
+        UnitKind::Value => {
+            let display_name = text(
+                "O nome",
+                body.display_name.as_deref().unwrap_or_default(),
+                120,
+            )?;
+            let amount =
+                non_negative("O valor", body.amount.or(body.quantity).unwrap_or_default())?;
+            if body.manual_price.is_some() {
+                return Err(ApiError::validation(
+                    "Renda fixa nao tem preco por unidade; informe o valor.",
+                ));
+            }
+            NewAsset {
+                asset_class: class,
+                symbol: None,
+                display_name,
+                quantity: amount,
+                manual_price: None,
+                score_override,
+            }
+        }
+        UnitKind::Whole | UnitKind::Fractional => {
+            let symbol = body
+                .symbol
+                .as_deref()
+                .and_then(normalize_symbol)
+                .ok_or_else(|| ApiError::validation("Informe um simbolo valido, como KNRI11."))?;
+            let quantity = non_negative("A quantidade", body.quantity.unwrap_or_default())?;
+            if class.unit_kind() == UnitKind::Whole && quantity.fract() != Decimal::ZERO {
+                return Err(ApiError::validation(
+                    "Essa classe so aceita quantidade inteira.",
+                ));
+            }
+            let manual_price = body
+                .manual_price
+                .map(|p| positive("O preco manual", p))
+                .transpose()?;
+            let quote = state.quotes.quote_now(class, &symbol).await;
+            let display_name = match body
+                .display_name
+                .as_deref()
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+            {
+                Some(name) => text("O nome", name, 120)?,
+                None => quote
+                    .and_then(|q| q.name)
+                    .unwrap_or_else(|| symbol.clone())
+                    .chars()
+                    .take(120)
+                    .collect(),
+            };
+            NewAsset {
+                asset_class: class,
+                symbol: Some(symbol),
+                display_name,
+                quantity,
+                manual_price,
+                score_override,
+            }
+        }
+    };
+    let asset = state.store.insert_asset(user.id, &new).await?;
+    let dto = asset_response(&state, user.id, asset.id).await?;
+    Ok((StatusCode::CREATED, Json(dto)))
+}
+
+pub async fn update_asset(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    ApiPath(id): ApiPath<Uuid>,
+    ApiJson(body): ApiJson<UpdateAssetRequest>,
+) -> ApiResult<Json<AssetDto>> {
+    let asset = state
+        .store
+        .asset(user.id, id)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    let kind = asset.asset_class.unit_kind();
+    let quantity = match (kind, body.quantity, body.amount) {
+        (UnitKind::Value, q, a) => a.or(q).map(|v| non_negative("O valor", v)).transpose()?,
+        (_, Some(_), Some(_)) | (_, None, Some(_)) => {
+            return Err(ApiError::validation(
+                "Use quantity para ativos com cotacao.",
+            ));
+        }
+        (_, q, None) => q.map(|v| non_negative("A quantidade", v)).transpose()?,
+    };
+    if kind == UnitKind::Whole && quantity.is_some_and(|q| q.fract() != Decimal::ZERO) {
+        return Err(ApiError::validation(
+            "Essa classe so aceita quantidade inteira.",
+        ));
+    }
+    if kind == UnitKind::Value && body.manual_price.is_some_and(|p| p.is_some()) {
+        return Err(ApiError::validation(
+            "Renda fixa nao tem preco por unidade; informe o valor.",
+        ));
+    }
+    let patch = AssetPatch {
+        quantity,
+        display_name: body
+            .display_name
+            .as_deref()
+            .map(|n| text("O nome", n, 120))
+            .transpose()?,
+        manual_price: body
+            .manual_price
+            .map(|p| p.map(|v| positive("O preco manual", v)).transpose())
+            .transpose()?,
+        score_override: body
+            .score_override
+            .map(|s| s.map(score_value).transpose())
+            .transpose()?,
+    };
+    state
+        .store
+        .update_asset(user.id, id, &patch)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    if let Some(answers) = body.answers {
+        let answers: Vec<(Uuid, Option<bool>)> = answers.into_iter().collect();
+        state.store.set_answers(user.id, &asset, &answers).await?;
+    }
+    Ok(Json(asset_response(&state, user.id, id).await?))
+}
+
+pub async fn delete_asset(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    ApiPath(id): ApiPath<Uuid>,
+) -> ApiResult<StatusCode> {
+    if state.store.delete_asset(user.id, id).await? {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(ApiError::not_found())
+    }
+}
+
+pub async fn add_question(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    ApiPath(name): ApiPath<String>,
+    ApiJson(body): ApiJson<QuestionRequest>,
+) -> ApiResult<impl IntoResponse> {
+    let checklist = checklist(&name)?;
+    let prompt = text("A pergunta", &body.prompt, 300)?;
+    let question = state
+        .store
+        .add_question(user.id, checklist, &prompt)
+        .await?;
+    Ok((StatusCode::CREATED, Json(QuestionDto::from(&question))))
+}
+
+pub async fn reset_checklist(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    ApiPath(name): ApiPath<String>,
+) -> ApiResult<Json<Vec<QuestionDto>>> {
+    let checklist = checklist(&name)?;
+    let questions = state.store.reset_checklist(user.id, checklist).await?;
+    Ok(Json(questions.iter().map(QuestionDto::from).collect()))
+}
+
+pub async fn update_question(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    ApiPath(id): ApiPath<Uuid>,
+    ApiJson(body): ApiJson<QuestionRequest>,
+) -> ApiResult<Json<QuestionDto>> {
+    let prompt = text("A pergunta", &body.prompt, 300)?;
+    let question = state
+        .store
+        .update_question(user.id, id, &prompt)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    Ok(Json(QuestionDto::from(&question)))
+}
+
+pub async fn delete_question(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    ApiPath(id): ApiPath<Uuid>,
+) -> ApiResult<StatusCode> {
+    if state.store.delete_question(user.id, id).await? {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(ApiError::not_found())
+    }
+}
+
+pub async fn plan(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    ApiJson(body): ApiJson<PlanRequest>,
+) -> ApiResult<Json<PlanDto>> {
+    let amount = non_negative("O valor do aporte", body.amount)?;
+    let (plan, view) = service::plan(&state.store, user.id, amount).await?;
+    Ok(Json(PlanDto::new(&plan, &view)))
+}
+
+pub async fn record_contribution(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    ApiJson(body): ApiJson<ContributionRequest>,
+) -> ApiResult<impl IntoResponse> {
+    let amount = non_negative("O valor do aporte", body.amount)?;
+    if body.items.is_empty() {
+        return Err(ApiError::validation(
+            "O aporte precisa de pelo menos um item.",
+        ));
+    }
+    let mut seen: HashMap<Uuid, ()> = HashMap::new();
+    let mut items = Vec::with_capacity(body.items.len());
+    for item in body.items {
+        if seen.insert(item.asset_id, ()).is_some() {
+            return Err(ApiError::validation(
+                "Cada ativo aparece uma vez no aporte.",
+            ));
+        }
+        items.push(NewContributionItem {
+            asset_id: item.asset_id,
+            quantity: positive("A quantidade", item.quantity)?,
+            unit_price: positive("O preco", item.unit_price)?,
+        });
+    }
+    let contribution = state
+        .store
+        .record_contribution(user.id, amount, &items)
+        .await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(ContributionDto::from(&contribution)),
+    ))
+}
+
+pub async fn contributions(
+    State(state): State<AppState>,
+    user: CurrentUser,
+) -> ApiResult<Json<Vec<ContributionDto>>> {
+    let list = state.store.contributions(user.id).await?;
+    Ok(Json(list.iter().map(ContributionDto::from).collect()))
+}
+
+pub async fn symbols(
+    State(state): State<AppState>,
+    _user: CurrentUser,
+    ApiQuery(query): ApiQuery<SymbolQuery>,
+) -> ApiResult<Json<Vec<SymbolDto>>> {
+    let term = query.query.trim();
+    if term.is_empty() || term.chars().count() > 40 {
+        return Err(ApiError::validation(
+            "A busca precisa ter de 1 a 40 caracteres.",
+        ));
+    }
+    let matches = state
+        .quotes
+        .provider()
+        .search(term)
+        .await
+        .map_err(|error| {
+            tracing::warn!(error = %error, "busca de simbolo falhou");
+            ApiError::quote_provider_unavailable()
+        })?;
+    Ok(Json(
+        matches
+            .into_iter()
+            .map(|m| SymbolDto {
+                symbol: m.symbol,
+                display_name: m.display_name,
+                exchange: m.exchange,
+                suggested_class: m.suggested_class,
+            })
+            .collect(),
+    ))
+}
+
+pub async fn refresh_quotes(
+    State(state): State<AppState>,
+    user: CurrentUser,
+) -> ApiResult<Json<RefreshDto>> {
+    if !state.take_refresh_slot(user.id).await {
+        return Ok(Json(RefreshDto {
+            refreshed: 0,
+            failed: Vec::new(),
+        }));
+    }
+    let targets: Vec<(AssetClass, String)> = state
+        .store
+        .assets(user.id)
+        .await?
+        .into_iter()
+        .filter_map(|a| a.symbol.map(|s| (a.asset_class, s)))
+        .collect();
+    let report = state.quotes.refresh(&targets).await;
+    Ok(Json(RefreshDto {
+        refreshed: report.refreshed,
+        failed: report.failed,
+    }))
+}
