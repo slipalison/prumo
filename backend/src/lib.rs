@@ -5,6 +5,7 @@
 //! Tesouro Direto; `service` junta tudo; `http` expõe a API e os estáticos.
 
 pub mod auth;
+pub mod b3_xlsx;
 pub mod config;
 pub mod domain;
 pub mod error;

@@ -1,6 +1,7 @@
 //! Rotas, estado e extratores.
 
 mod allocation;
+mod b3_import;
 pub mod dto;
 mod handlers;
 mod health;
@@ -243,6 +244,8 @@ pub fn public_router(state: AppState, static_dir: &str) -> Router {
         )
         .fallback(|| async { ApiError::not_found() })
         .layer(RequestBodyLimitLayer::new(64 * 1024))
+        // Depois do teto geral: a importacao da B3 tem o corpo maior, so dela.
+        .merge(b3_import::router())
         .layer(SetResponseHeaderLayer::overriding(
             header::CACHE_CONTROL,
             HeaderValue::from_static("no-store"),

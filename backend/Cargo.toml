@@ -16,7 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 async-trait = "0.1"
-axum = { version = "0.8", features = ["macros"] }
+axum = { version = "0.8", features = ["macros", "multipart"] }
 jsonwebtoken = { version = "10", default-features = false, features = ["aws_lc_rs"] }
 # Mesmo provedor criptografico do basalto. No Windows o aws-lc-sys pede NASM
 # para compilar; `prebuilt-nasm` usa os objetos que o proprio projeto publica, e
@@ -27,6 +27,8 @@ aws-lc-rs = { version = "1", features = ["prebuilt-nasm"] }
 base64 = "0.22"
 # Informe mensal de FII da CVM (CSV com ponto e virgula, em ISO-8859-1).
 csv = "1.4"
+# Leitura do .xlsx que a Area do Investidor da B3 exporta (importacao, em memoria).
+calamine = { version = "0.38", default-features = false }
 futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
 metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.17", default-features = false }
@@ -51,13 +53,15 @@ tower-http = { version = "0.6", features = ["fs", "trace", "timeout", "limit", "
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
 uuid = { version = "1", features = ["v4", "serde"] }
-# Leitura do .xlsx da B3 e do .zip da CVM; so descompacta, nao grava.
+# Leitura do .xlsx da B3 e do .zip da CVM; so descompacta, nao grava. Na B3
+# tambem confere o tamanho descompactado antes de abrir (bomba de descompressao).
 zip = { version = "9.8", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 http-body-util = "0.1"
 proptest = { version = "1", default-features = false, features = ["std"] }
 rust_decimal_macros = "1"
+rust_xlsxwriter = { version = "0.104", default-features = false }
 testcontainers = "0.27"
 testcontainers-modules = { version = "0.15", features = ["postgres"] }
 wiremock = "0.6"

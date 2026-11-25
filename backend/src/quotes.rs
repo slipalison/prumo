@@ -269,7 +269,7 @@ fn classify(quote: &SearchQuote) -> Option<SymbolMatch> {
 /// para a carteira, são outra coisa: o ETF de bitcoin é cripto, o de S&P 500 e
 /// o BDR são ações internacionais, o de IMA-B é renda fixa. O Yahoo marca todos
 /// como `EQUITY`; o que separa é o nome.
-fn classify_b3(base: &str, kind: &str, upper_name: &str, short: &str) -> AssetClass {
+pub(crate) fn classify_b3(base: &str, kind: &str, upper_name: &str, short: &str) -> AssetClass {
     let named = |words: &[&str]| {
         words
             .iter()
