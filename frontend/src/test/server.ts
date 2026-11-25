@@ -17,6 +17,7 @@ import type { AllocationSettings } from "../api/allocationTypes";
 import type { HealthRule, HealthWarning, RuleId, RulesRequest, SectorSourceInfo } from "../api/healthTypes";
 import type { CreateTransactionRequest, Transaction, UpdateTransactionRequest } from "../api/ledgerTypes";
 import { incomeHandlers } from "./incomeHandlers";
+import { objectivesHandlers } from "./objectivesHandlers";
 import {
   defaultAssets,
   defaultChecklists,
@@ -459,4 +460,4 @@ export const handlers = [
   ),
 ];
 
-export const server = setupServer(...handlers, ...incomeHandlers);
+export const server = setupServer(...handlers, ...incomeHandlers, ...objectivesHandlers);

@@ -1,0 +1,159 @@
+/*
+ * Objetivos com prazo. Mesma linguagem do resto: vidro, números em Space
+ * Grotesk e cor sempre acompanhada de texto (o estado e a data estão escritos).
+ */
+
+.objectives__actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.objective-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.objective-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+}
+
+.objective-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.objective-card__name {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 650;
+}
+
+.objective-card__target {
+  margin-top: 2px;
+  color: var(--text-muted);
+}
+
+.objective-card__target strong {
+  color: var(--gold-text);
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.objective-card__actions {
+  display: flex;
+  gap: 6px;
+}
+
+.objective-progress {
+  position: relative;
+  height: 14px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  background: var(--surface-sunken);
+}
+
+.objective-progress__fill {
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: linear-gradient(90deg, var(--gold-2), var(--gold));
+  box-shadow: 0 0 18px var(--gold-glow);
+}
+
+.objective-card--achieved .objective-progress__fill {
+  background: linear-gradient(90deg, var(--success), var(--success));
+  box-shadow: none;
+}
+
+.objective-card__legend {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.objective-card__legend strong {
+  color: var(--text);
+  font-family: var(--font-display);
+}
+
+.objective-card__eta {
+  font-weight: 600;
+}
+
+.objective-card__done {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--success);
+  font-weight: 600;
+}
+
+/* As premissas da conta ficam sempre à vista, mais discretas que a data. */
+.objective-card__premises {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0 0 0 18px;
+  color: var(--text-subtle);
+  font-size: 0.88rem;
+}
+
+.objective-form__premise {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.objective-form__fixed {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* --- No aporte --- */
+
+.plan-objectives {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 20px;
+}
+
+.plan-objectives__list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plan-objectives__item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.plan-objectives__item:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.plan-objectives__name {
+  font-family: var(--font-display);
+}

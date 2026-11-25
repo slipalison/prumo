@@ -9,6 +9,7 @@ pub mod entitlement;
 pub mod health;
 pub mod income;
 pub mod ledger;
+pub mod objectives;
 pub mod performance;
 pub mod profit;
 pub mod retro;

@@ -33,6 +33,7 @@ describe("Navegação e Ajustes", () => {
     expect(within(sections).getAllByRole("link").map((link) => link.textContent)).toEqual([
       "Metas por classe",
       "Critérios",
+      "Objetivos",
       "Saúde da carteira",
       "Importar da B3",
     ]);

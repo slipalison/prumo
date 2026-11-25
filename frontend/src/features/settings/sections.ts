@@ -4,6 +4,7 @@ import { CriteriaScreen } from "../criteria/CriteriaScreen";
 import { GoalsScreen } from "../goals/GoalsScreen";
 import { HealthScreen } from "../health/HealthScreen";
 import { ImportB3Screen } from "../importB3/ImportB3Screen";
+import { ObjectivesScreen } from "../objectives/ObjectivesScreen";
 
 export type SettingsSection = {
   /** O trecho do endereço: `#/ajustes/<id>`. */
@@ -20,6 +21,7 @@ export type SettingsSection = {
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { id: "metas", label: "Metas por classe", Component: GoalsScreen },
   { id: "criterios", label: "Critérios", Component: CriteriaScreen },
+  { id: "objetivos", label: "Objetivos", Component: ObjectivesScreen },
   { id: "saude", label: "Saúde da carteira", Component: HealthScreen },
   { id: "importar-b3", label: "Importar da B3", Component: ImportB3Screen },
 ];

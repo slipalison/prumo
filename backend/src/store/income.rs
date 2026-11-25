@@ -151,24 +151,27 @@ pub struct Objective {
     pub asset_class: Option<AssetClass>,
     pub target: Decimal,
     pub monthly_contribution: Option<Decimal>,
+    /// Premissa de rentabilidade, em % ao ano; `None` = a do Desempenho ou o padrão.
+    pub expected_return: Option<Decimal>,
     pub achieved_at: Option<OffsetDateTime>,
     pub created_at: OffsetDateTime,
 }
 
 #[derive(FromRow)]
-struct ObjectiveRow {
+pub(super) struct ObjectiveRow {
     id: Uuid,
     kind: String,
     asset_class: Option<String>,
     target: Decimal,
     monthly_contribution: Option<Decimal>,
+    expected_return: Option<Decimal>,
     achieved_at: Option<OffsetDateTime>,
     created_at: OffsetDateTime,
 }
 
 macro_rules! objective_columns {
     () => {
-        "id, kind, asset_class, target, monthly_contribution, achieved_at, created_at"
+        "id, kind, asset_class, target, monthly_contribution, expected_return, achieved_at, created_at"
     };
 }
 
@@ -185,6 +188,7 @@ impl TryFrom<ObjectiveRow> for Objective {
                 .transpose()?,
             target: row.target.normalize(),
             monthly_contribution: row.monthly_contribution.map(|c| c.normalize()),
+            expected_return: row.expected_return.map(|r| r.normalize()),
             achieved_at: row.achieved_at,
             created_at: row.created_at,
         })

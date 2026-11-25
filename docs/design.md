@@ -93,13 +93,13 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
 - A barra lista as telas de `APP_ROUTES` (`frontend/src/app/routes.tsx`): tela
   nova é **uma linha** nessa lista, e a barra (que reparte a largura entre
   quantas houver), o título da aba, o `aria-current` e o roteamento saem dela.
-  Hoje: Aportar, Carteira, Ajustes.
+  Hoje: Aportar, Carteira, Renda, Desempenho, Ajustes.
 - Ajustes agrupa **seções** (`SETTINGS_SECTIONS`,
-  `frontend/src/features/settings/sections.ts`): Metas por classe, Critérios e
-  Saúde da carteira.
+  `frontend/src/features/settings/sections.ts`): Metas por classe, Critérios,
+  Objetivos e Saúde da carteira.
   Seção nova também é uma linha. A lista de seções fica no topo de Ajustes
   (links com `aria-current="page"` na atual), cada seção tem endereço próprio
-  (`#/ajustes/metas`, `#/ajustes/criterios`, `#/ajustes/saude`) e uma seção por vez na tela.
+  (`#/ajustes/metas`, `#/ajustes/criterios`, `#/ajustes/objetivos`, `#/ajustes/saude`) e uma seção por vez na tela.
 - Os links antigos `#/metas` e `#/criterios` seguem valendo: abrem a seção
   certa de Ajustes e trocam o endereço pelo novo, sem entrada nova no
   histórico (`LEGACY_ROUTES` em `lib/route.ts`).
@@ -417,6 +417,46 @@ Na tela **Aportar**:
   `aria-valuetext`, tabelas `sr-only`). Só a proporção (percentual) continua — o yield on cost é percentual e fica; o
   motivo de um yield ausente ("informe o preço médio") e o "parcial" do lucro
   total também, porque são texto, não valor.
+
+### 9. Ajustes › Objetivos
+
+Seção de Ajustes (`#/ajustes/objetivos`, uma linha em `SETTINGS_SECTIONS`):
+metas com prazo, de patrimônio total ou de valor numa classe. A meta de renda
+mensal continua na tela Renda (a frase de abertura aponta para lá).
+
+- **Em andamento**: um cartão por objetivo, com o nome ("Patrimônio total",
+  "Valor em Fundos Imobiliários"), a meta, a barra de progresso
+  (`role="progressbar"`, com "R$ 250 mil de R$ 1 mi, 25,0%" para o leitor de
+  tela), a frase da data ("a meta chega em mar/2031 (daqui a 4 anos e 4
+  meses)") e, **sempre à vista**, as duas premissas da conta em lista: "Aporte
+  de R$ 2.400 por mês: a média das suas compras nos últimos 12 meses" e
+  "Rentabilidade de 9,80% ao ano: a da sua carteira em Desempenho". Nenhuma data
+  aparece sem a conta que a produziu. Sem aporte e sem rentabilidade positiva,
+  a frase diz que a meta não chega e pede um aporte; depois de 100 anos, diz
+  isso em vez de uma data.
+- **Concluídos**: o cartão fica com a barra verde e "Concluído em 15/10/2026",
+  sem premissas (não há mais conta). A cor nunca vai sozinha: o estado e a data
+  estão escritos.
+- **Novo objetivo / Editar** (folha): tipo (patrimônio ou classe), classe, meta
+  e duas chaves, "Informar o meu aporte" e "Informar a minha rentabilidade".
+  Desligadas, a folha diz o que a conta vai usar (a média do livro; o padrão de
+  rentabilidade e de onde vem). Ligadas, abrem o campo; a rentabilidade vai de
+  −50% a 100% ao ano. Na edição o tipo e a classe são texto fixo. Remover
+  pede confirmação no próprio cartão.
+
+Na tela **Aportar**, abaixo do resultado do plano, um cartão "Seus objetivos"
+(só aparece com objetivo ativo; se a consulta falha, some e o plano segue):
+
+- "Com este aporte, você chega a **25,6%** da meta de R$ 1.000.000 (hoje,
+  25,0%)." Se o aporte fecha a meta: "você completa a meta de R$ …".
+- "Com aportes assim, a meta chega em **fev/2031**." (com aporte informado:
+  "Com aportes de R$ 1.500 por mês, …"). A data conta a partir do valor que a
+  carteira passa a ter com o aporte.
+- As mesmas duas premissas em lista e um link para Ajustes › Objetivos, onde se
+  troca cada uma.
+- Com o olho fechado, a meta e o aporte saem como `R$ ••••`, inclusive nos
+  `aria-valuetext` e nos campos da folha; ficam o percentual, o mês estimado e
+  os nomes.
 
 ### Histórico
 

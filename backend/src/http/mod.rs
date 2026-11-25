@@ -9,6 +9,7 @@ mod health;
 mod income;
 mod ledger;
 mod live;
+mod objectives;
 mod ops;
 mod performance;
 mod profit;
@@ -274,6 +275,15 @@ pub fn public_router(state: AppState, static_dir: &str) -> Router {
                 .delete(income::delete_goal),
         )
         .route("/income/{id}", patch(income::update).delete(income::delete))
+        .route(
+            "/objectives",
+            get(objectives::list).post(objectives::create),
+        )
+        .route("/objectives/impact", post(objectives::impact))
+        .route(
+            "/objectives/{id}",
+            patch(objectives::update).delete(objectives::delete),
+        )
         .route("/symbols", get(handlers::symbols))
         .route("/quotes/refresh", post(handlers::refresh_quotes))
         .route("/history/net-worth", get(performance::net_worth))

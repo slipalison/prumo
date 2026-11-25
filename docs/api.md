@@ -1483,6 +1483,43 @@ antigos).
     { "date": "2026-11-20", "kind": "sale", "label": "ITSA4", "amount": 300.0 },
     { "date": "2026-11-14", "kind": "income", "label": "KNRI11", "amount": 12.0 },
     { "date": "2026-11-02", "kind": "contribution", "label": "Aporte", "amount": 100.0 }
+## Objetivos
+
+Metas com prazo: um patrimônio total (`net_worth`) ou um valor numa classe
+(`class_value`, com `asset_class`). Ficam na tabela `objectives`, a mesma da
+meta de renda mensal (`/income/goal`, acima), que **não** aparece aqui: criar
+`monthly_income` por estas rotas é `422`, e o `id` dela dá `404` em
+`PATCH`/`DELETE`. O nome **não** é `goals`: no Prumo, `goals` são as metas por
+classe (`PUT /goals`).
+
+Toda rota filtra pela pessoa: o `id` de outra pessoa é `404`.
+
+### `GET /api/v1/objectives`
+
+```json
+{
+  "defaults": { "annual_return_percent": 9.8, "return_source": "performance" },
+  "objectives": [
+    {
+      "id": "…",
+      "kind": "class_value",
+      "asset_class": "br_reits",
+      "target": 100000.0,
+      "monthly_contribution": null,
+      "expected_return": null,
+      "current": 41200.0,
+      "percent": 41.2,
+      "status": "active",
+      "achieved_at": null,
+      "created_at": "2026-11-25T12:00:00Z",
+      "assumptions": {
+        "monthly_contribution": 750.0,
+        "contribution_source": "ledger",
+        "annual_return_percent": 9.8,
+        "return_source": "performance"
+      },
+      "projection": { "state": "eta", "months": 52, "month": "2031-03" }
+    }
   ]
 }
 ```
@@ -1496,6 +1533,111 @@ antigos).
   (`income` e `sale` entram, `contribution` sai).
 - Registrar o aporte com `cash_used` ([`POST /contributions`](#post-apiv1contributions))
   baixa o saldo na hora; editar ou apagar um provento ou um lançamento o refaz.
+Do mais antigo para o mais novo. Cada leitura recalcula o progresso; se o valor
+chegou à meta, grava `achieved_at` (uma vez só) e o objetivo passa a
+`status: "achieved"`, com `assumptions: null` e `projection.state: "reached"`.
+**Meta atingida não volta a ser ativa** se o patrimônio cair depois; só trocar o
+valor da meta apaga a data (meta nova, conquista nova). A data registrada é a da
+primeira leitura que viu a meta atingida (a tela Aportar e Ajustes › Objetivos
+leem a cada uso).
+
+- `current`: o patrimônio total (`total_value` do `GET /portfolio`) ou o valor da
+  classe.
+- `percent`: de 0 a 100 (passou da meta, 100).
+- `monthly_contribution` e `expected_return` são **o que a pessoa informou**
+  (`null` = padrão); o que a conta usou está em `assumptions`.
+- `defaults`: a rentabilidade que vale para quem não informou a sua.
+
+#### A conta e as premissas
+
+A data estimada é uma simulação mês a mês (`domain/objectives.rs`):
+`saldo[m] = saldo[m-1] × (1 + anual)^(1/12) + aporte`, a partir do valor de hoje.
+O primeiro mês em que o saldo chega à meta é a conclusão, contado do mês de hoje.
+**A resposta sempre traz as duas premissas**, e a tela as mostra: a data nunca
+vem sem a conta.
+
+Aporte mensal (`assumptions.contribution_source`):
+
+- `informed`: o `monthly_contribution` do objetivo.
+- `ledger`: a média das **compras** (`buy`) do livro nos últimos 12 meses, em
+  reais (valor mais taxas, no câmbio do lançamento), dividida pelos meses desde
+  a primeira compra (meses de 30 dias, para cima, de 1 a 12): quem começou há
+  quatro meses é medido por quatro. Num objetivo de classe só entram as compras
+  daquela classe. Saldo inicial, bonificação e ajuste não são aporte; venda e
+  resgate não abatem.
+
+Rentabilidade anual (`assumptions.return_source`, `annual_return_percent` em %):
+
+- `informed`: o `expected_return` do objetivo (de −50 a 100).
+- `performance`: a rentabilidade da carteira em Desempenho (cotas/TWR), da
+  janela de 12 meses, anualizada; só com pelo menos 180 dias de série. É bruta
+  (antes do IR) e é da carteira inteira, também no objetivo de classe.
+- `cdi_net`: sem série suficiente, o CDI de hoje (taxa diária mais recente do
+  banco, composta por 252 dias úteis) menos 15% de IR (a menor alíquota de renda
+  fixa).
+- `fallback`: sem série nem CDI no banco, 8% ao ano fixos.
+
+`projection.state`:
+
+| `state` | Quando | `months` / `month` |
+|---|---|---|
+| `reached` | o valor já está na meta | `null` |
+| `eta` | chega em até 100 anos | meses (≥ 1) e `AAAA-MM` |
+| `unreachable` | sem aporte e sem rentabilidade positiva | `null` |
+| `beyond` | chega, mas depois de 100 anos | `null` |
+
+### `POST /api/v1/objectives`
+
+```json
+{ "kind": "class_value", "asset_class": "br_reits", "target": 100000,
+  "monthly_contribution": 1500, "expected_return": 9.5 }
+```
+
+`kind` é `net_worth` ou `class_value`. `asset_class` é obrigatório no
+`class_value` e proibido no `net_worth`. `target` é maior que zero (duas casas);
+`monthly_contribution` (≥ 0) e `expected_return` (% ao ano, de −50 a 100) são
+opcionais. `201` com o objetivo, já avaliado. Erros: `422`.
+
+### `PATCH /api/v1/objectives/{id}`
+
+Qualquer subconjunto de `target`, `monthly_contribution` e `expected_return`;
+`null` nos dois últimos volta ao padrão. O tipo e a classe não mudam (campo
+desconhecido é `422`): apague e crie outro. Trocar o valor de `target` apaga o
+`achieved_at`. `200` com o objetivo; `404` se não existe, é de outra pessoa ou é
+a meta de renda.
+
+### `DELETE /api/v1/objectives/{id}`
+
+`204`; `404` como acima.
+
+### `POST /api/v1/objectives/impact`
+
+O que um aporte faz com os objetivos **ativos**; a tela Aportar chama depois
+do plano, com o que o plano compra, somado por classe:
+
+```json
+{ "items": [{ "asset_class": "br_reits", "value": 1000 }, { "asset_class": "br_stocks", "value": 500 }] }
+```
+
+```json
+{
+  "objectives": [
+    {
+      "id": "…", "kind": "net_worth", "asset_class": null,
+      "target": 1000000.0, "current": 250000.0, "after": 251500.0,
+      "percent_before": 25.0, "percent_after": 25.15,
+      "assumptions": { "…": "como em GET /objectives" },
+      "projection": { "state": "eta", "months": 51, "month": "2031-02" }
+    }
+  ]
+}
+```
+
+`after` é `current` mais o que o aporte põe no objetivo (todos os itens no
+patrimônio; só os da classe no objetivo de classe). `projection` conta a partir
+de `after`, com as mesmas premissas de `GET /objectives`. Objetivo concluído (ou
+que já está na meta) não entra. `items` aceita até 200 itens e valor ≥ 0; sem
+itens, `after = current`. Não grava nada.
 
 ## Operacional (porta interna 9090)
 

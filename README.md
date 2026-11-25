@@ -55,6 +55,18 @@ comprar para a carteira ficar o mais perto possível das suas metas.
 - **Lucro total** — na Carteira: ganho de capital (realizado + não realizado)
   mais os proventos recebidos. O que falta saber (preço médio, cotação) deixa o
   número marcado como parcial, sem estimativa.
+  renda estimada ele soma e oferece incluir os proventos recebidos desde o
+  último aporte. A renda "da carteira de hoje" é **estimativa** (histórico por
+  cota do Yahoo, bruto, buscado em segundo plano: nenhuma tela espera por ele): o
+  que você lança, e depois o que importa da B3, vale mais.
+- **Objetivos** — metas com prazo, em Ajustes: um patrimônio total ou um valor
+  numa classe ("R$ 1 milhão", "R$ 100 mil em FIIs"). Cada uma mostra o
+  progresso e o mês estimado de conclusão, e **a conta fica sempre à vista**:
+  o aporte mensal (a média real das suas compras nos últimos 12 meses, ou o que
+  você informar) e a rentabilidade (a da sua carteira em Desempenho, o CDI de
+  hoje menos IR ou o que você informar). O Aportar diz quanto cada aporte
+  aproxima você da meta. É estimativa, não promessa. A meta de renda mensal
+  continua em Renda.
 - **Preço ao vivo** — patrimônio e ativos mudam na tela sem recarregar, pelo
   streamer do Yahoo: EUA, câmbio e cripto em segundos; B3 com os 15 minutos
   de atraso do dado gratuito. Tudo convertido para reais.

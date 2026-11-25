@@ -4,6 +4,7 @@ import { useEffect, useId, useState, type FormEvent } from "react";
 import { errorMessage } from "../../api/client";
 import { cashKeys } from "../../api/cashQueries";
 import { incomeKeys } from "../../api/incomeQueries";
+import { objectivesKeys } from "../../api/objectivesQueries";
 import { useContributions, usePlan } from "../../api/queries";
 import type { AssetClass, Plan, Portfolio } from "../../api/types";
 import { GlassCard } from "../../components/GlassCard";
@@ -18,6 +19,7 @@ import { sumTargets, targetsFromClasses } from "../../lib/goals";
 import { useMoney } from "../../lib/privacy";
 import { needsRating, ratingIntro } from "../../lib/rating";
 import { CashSuggestion } from "../cash/CashSuggestion";
+import { PlanObjectives } from "../objectives/PlanObjectives";
 import { Onboarding } from "../onboarding/Onboarding";
 import { AddAssetSheet } from "../portfolio/AddAssetSheet";
 import { RateAssetSheet, type RatingTarget } from "../portfolio/RateAssetSheet";
@@ -201,6 +203,7 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
               onEditAsset={(asset) => setRating({ asset })}
               onAddAsset={setAdding}
             />
+            <PlanObjectives plan={plan} />
           </motion.div>
         )}
       </AnimatePresence>
@@ -243,6 +246,8 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
             // O aporte baixou o caixa que usou: o saldo e a renda se refazem.
             void queryClient.invalidateQueries({ queryKey: cashKeys.all });
             void queryClient.invalidateQueries({ queryKey: incomeKeys.all });
+            // O aporte entra na média e no valor dos objetivos.
+            void queryClient.invalidateQueries({ queryKey: objectivesKeys.all });
             toast({ tone: "success", message: "Aporte registrado. A carteira já está atualizada." });
           }}
         />
