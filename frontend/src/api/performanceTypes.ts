@@ -7,8 +7,12 @@ export type NetWorthPoint = {
   /** `AAAA-MM-DD`, dia em Brasília. */
   date: string;
   market_value: number;
+  /** O que a pessoa pôs menos o que tirou, desde o começo da série. */
   invested: number;
+  /** Patrimônio − aplicado: o ganho de preço, sem os proventos. */
   gain: number;
+  /** Proventos recebidos desde o começo da série. */
+  income: number;
   /** Foto de hoje calculada na hora, antes do fechamento. */
   partial: boolean;
 };
@@ -16,6 +20,8 @@ export type NetWorthPoint = {
 export type NetWorth = {
   period: PerformancePeriod;
   starts_on: string | null;
+  /** O livro mudou no passado e a série está sendo refeita desde esta data. */
+  rebuilding_since: string | null;
   points: NetWorthPoint[];
 };
 
@@ -54,6 +60,7 @@ export type PerformanceYear = {
 export type Performance = {
   period: PerformancePeriod;
   starts_on: string | null;
+  rebuilding_since: string | null;
   window: { from: string; to: string } | null;
   return_percent: number | null;
   benchmarks: Benchmark[];

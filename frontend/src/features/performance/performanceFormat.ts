@@ -7,6 +7,12 @@ export function formatDay(iso: string, withYear = false): string {
   return withYear ? `${day}/${month}/${year}` : `${day}/${month}`;
 }
 
+/** As duas datas caem em anos diferentes: aí "05/03" sozinho fica ambíguo e a data leva o ano. */
+export function spansYears(first: string | undefined, last: string | undefined): boolean {
+  if (!first || !last) return false;
+  return first.slice(0, 4) !== last.slice(0, 4);
+}
+
 /** `+1,23%` / `−0,40%`: o sinal diz o sentido sem depender da cor. */
 export function formatSignedPercent(value: number, digits = 2): string {
   if (Math.abs(value) < 0.5 * 10 ** -digits) return formatPercent(0, digits);

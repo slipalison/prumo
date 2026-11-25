@@ -1,21 +1,23 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { NetWorth, Performance } from "../../api/performanceTypes";
+import { REBUILD_POLL_MS, whileRebuilding } from "../../api/performance";
+import type { NetWorth, Performance, PerformanceYear } from "../../api/performanceTypes";
 import { HIDE_VALUES_KEY } from "../../lib/privacy";
 import { renderApp } from "../../test/render";
 import { server } from "../../test/server";
-import { formatDay, formatSignedPercent, trend, versusText } from "./performanceFormat";
+import { formatDay, formatSignedPercent, spansYears, trend, versusText } from "./performanceFormat";
 
 /** Série fictícia de três fechamentos. */
 function worthFixture(overrides: Partial<NetWorth> = {}): NetWorth {
   return {
     period: "12m",
     starts_on: "2026-11-23",
+    rebuilding_since: null,
     points: [
-      { date: "2026-11-23", market_value: 1000, invested: 1000, gain: 0, partial: false },
-      { date: "2026-11-24", market_value: 1510, invested: 1500, gain: 10, partial: false },
-      { date: "2026-11-25", market_value: 1490, invested: 1500, gain: -10, partial: true },
+      { date: "2026-11-23", market_value: 1000, invested: 1000, gain: 0, income: 0, partial: false },
+      { date: "2026-11-24", market_value: 1510, invested: 1500, gain: 10, income: 0, partial: false },
+      { date: "2026-11-25", market_value: 1490, invested: 1500, gain: -10, income: 12.5, partial: true },
     ],
     ...overrides,
   };
@@ -25,6 +27,7 @@ function perfFixture(overrides: Partial<Performance> = {}): Performance {
   return {
     period: "12m",
     starts_on: "2026-11-23",
+    rebuilding_since: null,
     window: { from: "2026-11-23", to: "2026-11-25" },
     return_percent: 1.2345,
     benchmarks: [
@@ -124,7 +127,7 @@ describe("Desempenho", () => {
   it("série nova: diz a data de início em vez de inventar número", async () => {
     const day = { from: "2026-11-25", to: "2026-11-25", return_percent: 0, cdi_percent: null, cdi_as_of: null, excess_over_cdi: null, percent_of_cdi: null, full_window: false };
     serve(
-      worthFixture({ starts_on: "2026-11-25", points: [{ date: "2026-11-25", market_value: 837, invested: 837, gain: 0, partial: true }] }),
+      worthFixture({ starts_on: "2026-11-25", points: [{ date: "2026-11-25", market_value: 837, invested: 837, gain: 0, income: 0, partial: true }] }),
       perfFixture({
         starts_on: "2026-11-25",
         window: { from: "2026-11-25", to: "2026-11-25" },
@@ -156,6 +159,8 @@ describe("Desempenho", () => {
 
     const worth = screen.getByRole("region", { name: "Patrimônio no tempo" });
     expect(within(worth).getByText("R$ 1.500,00")).toBeInTheDocument();
+    expect(within(worth).getByText("R$ 12,50")).toBeInTheDocument();
+    expect(within(worth).getByText(/os proventos recebidos ficam ao lado/)).toBeInTheDocument();
     expect(within(worth).getByText(/−R\$\s10,00/)).toBeInTheDocument();
     expect(within(worth).getByRole("img", { name: /Patrimônio de 23\/11 a 25\/11/ })).toBeInTheDocument();
     expect(within(worth).getByText(/O ponto de hoje \(25\/11\) usa o preço do momento/)).toBeInTheDocument();
@@ -249,6 +254,74 @@ describe("Desempenho", () => {
     expect(asked).toContain("/api/v1/history/net-worth?period=all");
   });
 
+  it("série longa vinda do livro: datas com ano, filtros e uma linha por ano na tabela", async () => {
+    const dates = daysBetween("2023-03-01", "2026-11-25");
+    const worth = worthFixture({
+      period: "all",
+      starts_on: "2023-03-01",
+      points: dates.map((date, i) => ({
+        date,
+        market_value: 10000 + i * 10,
+        invested: 10000 + i * 5,
+        gain: i * 5,
+        income: i,
+        partial: i === dates.length - 1,
+      })),
+    });
+    const years: PerformanceYear[] = [2023, 2024, 2025, 2026].map((year) => ({
+      year,
+      months: Array.from({ length: 12 }, (_, m) => (year === 2023 && m < 2) || (year === 2026 && m > 10) ? null : 0.8),
+      return_percent: 9.6,
+      cdi_percent: 11.2,
+    }));
+    const perf = perfFixture({
+      starts_on: "2023-03-01",
+      window: { from: "2023-03-01", to: "2026-11-25" },
+      return_percent: 38.5,
+      points: dates.map((date, i) => ({ date, portfolio: i / 36, benchmarks: { cdi: i / 30, ipca: i / 60, ibov: null } })),
+      years,
+    });
+    serve(worth, perf);
+    const { user } = await open();
+    const worthCard = await screen.findByRole("region", { name: "Patrimônio no tempo" });
+    expect(within(worthCard).getByRole("img", { name: /Patrimônio de 01\/03\/2023 a 25\/11\/2026/ })).toBeInTheDocument();
+    // As pontas do eixo levam o ano.
+    expect(worthCard.querySelector(".chart__dates")).toHaveTextContent("01/03/2023");
+    expect(within(worthCard).getByText(`R$ ${(dates.length - 1).toLocaleString("pt-BR")},00`)).toBeInTheDocument();
+    const returns = screen.getByRole("region", { name: "Rentabilidade contra os índices" });
+    expect(within(returns).getByRole("img", { name: /de 01\/03\/2023 a 25\/11\/2026/ })).toBeInTheDocument();
+
+    const rows = within(screen.getByRole("table")).getAllByRole("row");
+    expect(rows).toHaveLength(5);
+    expect(within(rows[1] as HTMLElement).getByRole("rowheader")).toHaveTextContent("2026");
+    expect(within(rows[4] as HTMLElement).getByRole("rowheader")).toHaveTextContent("2023");
+    expect(within(rows[4] as HTMLElement).getAllByText("sem dado")).toHaveLength(2);
+
+    for (const [label, period] of [
+      ["Mês", "month"],
+      ["No ano", "ytd"],
+      ["12 meses", "12m"],
+      ["Desde o início", "all"],
+    ] as const) {
+      await user.click(screen.getByRole("button", { name: label }));
+      await waitFor(() => expect(asked).toContain(`/api/v1/performance?period=${period}&benchmarks=cdi,ipca,ibov`));
+      expect(asked).toContain(`/api/v1/history/net-worth?period=${period}`);
+      expect(screen.getByRole("button", { name: label })).toHaveAttribute("aria-pressed", "true");
+    }
+  });
+
+  it("série sendo refeita: avisa desde quando e pergunta de novo até acabar", async () => {
+    let rebuilding: string | null = "2025-03-04";
+    server.use(
+      http.get("/api/v1/history/net-worth", () => HttpResponse.json(worthFixture({ rebuilding_since: rebuilding }))),
+      http.get("/api/v1/performance", () => HttpResponse.json(perfFixture({ rebuilding_since: rebuilding }))),
+    );
+    await open();
+    expect(await screen.findByText(/Refazendo a série desde 04\/03\/2025/)).toBeInTheDocument();
+    rebuilding = null;
+    await waitFor(() => expect(screen.queryByText(/Refazendo a série/)).toBeNull(), { timeout: REBUILD_POLL_MS + 3000 });
+  }, REBUILD_POLL_MS + 8000);
+
   it("erro na API: mensagem e tentar de novo", async () => {
     let fail = true;
     server.use(
@@ -265,8 +338,26 @@ describe("Desempenho", () => {
   });
 });
 
+/** Todo dia corrido de `from` a `to`, como a série guarda. */
+function daysBetween(from: string, to: string): string[] {
+  const out: string[] = [];
+  for (let day = new Date(`${from}T12:00:00Z`); day <= new Date(`${to}T12:00:00Z`); day.setUTCDate(day.getUTCDate() + 1)) {
+    out.push(day.toISOString().slice(0, 10));
+  }
+  return out;
+}
+
 describe("formatação do desempenho", () => {
+  it("pergunta de novo só enquanto a série é refeita", () => {
+    expect(whileRebuilding({ rebuilding_since: "2025-03-04" })).toBe(REBUILD_POLL_MS);
+    expect(whileRebuilding({ rebuilding_since: null })).toBe(false);
+    expect(whileRebuilding(undefined)).toBe(false);
+  });
+
   it("datas, sinais e comparação", () => {
+    expect(spansYears("2025-12-31", "2026-01-02")).toBe(true);
+    expect(spansYears("2026-01-01", "2026-11-25")).toBe(false);
+    expect(spansYears(undefined, "2026-11-25")).toBe(false);
     expect(formatDay("2026-11-05")).toBe("05/11");
     expect(formatDay("2026-11-05", true)).toBe("05/11/2026");
     expect(formatDay("x")).toBe("x");

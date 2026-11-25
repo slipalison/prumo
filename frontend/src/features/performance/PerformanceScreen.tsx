@@ -18,7 +18,7 @@ import { formatPercent } from "../../lib/format";
 import { useMoney } from "../../lib/privacy";
 import { LineChart, type ChartSeries } from "./LineChart";
 import "./performance.css";
-import { formatDay, formatSignedPercent, MONTH_NAMES, MONTHS, trend, versusText } from "./performanceFormat";
+import { formatDay, formatSignedPercent, MONTH_NAMES, MONTHS, spansYears, trend, versusText } from "./performanceFormat";
 
 const PERIODS: Array<{ id: PerformancePeriod; label: string }> = [
   { id: "month", label: "Mês" },
@@ -47,7 +47,7 @@ export function PerformanceScreen() {
         <p className="eyebrow">Desempenho</p>
         <h1 className="screen__title">Você está ganhando do CDI?</h1>
         <p className="screen__lead">
-          Rentabilidade pelo método de cotas: o aporte não conta como ganho, só o que o preço fez.
+          Rentabilidade pelo método de cotas: o aporte não conta como ganho, só o que o preço e os proventos fizeram.
         </p>
       </header>
 
@@ -96,16 +96,24 @@ function Loaded({ worth, perf }: { worth: NetWorth; perf: Performance }) {
       <GlassCard as="section" className="state-card">
         <h2 className="state-card__title">Ainda não há série</h2>
         <p className="state-card__text">
-          A série do desempenho começa no dia em que a carteira tem patrimônio. Cadastre seus ativos na{" "}
-          <a href="#/carteira">Carteira</a> e volte depois do fechamento.
+          A série do desempenho começa no primeiro lançamento da carteira. Cadastre seus ativos na{" "}
+          <a href="#/carteira">Carteira</a> ou importe o extrato da B3 em Ajustes: o histórico aparece desde a
+          primeira negociação.
         </p>
       </GlassCard>
     );
   }
   const since = perf.summary.since_start;
   const young = !since || since.from === since.to;
+  const rebuilding = perf.rebuilding_since ?? worth.rebuilding_since;
   return (
     <>
+      {rebuilding && (
+        <p className="performance__notice" role="status">
+          Refazendo a série desde {formatDay(rebuilding, true)} com os lançamentos novos. Os números se acertam em
+          instantes.
+        </p>
+      )}
       {young && (
         <p className="performance__notice" role="note">
           A série começa em {formatDay(perf.starts_on, true)}. A rentabilidade aparece a partir do próximo fechamento:
@@ -160,6 +168,8 @@ function NetWorthCard({ worth }: { worth: NetWorth }) {
   const money = useMoney();
   const last = worth.points[worth.points.length - 1];
   if (!last) return null;
+  const first = worth.points[0]?.date ?? last.date;
+  const withYear = spansYears(first, last.date);
   const series: ChartSeries[] = [
     {
       key: "market_value",
@@ -202,14 +212,21 @@ function NetWorthCard({ worth }: { worth: NetWorth }) {
             {money.brl(Math.abs(last.gain))}
           </dd>
         </div>
+        <div>
+          <dt>Proventos</dt>
+          <dd>{money.brl(last.income)}</dd>
+        </div>
       </dl>
+      <p className="field__hint">
+        O ganho é o do preço; os proventos recebidos ficam ao lado e entram na rentabilidade.
+      </p>
       <Legend items={series.map((s) => ({ key: s.key, label: s.label, color: s.color, dash: s.dash }))} />
       <LineChart
         dates={worth.points.map((p) => p.date)}
         series={series}
         format={money.compact}
         fromZero
-        label={`Patrimônio de ${formatDay(worth.points[0]?.date ?? last.date)} a ${formatDay(last.date)}: ${money.brl(
+        label={`Patrimônio de ${formatDay(first, withYear)} a ${formatDay(last.date, withYear)}: ${money.brl(
           last.market_value,
         )}, com ${money.brl(last.invested)} aplicados.`}
       />
@@ -265,6 +282,7 @@ function ReturnCard({ perf }: { perf: Performance }) {
       values: perf.points.map((p) => p.benchmarks[b.code] ?? null),
     })),
   ];
+  const withYear = spansYears(perf.window?.from, perf.window?.to);
   const summary = [
     `carteira ${perf.return_percent === null ? "sem dado" : formatSignedPercent(perf.return_percent)}`,
     ...perf.benchmarks.map(
@@ -308,8 +326,9 @@ function ReturnCard({ perf }: { perf: Performance }) {
           series={series}
           format={(v) => formatSignedPercent(v, 1)}
           zeroLine
-          label={`Rentabilidade acumulada de ${formatDay(perf.window?.from ?? "")} a ${formatDay(
+          label={`Rentabilidade acumulada de ${formatDay(perf.window?.from ?? "", withYear)} a ${formatDay(
             perf.window?.to ?? "",
+            withYear,
           )}: ${summary}.`}
         />
       ) : (

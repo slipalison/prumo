@@ -1,6 +1,6 @@
 import { motion } from "motion/react";
 import { useId, useState, type PointerEvent } from "react";
-import { formatDay } from "./performanceFormat";
+import { formatDay, spansYears } from "./performanceFormat";
 
 export type ChartSeries = {
   key: string;
@@ -198,8 +198,8 @@ export function LineChart({ dates, series, format, label, zeroLine = false, from
       </div>
       {count > 0 && (
         <div className="chart__dates" aria-hidden="true">
-          <span>{formatDay(dates[0] ?? "")}</span>
-          {count > 1 && <span>{formatDay(dates[count - 1] ?? "")}</span>}
+          <span>{formatDay(dates[0] ?? "", spansYears(dates[0], dates[count - 1]))}</span>
+          {count > 1 && <span>{formatDay(dates[count - 1] ?? "", spansYears(dates[0], dates[count - 1]))}</span>}
         </div>
       )}
     </div>
