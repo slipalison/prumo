@@ -1,7 +1,6 @@
-import { useId } from "react";
 import type { Analysis, Mover, Ranking } from "../../api/analysisTypes";
 import { AssetIcon } from "../../components/AssetIcon";
-import { GlassCard } from "../../components/GlassCard";
+import { Panel } from "../../components/Layout";
 import { formatSignedPercent } from "../../lib/analysisText";
 import { iconSubjectOfLabel } from "../../lib/assetIcon";
 import { cx } from "../../lib/cx";
@@ -11,7 +10,7 @@ function MoverList({ title, movers, empty }: { title: string; movers: Mover[]; e
     <div className="movers">
       <h4 className="movers__title">{title}</h4>
       {movers.length === 0 ? (
-        <p className="field__hint">{empty}</p>
+        <p className="movers__empty">{empty}</p>
       ) : (
         <ol className="movers__list" aria-label={title}>
           {movers.map((mover) => (
@@ -48,12 +47,13 @@ function Measure({ title, ranking, empty }: { title: string; ranking: Ranking; e
  * de baixo.
  */
 export function HighlightsCard({ highlights }: { highlights: Analysis["highlights"] }) {
-  const titleId = useId();
   return (
-    <GlassCard as="section" className="highlights" aria-labelledby={titleId}>
-      <h2 id={titleId} className="section-title">
-        Destaques de 12 meses
-      </h2>
+    <Panel
+      className="highlights"
+      title="Destaques de 12 meses"
+      infoLabel="Como os destaques são medidos"
+      info="O preço de 12 meses atrás vem do histórico guardado; ativo com menos de 12 meses de histórico fica de fora. A rentabilidade desde a compra é o preço de hoje contra o preço médio do livro."
+    >
       <Measure
         title="Pela variação do preço em 12 meses"
         ranking={highlights.price_12m}
@@ -64,10 +64,6 @@ export function HighlightsCard({ highlights }: { highlights: Analysis["highlight
         ranking={highlights.since_purchase}
         empty="Nenhum com custo conhecido no livro."
       />
-      <p className="field__hint">
-        O preço de 12 meses atrás vem do histórico guardado; ativo com menos de 12 meses de histórico fica de fora. A
-        rentabilidade desde a compra é o preço de hoje contra o preço médio do livro.
-      </p>
-    </GlassCard>
+    </Panel>
   );
 }

@@ -5,9 +5,11 @@ import {
   attentionText,
   COUNT_MAX,
   formatSignedPercent,
+  limitCell,
   limitLabel,
   noDataText,
   pointText,
+  restText,
   NO_DATA_TEXT,
   ruleAction,
   ruleExplanation,
@@ -64,6 +66,26 @@ describe("texto da Análise", () => {
     expect(label("beat_ipca_12m")).toBe("IPCA");
     expect(label("empty_class")).toBeNull();
     expect(label("brick_reit")).toBeNull();
+  });
+
+  it("na célula da tabela, o limite leva o sentido escrito", () => {
+    expect(limitCell(result("max_asset", "warning", { current: 70 }))).toBe("máx. 15%");
+    expect(limitCell(result("min_abroad", "warning", { current: 0 }))).toBe("mín. 10%");
+    expect(limitCell(result("min_assets", "ok", { current: 3 }))).toBe("mín. 3");
+    expect(limitCell(result("beat_cdi_12m", "warning", { current: 9.4, limit: 13.2 }))).toBe("CDI 13,20%");
+    // Sem limite (regra sem dado, ou sem limite de fábrica): célula vazia.
+    expect(limitCell(result("min_abroad", "no_data"))).toBeNull();
+    expect(limitCell(result("brick_reit", "ok", { current: 1 }))).toBeNull();
+  });
+
+  it("o recolher de cada dimensão conta o que está ok, sem dado e desligado", () => {
+    expect(restText([result("max_asset", "ok"), result("top_five", "ok"), result("min_sectors", "no_data")])).toBe(
+      "2 regras ok · 1 sem dado",
+    );
+    expect(restText([result("max_asset", "ok"), result("min_classes", "off"), result("min_sectors", "off")])).toBe(
+      "1 regra ok · 2 desligadas",
+    );
+    expect(restText([result("min_sectors", "off")])).toBe("1 desligada");
   });
 
   it("diz a pontuação com o número exato e o que ficou fora da conta", () => {

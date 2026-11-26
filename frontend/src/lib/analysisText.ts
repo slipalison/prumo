@@ -264,6 +264,9 @@ export const DIMENSION_TEXT: Record<DimensionId, { title: string; lead: string }
   },
 };
 
+/** O `id` do painel de uma dimensão na Análise, para o cartão do topo levar até ele. */
+export const dimensionAnchor = (id: DimensionId) => `analysis-${id}`;
+
 export const BENCHMARK_LABEL: Record<Benchmark, string> = { cdi: "CDI", ibov: "Ibovespa", ipca: "IPCA" };
 
 export const PROFILE_LABEL: Record<RiskProfile, string> = {
@@ -292,6 +295,34 @@ export function limitLabel(rule: RuleConfig): string | null {
   if (rule.direction === "at_least") return "Mínimo";
   if (rule.direction === "at_most") return "Limite";
   return null;
+}
+
+/**
+ * O limite na célula da tabela, curto e com o sentido escrito: `máx. 15%`,
+ * `mín. 10%` ou o índice (`CDI 13,20%`). `null` quando a regra não tem limite.
+ */
+export function limitCell(result: RuleResult): string | null {
+  const label = limitLabel(result);
+  if (label === null || result.limit === null) return null;
+  const value = formatRuleValue(result.unit, result.limit);
+  if (label === "Limite") return `máx. ${value}`;
+  if (label === "Mínimo") return `mín. ${value}`;
+  return `${label} ${value}`;
+}
+
+/** O que está recolhido no fim de cada dimensão: "3 regras ok · 1 sem dado · 1 desligada". */
+export function restText(rules: readonly RuleResult[]): string {
+  const count = (status: RuleStatus) => rules.filter((r) => r.status === status).length;
+  const ok = count("ok");
+  const noData = count("no_data");
+  const off = count("off");
+  return [
+    ok > 0 ? `${ok} ${plural(ok, ["regra ok", "regras ok"])}` : null,
+    noData > 0 ? `${noData} sem dado` : null,
+    off > 0 ? `${off} ${plural(off, ["desligada", "desligadas"])}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /** `5 de 8 regras ok (62,5%)`: o número exato por trás da pontuação. */

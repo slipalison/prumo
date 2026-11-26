@@ -1,8 +1,7 @@
-import { useId } from "react";
 import type { Attention } from "../../api/analysisTypes";
 import { AssetIcon } from "../../components/AssetIcon";
-import { GlassCard } from "../../components/GlassCard";
 import { IconAlert } from "../../components/icons";
+import { Panel } from "../../components/Layout";
 import { pointText } from "../../lib/analysisText";
 import { iconSubjectOfLabel } from "../../lib/assetIcon";
 import { plural } from "../../lib/format";
@@ -14,19 +13,14 @@ import { plural } from "../../lib/format";
  * nada. Sem dado de fundamentos, diz isso em vez de "tudo certo".
  */
 export function AttentionCard({ attention }: { attention: Attention }) {
-  const titleId = useId();
   const { assessed, without_data: without, items } = attention;
 
   return (
-    <GlassCard as="section" className="dimension" aria-labelledby={titleId}>
-      <h2 id={titleId} className="section-title">
-        Pontos de atenção dos ativos
-      </h2>
-      <p className="field__hint">
-        Fatos dos balanços da CVM e dos seus proventos, ativo por ativo. Não são recomendação: o Prumo não manda comprar
-        nem vender.
-      </p>
-
+    <Panel
+      className="attention-card"
+      title="Pontos de atenção dos ativos"
+      info="Fatos dos balanços da CVM e dos seus proventos, ativo por ativo. Os indicadores de cada ativo estão na folha dele, em Fundamentos."
+    >
       {items.length > 0 ? (
         <ul className="attention-list" aria-label="Ativos com pontos de atenção">
           {items.map((item) => (
@@ -38,7 +32,7 @@ export function AttentionCard({ attention }: { attention: Attention }) {
               <ul className="attention__points" aria-label={`Pontos de atenção de ${item.label}`}>
                 {item.points.map((point) => (
                   <li key={point.kind} className="attention__point">
-                    <IconAlert width={16} height={16} className="attention__icon" />
+                    <IconAlert width={14} height={14} className="attention__icon" />
                     <span>{pointText(point)}</span>
                   </li>
                 ))}
@@ -57,18 +51,21 @@ export function AttentionCard({ attention }: { attention: Attention }) {
         </p>
       )}
 
-      {assessed > 0 && (
-        <p className="field__hint">
-          {assessed} {plural(assessed, ["ativo avaliado", "ativos avaliados"])}
-          {without > 0 && (
-            <>
-              ; {without} {plural(without, ["ação ou FII ainda sem dados", "ações ou FIIs ainda sem dados"])} (a busca na
-              CVM roda em segundo plano)
-            </>
-          )}
-          . Os indicadores de cada ativo estão na folha dele, em Fundamentos.
-        </p>
-      )}
-    </GlassCard>
+      <p className="attention-card__foot">
+        {assessed > 0 && (
+          <>
+            {assessed} {plural(assessed, ["ativo avaliado", "ativos avaliados"])}
+            {without > 0 && (
+              <>
+                ; {without} {plural(without, ["ação ou FII ainda sem dados", "ações ou FIIs ainda sem dados"])} (a busca
+                na CVM roda em segundo plano)
+              </>
+            )}
+            .{" "}
+          </>
+        )}
+        Não são recomendação: o Prumo não manda comprar nem vender.
+      </p>
+    </Panel>
   );
 }

@@ -2,6 +2,8 @@ import { useEffect, useId, useMemo, useState } from "react";
 import { errorMessage } from "../../api/client";
 import type { AnalysisConfig, AnalysisRuleId, ConfigRequest, DimensionId, RuleChange, RuleConfig } from "../../api/analysisTypes";
 import { GlassCard } from "../../components/GlassCard";
+import { InfoTip } from "../../components/InfoTip";
+import { Grid, Page, PageHeader, Panel } from "../../components/Layout";
 import { MagneticButton } from "../../components/MagneticButton";
 import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/toastContext";
@@ -10,8 +12,14 @@ import { parseDecimal } from "../../lib/format";
 import { formatRuleValue, thresholdError } from "../../lib/healthText";
 import { useAnalysisConfig, useSaveAnalysisConfig } from "./useAnalysis";
 
-/** As dimensões, na ordem da tela. */
-const GROUPS: DimensionId[] = ["diversification", "dividends", "returns", "quality"];
+/**
+ * As dimensões em duas colunas, na ordem da tela (uma coluna só no celular):
+ * as duas pilhas ficam com altura parecida (10 + 6 + 1 regras e 9 + 8).
+ */
+const COLUMNS: [DimensionId[], DimensionId[]] = [
+  ["diversification", "dividends"],
+  ["returns", "quality"],
+];
 
 type Draft = {
   rules: Record<AnalysisRuleId, { enabled: boolean; threshold: string }>;
@@ -39,19 +47,22 @@ export function AnalysisSettings() {
   const config = useAnalysisConfig();
 
   return (
-    <div className="screen analysis-settings">
-      <header className="screen__header">
-        <p className="eyebrow">Análise</p>
-        <h1 className="screen__title">Regras da análise</h1>
-        <p className="screen__lead">
-          Cada regra é uma pergunta com um limite que é seu: você liga, desliga e escolhe o número. A pontuação de uma
-          dimensão é só o percentual das regras ligadas, com dado, que estão ok. O resultado está em{" "}
+    <Page className="analysis-settings">
+      <PageHeader
+        title="Regras da análise"
+        infoLabel="Sobre as regras da análise"
+        info={
+          <>
+            Cada regra é uma pergunta com um limite que é seu: você liga, desliga e escolhe o número. A pontuação de uma
+            dimensão é só o percentual das regras ligadas, com dado, que estão ok.
+          </>
+        }
+        actions={
           <a className="link-btn" href="#/analise">
-            Análise
+            Ver a análise
           </a>
-          .
-        </p>
-      </header>
+        }
+      />
 
       {config.isPending && (
         <GlassCard as="section" aria-label="Carregando as regras" className="analysis__loading">
@@ -68,7 +79,7 @@ export function AnalysisSettings() {
         </GlassCard>
       )}
       {config.data && <RulesCard config={config.data} />}
-    </div>
+    </Page>
   );
 }
 
@@ -163,8 +174,8 @@ function RulesCard({ config }: { config: AnalysisConfig }) {
               </span>
             )}
             {copy.tail && <span className="rule-row__tail">{copy.tail}</span>}
+            <InfoTip label={`Por que: ${ruleName(rule.rule)}`}>{copy.why}</InfoTip>
           </div>
-          <p className="field__hint">{copy.why}</p>
           {error && state.enabled && (
             <p id={`${id}-error`} className="rule-row__error" role="alert">
               {error}
@@ -191,57 +202,58 @@ function RulesCard({ config }: { config: AnalysisConfig }) {
     );
   };
 
+  const panel = (group: DimensionId) => (
+    <Panel key={group} className="rules-panel" title={DIMENSION_TEXT[group].title} info={DIMENSION_TEXT[group].lead}>
+      <ul className="rule-list">{config.rules.filter((r) => r.dimension === group).map(row)}</ul>
+    </Panel>
+  );
+
   return (
     <>
-      {GROUPS.map((group) => (
-        <GlassCard key={group} as="section" className="health__rules" aria-labelledby={`${baseId}-${group}`}>
-          <h2 id={`${baseId}-${group}`} className="section-title">
-            {DIMENSION_TEXT[group].title}
-          </h2>
-          <ul className="rule-list">{config.rules.filter((r) => r.dimension === group).map(row)}</ul>
-        </GlassCard>
-      ))}
-
-      <GlassCard as="section" className="health__rules" aria-labelledby={`${baseId}-bazin`}>
-        <h2 id={`${baseId}-bazin`} className="section-title">
-          Referências de preço
-        </h2>
-        <div className="rule-row">
-          <div className="rule-row__main">
-            <div className="rule-row__sentence">
-              <label className="rule-row__lead" htmlFor={`${baseId}-bazin-yield`}>
-                Rendimento-alvo do Bazin
-              </label>
-              <span className="rule-row__field">
-                <input
-                  id={`${baseId}-bazin-yield`}
-                  className="text-input rule-row__input"
-                  inputMode="decimal"
-                  value={draft.bazinYield}
-                  aria-invalid={errors.bazin ? true : undefined}
-                  aria-describedby={errors.bazin ? `${baseId}-bazin-error` : undefined}
-                  onChange={(event) => {
-                    setTouched(true);
-                    setDraft((current) => ({ ...current, bazinYield: event.target.value }));
-                  }}
-                />
-                <span className="rule-row__unit">% ao ano</span>
-              </span>
+      <Grid cols={2} alignStart>
+        <div className="rules-column">
+          {COLUMNS[0].map(panel)}
+          <Panel
+            className="rules-panel"
+            title="Referências de preço"
+            infoLabel="Sobre o rendimento-alvo do Bazin"
+            info="O preço de referência de Bazin é a média anual de dividendos por cota dividida por este rendimento. É uma referência pública, não uma recomendação."
+          >
+            <div className="rule-row">
+              <div className="rule-row__main">
+                <div className="rule-row__sentence">
+                  <label className="rule-row__lead" htmlFor={`${baseId}-bazin-yield`}>
+                    Rendimento-alvo do Bazin
+                  </label>
+                  <span className="rule-row__field">
+                    <input
+                      id={`${baseId}-bazin-yield`}
+                      className="text-input rule-row__input"
+                      inputMode="decimal"
+                      value={draft.bazinYield}
+                      aria-invalid={errors.bazin ? true : undefined}
+                      aria-describedby={errors.bazin ? `${baseId}-bazin-error` : undefined}
+                      onChange={(event) => {
+                        setTouched(true);
+                        setDraft((current) => ({ ...current, bazinYield: event.target.value }));
+                      }}
+                    />
+                    <span className="rule-row__unit">% ao ano</span>
+                  </span>
+                </div>
+                {errors.bazin && (
+                  <p id={`${baseId}-bazin-error`} className="rule-row__error" role="alert">
+                    {errors.bazin}
+                  </p>
+                )}
+              </div>
             </div>
-            <p className="field__hint">
-              O preço de referência de Bazin é a média anual de dividendos por cota dividida por este rendimento. É uma
-              referência pública, não uma recomendação.
-            </p>
-            {errors.bazin && (
-              <p id={`${baseId}-bazin-error`} className="rule-row__error" role="alert">
-                {errors.bazin}
-              </p>
-            )}
-          </div>
+          </Panel>
         </div>
-      </GlassCard>
+        <div className="rules-column">{COLUMNS[1].map(panel)}</div>
+      </Grid>
 
-      <div className="health__actions">
+      <div className={dirty ? "rules-actions rules-actions--dirty" : "rules-actions"}>
         <MagneticButton disabled={!dirty || invalid} loading={save.isPending} onClick={submit}>
           Salvar regras
         </MagneticButton>

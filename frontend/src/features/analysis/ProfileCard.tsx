@@ -1,6 +1,6 @@
 import { useId } from "react";
 import type { Analysis, Mix } from "../../api/analysisTypes";
-import { GlassCard } from "../../components/GlassCard";
+import { InfoTip } from "../../components/InfoTip";
 import { PROFILE_LABEL } from "../../lib/analysisText";
 import { formatPercent } from "../../lib/format";
 
@@ -12,7 +12,7 @@ function MixBar({ title, mix, empty }: { title: string; mix: Mix | null; empty: 
     return (
       <div className="mix">
         <p className="mix__title">{title}</p>
-        <p className="field__hint">{empty}</p>
+        <p className="mix__empty">{empty}</p>
       </div>
     );
   }
@@ -54,9 +54,9 @@ function comparison(profile: Profile): string | null {
 }
 
 /**
- * Perfil de risco: onde a carteira está entre renda fixa e renda variável, o
- * rótulo que isso merece e o mesmo para as metas por classe, para comparar o
- * atual com o desejado. Os limiares são do Prumo e estão escritos aqui.
+ * Perfil de risco, compacto, dentro do veredito: onde a carteira está entre
+ * renda fixa e renda variável, o rótulo que isso merece e o mesmo para as
+ * metas, para comparar o atual com o desejado. Os limiares do Prumo ficam no ⓘ.
  */
 export function ProfileCard({ profile }: { profile: Profile }) {
   const titleId = useId();
@@ -65,10 +65,16 @@ export function ProfileCard({ profile }: { profile: Profile }) {
   const moderate = formatPercent(profile.moderate_max, 0);
 
   return (
-    <GlassCard as="section" className="profile" aria-labelledby={titleId}>
-      <h2 id={titleId} className="section-title">
-        Perfil de risco
-      </h2>
+    <section className="profile" aria-labelledby={titleId}>
+      <div className="profile__head">
+        <h2 id={titleId} className="profile__title">
+          Perfil de risco
+        </h2>
+        <InfoTip label="Como o perfil de risco é calculado" align="start">
+          Renda fixa são Renda Fixa e Renda Fixa Internacional; o resto é renda variável. Pelos limiares do Prumo, até{" "}
+          {conservative} em renda variável é conservador, até {moderate} é moderado e acima disso é arrojado.
+        </InfoTip>
+      </div>
       <MixBar title="Agora" mix={profile.current} empty="Ainda não há ativos com valor." />
       <MixBar
         title="Suas metas"
@@ -76,10 +82,6 @@ export function ProfileCard({ profile }: { profile: Profile }) {
         empty="Defina as metas por classe, em Ajustes, Metas, para comparar com o que você tem."
       />
       {note && <p className="profile__note">{note}</p>}
-      <p className="field__hint">
-        Renda fixa são Renda Fixa e Renda Fixa Internacional; o resto é renda variável. Pelos limiares do Prumo, até{" "}
-        {conservative} em renda variável é conservador, até {moderate} é moderado e acima disso é arrojado.
-      </p>
-    </GlassCard>
+    </section>
   );
 }

@@ -27,7 +27,13 @@ describe("Ajustes, Análise", () => {
     expect(await screen.findByRole("heading", { name: "Regras da análise", level: 1 })).toBeInTheDocument();
     expect(window.location.hash).toBe("#/ajustes/analise");
     expect(document.title).toBe("Ajustes · Prumo");
+    // A explicação da tela e o porquê de cada regra ficam no ⓘ.
+    expect(screen.queryByText(/A pontuação de uma dimensão é só o percentual/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Sobre as regras da análise" }));
     expect(screen.getByText(/A pontuação de uma dimensão é só o percentual das regras ligadas/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Por que: Pelo menos … da carteira no exterior" }));
+    expect(screen.getByText(/inclusive BDR e ETF de exterior/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Ver a análise" })).toHaveAttribute("href", "#/analise");
   });
 
   it("#/ajustes/saude continua abrindo, agora na Análise, e troca o endereço sem nova entrada no histórico", async () => {

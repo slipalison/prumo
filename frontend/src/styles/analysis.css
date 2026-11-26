@@ -1,437 +1,120 @@
 /*
- * Análise: o painel, as regras (também em Ajustes › Análise, Alertas e na
- * folha de objetivo), as fontes e o resto da tela.
+ * Análise da carteira e Ajustes › Análise (docs/layout.md § 7.5). Mesma
+ * linguagem do resto: vidro, números em Space Grotesk, cor sempre acompanhada
+ * de texto (o estado de cada regra está escrito) e a barra de perfil distingue
+ * renda fixa (listrada) de renda variável (lisa) sem depender da cor.
+ *
+ * `.rule-list`/`.rule-row` (a linha de regra com o limite no meio da frase e o
+ * interruptor à direita) também servem aos Alertas; `.rule-row__error` é dos
+ * padrões comuns (components.css).
  */
-
-/* ---------- Painel ---------- */
-
-.health__loading,
-.health__error {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 20px;
-}
-
-.health__verdict {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  padding: 18px 22px;
-}
-
-.health__count {
-  font-family: var(--font-display);
-  font-size: 1.6rem;
-  font-weight: 650;
-  line-height: 1.15;
-}
-
-.health__warnings {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.warning-card {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 18px 20px;
-}
-
-.warning-card__head {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-
-.warning-card__icon {
-  flex: none;
-  margin-top: 3px;
-  color: var(--gold-text);
-}
-
-.warning-card__title {
-  font-size: 1.1rem;
-  font-weight: 650;
-}
-
-.warning-card__numbers {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 32px;
-  margin: 0;
-}
-
-.warning-card__numbers dt {
-  color: var(--text-subtle);
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.warning-card__numbers dd {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: 1.6rem;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-}
-
-.warning-card__action {
-  color: var(--text-muted);
-}
-
-.warning-card__what {
-  color: var(--text);
-  font-weight: 650;
-}
-
-/* ---------- Regras ---------- */
-
-.health__rules,
-.health__sources {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 20px;
-}
-
-.rule-list {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.rule-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px 0;
-  border-top: 1px solid var(--border);
-}
-
-.rule-row:first-child {
-  border-top: 0;
-}
-
-.rule-row__main {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-
-.rule-row__sentence {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 10px;
-}
-
-.rule-row__lead {
-  font-weight: 650;
-}
-
-.rule-row__field {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.rule-row__input {
-  width: 92px;
-  min-height: 44px;
-  text-align: center;
-  font-family: var(--font-display);
-  font-size: 1.05rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.rule-row__input:disabled {
-  opacity: 0.5;
-}
-
-.rule-row__unit,
-.rule-row__tail {
-  color: var(--text-muted);
-}
-
-.rule-row__meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 14px;
-}
-
-.rule-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 28px;
-  padding: 2px 12px;
-  border-radius: var(--r-pill);
-  background: var(--surface-sunken);
-  color: var(--text-muted);
-  font-size: 0.82rem;
-  font-weight: 600;
-}
-
-.rule-status--ok {
-  color: var(--success);
-}
-
-.rule-status--warning {
-  background: var(--danger-surface);
-  color: var(--danger);
-}
-
-.health__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 18px;
-}
-
-/* ---------- Fontes ---------- */
-
-.source-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  color: var(--text-muted);
-}
-
-.source-list strong {
-  color: var(--text);
-}
-
-.source-list__warn {
-  color: var(--danger);
-  font-weight: 600;
-}
-
-
-/*
- * Análise da carteira. Mesma linguagem do resto: vidro, números em Space
- * Grotesk, cor sempre acompanhada de texto (o estado de cada regra está
- * escrito), e a barra de perfil distingue renda fixa (listrada) de renda
- * variável (lisa) sem depender da cor.
- */
-
-.analysis,
-.analysis-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
 
 .analysis__loading,
 .analysis__error {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 20px;
+  gap: var(--space-3);
+  padding: var(--pad-panel);
 }
 
-/* ---------- Resumo ---------- */
+/* ================= Primeira dobra ================= */
 
-.analysis__verdict {
+.analysis__top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap-grid);
+}
+
+/* Largo: o veredito à esquerda e as quatro pontuações em 2 × 2 ao lado. */
+@container page (min-width: 1100px) {
+  .analysis__top {
+    grid-template-columns: minmax(340px, 1fr) minmax(0, 2fr);
+  }
+
+  .analysis__top .dim-scores {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.analysis__verdict-head {
   display: flex;
   align-items: center;
-  gap: 18px;
-  padding: 18px 22px;
+  gap: var(--space-3);
+}
+
+.analysis__verdict-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .analysis__count {
   font-family: var(--font-display);
-  font-size: 1.6rem;
+  font-size: 1.35rem;
   font-weight: 650;
   line-height: 1.15;
 }
 
-/* ---------- Dimensões ---------- */
+.analysis__hint {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
 
-.dimension {
+/* ---------- Perfil de risco (dentro do veredito) ---------- */
+
+.profile {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 20px;
-}
-
-.dimension__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px 24px;
-}
-
-.dimension__score {
-  text-align: right;
-}
-
-.dimension__percent {
-  font-family: var(--font-display);
-  font-size: 1.8rem;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.1;
-}
-
-.dimension__fill {
-  background: var(--info);
-}
-
-/* ---------- Regras ---------- */
-
-.analysis-rules {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.analysis-rule {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px 0;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
   border-top: 1px solid var(--border);
 }
 
-.analysis-rule:first-child {
-  border-top: 0;
-}
-
-.analysis-rule--no_data,
-.analysis-rule--off {
-  color: var(--text-muted);
-}
-
-.analysis-rule__head {
+.profile__head {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 6px 12px;
+  gap: var(--space-1);
 }
 
-.analysis-rule__name {
-  flex: 1 1 260px;
-  font-size: 1rem;
-  font-weight: 650;
-}
-
-.analysis-rule--no_data .analysis-rule__name,
-.analysis-rule--off .analysis-rule__name {
-  font-weight: 500;
-}
-
-.analysis-rule__numbers {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 28px;
-  margin: 0;
-}
-
-.analysis-rule__numbers dt {
+.profile__title {
   color: var(--text-subtle);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-.analysis-rule__numbers dd {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: 1.3rem;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-}
-
-.analysis-rule__text {
-  color: var(--text-muted);
-}
-
-.analysis-rule__findings {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.rule-status--no_data,
-.rule-status--off {
-  background: transparent;
-  border: 1px solid var(--border-strong);
-}
-
-.finding {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--surface-sunken);
-}
-
-.finding__title {
-  font-size: 1rem;
-  font-weight: 650;
-}
-
-.finding__numbers dd {
-  font-size: 1.3rem;
-}
-
-/* ---------- Perfil de risco ---------- */
-
-.profile {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 20px;
-}
-
 .mix {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-1);
 }
 
 .mix__title {
   color: var(--text-muted);
+  font-size: var(--text-sm);
 }
 
 .mix__title strong {
   color: var(--text);
 }
 
+.mix__empty {
+  color: var(--text-subtle);
+  font-size: var(--text-sm);
+}
+
 .mix__bar {
   display: flex;
-  height: 18px;
+  height: 8px;
   overflow: hidden;
   border: 1px solid var(--border-strong);
   border-radius: var(--r-pill);
 }
 
 .mix__fixed {
-  background: repeating-linear-gradient(135deg, var(--info) 0 6px, transparent 6px 12px);
+  background: repeating-linear-gradient(135deg, var(--info) 0 4px, transparent 4px 8px);
 }
 
 .mix__variable {
@@ -441,19 +124,19 @@
 .mix__legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 20px;
+  gap: 2px var(--space-3);
   color: var(--text-muted);
-  font-size: 0.92rem;
+  font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
 }
 
 .mix__dot {
   display: inline-block;
-  width: 12px;
-  height: 12px;
-  margin-right: 4px;
+  width: 10px;
+  height: 10px;
+  margin-right: 2px;
   border: 1px solid var(--border-strong);
-  border-radius: 4px;
+  border-radius: 3px;
   vertical-align: -1px;
 }
 
@@ -466,43 +149,480 @@
 }
 
 .profile__note {
+  font-size: var(--text-sm);
   font-weight: 600;
 }
 
-/* ---------- Destaques ---------- */
+/* ---------- As quatro pontuações ---------- */
 
-.highlights {
+.dim-scores {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--gap-grid);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@container page (min-width: 640px) and (max-width: 1099px) {
+  .dim-scores {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.dim-score {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 20px;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--pad-panel);
+  transition:
+    translate var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.dim-score:hover {
+  translate: 0 -2px;
+  box-shadow: var(--shadow-lg), var(--inner-light);
+}
+
+.dim-score__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-2);
+}
+
+
+.dim-score__title {
+  font-size: var(--text-md);
+  font-weight: 650;
+}
+
+.dim-score__percent {
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 2.4vw, 2rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.dim-score__meter {
+  height: 6px;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: var(--surface-sunken);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.dim-score__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: linear-gradient(90deg, var(--gold-2), var(--gold) 60%, var(--gold-1));
+}
+
+.dim-score__detail {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
+
+/* O cartão inteiro leva até a tabela da dimensão (o botão cobre o cartão). */
+.dim-score__jump {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.dim-score__jump:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/* ================= Uma dimensão ================= */
+
+.dimension {
+  scroll-margin-top: var(--space-4);
+}
+
+/* No celular a barra do topo é fixa: a dimensão para logo abaixo dela. */
+@media (max-width: 959px) {
+  .dimension {
+    scroll-margin-top: calc(76px + var(--space-2));
+  }
+}
+
+.dimension:focus {
+  outline: none;
+}
+
+.dimension:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.dimension > .panel__body {
+  gap: 0;
+  padding-bottom: var(--space-1);
+}
+
+.dimension__score {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  color: var(--text-subtle);
+  font-size: var(--text-sm);
+}
+
+.dimension__percent {
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-variant-numeric: tabular-nums;
+}
+
+.dimension__calm {
+  padding: 0 var(--pad-panel) var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-md);
+}
+
+.dimension__rest {
+  margin: 0 var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.dimension__rest > .disclosure__body {
+  margin: 0 calc(-1 * var(--space-3));
+}
+
+/* ---------- A tabela de regras ---------- */
+
+/* A tabela das regras e a das referências nunca precisam rolar de lado (elas
+   se rearranjam no iPad em pé e no celular): sem o `overflow` da tabela comum,
+   o ⓘ da primeira linha abre por cima do cabeçalho em vez de ser cortado. */
+.rule-table.data-table,
+.references__table.data-table {
+  overflow: visible;
+}
+
+.rule-table tbody th {
+  width: 30%;
+  min-width: 220px;
+}
+
+.rule-table tr > :first-child {
+  padding-left: var(--pad-panel);
+}
+
+.rule-table tr > :last-child {
+  padding-right: var(--pad-panel);
+}
+
+.analysis-rule--no_data > th,
+.analysis-rule--off > th {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.rule-diagnosis {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.rule-findings {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  list-style: none;
+}
+
+.rule-finding {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.rule-finding__icons {
+  display: inline-flex;
+  flex: none;
+}
+
+.rule-finding__icons > * + * {
+  margin-left: -6px;
+}
+
+.rule-finding__members {
+  display: block;
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
+
+.rule-now {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1);
+}
+
+.rule-now__value {
+  font-family: var(--font-display);
+  font-weight: 650;
+}
+
+.rule-table .limit-bar {
+  width: 76px;
+  margin: 0;
+}
+
+.rule-table .class-bar__track {
+  height: 6px;
+}
+
+.rule-table .class-bar__target {
+  top: -3px;
+  bottom: -3px;
+}
+
+.rule-table .class-bar__target svg {
+  display: none;
+}
+
+.rule-limit {
+  color: var(--text-subtle);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.rule-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1);
+}
+
+.rule-action__link {
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.rule-action__text {
+  display: block;
+}
+
+.rule-action__text + .rule-action__text {
+  margin-top: var(--space-1);
+}
+
+/* Média (iPad em pé, coluna estreita): seis colunas não cabem. Cada regra
+   vira duas linhas: a frase, o estado e os números em cima; o diagnóstico e o
+   que fazer embaixo. O cabeçalho fica só para o leitor de tela. */
+@container (min-width: 561px) and (max-width: 1000px) {
+  .rule-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  .rule-table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto 92px 92px;
+    align-items: center;
+    gap: var(--space-1) var(--space-3);
+    padding: var(--space-2) var(--pad-panel);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .rule-table tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .rule-table.rule-table tbody tr > * {
+    display: block;
+    height: auto;
+    padding: 0;
+    border: 0;
+  }
+
+  .rule-table tbody th {
+    width: auto;
+    min-width: 0;
+  }
+
+  .rule-table td[data-label="Agora"]:not(:empty)::before,
+  .rule-table td[data-label="Limite"]:not(:empty)::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--text-subtle);
+    font-size: var(--text-2xs);
+  }
+
+  .rule-table td[data-label="Diagnóstico"] {
+    grid-row: 2;
+    grid-column: 1 / 3;
+  }
+
+  .rule-table td[data-label="O que fazer"] {
+    grid-row: 2;
+    grid-column: 3 / 5;
+  }
+}
+
+/* Estreita (celular): a frase em cima, o estado e os números numa linha, o
+   diagnóstico e o que fazer embaixo. */
+@container (max-width: 560px) {
+  .rule-table.data-table--stack tbody tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-3);
+    padding: var(--space-3) var(--pad-panel);
+  }
+
+  .rule-table.data-table--stack tbody tr > * {
+    padding: 0;
+  }
+
+  .rule-table.data-table--stack tbody th {
+    flex-basis: 100%;
+    width: auto;
+    min-width: 0;
+  }
+
+  .rule-table.data-table--stack td:empty {
+    display: none;
+  }
+
+  .rule-table.data-table--stack td[data-label="Estado"]::before,
+  .rule-table.data-table--stack td[data-label="Diagnóstico"]::before,
+  .rule-table.data-table--stack td[data-label="O que fazer"]::before {
+    content: none;
+  }
+
+  .rule-table.data-table--stack td[data-label="Diagnóstico"] {
+    order: 1;
+    flex-basis: 100%;
+  }
+
+  .rule-table.data-table--stack td[data-label="O que fazer"] {
+    order: 2;
+    flex-basis: 100%;
+  }
+
+  .rule-table.data-table--stack .rule-now {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .rule-table.data-table--stack .rule-action {
+    justify-content: flex-start;
+  }
+}
+
+/* ================= Pontos de atenção, destaques, referências ================= */
+
+.attention-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attention {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.attention__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.attention__name {
+  font-size: var(--text-md);
+  font-weight: 650;
+}
+
+.attention__points {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attention__point {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.attention__icon {
+  flex: none;
+  margin-top: 3px;
+  color: var(--gold-text);
+}
+
+.attention-card__foot {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
+
+.highlights__measure + .highlights__measure {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
 }
 
 .highlights__heading {
-  margin-bottom: 8px;
-  font-size: 1rem;
+  margin-bottom: var(--space-2);
+  font-size: var(--text-sm);
   font-weight: 650;
 }
 
 .highlights__columns {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px 24px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-2) var(--space-6);
 }
 
 .movers__title {
-  margin-bottom: 6px;
+  margin-bottom: var(--space-1);
   color: var(--text-subtle);
-  font-size: 0.75rem;
+  font-size: var(--text-2xs);
   font-weight: 600;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
+}
+
+.movers__empty {
+  color: var(--text-subtle);
+  font-size: var(--text-sm);
 }
 
 .movers__list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-1);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -511,7 +631,8 @@
 .movers__item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
+  font-size: var(--text-md);
 }
 
 .movers__label {
@@ -534,23 +655,152 @@
   color: var(--danger);
 }
 
-/* ---------- Referências de preço ---------- */
+.references > .panel__head {
+  flex-wrap: wrap;
+}
 
-.references {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 20px;
+.references > .panel__body {
+  padding-bottom: var(--space-2);
 }
 
 .references__disclaimer {
-  padding: 10px 14px;
+  margin: 0 var(--pad-panel);
+  padding: var(--space-2) var(--space-3);
   border-left: 3px solid var(--gold-text);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
   background: var(--surface-sunken);
+  font-size: var(--text-sm);
   font-weight: 600;
 }
 
-.references__list {
+.references__formula {
+  display: block;
+}
+
+.references__formula + .references__formula {
+  margin-top: var(--space-1);
+}
+
+.references__empty {
+  padding: 0 var(--pad-panel) var(--space-2);
+  color: var(--text-subtle);
+  font-size: var(--text-sm);
+}
+
+.references__table tr > :first-child {
+  padding-left: var(--pad-panel);
+}
+
+.references__table tr > :last-child {
+  padding-right: var(--pad-panel);
+}
+
+.reference__asset {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.reference__value {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.reference__both {
+  color: var(--gold-text);
+}
+
+.references__none,
+.references__muted {
+  color: var(--text-subtle);
+}
+
+.reference__use {
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+@media (pointer: coarse) {
+  .reference__use {
+    min-height: var(--touch);
+  }
+}
+
+@container (max-width: 560px) {
+  .references__table.data-table--stack tbody tr > * {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .references__table.data-table--stack tbody tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-1) var(--space-4);
+    padding-inline: var(--pad-panel);
+  }
+
+  .references__table.data-table--stack tbody tr > * {
+    text-align: left;
+  }
+
+  .references__table.data-table--stack tbody th,
+  .references__table.data-table--stack td[data-label="Teto"] {
+    flex-basis: 100%;
+  }
+
+  .references__table.data-table--stack td:empty {
+    display: none;
+  }
+
+  .references__table.data-table--stack td[data-label="Teto"]::before {
+    content: none;
+  }
+}
+
+/* ---------- De onde vêm os dados ---------- */
+
+.analysis__sources {
+  padding-block: var(--space-1);
+}
+
+.source-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0 var(--space-1) var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  list-style: none;
+}
+
+.source-list strong {
+  color: var(--text);
+}
+
+.source-list__warn {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* ================= Ajustes › Análise ================= */
+
+.rules-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-grid);
+  min-width: 0;
+}
+
+.rules-panel > .panel__body {
+  gap: 0;
+}
+
+.rule-list {
   display: flex;
   flex-direction: column;
   margin: 0;
@@ -558,109 +808,130 @@
   list-style: none;
 }
 
-.reference {
+.rule-row {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
   border-top: 1px solid var(--border);
 }
 
-.reference:first-child {
+.rule-row:first-child {
+  padding-top: 0;
   border-top: 0;
 }
 
-.reference__head {
+.rule-row:last-child {
+  padding-bottom: 0;
+}
+
+.rule-row__main {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
 }
 
-.reference__name {
-  font-size: 1.05rem;
-  font-weight: 650;
+/* Texto corrido: o limite entra no meio da frase, a frase quebra palavra por
+   palavra e o ⓘ fica colado na última. */
+.rule-row__sentence {
+  font-size: var(--text-md);
+  line-height: 1.95;
 }
 
-.reference__numbers {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 28px;
-  margin: 0;
+.rule-row__sentence > * {
+  margin-right: var(--space-1);
 }
 
-.reference__numbers dt {
-  color: var(--text-subtle);
-  font-size: 0.75rem;
+.rule-row__sentence .toggletip {
+  vertical-align: -2px;
+}
+
+.rule-row__lead {
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
-.reference__numbers dd {
-  margin: 0;
+.rule-row__field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  line-height: 1.2;
+  vertical-align: middle;
+}
+
+.rule-row__input {
+  width: 76px;
+  min-height: var(--touch);
+  padding-block: 0;
+  text-align: center;
   font-family: var(--font-display);
-  font-size: 1.2rem;
-  font-weight: 650;
+  font-size: var(--text-lg);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
-.reference__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 12px;
+@media (pointer: fine) {
+  .rule-row__input {
+    min-height: 36px;
+  }
 }
 
-/* ---------- Pontos de atenção dos ativos ---------- */
-
-.attention-list {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.rule-row__input:disabled {
+  opacity: 0.5;
 }
 
-.attention {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px 0;
-  border-top: 1px solid var(--border);
-}
-
-.attention:first-child {
-  border-top: 0;
-}
-
-.attention__head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.attention__name {
-  font-size: 1.05rem;
-  font-weight: 650;
-}
-
-.attention__points {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.attention__point {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
+.rule-row__unit,
+.rule-row__tail {
   color: var(--text-muted);
 }
 
-.attention__icon {
-  flex: none;
-  margin-top: 3px;
-  color: var(--gold-text);
+.rule-row__note {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
+
+.rule-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+}
+
+.rule-row__meta .link-btn {
+  min-height: 0;
+  font-size: var(--text-sm);
+}
+
+.rules-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+}
+
+/* Com mudança por salvar, a barra acompanha a rolagem no desktop. */
+@media (min-width: 960px) {
+  .rules-actions--dirty {
+    position: sticky;
+    bottom: var(--space-3);
+    z-index: 5;
+    align-self: flex-start;
+    padding: var(--space-2) var(--space-4) var(--space-2) var(--space-2);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-pill);
+    background: var(--surface-popover);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    box-shadow: var(--shadow-lg);
+    animation: rules-actions-in var(--dur-base) var(--ease-out);
+  }
+}
+
+@keyframes rules-actions-in {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
 }

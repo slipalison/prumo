@@ -12,16 +12,18 @@ describe("Análise", () => {
     renderApp("analise");
     await screen.findByRole("heading", { name: "Análise da carteira", level: 1 });
     const warnings = within(await screen.findByRole("region", { name: "Diversificação" }));
+    const findings = warnings.getAllByRole("listitem").filter((li) => li.classList.contains("rule-finding"));
+    const finding = (text: RegExp) => findings.find((li) => text.test(li.textContent ?? "")) as HTMLElement;
 
-    const itsa = warnings.getByRole("article", { name: "ITSA4 é 23,31% da carteira" });
+    const itsa = finding(/ITSA4 é 23,31% da carteira/);
     expect(await logoOf(itsa)).toBe("/api/v1/icons/ITSA4?v=v-itsa");
-    const topFive = warnings.getAllByRole("article").find((a) => a.querySelectorAll(".asset-icon").length === 5) as HTMLElement;
+    const topFive = findings.find((li) => li.querySelectorAll(".asset-icon").length === 5);
     expect(topFive).toBeDefined();
     // O Tesouro do aviso é citado por nome (não há chave): iniciais do nome.
-    const ipca = warnings.getByRole("article", { name: "Tesouro IPCA+ 2035 é 70,76% da carteira" });
+    const ipca = finding(/Tesouro IPCA\+ 2035 é 70,76% da carteira/);
     expect(ipca.querySelector(".asset-icon__initials")).toHaveTextContent("TI");
     // Setor e classe não citam ativo.
-    const sector = warnings.getAllByRole("article").find((a) => /Tijolo/.test(a.textContent ?? "")) as HTMLElement;
-    expect(sector.querySelector(".asset-icon")).toBeNull();
+    expect(finding(/Tijolo/).querySelector(".asset-icon")).toBeNull();
+    expect(finding(/Ações Nacionais tem 1 ativo/).querySelector(".asset-icon")).toBeNull();
   });
 });
