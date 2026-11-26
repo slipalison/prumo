@@ -14,7 +14,7 @@ describe("Aportar", () => {
     await user.click(screen.getByRole("button", { name: /Calcular/ }));
 
     const result = await screen.findByRole("region", { name: "Resultado do aporte" });
-    const cards = within(result).getAllByRole("listitem").filter((li) => li.classList.length === 0 || li.querySelector(".plan-card"));
+    const cards = within(result).getAllByRole("listitem").filter((li) => li.classList.contains("plan-card"));
     const card = (symbol: string) => cards.find((c) => c.querySelector(".plan-card__symbol")?.textContent === symbol) as HTMLElement;
     expect(await logoOf(card("ITSA4"))).toBe("/api/v1/icons/ITSA4?v=v-itsa");
     expect(card("BTLG11").querySelector(".asset-icon__initials")).toHaveTextContent("BT");

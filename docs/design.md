@@ -152,18 +152,30 @@ estão em [layout.md](layout.md).
    - **Caixa**, logo abaixo do campo, quando há saldo: "+ R$ 812 em caixa —
      **Incluir**". Incluir soma o saldo ao valor digitado; "Tirar" desfaz; digitar
      um valor menor que o caixa incluído desfaz a inclusão (o caixa nunca passa
-     do aporte). Um detalhe recolhido, "De onde vem esse caixa", diz quanto vem
-     de proventos recebidos e de vendas, quanto os aportes já usaram, desde que dia
-     a conta vale e os movimentos mais novos, cada um com o sinal escrito. A frase
-     do detalhe lembra que, para aportar dinheiro de fora, basta digitar o valor
-     total: só o que se incluiu do caixa sai dele. Ao registrar ("Já comprei"), a
+     do aporte). Um recolher, "De onde vem esse caixa", diz quanto vem de
+     proventos recebidos e de vendas, quanto os aportes já usaram e os movimentos
+     mais novos, cada um com o sinal escrito. Um ⓘ na linha do caixa ("Como o
+     caixa entra no aporte") diz desde que dia a conta vale e lembra que, para
+     aportar dinheiro de fora, basta digitar o valor total: só o que se incluiu
+     do caixa sai dele. Ao registrar ("Já comprei"), a
      folha avisa "R$ X deste aporte saem do caixa" e o saldo baixa.
 3. Chips rápidos: R$ 500 · R$ 1.000 · R$ 2.000 · R$ 5.000 · último aporte.
 4. Botão **Calcular** (Enter também calcula).
-5. Resultado, abaixo, sem trocar de tela:
-   - Manchete: "Compre **5 ativos** com **R$ 5.999,97**" (+ troco).
-   - Cartões: ticker em destaque, nome, "**12 cotas** × R$ 53,81", valor.
-   - Rosca antes → depois e as barras por classe com o pedaço dourado.
+5. Resultado, sem trocar de tela (docs/layout.md, 7.1). No desktop (a partir
+   de 1000 px de conteúdo) o campo vai para a coluna da esquerda, compacto
+   (prumo e pergunta na mesma linha), e o resultado ocupa o resto; antes do
+   primeiro cálculo o campo fica sozinho e centrado. A região "Resultado do
+   aporte" reúne tudo o que segue:
+   - Painel "Compre **5 ativos**" com o "Já comprei" no canto (no celular e no
+     iPad em pé ele flutua no rodapé): "com **R$ 5.999,97** · troco de …", a
+     frase da renda com o selo "estimativa" e os cartões.
+   - Cartões lado a lado (uma fileira no desktop, dois por linha no celular):
+     classe, ticker em destaque, nome, valor, "**12 cotas** × R$ 53,81" e a
+     renda do cartão.
+   - Abaixo, três painéis lado a lado: **Avisos (N)**, **A carteira depois do
+     aporte** (rosca e barras por classe com o pedaço dourado; um ⓘ explica o
+     traço da meta e o dourado; a rosca some em painel estreito, as barras já
+     dizem tudo) e **Seus objetivos**.
    - Avisos em linguagem simples ("Ações Internacionais está abaixo da meta,
      mas você não tem nenhum ativo lá — R$ 37.800 ficaram sem destino"), cada
      um com a ação que resolve. "XPTO3 está a R$ 32,50, acima do seu teto de
@@ -299,25 +311,30 @@ estão em [layout.md](layout.md).
 
 ### 3. Ajustes › Metas por classe
 
-- Perfis prontos em cartões (Conservador, Moderado, Arrojado) que preenchem as
-  metas com animação.
-- Um controle deslizante por classe, com a cor da classe.
-- Anel de soma: mostra o total; fica verde e "estala" (pulso) ao chegar em
+- Perfis prontos (Conservador, Moderado, Arrojado) numa fileira de botões
+  segmentados no cabeçalho, que preenchem as metas; a descrição de cada perfil
+  fica num ⓘ ao lado ("O que cada perfil pronto faz") e a frase "os aportes vão
+  sempre para o que está mais longe da meta" no ⓘ do título.
+- Um controle deslizante por classe, com a cor da classe, em duas colunas
+  dentro do painel "Metas por classe" (uma coluna no celular).
+- À direita (embaixo, no celular), "Resumo das metas": o anel de soma e a rosca
+  lado a lado; o anel mostra o total, fica verde e "estala" (pulso) ao chegar em
   100%. Botão **Salvar** só habilita em 100%; botão **Equilibrar** distribui o
   que falta/sobra proporcionalmente.
-- Embaixo, o cartão **Limite por ativo**, com o próprio **Salvar limite** (não
+- Embaixo do resumo, o painel **Limite por ativo**, com o próprio **Salvar limite** (não
   depende das metas fecharem 100%): uma chave "Limitar a concentração" que diz
   o estado salvo ("Desligado: cada ativo recebe pela nota, sem teto." / "Ligado
   em 15% da carteira.") e, ligada, um controle deslizante de 1% a 100% (começa
-  em 20%). O texto explica que o que passaria vai para os outros ativos da
+  em 20%). O ⓘ do título explica que o que passaria vai para os outros ativos da
   classe e que o motor nunca vende. Os avisos do plano sobre o limite levam
   para cá (`#/ajustes/metas`).
 
 ### 4. Ajustes › Critérios
 
-- Duas listas (Ações e Imobiliário): perguntas editáveis no lugar, adicionar,
-  remover, restaurar padrão.
-- Texto curto explicando a nota: "cada sim soma 1, cada não tira 1".
+- Duas listas (Ações e Imobiliário) lado a lado, num painel cada, com o número
+  de perguntas no canto: perguntas editáveis no lugar, adicionar, remover,
+  restaurar padrão.
+- A regra da nota ("cada sim soma 1, cada não tira 1…") fica no ⓘ do título.
 
 ### 5. Análise (tela de topo) e suas regras (seção de Ajustes)
 
@@ -562,7 +579,7 @@ Na tela **Aportar**:
   **Incluir**" (proventos recebidos e vendas, menos o que aportes anteriores já
   usaram; ver o item 1 de "Aportar"). Incluir soma ao valor; "Tirar" desfaz. Só
   mexe no valor de entrada.
-- No resultado, uma frase com o selo "estimativa": "Este aporte soma ~R$ 35/mês
+- No resultado, abaixo da manchete, uma frase com o selo "estimativa": "Este aporte soma ~R$ 35/mês
   de renda: sua renda vai de R$ 410 para R$ 445 por mês". Cada cartão mostra a
   renda mensal que ele soma. O plano não espera o provedor de dividendos: sem
   histórico em cache ainda, a frase vira "Estimativa de renda indisponível por
@@ -579,9 +596,11 @@ Na tela **Aportar**:
 
 Seção de Ajustes (`#/ajustes/objetivos`, uma linha em `SETTINGS_SECTIONS`):
 metas com prazo, de patrimônio total ou de valor numa classe. A meta de renda
-mensal continua na tela Renda (a frase de abertura aponta para lá).
+mensal continua na tela Renda (uma linha sob o título aponta para lá; o resto
+da explicação fica no ⓘ do título).
 
-- **Em andamento**: um cartão por objetivo, com o nome ("Patrimônio total",
+- **Em andamento**: um cartão por objetivo, em grade (três por linha no
+  desktop, um no celular), com o nome ("Patrimônio total",
   "Valor em Fundos Imobiliários"), a meta, a barra de progresso
   (`role="progressbar"`, com "R$ 250 mil de R$ 1 mi, 25,0%" para o leitor de
   tela), a frase da data ("a meta chega em mar/2031 (daqui a 4 anos e 4
@@ -601,7 +620,7 @@ mensal continua na tela Renda (a frase de abertura aponta para lá).
   −50% a 100% ao ano. Na edição o tipo e a classe são texto fixo. Remover
   pede confirmação no próprio cartão.
 
-Na tela **Aportar**, abaixo do resultado do plano, um cartão "Seus objetivos"
+Na tela **Aportar**, abaixo do resultado do plano, um painel "Seus objetivos"
 (só aparece com objetivo ativo; se a consulta falha, some e o plano segue):
 
 - "Com este aporte, você chega a **25,6%** da meta de R$ 1.000.000 (hoje,
@@ -609,8 +628,10 @@ Na tela **Aportar**, abaixo do resultado do plano, um cartão "Seus objetivos"
 - "Com aportes assim, a meta chega em **fev/2031**." (com aporte informado:
   "Com aportes de R$ 1.500 por mês, …"). A data conta a partir do valor que a
   carteira passa a ter com o aporte.
-- As mesmas duas premissas em lista e um link para Ajustes › Objetivos, onde se
-  troca cada uma.
+- Uma barra fina com o que a meta já tem (cinza) e o que o aporte soma
+  (dourado), só como reforço do percentual escrito.
+- As duas premissas ficam no ⓘ de cada objetivo ("Premissas da conta: …"), e o
+  link "Trocar premissas" leva a Ajustes › Objetivos, onde se troca cada uma.
 - Com o olho fechado, a meta e o aporte saem como `R$ ••••`, inclusive nos
   `aria-valuetext` e nos campos da folha; ficam o percentual, o mês estimado e
   os nomes.

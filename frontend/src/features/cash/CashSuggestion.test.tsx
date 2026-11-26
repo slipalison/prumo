@@ -48,16 +48,18 @@ describe("Aportar: o caixa", () => {
 
   it("mostra de onde veio o caixa: proventos, vendas e o que os aportes já usaram", async () => {
     server.use(cash(sampleCash()));
-    await openCalculator();
+    const { user } = await openCalculator();
     const offer = await screen.findByRole("group", { name: GROUP });
     const detail = within(offer).getByText("De onde vem esse caixa").closest("details") as HTMLElement;
     expect(detail).not.toHaveAttribute("open");
     expect(detail).toHaveTextContent(/Proventos recebidos \(3 pagamentos\)\s*R\$\s612,00/);
     expect(detail).toHaveTextContent(/Vendas, líquido de taxas \(1 venda\)\s*R\$\s300,00/);
     expect(detail).toHaveTextContent(/Já usado em aportes\s*− R\$\s100,00/);
-    expect(detail).toHaveTextContent("Conta desde 01/10/2026");
-    // O aporte de dinheiro de fora é dito.
-    expect(detail).toHaveTextContent(/Aportou dinheiro de fora\? Digite o valor total/);
+    // A data de partida e o aporte de dinheiro de fora ficam no ⓘ da linha do caixa.
+    await user.click(within(offer).getByRole("button", { name: "Como o caixa entra no aporte" }));
+    const tip = within(offer).getByRole("status");
+    expect(tip).toHaveTextContent("Conta desde 01/10/2026");
+    expect(tip).toHaveTextContent(/Aportou dinheiro de fora\? Digite o valor total/);
     // Do mais novo ao mais velho, com o sentido escrito.
     const items = within(detail).getAllByRole("listitem");
     expect(items[0]).toHaveTextContent(/20\/11 · Venda · ITSA4\s*\+ R\$\s300,00/);

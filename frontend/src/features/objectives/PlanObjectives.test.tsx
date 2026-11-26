@@ -25,11 +25,12 @@ describe("Objetivos no Aportar", () => {
       /chega a 25,6% da meta de R\$\s1\.000\.000,00 \(hoje, 25,0%\)/,
     );
     expect(within(card).getByText(/Com aportes assim, a meta chega em/)).toHaveTextContent("fev/2031");
-    // A conta não é prometida sem as premissas: elas vêm junto.
-    const premises = within(card).getByRole("list", { name: "Premissas: Patrimônio total" });
+    // A conta não é prometida sem as premissas: elas vêm junto, no ⓘ do objetivo.
+    await user.click(within(card).getByRole("button", { name: "Premissas da conta: Patrimônio total" }));
+    const premises = card;
     expect(within(premises).getByText(/Aporte de R\$\s2\.400,00 por mês/)).toBeInTheDocument();
     expect(within(premises).getByText(/Rentabilidade de 9,80% ao ano/)).toBeInTheDocument();
-    expect(within(card).getByRole("link", { name: "Trocar as premissas em Objetivos" })).toHaveAttribute(
+    expect(within(card).getByRole("link", { name: "Trocar premissas" })).toHaveAttribute(
       "href",
       "#/ajustes/objetivos",
     );
@@ -60,6 +61,7 @@ describe("Objetivos no Aportar", () => {
     await calculate(user);
     const card = await screen.findByRole("region", { name: "Seus objetivos" });
     expect(within(card).getByText(/Com aportes de R\$\s1\.500,00 por mês, a meta chega em/)).toBeInTheDocument();
+    await user.click(within(card).getByRole("button", { name: "Premissas da conta: Patrimônio total" }));
     expect(within(card).getByText(/Aporte de R\$\s1\.500,00 por mês: informado por você/)).toBeInTheDocument();
   });
 

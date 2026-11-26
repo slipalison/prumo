@@ -100,4 +100,10 @@ describe("Critérios", () => {
     await user.click(within(stocks).getByRole("button", { name: "Restaurar" }));
     await waitFor(() => expect(screen.getAllByText(/Algo deu errado do nosso lado/).length).toBeGreaterThanOrEqual(2));
   });
+
+  it("a regra da nota fica no ⓘ do título", async () => {
+    const { user } = await openCriteria();
+    await user.click(screen.getByRole("button", { name: "Como a nota é calculada" }));
+    expect(screen.getByText(/só ativo com nota acima de zero recebe aporte/)).toBeInTheDocument();
+  });
 });

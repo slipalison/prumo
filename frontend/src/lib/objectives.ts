@@ -34,9 +34,9 @@ export function projectionText(projection: Projection): string {
     case "reached":
       return "A meta já foi atingida.";
     case "eta":
-      return `No ritmo da conta abaixo, a meta chega em ${formatMonth(projection.month)} (daqui a ${formatDuration(projection.months ?? 0)}).`;
+      return `No ritmo das premissas, a meta chega em ${formatMonth(projection.month)} (daqui a ${formatDuration(projection.months ?? 0)}).`;
     case "beyond":
-      return "No ritmo da conta abaixo, a meta leva mais de 100 anos. Revise o aporte ou a rentabilidade.";
+      return "No ritmo das premissas, a meta leva mais de 100 anos. Revise o aporte ou a rentabilidade.";
     case "unreachable":
       return "Sem aporte e sem rentabilidade positiva, a meta não chega. Informe um aporte mensal.";
   }

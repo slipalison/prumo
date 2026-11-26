@@ -77,4 +77,13 @@ describe("Metas", () => {
     await user.click(screen.getByRole("button", { name: "Salvar" }));
     expect(await screen.findByText("As metas precisam somar exatamente 100%.")).toBeInTheDocument();
   });
+
+  it("a descrição de cada perfil e o porquê das metas moram nos ⓘ", async () => {
+    const { user } = await openGoals();
+    await user.click(screen.getByRole("button", { name: "O que cada perfil pronto faz" }));
+    expect(screen.getByText(/Proteção e liquidez primeiro/)).toBeInTheDocument();
+    expect(screen.getByText(/Crescimento no longo prazo/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Como as metas guiam o aporte" }));
+    expect(screen.getByText("Os aportes vão sempre para o que está mais longe da meta.")).toBeInTheDocument();
+  });
 });

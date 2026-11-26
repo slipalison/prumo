@@ -1,5 +1,7 @@
 import { useCash } from "../../api/cashQueries";
 import type { Cash, CashMovement } from "../../api/cashTypes";
+import { Disclosure } from "../../components/Disclosure";
+import { InfoTip } from "../../components/InfoTip";
 import { formatIsoDate, formatIsoDay } from "../../lib/income";
 import { plural } from "../../lib/format";
 import { useMoney } from "../../lib/privacy";
@@ -46,6 +48,10 @@ export function CashSuggestion({ amount, included, onChange }: CashSuggestionPro
             </button>
           </>
         )}
+        <InfoTip label="Como o caixa entra no aporte">
+          O caixa é o que os proventos e as vendas deixaram e ainda não foi aportado. Conta desde {formatIsoDate(cash.data.since)}.
+          Aportou dinheiro de fora? Digite o valor total: só o que você incluir daqui sai do caixa.
+        </InfoTip>
       </p>
       <CashDetail cash={cash.data} />
     </div>
@@ -62,8 +68,7 @@ const KIND_LABEL: Record<CashMovement["kind"], string> = {
 function CashDetail({ cash }: { cash: Cash }) {
   const money = useMoney();
   return (
-    <details className="cash-detail">
-      <summary>De onde vem esse caixa</summary>
+    <Disclosure summary="De onde vem esse caixa" className="cash-detail">
       <dl className="cash-detail__sources">
         <div>
           <dt>
@@ -88,10 +93,6 @@ function CashDetail({ cash }: { cash: Cash }) {
           </div>
         )}
       </dl>
-      <p className="field__hint">
-        Conta desde {formatIsoDate(cash.since)}. Aportou dinheiro de fora? Digite o valor total: só o que você incluir daqui sai do
-        caixa.
-      </p>
       {cash.recent.length > 0 && (
         <ul className="cash-detail__recent">
           {cash.recent.map((movement, index) => (
@@ -107,6 +108,6 @@ function CashDetail({ cash }: { cash: Cash }) {
           ))}
         </ul>
       )}
-    </details>
+    </Disclosure>
   );
 }

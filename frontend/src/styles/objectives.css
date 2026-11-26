@@ -3,16 +3,8 @@
  * Grotesk e cor sempre acompanhada de texto (o estado e a data estão escritos).
  */
 
-.objectives__actions {
-  display: flex;
-  justify-content: flex-start;
-}
-
 .objective-list {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin: 12px 0 0;
+  margin: var(--space-2) 0 0;
   padding: 0;
   list-style: none;
 }
@@ -20,20 +12,21 @@
 .objective-card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 20px;
+  gap: var(--space-2);
+  height: 100%;
+  padding: var(--pad-panel);
 }
 
 .objective-card__head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 14px;
+  gap: var(--space-3);
 }
 
 .objective-card__name {
   font-family: var(--font-display);
-  font-size: 1.15rem;
+  font-size: 1.05rem;
   font-weight: 650;
 }
 
@@ -55,7 +48,7 @@
 
 .objective-progress {
   position: relative;
-  height: 14px;
+  height: 10px;
   overflow: hidden;
   border: 1px solid var(--border-strong);
   border-radius: var(--r-pill);
@@ -100,11 +93,11 @@
 .objective-card__premises {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   margin: 0;
-  padding: 0 0 0 18px;
+  padding: 0 0 0 var(--space-4);
   color: var(--text-subtle);
-  font-size: 0.88rem;
+  font-size: var(--text-sm);
 }
 
 .objective-form__premise {

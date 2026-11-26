@@ -264,6 +264,30 @@ toggletip.
   hoje); no celular, continua flutuante.
 - **Meta:** ≤ 1,2 tela com plano (antes 2,2); celular ≤ 2,5 (antes 4,1).
 
+**Como ficou (grupo 1, medido em 1440×900 e demais larguras):**
+
+- Com plano: 1,02 tela em 1440×900, 1920×1080 e iPad deitado; 1,02–1,05 no iPad em
+  pé; celular 2,48 (antes 2,20 / 1,83 / 2,11 / 1,71 / 4,14). Tudo cabe acima da
+  dobra no desktop; 1,0 é o piso da casca (a página nunca é menor que a janela).
+- A região `Resultado do aporte` virou `display: contents` dentro da grade da
+  tela: o painel "Compre N ativos" fica ao lado do campo e os painéis de avisos,
+  carteira depois e objetivos ocupam a linha de baixo. Uma região só, porque
+  testes de outros grupos (`privacy.test`, `IncomePrivacy.test`) procuram os
+  avisos e a frase da renda dentro dela.
+- **Desvio do plano:** a manchete não virou `StatStrip`. A frase "com R$ X · troco
+  de R$ Y" e a frase da renda ("Este aporte soma ~R$ …/mês: sua renda vai de A
+  para B") seguem escritas, porque `privacy.test.tsx` (congelado) e
+  `IncomePrivacy.test.tsx` (grupo 3) as conferem por texto. Se quem integra
+  atualizar esses dois testes, a faixa de números e o ⓘ da renda cabem sem custo.
+- O "Já comprei" fica fora do painel de vidro (o `backdrop-filter` prenderia a doca
+  fixa do celular dentro dele): posição absoluta no canto do painel no desktop,
+  fixa no rodapé abaixo de 960 px.
+- Em painel estreito (< 460 px) a rosca de antes/depois some: as barras já são
+  `meter` com o antes e o depois por extenso. Cartões do plano: dois por linha
+  no celular.
+- Premissas dos objetivos no plano: ⓘ por objetivo; a frase da data passou a dizer
+  "No ritmo das premissas" (valia "da conta abaixo", e abaixo deixou de haver conta).
+
 ### 7.2 Ajustes › Metas, Critérios e Objetivos (grupo 1)
 
 - **Metas:** perfis prontos numa linha de botões segmentados (a descrição de
@@ -275,6 +299,15 @@ toggletip.
 - **Objetivos:** cartões em `Grid cols="auto" minWidth="320px"`; as premissas
   ficam à vista (é a regra da tela: nenhuma data sem a conta), em fonte menor e
   uma linha cada. Meta: 3 objetivos em ≤ 1,0.
+
+**Como ficou (grupo 1):** Metas, Critérios e Objetivos ficam em 1,01–1,02 tela
+nas quatro larguras largas (o piso da casca) e, no celular, 2,01 / 1,84 / 1,10
+(antes 2,77 / 2,13 / 1,36). Metas: os perfis prontos vão para o cabeçalho da
+tela (botões segmentados, descrições no ⓘ); sliders em duas colunas; à direita
+o anel de soma e a rosca lado a lado, e o Limite por ativo. Objetivos: o título
+leva uma linha com o link da Renda e o resto no ⓘ; cartões em `Grid auto`
+320 px. Medida com a casca de Ajustes antiga (a lista de seções ainda em duas
+linhas de pílulas, do grupo 4).
 
 ### 7.3 Carteira e folhas do ativo (grupo 2)
 

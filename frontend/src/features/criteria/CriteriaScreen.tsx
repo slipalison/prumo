@@ -3,8 +3,8 @@ import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent 
 import { errorMessage } from "../../api/client";
 import { useAddQuestion, useDeleteQuestion, useResetChecklist, useUpdateQuestion } from "../../api/queries";
 import type { ChecklistKind, ChecklistQuestion, Portfolio } from "../../api/types";
-import { GlassCard } from "../../components/GlassCard";
 import { IconEdit, IconPlus, IconTrash } from "../../components/icons";
+import { Grid, Page, PageHeader, Panel } from "../../components/Layout";
 import { MagneticButton } from "../../components/MagneticButton";
 import { useToast } from "../../components/toastContext";
 import { CHECKLIST_CLASSES, CHECKLIST_LABEL, CLASS_META } from "../../lib/assetClasses";
@@ -16,16 +16,19 @@ const KINDS: ChecklistKind[] = ["stocks", "real_estate"];
 
 export function CriteriaScreen({ portfolio }: CriteriaScreenProps) {
   return (
-    <div className="screen criteria">
-      <header className="screen__header">
-        <p className="eyebrow">Critérios</p>
-        <h1 className="screen__title">As perguntas que dão a nota</h1>
-        <p className="screen__lead">
-          Cada <strong className="yes">sim</strong> soma 1, cada <strong className="no">não</strong> tira 1, e o que ficou
-          sem resposta não conta. A nota nunca fica negativa — e só ativo com nota acima de zero recebe aporte.
-        </p>
-      </header>
-      <div className="criteria__grid">
+    <Page className="criteria">
+      <PageHeader
+        eyebrow="Critérios"
+        title="As perguntas que dão a nota"
+        infoLabel="Como a nota é calculada"
+        info={
+          <>
+            Cada <strong className="yes">sim</strong> soma 1, cada <strong className="no">não</strong> tira 1, e o que ficou sem
+            resposta não conta. A nota nunca fica negativa — e só ativo com nota acima de zero recebe aporte.
+          </>
+        }
+      />
+      <Grid cols={2} alignStart>
         {KINDS.map((kind) => (
           <ChecklistCard
             key={kind}
@@ -34,8 +37,8 @@ export function CriteriaScreen({ portfolio }: CriteriaScreenProps) {
             usage={portfolio.assets.filter((a) => CHECKLIST_CLASSES[kind].includes(a.asset_class)).length}
           />
         ))}
-      </div>
-    </div>
+      </Grid>
+    </Page>
   );
 }
 
@@ -48,7 +51,6 @@ function ChecklistCard({ kind, questions, usage }: ChecklistCardProps) {
   const add = useAddQuestion();
   const reset = useResetChecklist();
   const toast = useToast();
-  const headingId = `checklist-${kind}`;
   const classes = CHECKLIST_CLASSES[kind].map((c) => CLASS_META[c].label).join(" e ");
 
   const submit = (event: FormEvent) => {
@@ -75,18 +77,19 @@ function ChecklistCard({ kind, questions, usage }: ChecklistCardProps) {
   };
 
   return (
-    <GlassCard as="section" className="checklist" aria-labelledby={headingId}>
-      <header className="checklist__head">
-        <div>
-          <h2 id={headingId} className="section-title">
-            {CHECKLIST_LABEL[kind]}
-          </h2>
-          <p className="field__hint">
-            Vale para {classes} · {usage} {plural(usage, ["ativo usa", "ativos usam"])}
-          </p>
-        </div>
-        <span className="checklist__count">{questions.length}</span>
-      </header>
+    <Panel
+      className="checklist"
+      title={CHECKLIST_LABEL[kind]}
+      actions={
+        <span className="checklist__count">
+          {questions.length}
+          <span className="sr-only"> {plural(questions.length, ["pergunta", "perguntas"])}</span>
+        </span>
+      }
+    >
+      <p className="field__hint">
+        Vale para {classes} · {usage} {plural(usage, ["ativo usa", "ativos usam"])}
+      </p>
 
       <ol className="checklist__list">
         <AnimatePresence initial={false}>
@@ -140,7 +143,7 @@ function ChecklistCard({ kind, questions, usage }: ChecklistCardProps) {
           </button>
         )}
       </div>
-    </GlassCard>
+    </Panel>
   );
 }
 

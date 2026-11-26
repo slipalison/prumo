@@ -2,7 +2,7 @@ import { useId, useState } from "react";
 import { useAllocationSettings, useSaveAllocationSettings } from "../../api/allocation";
 import type { AllocationSettings } from "../../api/allocationTypes";
 import { errorMessage } from "../../api/client";
-import { GlassCard } from "../../components/GlassCard";
+import { Panel } from "../../components/Layout";
 import { MagneticButton } from "../../components/MagneticButton";
 import { useToast } from "../../components/toastContext";
 import { formatPercent } from "../../lib/format";
@@ -16,18 +16,15 @@ const DEFAULT_LIMIT = 20;
  * para os outros ativos da classe (docs/alocacao.md).
  */
 export function ConcentrationLimitCard() {
-  const titleId = useId();
   const settings = useAllocationSettings();
 
   return (
-    <GlassCard as="section" className="limit-card" aria-labelledby={titleId}>
-      <h2 id={titleId} className="section-title">
-        Limite por ativo
-      </h2>
-      <p className="field__hint">
-        Opcional. Nenhum ativo passa desta fatia da carteira depois do aporte; o que passaria vai para os outros ativos
-        da mesma classe. O motor nunca vende: quem já está acima só deixa de receber.
-      </p>
+    <Panel
+      title="Limite por ativo"
+      className="limit-card"
+      infoLabel="Como funciona o limite por ativo"
+      info="Opcional. Nenhum ativo passa desta fatia da carteira depois do aporte; o que passaria vai para os outros ativos da mesma classe. O motor nunca vende: quem já está acima só deixa de receber."
+    >
       {settings.isError ? (
         <p className="form-error" role="alert">
           {errorMessage(settings.error)}
@@ -38,7 +35,7 @@ export function ConcentrationLimitCard() {
       ) : (
         <p className="field__hint">Carregando…</p>
       )}
-    </GlassCard>
+    </Panel>
   );
 }
 

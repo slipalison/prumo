@@ -85,5 +85,11 @@ describe("Objetivos com o olho fechado", () => {
       `chega a 25,6% da meta de ${MASK_BRL} (hoje, 25,0%)`,
     );
     expect(within(card).getByText(/Com aportes assim, a meta chega em/)).toHaveTextContent("fev/2031");
+
+    // As premissas moram no ⓘ do objetivo: aberto, o balão também sai mascarado.
+    await user.click(within(card).getByRole("button", { name: "Premissas da conta: Patrimônio total" }));
+    expect(within(card).getByText(/Aporte de/)).toHaveTextContent(`Aporte de ${MASK_BRL} por mês`);
+    expectNoMoney(card);
+    expectNoMoney();
   });
 });

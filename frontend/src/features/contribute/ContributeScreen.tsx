@@ -6,15 +6,17 @@ import { cashKeys } from "../../api/cashQueries";
 import { incomeKeys } from "../../api/incomeQueries";
 import { objectivesKeys } from "../../api/objectivesQueries";
 import { useContributions, usePlan } from "../../api/queries";
-import type { AssetClass, Plan, Portfolio } from "../../api/types";
+import type { Asset, AssetClass, Plan, Portfolio } from "../../api/types";
 import { GlassCard } from "../../components/GlassCard";
 import { IconArrowRight, IconSparkle } from "../../components/icons";
+import { Grid, Page } from "../../components/Layout";
 import { MagneticButton } from "../../components/MagneticButton";
 import { MoneyInput } from "../../components/MoneyInput";
 import { Plumb } from "../../components/Plumb";
 import { useToast } from "../../components/toastContext";
 import { cx } from "../../lib/cx";
 import { formatBRL } from "../../lib/format";
+import { DURATION } from "../../lib/motion";
 import { sumTargets, targetsFromClasses } from "../../lib/goals";
 import { useMoney } from "../../lib/privacy";
 import { needsRating, ratingIntro } from "../../lib/rating";
@@ -42,7 +44,7 @@ export function ContributeScreen({ portfolio }: ContributeScreenProps) {
   return (
     <>
       {portfolio.assets.length === 0 ? (
-        <div className="screen contribute">
+        <Page className="contribute">
           <GlassCard as="section" className="welcome" aria-labelledby="welcome-title">
             <Plumb state="idle" size={110} label="Prumo esperando a carteira" />
             <h1 id="welcome-title" className="welcome__title">
@@ -55,7 +57,7 @@ export function ContributeScreen({ portfolio }: ContributeScreenProps) {
               <IconSparkle /> Montar minha carteira
             </MagneticButton>
           </GlassCard>
-        </div>
+        </Page>
       ) : (
         <Calculator portfolio={portfolio} />
       )}
@@ -125,88 +127,95 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
   }, [registered, inputId]);
 
   const plumbState = planMutation.isPending ? "swinging" : registered ? "success" : plan ? "settled" : "idle";
+  // Com resultado (ou o aporte recém-registrado), o campo vai para a coluna da
+  // esquerda e o resultado ocupa o resto; antes disso o campo fica centrado.
+  const sideBySide = plan !== null || registered;
+  const assetActions = {
+    onRateAsset: (asset: Asset) => setRating({ asset, intro: ratingIntro(asset) }),
+    onEditAsset: (asset: Asset) => setRating({ asset }),
+    onAddAsset: setAdding,
+  };
 
   return (
-    <div className="screen contribute">
-      <GlassCard as="section" className="ask" aria-labelledby={titleId}>
-        <div className="ask__plumb">
-          <Plumb state={plumbState} size={58} label={planMutation.isPending ? "Equilibrando a carteira" : "Prumo"} />
-        </div>
-        <form className="ask__form" onSubmit={submit}>
-          <h1 id={titleId} className="ask__title">
-            Quanto você vai aportar?
-          </h1>
-          <MoneyInput
-            id={inputId}
-            labelledBy={titleId}
-            size="hero"
-            value={amount}
-            onChange={changeAmount}
-            focusOnMount
-            screenFocus
-            onEnter={() => calculate()}
-          />
-          <CashSuggestion amount={amount} included={cashIncluded} onChange={changeAmount} />
-          <div className="quick" role="group" aria-label="Valores rápidos">
-            {quick.map((value) => (
-              <motion.button
-                key={value}
-                type="button"
-                className={cx("chip chip--quick", value === amount && "is-active")}
-                whileTap={{ scale: 0.94 }}
-                onClick={() => {
-                  setAmount(value);
-                  setCashIncluded((current) => (value >= current ? current : 0));
-                  calculate(value);
-                }}
-              >
-                {value === lastAmount ? `Último: ${money.brl(value)}` : formatQuick(value)}
-              </motion.button>
-            ))}
-          </div>
-          <MagneticButton type="submit" disabled={amount <= 0} loading={planMutation.isPending} className="ask__submit">
-            {planMutation.isPending ? "Equilibrando…" : "Calcular"}
-            {!planMutation.isPending && <IconArrowRight />}
-          </MagneticButton>
-        </form>
-        {noGoals && (
-          <p className="ask__hint">
-            Você ainda não tem metas. <a href="#/ajustes/metas">Defina em Metas</a> para eu saber para onde levar a carteira.
-          </p>
-        )}
-      </GlassCard>
-
-      <AnimatePresence mode="wait">
-        {registered && (
-          <motion.div
-            key="registered"
-            className="registered glass"
-            role="status"
-            initial={{ opacity: 0, scale: 0.96 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <Plumb state="success" size={72} label="Aporte registrado" />
-            <div>
-              <h2 className="registered__title">Aporte registrado!</h2>
-              <p className="field__hint">A carteira já está atualizada. Até o próximo.</p>
+    <Page className="contribute">
+      <Grid cols="aside-main" alignStart className={cx("contribute__layout", sideBySide ? "has-result" : "is-solo")}>
+        <GlassCard as="section" className="ask" aria-labelledby={titleId}>
+          <form className="ask__form" onSubmit={submit}>
+            <div className="ask__head">
+              <Plumb
+                state={plumbState}
+                size={sideBySide ? 40 : 58}
+                label={planMutation.isPending ? "Equilibrando a carteira" : "Prumo"}
+              />
+              <h1 id={titleId} className="ask__title">
+                Quanto você vai aportar?
+              </h1>
             </div>
-          </motion.div>
-        )}
-        {plan && !registered && (
-          <motion.div key="plan" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
-            <PlanResult
-              plan={plan}
-              assets={portfolio.assets}
-              onConfirm={() => setConfirming(true)}
-              onRateAsset={(asset) => setRating({ asset, intro: ratingIntro(asset) })}
-              onEditAsset={(asset) => setRating({ asset })}
-              onAddAsset={setAdding}
+            <MoneyInput
+              id={inputId}
+              labelledBy={titleId}
+              size="hero"
+              value={amount}
+              onChange={changeAmount}
+              focusOnMount
+              screenFocus
+              onEnter={() => calculate()}
             />
-            <PlanObjectives plan={plan} />
-          </motion.div>
-        )}
-      </AnimatePresence>
+            <CashSuggestion amount={amount} included={cashIncluded} onChange={changeAmount} />
+            <div className="quick" role="group" aria-label="Valores rápidos">
+              {quick.map((value) => (
+                <motion.button
+                  key={value}
+                  type="button"
+                  className={cx("chip chip--quick", value === amount && "is-active")}
+                  whileTap={{ scale: 0.94 }}
+                  onClick={() => {
+                    setAmount(value);
+                    setCashIncluded((current) => (value >= current ? current : 0));
+                    calculate(value);
+                  }}
+                >
+                  {value === lastAmount ? `Último: ${money.brl(value)}` : formatQuick(value)}
+                </motion.button>
+              ))}
+            </div>
+            <MagneticButton type="submit" disabled={amount <= 0} loading={planMutation.isPending} className="ask__submit">
+              {planMutation.isPending ? "Equilibrando…" : "Calcular"}
+              {!planMutation.isPending && <IconArrowRight />}
+            </MagneticButton>
+          </form>
+          {noGoals && (
+            <p className="ask__hint">
+              Você ainda não tem metas. <a href="#/ajustes/metas">Defina em Metas</a> para eu saber para onde levar a carteira.
+            </p>
+          )}
+        </GlassCard>
+
+        <AnimatePresence mode="wait">
+          {registered && (
+            <motion.div
+              key="registered"
+              className="registered glass"
+              role="status"
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: DURATION.base }}
+            >
+              <Plumb state="success" size={72} label="Aporte registrado" />
+              <div>
+                <h2 className="registered__title">Aporte registrado!</h2>
+                <p className="field__hint">A carteira já está atualizada. Até o próximo.</p>
+              </div>
+            </motion.div>
+          )}
+          {plan && !registered && (
+            <PlanResult key="plan" plan={plan} assets={portfolio.assets} onConfirm={() => setConfirming(true)} {...assetActions}>
+              <PlanObjectives plan={plan} />
+            </PlanResult>
+          )}
+        </AnimatePresence>
+      </Grid>
 
       <RateAssetSheet
         target={rating}
@@ -252,6 +261,6 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
           }}
         />
       )}
-    </div>
+    </Page>
   );
 }

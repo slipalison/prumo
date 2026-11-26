@@ -4,6 +4,7 @@ import { errorMessage } from "../../api/client";
 import { useDeleteObjective, useObjectives } from "../../api/objectivesQueries";
 import type { Objective, ObjectivesResponse } from "../../api/objectivesTypes";
 import { GlassCard } from "../../components/GlassCard";
+import { Grid, Page, PageHeader } from "../../components/Layout";
 import { IconCheck, IconEdit, IconPlus, IconTrash } from "../../components/icons";
 import { MagneticButton } from "../../components/MagneticButton";
 import { Skeleton } from "../../components/Skeleton";
@@ -21,24 +22,25 @@ export function ObjectivesScreen() {
   const [sheet, setSheet] = useState<{ objective: Objective | null } | null>(null);
 
   return (
-    <div className="screen objectives">
-      <header className="screen__header">
-        <p className="eyebrow">Objetivos</p>
-        <h1 className="screen__title">Para onde a carteira vai?</h1>
-        <p className="screen__lead">
-          Metas com prazo: um patrimônio total ou um valor numa classe. A data estimada vem de uma conta simples, mês a
-          mês, e as duas premissas dela (aporte e rentabilidade) ficam sempre à vista. É uma estimativa, não uma
-          promessa. A meta de renda mensal fica em <a href="#/renda">Renda</a>.
-        </p>
-      </header>
+    <Page className="objectives">
+      <PageHeader
+        eyebrow="Objetivos"
+        title="Para onde a carteira vai?"
+        summary={
+          <>
+            A meta de renda mensal fica em <a href="#/renda">Renda</a>.
+          </>
+        }
+        infoLabel="Como a data de cada objetivo é estimada"
+        info="Metas com prazo: um patrimônio total ou um valor numa classe. A data estimada vem de uma conta simples, mês a mês, e as duas premissas dela (aporte e rentabilidade) ficam sempre à vista em cada objetivo. É uma estimativa, não uma promessa."
+        actions={
+          <MagneticButton onClick={() => setSheet({ objective: null })}>
+            <IconPlus /> Novo objetivo
+          </MagneticButton>
+        }
+      />
 
-      <div className="objectives__actions">
-        <MagneticButton onClick={() => setSheet({ objective: null })}>
-          <IconPlus /> Novo objetivo
-        </MagneticButton>
-      </div>
-
-      {objectives.isPending && <Skeleton height={180} radius={22} />}
+      {objectives.isPending && <Skeleton height={140} radius={22} />}
       {objectives.isError && (
         <GlassCard as="section" className="state-card" role="alert">
           <h2 className="state-card__title">Não consegui carregar os objetivos</h2>
@@ -54,7 +56,7 @@ export function ObjectivesScreen() {
         objective={sheet?.objective ?? null}
         defaults={objectives.data?.defaults ?? { annual_return_percent: 0, return_source: "fallback" }}
       />
-    </div>
+    </Page>
   );
 }
 
@@ -81,11 +83,11 @@ function Loaded({ data, onEdit }: { data: ObjectivesResponse; onEdit: (objective
           <h2 id="objectives-active" className="section-title">
             Em andamento
           </h2>
-          <ul className="objective-list">
+          <Grid as="ul" cols="auto" minWidth="320px" alignStart className="objective-list">
             {active.map((objective) => (
               <ObjectiveCard key={objective.id} objective={objective} onEdit={onEdit} />
             ))}
-          </ul>
+          </Grid>
         </section>
       )}
       {achieved.length > 0 && (
@@ -93,11 +95,11 @@ function Loaded({ data, onEdit }: { data: ObjectivesResponse; onEdit: (objective
           <h2 id="objectives-achieved" className="section-title">
             Concluídos
           </h2>
-          <ul className="objective-list">
+          <Grid as="ul" cols="auto" minWidth="320px" alignStart className="objective-list">
             {achieved.map((objective) => (
               <ObjectiveCard key={objective.id} objective={objective} onEdit={onEdit} />
             ))}
-          </ul>
+          </Grid>
         </section>
       )}
     </>

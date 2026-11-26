@@ -3,7 +3,8 @@ import { errorMessage } from "../../api/client";
 import { useSaveGoals } from "../../api/queries";
 import type { AssetClass, GoalTargets, Portfolio } from "../../api/types";
 import { Donut } from "../../components/Donut";
-import { GlassCard } from "../../components/GlassCard";
+import { InfoTip } from "../../components/InfoTip";
+import { Grid, Page, PageHeader, Panel } from "../../components/Layout";
 import { MagneticButton } from "../../components/MagneticButton";
 import { useToast } from "../../components/toastContext";
 import { ASSET_CLASSES, CLASS_META, classColor } from "../../lib/assetClasses";
@@ -51,99 +52,114 @@ export function GoalsScreen({ portfolio }: GoalsScreenProps) {
   };
 
   return (
-    <div className="screen goals">
-      <header className="screen__header">
-        <p className="eyebrow">Metas</p>
-        <h1 className="screen__title">Quanto você quer em cada classe?</h1>
-        <p className="screen__lead">Os aportes vão sempre para o que está mais longe da meta.</p>
-      </header>
-
-      <div className="preset-grid" role="group" aria-label="Perfis prontos">
-        {PRESETS.map((preset) => {
-          const active = sameTargets(preset.targets, draft);
-          return (
-            <button
-              key={preset.id}
-              type="button"
-              aria-pressed={active}
-              className={cx("preset-card glass", active && "is-active")}
-              onClick={() => change(preset.targets)}
-            >
-              <strong className="preset-card__title">{preset.label}</strong>
-              <span className="preset-card__text">{preset.description}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="goals__layout">
-        <GlassCard as="section" className="goals__sliders" aria-label="Metas por classe">
-          {ASSET_CLASSES.map((assetClass) => {
-            const id = `goal-${assetClass}`;
-            const value = draft[assetClass];
-            return (
-              <div key={assetClass} className="goal-row" style={{ ["--class-color" as string]: classColor(assetClass) }}>
-                <div className="goal-row__head">
-                  <label htmlFor={id} className="goal-row__label">
-                    <span className="dot" aria-hidden="true" />
-                    {CLASS_META[assetClass].label}
-                  </label>
-                  <span className="goal-row__value">{formatPercent(value, 0)}</span>
-                </div>
-                <input
-                  id={id}
-                  className="range range--class"
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={1}
-                  value={value}
-                  style={{ ["--fill" as string]: `${value}%` }}
-                  onChange={(event) => change({ ...draft, [assetClass]: Number(event.target.value) })}
-                />
-                <span className="goal-row__now">hoje {formatPercent(current[assetClass] ?? 0)}</span>
-              </div>
-            );
-          })}
-        </GlassCard>
-
-        <GlassCard as="aside" className="goals__summary" aria-label="Resumo das metas">
-          <SumRing sum={sum} />
-          <Donut
-            size={150}
-            thickness={14}
-            label="Distribuição das metas"
-            segments={ASSET_CLASSES.map((c) => ({
-              key: c,
-              value: draft[c],
-              color: classColor(c),
-              label: CLASS_META[c].label,
-            }))}
-          />
-          <div className="goals__actions">
-            <MagneticButton variant="ghost" magnetic={false} disabled={sum === 0 || complete} onClick={() => change(balanceTargets(draft))}>
-              Equilibrar
-            </MagneticButton>
-            <MagneticButton disabled={!complete || !dirty} loading={save.isPending} onClick={submit}>
-              Salvar
-            </MagneticButton>
+    <Page className="goals">
+      <PageHeader
+        eyebrow="Metas"
+        title="Quanto você quer em cada classe?"
+        infoLabel="Como as metas guiam o aporte"
+        info="Os aportes vão sempre para o que está mais longe da meta."
+        actions={
+          <div className="preset-row">
+            <div className="preset-row__group" role="group" aria-label="Perfis prontos">
+              {PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  aria-pressed={sameTargets(preset.targets, draft)}
+                  className={cx("preset-btn", sameTargets(preset.targets, draft) && "is-active")}
+                  onClick={() => change(preset.targets)}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+            <InfoTip label="O que cada perfil pronto faz" align="end" placement="bottom">
+              <span className="preset-row__tip">
+                {PRESETS.map((preset) => (
+                  <span key={preset.id}>
+                    <strong>{preset.label}:</strong> {preset.description}
+                  </span>
+                ))}
+              </span>
+            </InfoTip>
           </div>
-          {dirty && (
-            <button
-              type="button"
-              className="link-btn"
-              onClick={() => {
-                setTouched(false);
-                setDraft(saved);
-              }}
-            >
-              Descartar mudanças
-            </button>
-          )}
-        </GlassCard>
-      </div>
+        }
+      />
 
-      <ConcentrationLimitCard />
-    </div>
+      <Grid cols="main-aside" alignStart>
+        <Panel title="Metas por classe">
+          <Grid cols={2} className="goals__sliders">
+            {ASSET_CLASSES.map((assetClass) => {
+              const id = `goal-${assetClass}`;
+              const value = draft[assetClass];
+              return (
+                <div key={assetClass} className="goal-row" style={{ ["--class-color" as string]: classColor(assetClass) }}>
+                  <div className="goal-row__head">
+                    <label htmlFor={id} className="goal-row__label">
+                      <span className="dot" aria-hidden="true" />
+                      {CLASS_META[assetClass].label}
+                    </label>
+                    <span className="goal-row__value">{formatPercent(value, 0)}</span>
+                  </div>
+                  <input
+                    id={id}
+                    className="range range--class"
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={value}
+                    style={{ ["--fill" as string]: `${value}%` }}
+                    onChange={(event) => change({ ...draft, [assetClass]: Number(event.target.value) })}
+                  />
+                  <span className="goal-row__now">hoje {formatPercent(current[assetClass] ?? 0)}</span>
+                </div>
+              );
+            })}
+          </Grid>
+        </Panel>
+
+        <div className="goals__side">
+          <Panel as="aside" title="Resumo das metas" className="goals__summary">
+            <div className="goals__figures">
+              <SumRing sum={sum} />
+              <Donut
+                size={120}
+                thickness={12}
+                label="Distribuição das metas"
+                segments={ASSET_CLASSES.map((c) => ({
+                  key: c,
+                  value: draft[c],
+                  color: classColor(c),
+                  label: CLASS_META[c].label,
+                }))}
+              />
+            </div>
+            <div className="goals__actions">
+              <MagneticButton variant="ghost" magnetic={false} disabled={sum === 0 || complete} onClick={() => change(balanceTargets(draft))}>
+                Equilibrar
+              </MagneticButton>
+              <MagneticButton disabled={!complete || !dirty} loading={save.isPending} onClick={submit}>
+                Salvar
+              </MagneticButton>
+            </div>
+            {dirty && (
+              <button
+                type="button"
+                className="link-btn"
+                onClick={() => {
+                  setTouched(false);
+                  setDraft(saved);
+                }}
+              >
+                Descartar mudanças
+              </button>
+            )}
+          </Panel>
+
+          <ConcentrationLimitCard />
+        </div>
+      </Grid>
+    </Page>
   );
 }
