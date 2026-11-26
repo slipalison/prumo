@@ -3,6 +3,7 @@
 pub mod allocation;
 pub mod asset_class;
 pub mod b3_import;
+pub mod b3_plan;
 pub mod cash;
 pub mod defaults;
 pub mod entitlement;

@@ -141,3 +141,100 @@ export type B3Preview = {
   ignored: B3IgnoredSummary[];
   summary: B3PreviewSummary;
 };
+
+// --- o plano (docs/api.md § Importar da B3) ---------------------------------
+
+/** O destino de uma linha: entra, já existe, conflita ou fica de fora. */
+export type B3LineState = "new" | "existing" | "conflict" | "not_imported";
+
+export type B3LineStatus = { status: B3LineState; reason_code: string | null };
+
+export type B3AssetAction = "create" | "update" | "skip" | "nothing";
+
+export type B3OpeningBasis = "covers_sales" | "keeps_quantity" | "none";
+
+export type B3OpeningPlan = {
+  date: string;
+  quantity: number;
+  unit_price: number | null;
+  suggested_quantity: number;
+  suggested_unit_price: number | null;
+  basis: B3OpeningBasis;
+  chosen: boolean;
+};
+
+export type B3ReplacedEntry = { kind: string; date: string; quantity: number; unit_price: number | null };
+
+export type B3AssetConflict = { reason_code: string; detail: string };
+
+export type B3AssetCounts = {
+  new_transactions: number;
+  existing_transactions: number;
+  new_income: number;
+  replaced_income: number;
+  existing_income: number;
+  not_imported: number;
+};
+
+export type B3AssetPlan = {
+  key: string;
+  action: B3AssetAction;
+  asset_id: string | null;
+  symbol: string | null;
+  display_name: string;
+  asset_class: AssetClass;
+  class_basis: B3ClassBasis;
+  listed_on_b3: boolean;
+  treasury: boolean;
+  class_editable: boolean;
+  class_needs_confirmation: boolean;
+  current_quantity: number;
+  final_quantity: number | null;
+  opening: B3OpeningPlan | null;
+  replaced: B3ReplacedEntry[];
+  conflict: B3AssetConflict | null;
+  counts: B3AssetCounts;
+};
+
+export type B3PlanSummary = {
+  assets_created: number;
+  assets_updated: number;
+  assets_skipped: number;
+  transactions_new: number;
+  transactions_existing: number;
+  income_new: number;
+  income_replaced: number;
+  income_existing: number;
+  openings: number;
+  not_imported: number;
+  conflicts: number;
+  needs_confirmation: number;
+};
+
+export type B3Plan = {
+  digest: string;
+  ready: boolean;
+  assets: B3AssetPlan[];
+  lines: Record<string, B3LineStatus>;
+  summary: B3PlanSummary;
+};
+
+export type B3PreviewResponse = B3Preview & { plan: B3Plan };
+
+/** O que a pessoa decidiu para um ativo da prévia. */
+export type B3AssetDecision = {
+  asset_class?: AssetClass;
+  skip?: boolean;
+  /** Quantidade zero: sem saldo inicial. Preço nulo: custo desconhecido. */
+  opening?: { quantity: number; unit_price: number | null };
+};
+
+export type B3Decisions = { assets: Record<string, B3AssetDecision> };
+
+export type B3CommitResult = {
+  summary: B3PlanSummary;
+  not_imported: { key: string; external_ref: string; reason_code: string }[];
+  skipped_assets: string[];
+  unrecognized: number;
+  ignored: number;
+};

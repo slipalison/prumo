@@ -5,6 +5,7 @@
 //! `impl Store`): o submódulo enxerga o `pool` e este arquivo não cresce.
 
 mod allocation;
+mod b3_import;
 mod cash;
 pub mod health;
 pub mod sectors;
@@ -28,6 +29,7 @@ mod performance;
 mod retro;
 mod treasury;
 
+pub use b3_import::{Applied, CreatedAsset};
 pub use performance::{JobLock, Snapshot, SnapshotPoint};
 pub use retro::{DirtySeries, HeldSymbol};
 

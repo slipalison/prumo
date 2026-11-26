@@ -242,7 +242,7 @@ fn iso(date: Date) -> String {
     )
 }
 
-mod iso_date {
+pub(crate) mod iso_date {
     use serde::Serializer;
     use time::Date;
 

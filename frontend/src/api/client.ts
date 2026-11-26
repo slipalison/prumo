@@ -33,6 +33,8 @@ const FRIENDLY: Partial<Record<string, string>> = {
   payload_too_large: "Os arquivos passam de 10 MB juntos. Envie menos arquivos ou um período menor.",
   exceeds_position:
     "Esse lançamento deixaria a posição negativa em alguma data. Confira a quantidade, a data e os lançamentos depois dele.",
+  preview_stale: "A carteira mudou desde a prévia. Li as planilhas de novo: confira e importe outra vez.",
+  import_blocked: "Ainda há conflito ou classe por confirmar. Resolva na prévia antes de importar.",
   internal: INTERNAL,
   network: NETWORK,
 };

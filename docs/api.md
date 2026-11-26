@@ -127,8 +127,10 @@ Ativo com nota 0 não recebe aporte.
 | `asset_already_exists` | 409 | mesmo símbolo duas vezes na mesma classe |
 | `exceeds_position` | 422 | lançamento que deixaria a posição negativa em alguma data (ver [Lançamentos](#lançamentos)) |
 | `not_found` | 404 | id que não existe ou não é da pessoa |
-| `unreadable_file` | 422 | planilha que quebrou o leitor no servidor (só `POST /imports/b3/preview`; o detalhe cita só o nome do arquivo) |
-| `payload_too_large` | 413 | envio de planilhas acima de 10 MiB (só `POST /imports/b3/preview`) |
+| `unreadable_file` | 422 | planilha que quebrou o leitor no servidor (só `POST /imports/b3/*`; o detalhe cita só o nome do arquivo) |
+| `payload_too_large` | 413 | envio de planilhas acima de 10 MiB (só `POST /imports/b3/*`) |
+| `preview_stale` | 409 | `POST /imports/b3/commit` com um `digest` que não é o do plano refeito agora (a carteira ou as planilhas mudaram desde a prévia) |
+| `import_blocked` | 422 | `POST /imports/b3/commit` com conflito ou classe por confirmar (o detalhe só conta quantos) |
 | `quote_provider_unavailable` | 502 | busca de símbolo sem resposta do provedor |
 | `internal` | 500 | o resto (detalhe genérico; o log tem o porquê) |
 
@@ -863,14 +865,36 @@ casas.
 
 ### `POST /api/v1/imports/b3/preview`
 
-Lê as planilhas `.xlsx` que a Área do Investidor da B3 exporta e devolve a
-**prévia** do que entraria na carteira. **Só lê: não grava nada** (a gravação
-chega numa próxima versão). Formato das planilhas, mapeamento e limites em
-[`importacao-b3.md`](importacao-b3.md).
+Lê as planilhas `.xlsx` que a Área do Investidor da B3 exporta, confronta com
+a carteira da pessoa e devolve a **prévia** com o **plano**: o que entra, o
+que já existe e o que conflita. **Só lê: não grava nada.** Formato das
+planilhas, mapeamento e regras em [`importacao-b3.md`](importacao-b3.md).
 
-`multipart/form-data` com um ou mais arquivos (qualquer nome de campo; a tela
-usa `files`). Limites: **10 MiB** no corpo todo (esta é a única rota acima do
-teto geral de 64 KiB), até **10 arquivos**. Os arquivos ficam só na memória do
+`multipart/form-data` com um ou mais arquivos (qualquer nome de campo com
+`filename`; a tela usa `files`) e, opcional, uma parte de texto `decisions`
+com as escolhas da pessoa, em JSON (até 256 KiB):
+
+```json
+{
+  "assets": {
+    "KNRI11": { "asset_class": "br_reits" },
+    "HGLG11": { "opening": { "quantity": 5, "unit_price": 100 } },
+    "BOVV11": { "skip": true }
+  }
+}
+```
+
+- a chave é o `key` do ativo na prévia;
+- `asset_class`: a classe de um ativo **novo** da B3 (num ativo que já existe
+  e no Tesouro, ignorada). Com `class_basis: "code"`, a gravação exige esta
+  confirmação;
+- `opening`: o saldo inicial que a pessoa escolheu no lugar do sugerido
+  (`quantity` 0 = sem saldo inicial; `unit_price` nulo = custo desconhecido);
+  de 0 a 10^15;
+- `skip`: deixa o ativo inteiro (lançamentos e proventos) de fora.
+
+Limites: **10 MiB** no corpo todo (estas são as únicas rotas acima do teto
+geral de 64 KiB), até **10 arquivos**. Os arquivos ficam só na memória do
 pedido; nada do conteúdo vai para log nem para mensagem de erro.
 
 Datas desta rota são datas de calendário `aaaa-mm-dd` (não RFC 3339); dinheiro
@@ -938,6 +962,40 @@ e quantidade são número JSON.
   "summary": {
     "assets": 1, "trades": 2, "events": 1, "income": 2, "unrecognized": 1, "ignored": 3,
     "first_date": "2025-12-18", "last_date": "2026-04-02"
+  },
+  "plan": {
+    "digest": "9c1f0a3b5d7e9f11a2b4c6d8e0f1a3b5",
+    "ready": true,
+    "assets": [
+      {
+        "key": "PETR4", "action": "update", "asset_id": "0b6c…", "symbol": "PETR4",
+        "display_name": "Petrobras", "asset_class": "br_stocks", "class_basis": "name",
+        "listed_on_b3": true, "treasury": false,
+        "class_editable": false, "class_needs_confirmation": false,
+        "current_quantity": 120, "final_quantity": 125,
+        "opening": {
+          "date": "2026-01-04", "quantity": 70, "unit_price": null,
+          "suggested_quantity": 70, "suggested_unit_price": null,
+          "basis": "keeps_quantity", "chosen": false
+        },
+        "replaced": [ { "kind": "opening", "date": "2026-05-01", "quantity": 120, "unit_price": null } ],
+        "conflict": null,
+        "counts": {
+          "new_transactions": 2, "existing_transactions": 0, "new_income": 1,
+          "replaced_income": 0, "existing_income": 0, "not_imported": 1
+        }
+      }
+    ],
+    "lines": {
+      "b3:v1:trade:3f2a...": { "status": "new", "reason_code": null },
+      "b3:v1:income:...": { "status": "existing", "reason_code": "same_ref" }
+    },
+    "summary": {
+      "assets_created": 0, "assets_updated": 1, "assets_skipped": 0,
+      "transactions_new": 2, "transactions_existing": 0,
+      "income_new": 1, "income_replaced": 0, "income_existing": 0,
+      "openings": 1, "not_imported": 1, "conflicts": 0, "needs_confirmation": 0
+    }
   }
 }
 ```
@@ -975,11 +1033,83 @@ e quantidade são número JSON.
   `transferred`, `lending`, `duplicate_in_request`), contadas por motivo.
   `reason` é texto do servidor (sem acento); a tela escolhe o dela pelo
   `reason_code`.
+- `plan` é o que a gravação faria com estes arquivos, estas decisões e a
+  carteira de agora:
+  - `plan.lines` dá, por `external_ref`, o destino de cada linha de `assets[]`:
+    `status` `new` (entra), `existing` (já está no livro ou na Renda),
+    `conflict` (o livro recusaria) ou `not_imported` (fica de fora), e o
+    `reason_code`: `same_ref` (já importada), `same_entry` (é o lançamento
+    digitado igual: mesmo ativo, tipo, data, quantidade e preço até 2% —
+    o "Já comprei"), `same_income`, `replaces_provisioned` (entra no lugar do
+    provento a receber), `superseded_by_received`, `provisioned_without_date`,
+    `asset_skipped`, `treasury_unidentified`, `treasury_interest`,
+    `fraction_in_kind`, `event_debit`, `reverse_split_unclear`,
+    `missing_quantity`, `missing_value`, `exceeds_position`, `unit`, `invalid`.
+  - `plan.assets[]`, por `key`: `action` `create` (o ativo nasce), `update`
+    (já existe e ganha lançamento ou provento), `skip` (a pessoa deixou de
+    fora) ou `nothing`; o símbolo que será gravado (o título do Tesouro já como
+    `TD-<tipo>-<vencimento>`); a classe (num ativo que já existe, a dele;
+    `class_editable` só em ativo novo da B3; `class_needs_confirmation` trava a
+    gravação até vir `asset_class` nas decisões); `current_quantity` e
+    `final_quantity` (depois de gravar; nulo com conflito ou sem lançamento
+    novo); `opening`, o saldo inicial do ativo depois da importação (datado na
+    véspera do primeiro lançamento; `basis` `covers_sales`, `keeps_quantity`
+    ou `none`; `chosen` quando veio das decisões); `replaced`, os saldos
+    iniciais e ajustes digitados que ele substitui; e `conflict`
+    (`reason_code` `exceeds_position`, `invalid_opening`, `unit`, `invalid`;
+    `detail` é texto do servidor, com número — a tela usa o dela).
+  - `plan.ready`: sem conflito e sem classe por confirmar (ativo deixado de
+    fora não trava). `plan.digest` resume tudo o que seria gravado; a gravação
+    pede o mesmo.
 
 Erros: `401` sem credencial; `413 payload_too_large` acima de 10 MiB; `422`
-sem arquivo, com mais de 10 arquivos ou fora de `multipart/form-data`;
-`422 unreadable_file` se a leitura de um arquivo entrar em pânico (o arquivo
-é entrada não confiável; o erro cita só o nome dele, e nada de dentro).
+sem arquivo, com mais de 10 arquivos, fora de `multipart/form-data` ou com
+`decisions` inválidas; `422 unreadable_file` se a leitura de um arquivo entrar
+em pânico (o arquivo é entrada não confiável; o erro cita só o nome dele, e
+nada de dentro).
+
+### `POST /api/v1/imports/b3/commit`
+
+Grava o plano conferido, **tudo ou nada**. O servidor não guarda nada entre a
+prévia e a gravação: a tela reenvia **os mesmos arquivos e as mesmas
+decisões** da última prévia, mais o `digest` dela na parte `decisions`:
+
+```json
+{ "digest": "9c1f0a3b5d7e9f11a2b4c6d8e0f1a3b5", "assets": { "KNRI11": { "asset_class": "br_reits" } } }
+```
+
+O servidor relê os arquivos, trava a carteira da pessoa, refaz o plano ali
+dentro e grava só se o `digest` for o mesmo. Numa transação: cria os ativos
+novos, troca os saldos iniciais e ajustes digitados pelo saldo inicial do
+plano, grava os lançamentos (`source: "b3_import"`, `external_ref` da linha)
+e refaz a posição de cada ativo, dá o `external_ref` ao lançamento digitado
+que bateu com a linha, grava os proventos (`source: "b3_import"`) e troca o
+provisionado pelo recebido. Qualquer erro desfaz tudo. Reimportar os mesmos
+arquivos grava zero.
+
+```json
+{
+  "summary": { "assets_created": 3, "assets_updated": 1, "transactions_new": 6, "income_new": 3, "income_replaced": 1, "...": "como plan.summary" },
+  "not_imported": [ { "key": "WEGE3", "external_ref": "b3:v1:income:...", "reason_code": "provisioned_without_date" } ],
+  "skipped_assets": ["BOVV11"],
+  "unrecognized": 2,
+  "ignored": 4
+}
+```
+
+Depois de gravar: a série de desempenho fica marcada para refazer desde o
+lançamento ou provento mais antigo que a gravação escreveu ou apagou (os
+gatilhos da série, ver [Desempenho](#desempenho)), e a tarefa de
+reconstrução a refaz inteira dali em diante; os ativos novos buscam cotação e
+histórico de dividendos em segundo plano. O caixa (`GET /cash`) só conta o que
+é de `cash_since` em diante: importar anos de histórico não o enche de
+proventos e vendas antigos. A resposta sai com `Cache-Control: no-store`.
+
+Erros: os de `preview`; `422 validation_failed` sem `digest`;
+`409 preview_stale` quando o plano refeito não é o conferido (nada gravado:
+confira a prévia de novo); `422 import_blocked` com conflito ou classe por
+confirmar (nada gravado); `409 asset_already_exists` se outro pedido criou o
+mesmo ativo no meio (nada gravado).
 
 ## Lançamentos
 

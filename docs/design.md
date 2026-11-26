@@ -350,15 +350,36 @@ Responde "estou ganhando do CDI?". Método e limites em
 - Seletor de um ou mais `.xlsx`; cada arquivo da lista mostra o que foi lido
   (tipo, linhas, quantas entram, quantas não foram entendidas) ou, se não abriu,
   o motivo em português.
-- Prévia: contadores, tabela agrupada por ativo (classe sugerida, com aviso
-  "só pelo código — confira" quando falta o nome; compras, vendas, saldo dos
-  negócios, proventos) e, por ativo, a lista de linhas que expande. Abaixo, as
-  linhas que não entendi e as deixadas de fora de propósito.
-- O botão **Importar** fica desligado, com o texto "Chega na próxima versão":
-  a tela não finge que grava.
+- Prévia: contadores do que foi lido e, contra a carteira, quantas linhas
+  **entram**, **já existem**, **conflitam** e **ficam de fora**. Tabela
+  agrupada por ativo: classe (num ativo novo, um seletor com a sugestão; no que
+  já está na carteira, a classe dele), a situação ("entra na carteira", "já
+  está na carteira", "nada novo", "deixado de fora", com os selos "conflito" e
+  "confira a classe"), compras, vendas, saldo dos negócios e proventos. Cada
+  linha que expande diz o destino dela: "— entra", "— já existe: é o
+  lançamento que você já fez", "— fica de fora: a receber sem data"...
+- **Conferir antes de importar:** um bloco por ativo que pede atenção —
+  classe só pelo código (botão "Confirmar Fundos Imobiliários"), saldo inicial
+  sugerido (data, quantidade, preço médio ou "custo desconhecido", o porquê, e
+  os campos de quantidade e preço médio para trocar), os saldos e ajustes
+  digitados que dão lugar ao histórico, "na carteira hoje → depois de
+  importar", o conflito em texto da tela (nunca o do servidor, que tem
+  número) e a chave "Deixar de fora desta importação".
+- Mudou uma escolha: aparece **Atualizar prévia** e o **Importar** espera; a
+  gravação usa o `digest` da prévia que está na tela. Importar desligado diz
+  por quê (conflito ou classe por confirmar; "Nada novo: tudo já está na
+  carteira"). Ligado, diz quantos lançamentos e proventos grava.
+- Depois de gravar, a prévia dá lugar ao **resultado**: quantos lançamentos e
+  proventos entraram (e quantos substituíram um a receber), ativos novos e
+  atualizados, saldos iniciais, o que já existia e o que ficou de fora, por
+  motivo. Carteira, lançamentos, Renda, caixa, saúde e Desempenho são lidos de
+  novo; o resultado avisa que o Desempenho refaz a série em segundo plano.
+  Prévia vencida (`409`) avisa e lê as planilhas de novo.
 - É uma seção de Ajustes (`#/ajustes/importar-b3`). Quantidades e valores da
-  prévia seguem o olho de ocultar valores, inclusive para o leitor de tela, e o
-  texto cru das linhas não entendidas (que traz valores) também some.
+  prévia, da conferência e do resultado seguem o olho de ocultar valores,
+  inclusive para o leitor de tela e nos campos fora do foco, e o texto cru das
+  linhas não entendidas (que traz valores) também some. Contagem de linhas e
+  de ativos fica à vista.
 
 ### 8. Renda
 

@@ -31,9 +31,11 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   centésimos de título. CDB e LCI seguem por valor. Detalhes em
   [`docs/tesouro.md`](docs/tesouro.md).
 - **Importar da B3** — suba as planilhas da Área do Investidor (Negociação,
-  Movimentação, Proventos) e veja o que entraria: agrupado por ativo, com as
-  linhas que o Prumo não entendeu. Nesta versão só lê e mostra; gravar chega
-  depois. Ver [`docs/importacao-b3.md`](docs/importacao-b3.md).
+  Movimentação, Proventos), confira o que é novo, o que já está na carteira e o
+  que conflita, ajuste a classe e o saldo inicial de antes de 2019 e importe:
+  compras, vendas, desdobros, bonificações, Tesouro e proventos entram de uma
+  vez, e importar de novo não duplica. Ver
+  [`docs/importacao-b3.md`](docs/importacao-b3.md).
 - **Livro de lançamentos** — compra, venda, desdobramento, grupamento,
   bonificação, amortização, resgate, saldo inicial e ajuste, com data. A
   quantidade é a soma do livro; dele saem o preço médio (regra da Receita,
