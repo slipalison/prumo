@@ -16,7 +16,6 @@ use super::dto::optional_decimal;
 use super::{ApiJson, AppState, CurrentUser};
 use crate::alerts::{tax_year_covered, AlertError};
 use crate::domain::alerts::{self as rules, AlertConfig, AlertKind, TypeSetting};
-use crate::domain::income::today_in_brazil;
 use crate::error::{ApiError, ApiResult};
 use crate::telegram::TelegramError;
 
@@ -130,10 +129,7 @@ async fn current(state: &AppState, user: &CurrentUser) -> ApiResult<AlertsDto> {
         },
         send_at: rules::format_send_at(settings.send_at),
         hide_values: settings.hide_values,
-        types: types_dto(
-            &config,
-            tax_year_covered(today_in_brazil(OffsetDateTime::now_utc()).year()),
-        ),
+        types: types_dto(&config, tax_year_covered(state.alerts.today().year())),
     })
 }
 
@@ -192,7 +188,7 @@ pub async fn save(
         })?),
     };
     let (config, _) = state.store.alert_config(user.id).await?;
-    let tax_rules = tax_year_covered(today_in_brazil(OffsetDateTime::now_utc()).year());
+    let tax_rules = tax_year_covered(state.alerts.today().year());
     let mut changes = Vec::new();
     for (name, change) in body.types.unwrap_or_default() {
         let kind = AlertKind::parse(&name)
@@ -241,7 +237,7 @@ pub async fn link(
 ) -> ApiResult<(StatusCode, Json<LinkDto>)> {
     let code = state
         .alerts
-        .new_link_code(user.id, OffsetDateTime::now_utc())
+        .new_link_code(user.id, state.alerts.now())
         .await?;
     Ok((
         StatusCode::CREATED,

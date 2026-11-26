@@ -102,7 +102,12 @@ pub struct AlertService {
     username: Mutex<Option<String>>,
     tests: Mutex<HashMap<Uuid, Instant>>,
     poll_timeout: Duration,
+    clock: Clock,
 }
+
+/// De onde o serviço tira "agora". Em produção é o relógio do sistema; os
+/// testes fixam a data para o resultado não depender do dia em que rodam.
+pub type Clock = Arc<dyn Fn() -> OffsetDateTime + Send + Sync>;
 
 impl AlertService {
     pub fn new(store: Store, api: Option<Arc<dyn TelegramApi>>) -> Self {
@@ -112,7 +117,24 @@ impl AlertService {
             username: Mutex::new(None),
             tests: Mutex::default(),
             poll_timeout: POLL_TIMEOUT,
+            clock: Arc::new(OffsetDateTime::now_utc),
         }
+    }
+
+    /// Outro relógio (os testes usam uma data fixa).
+    pub fn with_clock(mut self, clock: Clock) -> Self {
+        self.clock = clock;
+        self
+    }
+
+    /// Agora, pelo relógio do serviço.
+    pub fn now(&self) -> OffsetDateTime {
+        (self.clock)()
+    }
+
+    /// O dia de hoje em Brasília, pelo relógio do serviço.
+    pub fn today(&self) -> Date {
+        local_date(self.now())
     }
 
     /// Sem token: os alertas ficam desligados.
@@ -286,7 +308,7 @@ impl AlertService {
     }
 
     async fn link(&self, chat: i64, code: &str) -> Result<String, AlertError> {
-        let now = OffsetDateTime::now_utc();
+        let now = self.now();
         let code = code.to_ascii_uppercase();
         let Some(user) = self.store.consume_link_code(&code, now).await? else {
             return Ok(
@@ -555,7 +577,7 @@ impl AlertService {
         self.configured().then(|| {
             tokio::spawn(async move {
                 loop {
-                    match self.run_digest(OffsetDateTime::now_utc()).await {
+                    match self.run_digest(self.now()).await {
                         Ok(report) if report.sent + report.failed > 0 => tracing::info!(
                             sent = report.sent,
                             silent = report.silent,

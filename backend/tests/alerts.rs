@@ -22,7 +22,7 @@ use prumo::performance::{local_date, BRASILIA};
 use prumo::store::Store;
 use prumo::telegram::{BotApi, Chat, Message, TelegramApi, TelegramError, Update};
 use serde_json::{json, Value};
-use time::macros::time;
+use time::macros::{date, time};
 use time::{Date, OffsetDateTime};
 use uuid::Uuid;
 use wiremock::matchers::{body_partial_json, method, path};
@@ -112,24 +112,22 @@ fn service(store: &Store, fake: &Arc<FakeTelegram>) -> Arc<AlertService> {
             store.clone(),
             Some(Arc::clone(fake) as Arc<dyn TelegramApi>),
         )
-        .with_poll_timeout(Duration::ZERO),
+        .with_poll_timeout(Duration::ZERO)
+        .with_clock(Arc::new(now)),
     )
 }
 
-fn tax_rules_cover_today() -> bool {
-    prumo::alerts::tax_year_covered(local_date(OffsetDateTime::now_utc()).year())
-}
+/// "Hoje" de todos os cenários: uma data fixa, num ano com regra de IR. Nenhum
+/// resultado depende do dia em que o teste roda.
+const TODAY: Date = date!(2026 - 06 - 15);
 
 fn now() -> OffsetDateTime {
-    OffsetDateTime::now_utc()
+    noon(0)
 }
 
-/// Meio-dia em Brasília, `days` dias depois de hoje.
+/// Meio-dia em Brasília, `days` dias depois de [`TODAY`].
 fn noon(days: i64) -> OffsetDateTime {
-    local_date(now())
-        .with_time(time!(12:00))
-        .assume_offset(BRASILIA)
-        + time::Duration::days(days)
+    TODAY.with_time(time!(12:00)).assume_offset(BRASILIA) + time::Duration::days(days)
 }
 
 fn day_after(at: OffsetDateTime) -> Date {
@@ -338,8 +336,9 @@ async fn the_real_client_polls_with_the_saved_offset_against_a_mock_server() {
     let server = MockServer::start().await;
     let token = "999:token-de-mentira";
     let api = BotApi::with_base(reqwest::Client::new(), Secret::new(token), &server.uri());
-    let alerts =
-        AlertService::new(db.store.clone(), Some(Arc::new(api))).with_poll_timeout(Duration::ZERO);
+    let alerts = AlertService::new(db.store.clone(), Some(Arc::new(api)))
+        .with_poll_timeout(Duration::ZERO)
+        .with_clock(Arc::new(now));
     let ana = db.store.ensure_user("ana@prumo.test").await.unwrap();
     let code = alerts.new_link_code(ana, now()).await.unwrap();
 
@@ -861,13 +860,11 @@ async fn the_api_shows_state_validates_changes_and_drives_linking() {
         (drift["threshold"].clone(), drift["unit"].clone()),
         (json!(5.0), json!("percentage_points"))
     );
-    // O isentômetro vale enquanto o ano de hoje tem regra de IR; sem ela, fica
-    // indisponível (e desligado), sem erro.
-    let covered = tax_rules_cover_today();
+    // 2026 tem regra de IR: o isentômetro vem ligado e disponível.
     let tax = find(types, "kind", "tax_exemption");
     assert_eq!(
         (tax["enabled"].clone(), tax["available"].clone()),
-        (json!(covered), json!(covered))
+        (json!(true), json!(true))
     );
     assert_eq!(tax["threshold"], 80.0);
     assert_eq!(tax["default_threshold"], 80.0);
@@ -948,18 +945,13 @@ async fn the_api_shows_state_validates_changes_and_drives_linking() {
         saved.body
     );
 
-    // Ligar o isentômetro só vale com regra de IR do ano de hoje.
     let on = put(
         &fabio.app.router,
         "/api/v1/alerts",
         json!({ "types": { "tax_exemption": { "enabled": true } } }),
     )
     .await;
-    if tax_rules_cover_today() {
-        assert_eq!(on.status, StatusCode::OK, "{}", on.text);
-    } else {
-        assert_eq!(on.status, StatusCode::UNPROCESSABLE_ENTITY, "{}", on.text);
-    }
+    assert_eq!(on.status, StatusCode::OK, "{}", on.text);
 
     // Desligar é sempre inofensivo; o limite do isentômetro se guarda.
     let tax = put(
@@ -1037,13 +1029,10 @@ async fn the_api_shows_state_validates_changes_and_drives_linking() {
 
 // -------------------------------------------------------------- isentômetro --
 
-/// Vende ações no mês de hoje e confere o aviso ao chegar perto e de novo ao
+/// Vende ações em junho de 2026 e confere o aviso ao chegar perto e de novo ao
 /// passar do limite, sem repetir. O limite e as vendas vêm da apuração de IR.
 #[tokio::test]
 async fn the_stock_exemption_warns_near_the_limit_and_again_above_it() {
-    if !tax_rules_cover_today() {
-        return;
-    }
     let db = database().await;
     let fake = FakeTelegram::new();
     let alerts = service(&db.store, &fake);
@@ -1074,10 +1063,6 @@ async fn the_stock_exemption_warns_near_the_limit_and_again_above_it() {
     // Dia 1: R$ 16.500 de R$ 20.000 (82,5%): perto do limite de 80%.
     let first = post(router, "/api/v1/transactions", sell(330)).await;
     assert_eq!(first.status, StatusCode::CREATED, "{}", first.text);
-    // O mês de "amanhã" pode já ser outro: só vale se hoje e o dia 1 são do mesmo mês.
-    if local_date(noon(1)).month() != local_date(noon(0)).month() {
-        return;
-    }
     let report = alerts.run_digest(noon(1)).await.unwrap();
     assert_eq!(report.sent, 1);
     let texts = fake.texts_to(gil.chat);
@@ -1095,9 +1080,6 @@ async fn the_stock_exemption_warns_near_the_limit_and_again_above_it() {
     assert_eq!((report.sent, report.silent), (0, 1));
 
     // Dia 3: passa do limite (R$ 21.500): avisa de novo, agora como "passou".
-    if local_date(noon(3)).month() != local_date(noon(0)).month() {
-        return;
-    }
     let second = post(router, "/api/v1/transactions", sell(100)).await;
     assert_eq!(second.status, StatusCode::CREATED, "{}", second.text);
     let hidden = put(router, "/api/v1/alerts", json!({ "hide_values": true })).await;
@@ -1125,4 +1107,69 @@ async fn the_stock_exemption_warns_near_the_limit_and_again_above_it() {
         find(&quiet.body["types"], "kind", "tax_exemption")["threshold"],
         100.0
     );
+}
+
+/// Um ano sem regra de IR cadastrada (2031): o isentômetro fica indisponível e
+/// desligado, não pode ser ligado, e o resumo segue sem ele e sem erro.
+#[tokio::test]
+async fn without_tax_rules_for_the_year_the_exemption_is_unavailable() {
+    let db = database().await;
+    let fake = FakeTelegram::new();
+    let in_2031 = || {
+        date!(2031 - 06 - 15)
+            .with_time(time!(12:00))
+            .assume_offset(BRASILIA)
+    };
+    let alerts = Arc::new(
+        AlertService::new(
+            db.store.clone(),
+            Some(Arc::clone(&fake) as Arc<dyn TelegramApi>),
+        )
+        .with_poll_timeout(Duration::ZERO)
+        .with_clock(Arc::new(in_2031)),
+    );
+    assert!(prumo::alerts::tax_year_covered(2026));
+    assert!(!prumo::alerts::tax_year_covered(2031));
+    let hugo = person(&db, &alerts, "hugo@prumo.test", 9101).await;
+    let router = &hugo.app.router;
+
+    let state = get(router, "/api/v1/alerts").await;
+    assert_eq!(state.status, StatusCode::OK, "{}", state.text);
+    let tax = find(&state.body["types"], "kind", "tax_exemption");
+    assert_eq!(
+        (tax["enabled"].clone(), tax["available"].clone()),
+        (json!(false), json!(false))
+    );
+    // Os outros cinco seguem disponíveis.
+    let available = state.body["types"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|t| t["available"] == true)
+        .count();
+    assert_eq!(available, 5);
+
+    let on = put(
+        router,
+        "/api/v1/alerts",
+        json!({ "types": { "tax_exemption": { "enabled": true } } }),
+    )
+    .await;
+    assert_eq!(on.status, StatusCode::UNPROCESSABLE_ENTITY, "{}", on.text);
+    assert!(
+        on.body["detail"].as_str().unwrap().contains("regra de IR"),
+        "{}",
+        on.text
+    );
+    let off = put(
+        router,
+        "/api/v1/alerts",
+        json!({ "types": { "tax_exemption": { "enabled": false, "threshold": 90 } } }),
+    )
+    .await;
+    assert_eq!(off.status, StatusCode::OK, "{}", off.text);
+
+    // O resumo de 2031 sai sem erro, sem tocar na apuração de IR.
+    let report = alerts.run_digest(in_2031()).await.unwrap();
+    assert_eq!((report.sent, report.silent, report.failed), (0, 1, 0));
 }
