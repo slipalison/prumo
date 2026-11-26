@@ -298,6 +298,8 @@ pub struct PeriodFigures {
     pub net_income: Figure,
     /// Patrimônio líquido total (com a participação dos não controladores).
     pub equity: Figure,
+    /// Patrimônio líquido dos controladores: a base do ROE e do VPA.
+    pub equity_controlling: Figure,
     pub gross_debt: Figure,
     pub cash: Figure,
     /// Dívida bruta menos caixa e aplicações; negativa = caixa líquido.
@@ -384,6 +386,12 @@ pub struct CompanyMetrics {
     pub earnings_cagr: Figure,
     /// O documento mais novo lido.
     pub latest_filing: Option<FilingRef>,
+    /// Total de ações emitidas (ON + PN), da página do emissor na B3.
+    pub shares: Option<Decimal>,
+    /// LPA: lucro dos controladores dos últimos 12 meses ÷ ações.
+    pub earnings_per_share: Figure,
+    /// VPA: patrimônio dos controladores no fim dos 12 meses ÷ ações.
+    pub book_value_per_share: Figure,
     /// Quando o Prumo leu a CVM pela última vez com sucesso.
     pub synced_at: Option<OffsetDateTime>,
 }
@@ -544,6 +552,7 @@ fn derive(raw: &Raw, sources: Vec<FilingRef>) -> PeriodFigures {
         revenue: raw.revenue,
         net_income: raw.net_income,
         equity: raw.equity,
+        equity_controlling: raw.equity_controlling,
         gross_debt: raw.gross_debt,
         cash: raw.cash,
         net_debt,
@@ -675,6 +684,7 @@ pub fn company_metrics(
     cvm_code: i32,
     filings: &[Filing],
     registration: Option<&Registration>,
+    shares: Option<Decimal>,
     synced_at: Option<OffsetDateTime>,
 ) -> Option<CompanyMetrics> {
     let latest = filings
@@ -720,6 +730,17 @@ pub fn company_metrics(
     let trailing = last_year
         .and_then(|year| by_year.get(&year))
         .map(|(_, r, s)| trailing(filings, &(r.clone(), *s)));
+    let per_share = |pick: fn(&PeriodFigures) -> Figure| {
+        let divisor = shares
+            .filter(|s| *s > Decimal::ZERO)
+            .map_or(Figure::missing(Gap::NoShares), Figure::known);
+        match &trailing {
+            Some(period) => pick(period).ratio(divisor),
+            None => Figure::missing(Gap::NoFiling),
+        }
+    };
+    let earnings_per_share = per_share(|p| p.net_income);
+    let book_value_per_share = per_share(|p| p.equity_controlling);
 
     Some(CompanyMetrics {
         cvm_code,
@@ -737,6 +758,9 @@ pub fn company_metrics(
         years,
         trailing,
         latest_filing: Some(reference(latest, Column::Current)),
+        shares,
+        earnings_per_share,
+        book_value_per_share,
         synced_at,
     })
 }
@@ -1004,6 +1028,7 @@ mod tests {
             &five_years(),
             Some(&registration("FASE OPERACIONAL")),
             None,
+            None,
         )
         .unwrap();
         assert_eq!(m.template, Template::Commercial);
@@ -1062,7 +1087,7 @@ mod tests {
             ..year_of(dec!(1000), dec!(100))
         };
         filings.push(itr(2026, &ytd, &previous_ytd));
-        let m = company_metrics(99901, &filings, None, None).unwrap();
+        let m = company_metrics(99901, &filings, None, None, None).unwrap();
         let ttm = m.trailing.unwrap();
         assert_eq!(ttm.period_start, date!(2025 - 10 - 01));
         assert_eq!(ttm.period_end, date!(2026 - 09 - 30));
@@ -1089,7 +1114,7 @@ mod tests {
             &year_of(dec!(1), dec!(1)),
             &year_of(dec!(1), dec!(1)),
         ));
-        let ttm = company_metrics(99901, &filings, None, None)
+        let ttm = company_metrics(99901, &filings, None, None, None)
             .unwrap()
             .trailing
             .unwrap();
@@ -1190,7 +1215,7 @@ mod tests {
             company_name: "BANCO FICTICIO SA".into(),
             lines,
         };
-        let m = company_metrics(99902, &[filing], None, None).unwrap();
+        let m = company_metrics(99902, &[filing], None, None, None).unwrap();
         assert_eq!(m.template, Template::Bank);
         let y = m.years[4].figures.as_ref().unwrap();
         assert_eq!(y.net_income.value(), Some(dec!(1000)));
@@ -1272,7 +1297,7 @@ mod tests {
             company_name: "SEGURADORA FICTICIA SA".into(),
             lines,
         };
-        let m = company_metrics(99903, &[filing], None, None).unwrap();
+        let m = company_metrics(99903, &[filing], None, None, None).unwrap();
         assert_eq!(m.template, Template::Insurer);
         let y = m.years[4].figures.as_ref().unwrap();
         assert_eq!(y.net_income.value(), Some(dec!(900)));
@@ -1292,6 +1317,7 @@ mod tests {
             99901,
             &filings,
             Some(&registration("EM RECUPERAÇÃO JUDICIAL OU EQUIVALENTE")),
+            None,
             None,
         )
         .unwrap();
@@ -1316,7 +1342,7 @@ mod tests {
         let mut filings = five_years();
         // Sem a DFP de 2023: a coluna de comparação da DFP de 2024 cobre.
         filings.remove(2);
-        let m = company_metrics(99901, &filings, None, None).unwrap();
+        let m = company_metrics(99901, &filings, None, None, None).unwrap();
         let y2023 = m.years[2].figures.as_ref().unwrap();
         assert_eq!(y2023.revenue.value(), Some(dec!(1210)));
         assert_eq!(y2023.sources[0].column, Column::Previous);
@@ -1325,13 +1351,13 @@ mod tests {
         let mut filings = five_years();
         filings.remove(3);
         filings.remove(2);
-        let m = company_metrics(99901, &filings, None, None).unwrap();
+        let m = company_metrics(99901, &filings, None, None, None).unwrap();
         assert!(m.years[2].figures.is_none());
         assert!(m.years[3].figures.is_some());
         assert_eq!(m.profitable_years.known, 4);
         // A primeira ponta da janela faltando: sem CAGR.
         let filings: Vec<Filing> = five_years().into_iter().skip(2).collect();
-        let m = company_metrics(99901, &filings, None, None).unwrap();
+        let m = company_metrics(99901, &filings, None, None, None).unwrap();
         assert_eq!(m.years[0].year, 2021);
         assert!(m.years[0].figures.is_none());
         // 2022 vem da comparação da DFP de 2023; 2021 não tem fonte.
@@ -1350,7 +1376,7 @@ mod tests {
             Some(&year_of(dec!(9999), dec!(1))),
             1,
         );
-        let m = company_metrics(99901, &filings, None, None).unwrap();
+        let m = company_metrics(99901, &filings, None, None, None).unwrap();
         assert_eq!(
             m.years[3].figures.as_ref().unwrap().revenue.value(),
             Some(dec!(1331))
@@ -1369,7 +1395,7 @@ mod tests {
                 line.description = "Outra coisa".into();
             }
         }
-        let m = company_metrics(99901, &[filing], None, None).unwrap();
+        let m = company_metrics(99901, &[filing], None, None, None).unwrap();
         let y = m.years[4].figures.as_ref().unwrap();
         assert_eq!(y.depreciation_amortization.gap(), Some(Gap::NotReported));
         assert_eq!(y.ebitda.gap(), Some(Gap::NotReported));
@@ -1387,7 +1413,7 @@ mod tests {
         filing
             .lines
             .retain(|l| !l.code.starts_with("3.11.") && !l.code.starts_with("2.03."));
-        let m = company_metrics(99901, &[filing], None, None).unwrap();
+        let m = company_metrics(99901, &[filing], None, None, None).unwrap();
         let y = m.years[4].figures.as_ref().unwrap();
         assert_eq!(y.net_income.value(), Some(dec!(146.41)));
         assert_eq!(y.roe.value(), Some(dec!(0.029282)));
@@ -1400,7 +1426,7 @@ mod tests {
             minority: dec!(1000),
             ..year_of(dec!(1000), dec!(100))
         };
-        let m = company_metrics(99901, &[dfp(2025, &y, None, 1)], None, None).unwrap();
+        let m = company_metrics(99901, &[dfp(2025, &y, None, 1)], None, None, None).unwrap();
         let f = m.years[4].figures.as_ref().unwrap();
         assert_eq!(f.net_income.value(), Some(dec!(80)));
         // 80 ÷ (5000 − 1000)
@@ -1439,7 +1465,7 @@ mod tests {
                 line.description = "Plano novo".into();
             }
         }
-        let m = company_metrics(99901, &[filing], None, None).unwrap();
+        let m = company_metrics(99901, &[filing], None, None, None).unwrap();
         let y = m.years[4].figures.as_ref().unwrap();
         assert_eq!(m.template, Template::Unknown);
         assert_eq!(y.revenue.gap(), Some(Gap::UnknownTemplate));
@@ -1493,8 +1519,51 @@ mod tests {
     }
 
     #[test]
+    fn per_share_figures_use_the_b3_share_count() {
+        let y = Year {
+            controlling: dec!(120),
+            minority: dec!(1000),
+            ..year_of(dec!(1000), dec!(146.41))
+        };
+        let m = company_metrics(
+            99901,
+            &[dfp(2025, &y, None, 1)],
+            None,
+            Some(dec!(100)),
+            None,
+        )
+        .unwrap();
+        assert_eq!(m.shares, Some(dec!(100)));
+        // Lucro e patrimônio dos controladores: 120 ÷ 100 e (5000 − 1000) ÷ 100.
+        assert_eq!(m.earnings_per_share.value(), Some(dec!(1.2)));
+        assert_eq!(m.book_value_per_share.value(), Some(dec!(40)));
+        let f = m.years[4].figures.as_ref().unwrap();
+        assert_eq!(f.equity_controlling.value(), Some(dec!(4000)));
+        // Prejuízo dá LPA negativo; sem ações, o motivo.
+        let loss = company_metrics(
+            99901,
+            &[dfp(2025, &year_of(dec!(1), dec!(-50)), None, 1)],
+            None,
+            Some(dec!(10)),
+            None,
+        )
+        .unwrap();
+        assert_eq!(loss.earnings_per_share.value(), Some(dec!(-5)));
+        let none = company_metrics(99901, &[dfp(2025, &y, None, 1)], None, None, None).unwrap();
+        assert_eq!(none.earnings_per_share.gap(), Some(Gap::NoShares));
+        assert_eq!(none.book_value_per_share.gap(), Some(Gap::NoShares));
+        let zero =
+            company_metrics(99901, &[dfp(2025, &y, None, 1)], None, Some(dec!(0)), None).unwrap();
+        assert_eq!(zero.earnings_per_share.gap(), Some(Gap::NoShares));
+        // Só ITR: sem 12 meses, sem LPA.
+        let quarter =
+            company_metrics(99901, &[itr(2026, &y, &y)], None, Some(dec!(10)), None).unwrap();
+        assert_eq!(quarter.earnings_per_share.gap(), Some(Gap::NoFiling));
+    }
+
+    #[test]
     fn no_filings_no_metrics() {
-        assert!(company_metrics(1, &[], None, None).is_none());
+        assert!(company_metrics(1, &[], None, None, None).is_none());
         // Só ITR: sem exercício, sem série nem 12 meses.
         let m = company_metrics(
             99901,
@@ -1503,6 +1572,7 @@ mod tests {
                 &year_of(dec!(1), dec!(1)),
                 &year_of(dec!(1), dec!(1)),
             )],
+            None,
             None,
             None,
         )
@@ -1538,7 +1608,7 @@ mod tests {
             let mut filings = vec![dfp(2025, &year_of(Decimal::from(revenue), Decimal::from(profit)), None, 1)];
             let same = year_of(Decimal::from(ytd), Decimal::from(ytd / 10));
             filings.push(itr(2026, &same, &same));
-            let m = company_metrics(99901, &filings, None, None).unwrap();
+            let m = company_metrics(99901, &filings, None, None, None).unwrap();
             let ttm = m.trailing.unwrap();
             prop_assert_eq!(ttm.revenue.value(), Some(Decimal::from(revenue)));
             prop_assert_eq!(ttm.net_income.value(), Some(Decimal::from(profit)));
@@ -1557,7 +1627,7 @@ mod tests {
                     dfp(2021 + i, &year_of(v, v), None, 1)
                 })
                 .collect();
-            let m = company_metrics(99901, &filings, None, None).unwrap();
+            let m = company_metrics(99901, &filings, None, None, None).unwrap();
             let got = m.revenue_cagr.value().unwrap();
             prop_assert!((got - g).abs() <= dec!(0.00001), "{} contra {}", got, g);
         }
@@ -1566,7 +1636,7 @@ mod tests {
         #[test]
         fn roe_has_the_sign_of_the_profit(profit in -1_000_000i64..1_000_000, equity in 1i64..10_000_000) {
             let y = Year { equity: Decimal::from(equity), ..year_of(dec!(1000), Decimal::from(profit)) };
-            let m = company_metrics(99901, &[dfp(2025, &y, None, 1)], None, None).unwrap();
+            let m = company_metrics(99901, &[dfp(2025, &y, None, 1)], None, None, None).unwrap();
             let roe = m.years[4].figures.as_ref().unwrap().roe.value().unwrap();
             prop_assert_eq!(roe.is_sign_negative() && !roe.is_zero(), profit < 0 && roe != Decimal::ZERO);
         }

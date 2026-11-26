@@ -4,7 +4,7 @@
 //!
 //! **Fontes.** Os dados abertos da CVM (`dados.cvm.gov.br`, ver [`cvm`]) e,
 //! para ligar o ticker à companhia, o código CVM da página pública do emissor
-//! na B3 (`B3Listed`, o cliente dos proventos automáticos).
+//! e o número de ações, da página pública do emissor na B3 (ver [`b3`]).
 //!
 //! **Uma vez por dia, sem baixar à toa.** Cada arquivo é conferido com GET
 //! condicional (a CVM responde 304 quando nada mudou). Só um arquivo novo, ou
@@ -20,6 +20,7 @@
 //! **Fonte fora do ar não quebra nada.** A falha fica registrada, o que já
 //! estava gravado continua valendo e a próxima tentativa vem em 6 h.
 
+pub mod b3;
 pub mod cvm;
 pub mod download;
 
@@ -27,16 +28,14 @@ use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use time::OffsetDateTime;
 use tokio::sync::Notify;
 
+use self::b3::IssuerDirectory;
 use self::download::{FetchError, Opened, Validators};
 use crate::domain::asset_class::Market;
 use crate::domain::fundamentals::{physical_vacancy, FilingKind, Vacancy};
 use crate::domain::income::today_in_brazil;
-use crate::domain::income_auto::Venue;
-use crate::income_auto::{AnnouncementSource, B3Listed, SourceError};
 use crate::store::fundamentals::{FundVacancy, IssuerCode, SourceState};
 use crate::store::Store;
 
@@ -50,8 +49,10 @@ pub const RETRY_AFTER: time::Duration = time::Duration::hours(6);
 /// A vez de uma réplica num arquivo ou emissor; passou disso, a reserva é de
 /// um processo que caiu.
 pub const CLAIM_FOR: time::Duration = time::Duration::minutes(30);
-/// Código CVM achado vale por isto; "a B3 não tem" é conferido de novo antes.
-pub const CODE_FOUND_TTL: time::Duration = time::Duration::days(90);
+/// O emissor achado é conferido de novo uma vez por dia (o número de ações
+/// muda com desdobramento, grupamento e recompra cancelada); "a B3 não tem
+/// código" espera uma semana.
+pub const CODE_FOUND_TTL: time::Duration = time::Duration::hours(20);
 pub const CODE_MISSING_TTL: time::Duration = time::Duration::days(7);
 /// Exercícios de DFP lidos: o ano corrente e os cinco anteriores (a janela é
 /// de cinco exercícios, e o do ano corrente quase sempre ainda não saiu).
@@ -62,29 +63,6 @@ pub const PAUSE: Duration = Duration::from_millis(800);
 pub const DEBOUNCE: Duration = Duration::from_secs(30);
 
 const CVM_BASE: &str = "https://dados.cvm.gov.br";
-
-/// O código CVM de um emissor da B3 (`WEGE` → 5410).
-#[async_trait]
-pub trait CvmCodes: Send + Sync {
-    /// `Ok(None)`: a B3 não informa código (ETF em Ações Nacionais).
-    async fn cvm_code(&self, issuer: &str) -> Result<Option<i32>, String>;
-}
-
-/// A página pública do emissor na B3 (`GetListedSupplementCompany`), a mesma
-/// dos proventos automáticos, traz o `codeCVM`.
-#[async_trait]
-impl CvmCodes for B3Listed {
-    async fn cvm_code(&self, issuer: &str) -> Result<Option<i32>, String> {
-        match self.supplement(issuer, Venue::Company).await {
-            Ok(supplement) => Ok(supplement
-                .code_cvm
-                .and_then(|code| code.parse::<i32>().ok())
-                .filter(|code| *code > 0)),
-            Err(SourceError::InvalidIssuer) => Ok(None),
-            Err(error) => Err(error.to_string()),
-        }
-    }
-}
 
 /// Um arquivo da CVM.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -161,7 +139,7 @@ pub fn due(
     (now - checked >= REVALIDATE_AFTER).then_some(Mode::Revalidate)
 }
 
-/// Se o código CVM do emissor precisa ser buscado na B3.
+/// Se o emissor (código CVM e ações) precisa ser buscado na B3.
 pub fn code_due(known: Option<&IssuerCode>, now: OffsetDateTime) -> bool {
     match known {
         None
@@ -171,6 +149,7 @@ pub fn code_due(known: Option<&IssuerCode>, now: OffsetDateTime) -> bool {
         Some(IssuerCode {
             cvm_code,
             fetched_at: Some(at),
+            ..
         }) => {
             let ttl = if cvm_code.is_some() {
                 CODE_FOUND_TTL
@@ -218,7 +197,7 @@ pub struct FundamentalsService {
     store: Store,
     /// `None`: fontes externas desligadas; a tela mostra o que já está gravado.
     http: Option<reqwest::Client>,
-    codes: Option<Arc<dyn CvmCodes>>,
+    codes: Option<Arc<dyn IssuerDirectory>>,
     base: String,
     pause: Duration,
     debounce: Duration,
@@ -226,7 +205,7 @@ pub struct FundamentalsService {
 }
 
 impl FundamentalsService {
-    pub fn new(store: Store, http: reqwest::Client, codes: Arc<dyn CvmCodes>) -> Self {
+    pub fn new(store: Store, http: reqwest::Client, codes: Arc<dyn IssuerDirectory>) -> Self {
         Self {
             store,
             http: Some(http),
@@ -311,9 +290,9 @@ impl FundamentalsService {
                 tokio::time::sleep(self.pause).await;
             }
             first = false;
-            match codes.cvm_code(issuer).await {
-                Ok(code) => {
-                    if let Err(error) = self.store.save_issuer_code(issuer, code, now).await {
+            match codes.issuer(issuer).await {
+                Ok(info) => {
+                    if let Err(error) = self.store.save_issuer_code(issuer, &info, now).await {
                         tracing::error!(issuer = %issuer, error = %error, "codigo CVM nao gravado");
                         report.codes_failed += 1;
                     } else {
@@ -609,18 +588,23 @@ mod tests {
     fn issuer_codes_are_kept_for_a_while() {
         let now = datetime!(2026-11-26 12:00 UTC);
         assert!(code_due(None, now));
-        let found = IssuerCode {
+        let found = |ago: time::Duration| IssuerCode {
             cvm_code: Some(5410),
-            fetched_at: Some(now - time::Duration::days(10)),
+            total_shares: None,
+            fetched_at: Some(now - ago),
         };
-        assert!(!code_due(Some(&found), now));
-        let missing = IssuerCode {
+        assert!(!code_due(Some(&found(time::Duration::hours(2))), now));
+        assert!(code_due(Some(&found(time::Duration::hours(21))), now));
+        let missing = |ago: time::Duration| IssuerCode {
             cvm_code: None,
-            fetched_at: Some(now - time::Duration::days(10)),
+            total_shares: None,
+            fetched_at: Some(now - ago),
         };
-        assert!(code_due(Some(&missing), now));
+        assert!(!code_due(Some(&missing(time::Duration::days(2))), now));
+        assert!(code_due(Some(&missing(time::Duration::days(8))), now));
         let claimed_only = IssuerCode {
             cvm_code: None,
+            total_shares: None,
             fetched_at: None,
         };
         assert!(code_due(Some(&claimed_only), now));

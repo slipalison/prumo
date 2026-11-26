@@ -30,6 +30,7 @@ export function samplePeriod(overrides: Partial<PeriodFigures> = {}): PeriodFigu
     revenue: known(1_500_000_000),
     net_income: known(180_000_000),
     equity: known(1_200_000_000),
+    equity_controlling: known(1_100_000_000),
     gross_debt: known(400_000_000),
     cash: known(100_000_000),
     net_debt: known(300_000_000),

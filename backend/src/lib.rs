@@ -40,6 +40,7 @@ use crate::auth::{AccessAuthenticator, Authenticator, DevAuthenticator};
 use crate::brapi::{BrapiLogos, LogoSource};
 use crate::config::{AuthConfig, Config};
 use crate::dividends::{DisabledDividends, DividendProvider, YahooDividends};
+use crate::fundamentals::b3::B3Issuers;
 use crate::fundamentals::FundamentalsService;
 use crate::history::{DisabledHistory, HistoryProvider, PublicHistory};
 use crate::http::{AppState, BuildInfo};
@@ -224,7 +225,7 @@ pub async fn run(config: Config) -> Result<(), StartError> {
         FundamentalsService::new(
             store.clone(),
             http.clone(),
-            Arc::new(B3Listed::new(http.clone())),
+            Arc::new(B3Issuers::new(http.clone())),
         )
     } else {
         FundamentalsService::disabled(store.clone())

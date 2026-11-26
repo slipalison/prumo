@@ -44,6 +44,10 @@ const times = (figure: Figure) =>
 const reais = (money: Money, figure: Figure) =>
   figure.value === null ? <Missing gap={figure.gap} /> : money.compact(figure.value);
 
+/** Lucro e patrimônio por ação: em reais com centavos. */
+const perShare = (money: Money, figure: Figure) =>
+  figure.value === null ? <Missing gap={figure.gap} /> : money.brl(figure.value);
+
 const growth = (figure: Figure) => {
   if (figure.value === null) return <Missing gap={figure.gap} />;
   const sign = figure.value > 0 ? "+" : figure.value < 0 ? "−" : "";
@@ -122,6 +126,14 @@ function CompanyBody({ company, money }: { company: CompanyFundamentals; money: 
                 <dd>{times(period.net_debt_to_equity)}</dd>
               </div>
             )}
+            <div>
+              <dt>LPA</dt>
+              <dd>{perShare(money, company.earnings_per_share)}</dd>
+            </div>
+            <div>
+              <dt>VPA</dt>
+              <dd>{perShare(money, company.book_value_per_share)}</dd>
+            </div>
           </dl>
         </>
       )}

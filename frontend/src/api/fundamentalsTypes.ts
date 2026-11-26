@@ -39,6 +39,8 @@ export type PeriodFigures = {
   revenue: Figure;
   net_income: Figure;
   equity: Figure;
+  /** Patrimônio dos controladores: a base do ROE e do VPA. */
+  equity_controlling: Figure;
   gross_debt: Figure;
   cash: Figure;
   net_debt: Figure;
@@ -70,6 +72,11 @@ export type CompanyFundamentals = {
   positive_operating_cash_years: YearCount;
   revenue_cagr: Figure;
   earnings_cagr: Figure;
+  /** Total de ações (ON + PN), da B3. */
+  shares: number | null;
+  /** LPA e VPA dos últimos 12 meses (`trailing`), em reais por ação. */
+  earnings_per_share: Figure;
+  book_value_per_share: Figure;
 };
 
 export type FundFundamentals = {

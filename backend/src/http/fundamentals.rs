@@ -88,6 +88,7 @@ pub struct PeriodDto {
     pub revenue: FigureDto,
     pub net_income: FigureDto,
     pub equity: FigureDto,
+    pub equity_controlling: FigureDto,
     pub gross_debt: FigureDto,
     pub cash: FigureDto,
     pub net_debt: FigureDto,
@@ -112,6 +113,7 @@ impl From<&PeriodFigures> for PeriodDto {
             revenue: p.revenue.into(),
             net_income: p.net_income.into(),
             equity: p.equity.into(),
+            equity_controlling: p.equity_controlling.into(),
             gross_debt: p.gross_debt.into(),
             cash: p.cash.into(),
             net_debt: p.net_debt.into(),
@@ -180,6 +182,12 @@ pub struct CompanyDto {
     pub positive_operating_cash_years: YearCountDto,
     pub revenue_cagr: FigureDto,
     pub earnings_cagr: FigureDto,
+    /// Total de ações (ON + PN) da B3; `null` se a B3 não informou.
+    #[serde(with = "decimal_out::option")]
+    pub shares: Option<Decimal>,
+    /// LPA e VPA dos últimos 12 meses (`trailing`), em reais por ação.
+    pub earnings_per_share: FigureDto,
+    pub book_value_per_share: FigureDto,
 }
 
 impl From<&CompanyMetrics> for CompanyDto {
@@ -199,6 +207,9 @@ impl From<&CompanyMetrics> for CompanyDto {
             positive_operating_cash_years: m.positive_operating_cash_years.into(),
             revenue_cagr: m.revenue_cagr.into(),
             earnings_cagr: m.earnings_cagr.into(),
+            shares: m.shares,
+            earnings_per_share: m.earnings_per_share.into(),
+            book_value_per_share: m.book_value_per_share.into(),
         }
     }
 }

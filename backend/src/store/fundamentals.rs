@@ -23,6 +23,7 @@ use crate::domain::fundamentals::{
     company_metrics, coverage, fund_metrics, AssetFundamentals, Column, Coverage, Figure, Filing,
     FilingKind, FundReport, Gap, Line, Registration, Scope, Statement, Unsupported, Vacancy,
 };
+use crate::fundamentals::b3::IssuerInfo;
 use crate::fundamentals::download::Validators;
 
 /// Os emissores que alguém tem na carteira (todas as pessoas).
@@ -36,6 +37,8 @@ pub struct Wanted {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IssuerCode {
     pub cvm_code: Option<i32>,
+    /// Total de ações emitidas, da B3.
+    pub total_shares: Option<Decimal>,
     pub fetched_at: Option<OffsetDateTime>,
 }
 
@@ -100,6 +103,8 @@ async fn mark_checked(
     .await?;
     Ok(())
 }
+
+type IssuerRow = (String, Option<i32>, Option<Decimal>, Option<OffsetDateTime>);
 
 type SourceRow = (
     String,
@@ -208,19 +213,20 @@ impl Store {
         &self,
         issuers: &[String],
     ) -> Result<HashMap<String, IssuerCode>, StoreError> {
-        let rows: Vec<(String, Option<i32>, Option<OffsetDateTime>)> = sqlx::query_as(
-            "select issuer, cvm_code, fetched_at from b3_issuer_cvm where issuer = any($1)",
+        let rows: Vec<IssuerRow> = sqlx::query_as(
+            "select issuer, cvm_code, total_shares, fetched_at from b3_issuer_cvm where issuer = any($1)",
         )
         .bind(issuers)
         .fetch_all(&self.pool)
         .await?;
         Ok(rows
             .into_iter()
-            .map(|(issuer, cvm_code, fetched_at)| {
+            .map(|(issuer, cvm_code, total_shares, fetched_at)| {
                 (
                     issuer,
                     IssuerCode {
                         cvm_code,
+                        total_shares: total_shares.map(|s| s.normalize()),
                         fetched_at,
                     },
                 )
@@ -254,16 +260,19 @@ impl Store {
     pub async fn save_issuer_code(
         &self,
         issuer: &str,
-        cvm_code: Option<i32>,
+        info: &IssuerInfo,
         now: OffsetDateTime,
     ) -> Result<(), StoreError> {
         sqlx::query(
-            "insert into b3_issuer_cvm (issuer, cvm_code, fetched_at) values ($1, $2, $3)
+            "insert into b3_issuer_cvm (issuer, cvm_code, total_shares, fetched_at)
+             values ($1, $2, $3, $4)
              on conflict (issuer) do update set
-                cvm_code = excluded.cvm_code, fetched_at = excluded.fetched_at, claimed_until = null",
+                cvm_code = excluded.cvm_code, total_shares = excluded.total_shares,
+                fetched_at = excluded.fetched_at, claimed_until = null",
         )
         .bind(issuer)
-        .bind(cvm_code)
+        .bind(info.cvm_code)
+        .bind(info.total_shares)
         .bind(now)
         .execute(&self.pool)
         .await?;
@@ -765,10 +774,17 @@ impl Store {
                 }
                 Some(IssuerCode {
                     cvm_code: Some(code),
+                    total_shares,
                     ..
                 }) => {
                     let docs = filings.get(code).map(Vec::as_slice).unwrap_or_default();
-                    match company_metrics(*code, docs, registrations.get(code), synced_at) {
+                    match company_metrics(
+                        *code,
+                        docs,
+                        registrations.get(code),
+                        *total_shares,
+                        synced_at,
+                    ) {
                         Some(metrics) => AssetFundamentals::Company(Box::new(metrics)),
                         None if scanned.contains(code) => {
                             AssetFundamentals::Unsupported(Unsupported::NoFilings)

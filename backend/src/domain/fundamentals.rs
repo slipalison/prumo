@@ -62,7 +62,8 @@ pub enum Gap {
     NoRentalProperty,
     /// O fundo não aparece no informe trimestral da CVM.
     NoQuarterlyReport,
-    /// O informe mensal veio sem cotas emitidas (ou com zero).
+    /// Sem número de ações (a B3 não informou) ou de cotas (o informe mensal
+    /// veio sem cotas emitidas), ou veio zero.
     NoShares,
 }
 

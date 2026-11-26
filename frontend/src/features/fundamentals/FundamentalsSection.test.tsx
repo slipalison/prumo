@@ -32,6 +32,9 @@ function company(overrides: Partial<CompanyFundamentals> = {}): AssetFundamental
       positive_operating_cash_years: { positive: 5, known: 5, window: 5, gap: null },
       revenue_cagr: { value: 0.1, gap: null },
       earnings_cagr: { value: -0.032, gap: null },
+      shares: 1_000_000,
+      earnings_per_share: { value: 1.8, gap: null },
+      book_value_per_share: { value: 11, gap: null },
       ...overrides,
     },
   };
@@ -83,6 +86,8 @@ describe("Fundamentos na folha do ativo", () => {
     expect(value(section, "Margem líquida")).toHaveTextContent("12,0%");
     expect(value(section, "Dív. líquida / EBITDA")).toHaveTextContent("1,0×");
     expect(value(section, "Dív. líquida / PL")).toHaveTextContent("0,3×");
+    expect(value(section, "LPA")).toHaveTextContent(/R\$\s1,80/);
+    expect(value(section, "VPA")).toHaveTextContent(/R\$\s11,00/);
     expect(value(section, "Anos com lucro")).toHaveTextContent("4 de 5");
     expect(value(section, "Anos com caixa operacional positivo")).toHaveTextContent("5 de 5");
     expect(value(section, "Receita, CAGR 5 anos")).toHaveTextContent("+10,0% a.a.");
@@ -116,6 +121,8 @@ describe("Fundamentos na folha do ativo", () => {
     expect(await within(section).findByText("ROE")).toBeInTheDocument();
     expect(value(section, "Receita líquida")).toHaveTextContent(MASK_BRL);
     expect(value(section, "Lucro líquido")).toHaveTextContent(MASK_BRL);
+    expect(value(section, "LPA")).toHaveTextContent(MASK_BRL);
+    expect(value(section, "VPA")).toHaveTextContent(MASK_BRL);
     expect(value(section, "ROE")).toHaveTextContent("15,0%");
     expect(section.textContent).not.toMatch(/R\$\s*\d/);
     for (const element of section.querySelectorAll("[title], [aria-label]")) {
@@ -150,6 +157,7 @@ describe("Fundamentos na folha do ativo", () => {
         positive_operating_cash_years: { positive: 0, known: 0, window: 5, gap: "financial_template" },
         revenue_cagr: missing,
         earnings_cagr: { value: null, gap: "non_positive_endpoint" },
+        earnings_per_share: { value: null, gap: "no_shares" },
       }),
     ]);
     const { section } = await openSection(/ITSA4/, "ITSA4");
@@ -162,6 +170,7 @@ describe("Fundamentos na folha do ativo", () => {
     expect(value(section, "ROE")).toHaveTextContent("—");
     expect(within(value(section, "ROE")).getByText(GAP_TEXT.non_positive_base)).toHaveClass("sr-only");
     expect(within(value(section, "Lucro, CAGR 5 anos")).getByText(GAP_TEXT.non_positive_endpoint)).toBeInTheDocument();
+    expect(within(value(section, "LPA")).getByText(GAP_TEXT.no_shares)).toBeInTheDocument();
   });
 
   it("seguradora e companhia sem história suficiente", async () => {

@@ -3,12 +3,15 @@
 -- entre as carteiras, como `quotes`: o balanco da WEG e o mesmo para todo
 -- mundo. As contas, as formulas e os limites estao em docs/fundamentos.md.
 
--- Emissor da B3 (as quatro letras do ticker) -> codigo CVM da companhia, da
--- pagina publica do emissor (`GetListedSupplementCompany`, campo `codeCVM`).
+-- Emissor da B3 (as quatro letras do ticker) -> codigo CVM da companhia e
+-- total de acoes emitidas, da pagina publica do emissor
+-- (`GetListedSupplementCompany`, campos `codeCVM` e `totalNumberShares`).
 -- `cvm_code` nulo: a B3 nao informa (ETF cadastrado em Acoes Nacionais).
 create table b3_issuer_cvm (
     issuer text primary key check (issuer ~ '^[A-Z0-9]{4}$'),
     cvm_code integer check (cvm_code > 0),
+    -- ON + PN, em acoes (com as em tesouraria): o divisor do LPA e do VPA.
+    total_shares numeric check (total_shares > 0),
     fetched_at timestamptz,
     -- A vez de uma replica buscar (mesmo esquema de `b3_issuer_fetches`).
     claimed_until timestamptz

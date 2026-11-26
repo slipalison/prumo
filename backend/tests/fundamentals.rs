@@ -23,8 +23,9 @@ use prumo::domain::fundamentals::{
     AssetFundamentals, Column, Filing, FilingKind, Gap, Line, Scope, Statement, Template,
     Unsupported,
 };
+use prumo::fundamentals::b3::{parse_issuer, B3Issuers, IssuerDirectory, IssuerInfo};
 use prumo::fundamentals::download::Validators;
-use prumo::fundamentals::{CvmCodes, FundamentalsService};
+use prumo::fundamentals::FundamentalsService;
 use prumo::quotes::Quote;
 use prumo::store::{NewAsset, Store};
 use rust_decimal::Decimal;
@@ -337,16 +338,22 @@ impl FakeCodes {
 }
 
 #[async_trait]
-impl CvmCodes for FakeCodes {
-    async fn cvm_code(&self, issuer: &str) -> Result<Option<i32>, String> {
+impl IssuerDirectory for FakeCodes {
+    async fn issuer(&self, issuer: &str) -> Result<IssuerInfo, String> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         tokio::time::sleep(Duration::from_millis(20)).await;
-        self.codes
+        let code = self
+            .codes
             .lock()
             .unwrap()
             .get(issuer)
             .copied()
-            .ok_or_else(|| "B3 fora do ar".to_owned())
+            .ok_or_else(|| "B3 fora do ar".to_owned())?;
+        // Mil ações por companhia (fictício).
+        Ok(IssuerInfo {
+            cvm_code: code,
+            total_shares: code.map(|_| dec!(1000)),
+        })
     }
 }
 
@@ -460,6 +467,10 @@ async fn a_round_reads_the_portfolio_companies_and_funds() {
     assert_eq!(last.depreciation_amortization.value(), Some(dec!(100000)));
     assert_eq!(last.ebitda.value(), Some(dec!(319000)));
     assert_eq!(last.roe.value(), Some(dec!(0.0292)));
+    // LPA e VPA com as mil ações da B3: 146.000 ÷ 1.000 e 5.000.000 ÷ 1.000.
+    assert_eq!(m.shares, Some(dec!(1000)));
+    assert_eq!(m.earnings_per_share.value(), Some(dec!(146)));
+    assert_eq!(m.book_value_per_share.value(), Some(dec!(5000)));
     assert_eq!(m.profitable_years.positive, 5);
     assert!(m.revenue_cagr.value().unwrap() > dec!(0.09));
     assert!(m.synced_at.is_some());
@@ -524,11 +535,9 @@ async fn a_round_reads_the_portfolio_companies_and_funds() {
     assert_eq!(next_day.failed, 0, "{next_day:?}");
     assert_eq!(next_day.updated, 0, "{next_day:?}");
     assert_eq!(cvm.hits(DFP_2025).await, (1, 1));
-    assert_eq!(
-        codes.calls.load(Ordering::SeqCst),
-        2,
-        "codigo achado nao e buscado de novo"
-    );
+    // O emissor achado é conferido de novo uma vez por dia (o número de ações
+    // muda); o ETF sem código, só depois de uma semana.
+    assert_eq!(codes.calls.load(Ordering::SeqCst), 3);
 
     // A rota mostra a mesma coisa, na ordem da carteira.
     let app = app(
@@ -555,6 +564,13 @@ async fn a_round_reads_the_portfolio_companies_and_funds() {
     );
     assert_eq!(c["years"][4]["figures"]["period_end"], "2025-12-31");
     assert_eq!(c["profitable_years"]["positive"], 5);
+    assert_eq!(c["shares"], 1000.0);
+    assert_eq!(c["earnings_per_share"]["value"], 146.0);
+    assert_eq!(c["book_value_per_share"]["value"], 5000.0);
+    assert_eq!(
+        c["years"][4]["figures"]["equity_controlling"]["value"],
+        5000000.0
+    );
     assert_eq!(assets[1]["kind"], "unsupported");
     assert_eq!(assets[1]["reason"], "no_cvm_code");
     assert_eq!(assets[2]["kind"], "fund");
@@ -744,7 +760,14 @@ async fn a_restatement_wins_and_an_older_version_never_undoes_it() {
         .unwrap();
     asset(&db.store, user, AssetClass::BrStocks, Some("NOVE3"), true).await;
     db.store
-        .save_issuer_code("NOVE", Some(99909), NOW)
+        .save_issuer_code(
+            "NOVE",
+            &IssuerInfo {
+                cvm_code: Some(99909),
+                total_shares: None,
+            },
+            NOW,
+        )
         .await
         .unwrap();
     let scanned: BTreeSet<i32> = [99909].into_iter().collect();
@@ -788,7 +811,14 @@ async fn a_restatement_wins_and_an_older_version_never_undoes_it() {
     let other = db.store.ensure_user("semdfp@teste.local").await.unwrap();
     asset(&db.store, other, AssetClass::BrStocks, Some("ZERO3"), true).await;
     db.store
-        .save_issuer_code("ZERO", Some(99908), NOW)
+        .save_issuer_code(
+            "ZERO",
+            &IssuerInfo {
+                cvm_code: Some(99908),
+                total_shares: None,
+            },
+            NOW,
+        )
         .await
         .unwrap();
     let pending = db.store.fundamentals_for_user(other).await.unwrap();
@@ -914,4 +944,34 @@ async fn a_new_asset_wakes_the_task_without_waiting_the_hour() {
     })
     .await;
     assert_eq!(codes.calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn the_b3_client_reads_the_code_and_the_shares() {
+    let server = MockServer::start().await;
+    let query =
+        prumo::income_auto::supplement_query("FICT", prumo::domain::income_auto::Venue::Company);
+    Mock::given(method("GET"))
+        .and(path(format!(
+            "/listedCompaniesProxy/CompanyCall/GetListedSupplementCompany/{}",
+            prumo::income_auto::encoded(&query)
+        )))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+            { "code": "FICT", "codeCVM": "99901", "totalNumberShares": "1.234.567", "cashDividends": [] }
+        ])))
+        .mount(&server)
+        .await;
+    let client = B3Issuers::with_base(reqwest::Client::new(), &format!("{}/", server.uri()));
+    assert_eq!(
+        client.issuer("FICT").await.unwrap(),
+        IssuerInfo {
+            cvm_code: Some(99901),
+            total_shares: Some(dec!(1234567))
+        }
+    );
+    // Emissor fora do padrão: nem vai à B3.
+    assert_eq!(client.issuer("fict").await.unwrap(), IssuerInfo::default());
+    // Página que não existe: erro, para a rodada tentar de novo.
+    assert!(client.issuer("ZZZZ").await.is_err());
+    assert_eq!(parse_issuer(&serde_json::json!([])), IssuerInfo::default());
 }

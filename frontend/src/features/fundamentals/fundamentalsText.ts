@@ -12,7 +12,7 @@ export const GAP_TEXT: Record<FundamentalsGap, string> = {
   no_quote: "sem cotação",
   no_rental_property: "o fundo não declara imóvel para renda",
   no_quarterly_report: "o fundo não aparece no informe trimestral",
-  no_shares: "o informe veio sem cotas emitidas",
+  no_shares: "sem o número de ações ou de cotas",
 };
 
 /** Por que o ativo não tem fundamentos. */
