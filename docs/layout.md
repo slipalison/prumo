@@ -493,6 +493,55 @@ seção ocupa o resto (`.page` em volta, para as grades das seções enxergarem 
 largura certa). No celular, as pílulas numa linha só que rola de lado (hoje
 quebram em 2–3 linhas).
 
+**Depois (grupo 4, feito).** Medido no modo de demonstração, em telas (altura
+da página ÷ altura da janela; 1,02 é o piso da casca):
+
+| Tela | 1440×900 | 1920×1080 | iPad 1366×1024 | iPad 1024×1366 | Celular 390×844 |
+|---|---|---|---|---|---|
+| Análise (antes 11,16 / 9,30 / 9,90 / 7,85 / 17,25) | 2,76 | 2,25 | 2,50 | 2,27 | 6,40 |
+| Ajustes › Análise (antes 4,70 / 3,92 / 4,16 / 3,69 / 8,78) | 1,61 | 1,24 | 1,47 | 1,30 | 4,49 |
+| Ajustes › Alertas (antes 2,18 / 1,82 / 1,99 / 1,60 / 3,65) | 1,02 | 1,01 | 1,02 | 1,01 | 2,25 |
+
+A folha de teto (aberta da tabela de referências) segue em 1,0.
+
+O que mudou, e onde o desenho foi outro:
+
+- **Análise, primeira dobra:** o veredito com o perfil de risco compacto (os
+  limiares no ⓘ) à esquerda e as quatro pontuações em **2 × 2** ao lado (no
+  plano eram cinco cartões numa linha: com o perfil dentro do veredito, os
+  cartões de pontuação ficavam altos e vazios). Abaixo de 1100 px de conteúdo,
+  o veredito ocupa a linha e as pontuações ficam 4 lado a lado (2 × 2 no
+  celular). Cada pontuação tem o selo "N a ver" e leva até a tabela da dimensão.
+- **Regras:** uma `DataTable` por dimensão em **largura inteira** (o plano dizia
+  `Grid cols={2}`): Regra, Estado (`StatusPill`), **Diagnóstico** (a conta,
+  em uma linha, à vista — o pedido era "diagnóstico em uma linha"), Agora (com a
+  barra fina do limite), Limite ("máx. 15%", "mín. 10%", "CDI 13,20%") e O que
+  fazer (o link à vista, o texto inteiro com o valor do aporte no ⓘ). Em duas
+  colunas o diagnóstico não caberia. Os achados das sete regras originais são
+  linhas do diagnóstico com o ícone dos ativos (o cartão `Finding` saiu); o
+  "o que fazer" de cada achado vai junto no ⓘ. Ok, sem dado e desligadas num
+  recolher no fim de cada dimensão. Entre 561 e 1000 px de tabela (iPad em pé)
+  cada regra vira duas linhas; abaixo de 560 px, um bloco.
+- **Embaixo:** Pontos de atenção e Destaques lado a lado; Referências de preço
+  numa tabela em largura inteira (o plano punha as três em `Grid cols={3}`: a
+  tabela de sete colunas não cabe em 1/3). "De onde vêm os dados" recolhido,
+  com a falha de fonte já na frase fechada.
+- **Ajustes › Análise:** duas pilhas de painéis (Diversificação, Dividendos e
+  o Bazin; Rentabilidade e Qualidade), de altura parecida, em vez de uma grade
+  de 2 colunas linha a linha; a frase da regra é texto corrido com o campo no
+  meio e o ⓘ colado; com mudança por salvar, a barra de salvar acompanha a
+  rolagem no desktop.
+- **Alertas:** duas colunas iguais (`Grid cols={2}`, não `main-aside`): com o
+  exemplo do resumo na coluna estreita a tela passava de 1,1.
+- **Casca de Ajustes:** `<Page>` em volta; coluna de 188 px fixa ao rolar a
+  partir de 1000 px de conteúdo; pílulas numa linha que rola no celular, com a
+  seção aberta trazida à vista. Seção sem `<Page>` fica limitada a
+  `--content-legacy`.
+- Em `components/` e nos congelados: nada foi alterado. A `DataTable` comum
+  rola de lado (`overflow-x: auto`) e isso corta o ⓘ da primeira linha; as
+  tabelas da Análise, que nunca precisam rolar, usam `overflow: visible` no
+  próprio CSS (`analysis.css`).
+
 ## 8. Etapa 2: grupos e arquivos
 
 Quatro agentes em paralelo, um por grupo. Cada um mexe **só** nos arquivos do

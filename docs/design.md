@@ -133,8 +133,11 @@ estão em [layout.md](layout.md).
 - Ajustes agrupa **seções** (`SETTINGS_SECTIONS`,
   `frontend/src/features/settings/sections.ts`): Metas por classe, Critérios,
   Objetivos, Análise, Importar da B3, Impostos e Alertas.
-  Seção nova também é uma linha. A lista de seções fica no topo de Ajustes
-  (links com `aria-current="page"` na atual), cada seção tem endereço próprio
+  Seção nova também é uma linha. Com espaço (≥ 1000 px de conteúdo), a lista
+  de seções é uma **coluna à esquerda**, fixa ao rolar, e a seção ocupa o
+  resto; mais estreito (celular, iPad em pé), as seções viram **pílulas numa
+  linha só** que rola de lado, com a seção aberta trazida à vista. Os links
+  têm `aria-current="page"` na atual; cada seção tem endereço próprio
   (`#/ajustes/metas`, `#/ajustes/criterios`, `#/ajustes/objetivos`, `#/ajustes/analise`,
   `#/ajustes/importar-b3`, `#/ajustes/impostos`) e uma seção por vez na tela.
 - Os links antigos `#/metas` e `#/criterios` seguem valendo: abrem a seção
@@ -346,73 +349,93 @@ abrindo a seção nova (`LEGACY_SECTIONS` em `lib/route.ts`). Pontuação simple
 à mostra, nunca uma nota de marca: o percentual das regras ligadas, com dado,
 que estão ok, e o número exato ao lado.
 
-Na tela (`AnalysisScreen`), de cima para baixo:
+Na tela (`AnalysisScreen`, `<Page>`), de cima para baixo (o desenho e as
+medidas estão em [layout.md](layout.md) § 7.5):
 
-- **Veredito** (cartão no topo, `role="status"`): o prumo parado e "Nenhum
-  ponto a ver" quando está tudo dentro dos limites; "N pontos a ver" com
-  quantas regras passaram; ou "Ainda sem o que medir". Nunca "tudo certo"
-  quando não há o que medir. Link "Ajustar as regras".
-- **Perfil de risco**: duas barras horizontais, **Agora** e **Suas metas**,
-  renda fixa de um lado (**listrada**) e renda variável do outro (lisa), com o
-  rótulo (Conservador, Moderado, Arrojado) e os dois percentuais **escritos**
-  sob a barra; a cor e a listra só ajudam. A barra é `role="img"` com a
-  descrição completa. Abaixo, a diferença em pontos percentuais e os limiares do
-  Prumo (30% e 70% de renda variável). Sem ativos ou sem metas, diz o que falta.
-- **Quatro cartões de dimensão** (Diversificação, Dividendos, Rentabilidade,
-  Qualidade dos ativos): título, a **pontuação em número grande** ("62,5%"), o
-  número exato ("5 de 8 regras ok · 2 regras sem dado, fora da conta") e uma
-  barra `role="meter"`. As regras vêm em ordem de atenção: primeiro o que passou
-  do limite, depois ok, sem dado e desligadas.
-- **Uma linha por regra** (`RuleRow`): o **estado em texto com ícone** (Ponto a
-  ver / Ok / Sem dado / Desligada) e a frase da regra com o limite da pessoa
-  ("Pelo menos 10% da carteira no exterior"); **Agora** e **Mínimo**/**Limite**
-  (ou o nome do índice, nas regras contra CDI, Ibovespa e IPCA) em números
-  grandes; a barra com o limite no fio de prumo só nas regras de teto em
-  percentual; a conta por trás em uma frase ("0% da carteira está no
-  exterior."); e, num ponto a ver, **"O que fazer."** — aportar (valor em reais)
-  ou olhar uma tela do Prumo, nunca vender nem citar ativo de fora — com link.
-  "Sem dado" diz o motivo e **não** é aviso. As sete regras originais mostram os
-  achados em cartões internos (`Finding`), como os avisos de antes: título,
-  Agora/Limite, barra, "O que fazer".
-- **Qualidade dos ativos**: um cartão de dimensão como os outros (pontuação,
-  número exato, regras em ordem de atenção). Cada regra diz "Entraram na conta 1
-  de 2 ativos. Abaixo do critério: FRAC3." — quem não tem o dado fica fora e
-  aparece como "Sem dado", com o motivo (banco sem dívida, fundo de papel sem
-  vacância). "Pelo menos 70% do valor em ações vem de empresas com ROE de 10% ou
-  mais" é a frase; o "O que fazer" manda olhar a folha do ativo, em Fundamentos,
-  e diz que o Prumo não manda vender.
-- **Pontos de atenção dos ativos** (`AttentionCard`): uma lista por ativo, com o
-  ícone dele (`AssetIcon`) e frases curtas e factuais ("ROE de 4,12%, abaixo de
-  10%", "Dívida líquida de 1,5 vezes o patrimônio líquido", "Provento de 12 meses
-  caiu 22,50% em relação aos 12 meses anteriores", "Em recuperação judicial"),
-  cada uma com o ícone de alerta (o texto diz tudo; o ícone só ajuda). Sem ponto,
-  diz "Nenhum ponto de atenção nos N ativos com fundamentos"; sem nenhum ativo
-  avaliado, "Ainda sem dados de fundamentos", nunca "tudo certo". Rodapé: quantos
-  foram avaliados e quantas ações e FIIs ainda esperam a busca da CVM.
-- **Destaques de 12 meses**: duas medidas (preço em 12 meses e rentabilidade
-  desde a compra), cada uma com "Mais subiram" e "Mais caíram" (até 3), o
-  ícone do ativo, o nome e a variação **com sinal** (+18,40%, −12,80%): o sinal
-  diz o sentido, a cor só reforça. Vazio explica por quê.
-- **Referências de preço**: um aviso fixo (`role="note"`) "Referência pública,
-  não é recomendação"; por ativo, **Bazin** e **Graham** (este só com lucro e patrimônio por ação
+- **Cabeçalho** em uma linha: o título, o ⓘ com a explicação da tela (o que é
+  cada dimensão e que regra sem dado não é falha) e o link **Ajustar as
+  regras** à direita.
+- **Primeira dobra.** À esquerda, o **veredito** (`role="status"`): o prumo
+  parado e "Nenhum ponto a ver" quando está tudo dentro dos limites; "N pontos a
+  ver" com quantas regras passaram; ou "Ainda sem o que medir". Nunca "tudo
+  certo" quando não há o que medir. Logo abaixo, no mesmo cartão, o **perfil de
+  risco** compacto: duas barras finas, **Agora** e **Suas metas**, renda fixa de
+  um lado (**listrada**) e renda variável do outro (lisa), com o rótulo
+  (Conservador, Moderado, Arrojado) e os dois percentuais **escritos**; a cor e
+  a listra só ajudam. A barra é `role="img"` com a descrição completa. Embaixo,
+  a diferença em pontos percentuais; os limiares do Prumo (30% e 70% de renda
+  variável) ficam no ⓘ. Sem ativos ou sem metas, diz o que falta.
+  À direita, as **quatro pontuações** (`DimensionScores`: Diversificação,
+  Dividendos, Rentabilidade, Qualidade dos ativos), em 2 × 2 na tela larga e
+  lado a lado no iPad em pé: a **pontuação em número grande** ("62,5%"), o selo
+  "N a ver" (ou "Tudo ok"), uma barra `role="meter"` e o número exato ("5 de 8
+  regras ok · 2 regras sem dado, fora da conta"). O cartão inteiro é um botão
+  ("Ver as regras de Dividendos") que leva até a tabela da dimensão e põe o
+  foco nela.
+- **Uma tabela por dimensão** (`DimensionCard` + `RuleTable`, sobre a
+  `DataTable`). O cabeçalho repete a pontuação ("3 de 9 regras ok 33,3%") e o
+  ⓘ diz o que a dimensão mede. À vista ficam **só os pontos a ver**, uma linha
+  por regra: a frase com o limite da pessoa ("Pelo menos 10% da carteira no
+  exterior"), o **estado** (`StatusPill`: texto e ícone; Ponto a ver / Ok / Sem
+  dado / Desligada), o **diagnóstico** em uma linha (a conta: "0% da carteira
+  está no exterior."), **Agora** (com a barra fina do limite nas regras de teto
+  em percentual), o **Limite** com o sentido escrito ("máx. 15%", "mín. 10%" ou
+  o índice, "CDI 13,20%") e **O que fazer**: o link para a tela certa à vista e
+  o texto inteiro — aportar (valor em reais) ou olhar uma tela do Prumo, nunca
+  vender nem citar ativo de fora — no ⓘ da linha. As sete regras originais
+  listam os **achados** no diagnóstico, um por linha, com o ícone dos ativos
+  citados ("Tesouro IPCA+ 2035 é 70,76% da carteira", "Ações Nacionais tem 1
+  ativo"); o "o que fazer" de cada achado fica no mesmo ⓘ. As regras **ok, sem
+  dado e desligadas** ficam num recolher no fim ("3 regras ok · 1 sem dado"),
+  na mesma tabela; "Sem dado" diz o motivo e **não** é aviso; "Desligada" diz
+  que não entra na pontuação. Sem nenhum ponto a ver, a dimensão diz isso.
+  No iPad em pé cada regra vira duas linhas (frase, estado e números em cima;
+  diagnóstico e o que fazer embaixo) e, no celular, um bloco com a frase em
+  cima.
+- **Qualidade dos ativos**: uma dimensão como as outras. Cada regra diz
+  "Entraram na conta 1 de 2 ativos. Abaixo do critério: FRAC3." — quem não tem
+  o dado fica fora e aparece como "Sem dado", com o motivo (banco sem dívida,
+  fundo de papel sem vacância). O "o que fazer" manda olhar a folha do ativo, em
+  Fundamentos, e diz que o Prumo não manda vender.
+- **Pontos de atenção dos ativos** e **Destaques de 12 meses**, lado a lado.
+  Pontos de atenção (`AttentionCard`): uma lista por ativo, com o ícone dele e
+  frases curtas e factuais ("ROE de 4,12%, abaixo de 10%", "Provento de 12
+  meses caiu 22,50% em relação aos 12 meses anteriores"), cada uma com o ícone
+  de alerta (o texto diz tudo). Sem ponto, "Nenhum ponto de atenção nos N ativos
+  com fundamentos"; sem nenhum ativo avaliado, "Ainda sem dados de
+  fundamentos", nunca "tudo certo". Rodapé de uma linha: quantos foram
+  avaliados, quantos esperam a CVM e "não são recomendação". Destaques: duas
+  medidas (preço em 12 meses e rentabilidade desde a compra), cada uma com
+  "Mais subiram" e "Mais caíram" (até 3), o ícone, o nome e a variação **com
+  sinal** (+18,40%, −12,80%); como cada medida é tirada fica no ⓘ.
+- **Referências de preço** (`ReferencesCard`): o aviso fixo (`role="note"`)
+  "Referência pública, não é recomendação" em uma linha; as três fórmulas (com
+  o rendimento-alvo de hoje) no ⓘ do título e "Mudar o rendimento-alvo" à
+  direita. Uma **tabela compacta**: Ativo, **Bazin** (a média de dividendos
+  usada no ⓘ da célula), **Graham** (só com lucro e patrimônio por ação
   positivos), **Pelas duas** (o menor dos dois, só quando há os dois), **Seu
-  teto** e **Preço de hoje**, e a média de dividendos usada. Um botão só
-  ("Usar R$ 9,50 como meu teto", com o valor pelas duas; a pessoa não escolhe
-  fórmula) abre uma folha de **confirmação** ("Definir R$ 9,50 como teto de
-  preço de ITSA4?") antes do `PATCH`. Nada de "oportunidade",
-  "compre", "preço justo" ou "upside".
-- **De onde vêm os dados**: a fonte de setor de cada classe, de quando é, se a
-  última busca falhou, quantos ativos ficaram sem setor e por que os EUA não têm
+  teto**, **Hoje** e, na linha, o botão "Usar R$ 9,50 como meu teto" (com o
+  valor pelas duas; a pessoa não escolhe fórmula), que abre uma folha de
+  **confirmação** ("Definir R$ 9,50 como teto de preço de ITSA4?") antes do
+  `PATCH`. Célula sem valor mostra "—" e diz o motivo ao leitor de tela. Nada de
+  "oportunidade", "compre", "preço justo" ou "upside".
+- **De onde vêm os dados**, recolhido no fim: a fonte de setor de cada classe,
+  de quando é, se a última busca falhou (a falha aparece já na frase fechada:
+  "1 fonte falhou"), quantos ativos ficaram sem setor e por que os EUA não têm
   setor.
 
-Em **Ajustes, Análise** (`AnalysisSettings`), um cartão por dimensão com uma
-linha por regra, em frase ("Nenhum ativo acima de [15] % da carteira"), o campo
-do limite (só nas regras com limite editável), o porquê em uma linha e o
-interruptor. "Voltar para 60%" aparece quando o limite não é o de fábrica.
-**Salvar regras** só habilita com mudança válida; o erro de um limite aparece na
-própria linha (`role="alert"`, `aria-invalid`). A Qualidade tem as suas oito regras (a de recuperação judicial só liga
-e desliga). Um cartão à parte guarda o **rendimento-alvo do
-Bazin** (% ao ano).
+Em **Ajustes, Análise** (`AnalysisSettings`, `<Page>`), as dimensões em duas
+colunas (Diversificação, Dividendos e o rendimento-alvo do Bazin à esquerda;
+Rentabilidade e Qualidade à direita; uma coluna no celular), um painel por
+dimensão com uma linha por regra: a frase corrida com o campo do limite no
+meio ("Nenhum ativo acima de [15] % da carteira"), só nas regras com limite
+editável, o porquê no ⓘ colado na frase e o interruptor à direita. "Voltar
+para 60%" aparece quando o limite não é o de fábrica. **Salvar regras** só
+habilita com mudança válida; com mudança por salvar, a barra de salvar
+acompanha a rolagem no desktop. O erro de um limite aparece na própria linha
+(`role="alert"`, `aria-invalid`). A Qualidade tem as suas oito regras (a de
+recuperação judicial só liga e desliga). Um painel à parte guarda o
+**rendimento-alvo do Bazin** (% ao ano).
 
 Na **Carteira**:
 
@@ -429,8 +452,10 @@ Na **Carteira**:
 
 Com o **olho fechado**, todo valor em reais da Análise vira `R$ ••••` (por
 `useMoney()`, também para o leitor de tela e para a folha de confirmação): o
-aporte sugerido, o que o pagador pagou, a renda de 12 meses e a base do
-yield (o valor das ações e FIIs), o Bazin, o teto e o preço de hoje. Percentuais, contagens,
+aporte sugerido (no ⓘ do "o que fazer"), o que o pagador pagou, a renda de 12
+meses e a base do yield (o valor das ações e FIIs), o Bazin e a média de
+dividendos do ⓘ, o Graham, o "pelas duas", o teto, o preço de hoje e o botão de
+teto (cujo nome acessível não leva valor). Percentuais, contagens,
 limites, o perfil e os destaques são percentuais e ficam à vista. O título do
 Tesouro Direto (renda fixa) não tem setor e aparece nos achados pelo nome
 ("Tesouro IPCA+ 2035"), não pela chave `TD-…`.
@@ -727,9 +752,11 @@ pediu, e a tela continua mascarada.
 
 ### 11. Ajustes › Alertas
 
-Seção `#/ajustes/alertas`. Responde "como o Prumo me avisa fora do app?" sem
-virar painel: três cartões de vidro, na ordem em que a pessoa os usa. O
-funcionamento e a configuração do bot estão em [alertas.md](alertas.md).
+Seção `#/ajustes/alertas` (`<Page>`). Responde "como o Prumo me avisa fora do
+app?" sem virar painel: o cabeçalho em uma linha (a explicação no ⓘ) e quatro
+painéis em **duas colunas** (uma no celular) — à esquerda Telegram e "O que
+avisar", à direita "Quando e com quê" e o exemplo do resumo. O funcionamento e
+a configuração do bot estão em [alertas.md](alertas.md).
 
 1. **Telegram.** Quatro estados, cada um com texto (nenhum só por cor):
    - **Desligado no servidor** (sem token do bot): uma frase "os alertas estão
@@ -746,15 +773,16 @@ funcionamento e a configuração do bot estão em [alertas.md](alertas.md).
      **Desvincular**.
 2. **O que avisar.** A mesma lista de regras da Análise (`rule-row`): uma frase,
    o limite quando o tipo tem (campo numérico, desligado junto do interruptor),
-   a explicação em uma linha e o interruptor à direita. Sem regra de IR para o
+   quando o tipo avisa no ⓘ colado na frase e o interruptor à direita. Sem regra de IR para o
    ano de hoje, o isentômetro aparece **desligado e travado**, com a razão
    escrita ("o Prumo ainda não tem a regra de IR deste ano").
 3. **Quando e com quê.** Hora do resumo (`<input type="time">`, horário de
-   Brasília), o interruptor **Sem valores no resumo** (com a explicação de que
-   o resumo passa pelos servidores do Telegram) e **Salvar alertas**. Erros
+   Brasília), o interruptor **Sem valores no resumo** ("só nomes e
+   percentuais" à vista; no ⓘ, que o resumo passa pelos servidores do Telegram
+   e que o olho só esconde a tela) e **Salvar alertas**. Erros
    ficam ao lado do campo (`role="alert"`) e travam o botão; "Descartar
    mudanças" volta ao salvo.
-4. **Como o resumo fica.** Um exemplo, com dados **fictícios**, só dos tipos
+4. **Como o resumo fica.** Um exemplo, com dados **fictícios** (dito no ⓘ), só dos tipos
    ligados, no texto exato do servidor (com acento, como chega no Telegram). Acompanha
    "Sem valores no resumo" na hora, antes de salvar.
 

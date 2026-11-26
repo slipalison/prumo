@@ -210,7 +210,7 @@ que a fatia de renda variável merece. Os limiares são do Prumo:
 | acima de 70% | Arrojado |
 
 A tela mostra o perfil **de agora** (valor de mercado) e o perfil **das metas
-por classe** da pessoa (os pontos-base de cada classe), lado a lado, com a
+por classe** da pessoa (os pontos-base de cada classe), uma barra sob a outra no cartão do veredito, com a
 diferença em pontos percentuais. Sem ativos ou sem metas, diz o que falta. As
 duas misturas somam 100%.
 
@@ -243,7 +243,8 @@ sobre o histórico de dividendos, sem dizer se o ativo está barato ou caro.
   12 meses, e assim por diante, **até 5 anos**. A janela de agora entra sempre; as
   mais velhas só entram **inteiras**, ou seja, se o primeiro dividendo conhecido é
   de antes do início delas — uma janela em que o papel ainda nem existia (ou o
-  histórico não chega) não vira "zero dividendo". A tela diz quantos anos entraram.
+  histórico não chega) não vira "zero dividendo". A tela diz quantos anos entraram
+  (no ⓘ do Bazin, na tabela de referências).
   Dividendo é o bruto por cota (data ex) do cache do Yahoo (`dividend_history`),
   que passou a pedir **5 anos** em vez de 2 (`dividends.rs`; o cache se refaz em
   um dia). Só ações e FIIs da B3 (em reais).
@@ -266,7 +267,7 @@ sobre o histórico de dividendos, sem dizer se o ativo está barato ou caro.
   Bazin e Graham). O rendimento-alvo é sempre o da pessoa. Como a conta não
   depende do valor em carteira, um ativo recém-cadastrado, ainda sem quantidade,
   também recebe Graham.
-- **Teto de preço**: a tela mostra as referências ao lado do teto que a pessoa
+- **Teto de preço**: a tela mostra as referências numa tabela, ao lado do teto que a pessoa
   pôs no ativo (`max_price`) e do preço de hoje. Um botão só ("Usar R$ X como
   meu teto") aplica o valor pelas duas como teto **depois de uma confirmação**,
   pelo mesmo `PATCH /assets/{id}` do resto do app. O Prumo não calcula
