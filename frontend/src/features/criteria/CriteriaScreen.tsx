@@ -18,7 +18,6 @@ export function CriteriaScreen({ portfolio }: CriteriaScreenProps) {
   return (
     <Page className="criteria">
       <PageHeader
-        eyebrow="Critérios"
         title="As perguntas que dão a nota"
         infoLabel="Como a nota é calculada"
         info={

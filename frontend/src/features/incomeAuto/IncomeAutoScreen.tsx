@@ -19,7 +19,6 @@ export function IncomeAutoScreen() {
     <Page className="income-auto">
       <PageHeader
         title="Proventos automáticos"
-        eyebrow="Renda"
         info="O Prumo lê na B3 os dividendos, JCP e rendimentos anunciados para os seus ativos e calcula quanto você recebe com as cotas do seu livro na data com. O que você lançou à mão ou importou da B3 sempre vence."
         infoLabel="Sobre os proventos automáticos"
       />

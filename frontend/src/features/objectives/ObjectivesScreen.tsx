@@ -24,7 +24,6 @@ export function ObjectivesScreen() {
   return (
     <Page className="objectives">
       <PageHeader
-        eyebrow="Objetivos"
         title="Para onde a carteira vai?"
         summary={
           <>

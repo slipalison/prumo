@@ -58,6 +58,14 @@
   gap: var(--space-2);
 }
 
+/* O botão de ação do cabeçalho tem o mesmo tamanho em toda tela (Carteira,
+   Renda, Objetivos): 44 px, o alvo de toque, e não os 48 px do botão solto. */
+.page-header__actions .btn {
+  min-height: var(--touch);
+  padding-inline: var(--space-5);
+  font-size: var(--text-lg);
+}
+
 /* ================= Grade ================= */
 
 .grid {

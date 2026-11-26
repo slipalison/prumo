@@ -129,7 +129,6 @@ export function ImportB3Screen() {
   return (
     <Page className="import-b3">
       <PageHeader
-        eyebrow="Importar"
         title="Importar da B3"
         summary="Nada é gravado antes de você apertar Importar, e importar de novo não duplica."
         infoLabel="Sobre a importação"

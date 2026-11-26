@@ -26,12 +26,6 @@
   color: transparent;
 }
 
-.portfolio .page-header__actions .btn {
-  min-height: var(--touch);
-  padding-inline: var(--space-5);
-  font-size: var(--text-lg);
-}
-
 /* ---------- Faixa de números ---------- */
 
 .portfolio__strip {

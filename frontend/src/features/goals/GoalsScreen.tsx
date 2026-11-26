@@ -54,7 +54,6 @@ export function GoalsScreen({ portfolio }: GoalsScreenProps) {
   return (
     <Page className="goals">
       <PageHeader
-        eyebrow="Metas"
         title="Quanto você quer em cada classe?"
         infoLabel="Como as metas guiam o aporte"
         info="Os aportes vão sempre para o que está mais longe da meta."
