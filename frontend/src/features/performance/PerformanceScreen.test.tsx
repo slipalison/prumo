@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { REBUILD_POLL_MS, whileRebuilding } from "../../api/performance";
@@ -102,6 +103,18 @@ async function open() {
   return rendered;
 }
 
+/** Um dos números do topo (o rótulo é o `dt`; o número, o detalhe e o ⓘ ficam na mesma caixa). */
+async function stat(label: string) {
+  const summary = await screen.findByRole("region", { name: "Resumo do desempenho" });
+  return within(summary).getByText(label, { selector: "dt" }).closest("div") as HTMLElement;
+}
+
+/** Abre o ⓘ de nome `name` dentro de `root` e devolve o texto que ele mostra. */
+async function openTip(user: ReturnType<typeof userEvent.setup>, root: HTMLElement, name: string) {
+  await user.click(within(root).getByRole("button", { name }));
+  return within(root).getByRole("status");
+}
+
 afterEach(() => vi.restoreAllMocks());
 
 describe("Desempenho", () => {
@@ -145,30 +158,35 @@ describe("Desempenho", () => {
     expect(screen.getByText("Hoje é parcial")).toBeInTheDocument();
   });
 
-  it("mostra os cartões contra o CDI, o patrimônio e a tabela", async () => {
+  it("mostra os números contra o CDI, o patrimônio e a tabela", async () => {
     serve(worthFixture(), perfFixture());
-    await open();
-    const year = await screen.findByRole("region", { name: "Últimos 12 meses" });
+    const { user } = await open();
+    const year = await stat("Últimos 12 meses");
     expect(within(year).getByText("+1,23%")).toBeInTheDocument();
-    expect(within(year).getByText("1,13% acima do CDI")).toBeInTheDocument();
+    expect(year).toHaveTextContent("1,13% acima do CDI");
     expect(year).toHaveTextContent("(1.215% do CDI)");
     expect(year).toHaveTextContent("a série ainda não tem 12 meses");
-    const since = screen.getByRole("region", { name: "Desde o início" });
+    expect(await openTip(user, year, "Sobre Últimos 12 meses")).toHaveTextContent(/De 23\/11\/2026 a 25\/11\/2026\. O CDI rendeu \+0,10% no período\./);
+    const since = await stat("Desde o início");
     expect(within(since).getByText("−0,20%")).toBeInTheDocument();
-    expect(within(since).getByText("0,30% abaixo do CDI")).toBeInTheDocument();
+    expect(since).toHaveTextContent("0,30% abaixo do CDI");
+
+    expect(await stat("Aplicado")).toHaveTextContent("R$ 1.500,00");
+    expect(await stat("Proventos")).toHaveTextContent("R$ 12,50");
+    const gain = await stat("Ganho");
+    expect(gain).toHaveTextContent(/−R\$\s10,00/);
+    expect(await openTip(user, gain, "Sobre Ganho")).toHaveTextContent(/os proventos recebidos ficam ao lado/);
 
     const worth = screen.getByRole("region", { name: "Patrimônio no tempo" });
-    expect(within(worth).getByText("R$ 1.500,00")).toBeInTheDocument();
-    expect(within(worth).getByText("R$ 12,50")).toBeInTheDocument();
-    expect(within(worth).getByText(/os proventos recebidos ficam ao lado/)).toBeInTheDocument();
-    expect(within(worth).getByText(/−R\$\s10,00/)).toBeInTheDocument();
+    expect(within(worth).getByText("Hoje é parcial")).toBeInTheDocument();
     expect(within(worth).getByRole("img", { name: /Patrimônio de 23\/11 a 25\/11/ })).toBeInTheDocument();
-    expect(within(worth).getByText(/O ponto de hoje \(25\/11\) usa o preço do momento/)).toBeInTheDocument();
+    expect(await openTip(user, worth, "Como ler o patrimônio no tempo")).toHaveTextContent(/O ponto de hoje \(25\/11\) usa o preço do momento/);
 
     const returns = screen.getByRole("region", { name: "Rentabilidade contra os índices" });
     expect(within(returns).getByRole("img", { name: /carteira \+1,23%, CDI \+0,10%, IPCA sem dado, Ibovespa −0,43%/ })).toBeInTheDocument();
-    expect(within(returns).getByText(/Ibovespa até 24\/11\/2026/)).toBeInTheDocument();
-    expect(within(returns).getByText(/Ainda sem dado no período: IPCA/)).toBeInTheDocument();
+    const notes = await openTip(user, returns, "De quando é cada índice");
+    expect(notes).toHaveTextContent(/Ibovespa até 24\/11\/2026/);
+    expect(notes).toHaveTextContent(/Ainda sem dado no período: IPCA/);
 
     const table = screen.getByRole("table");
     const rows = within(table).getAllByRole("row");
@@ -204,9 +222,9 @@ describe("Desempenho", () => {
     for (const text of heard) expect(text).not.toMatch(/R\$\s*\d/);
     expect(within(worth).getByRole("img", { name: /R\$ ••••, com R\$ •••• aplicados/ })).toBeInTheDocument();
     // O ganho não diz o sentido com o olho fechado.
-    expect(within(worth).queryByText(/^[+−]/)).toBeNull();
+    expect(within(await stat("Ganho")).queryByText(/^[+−]/)).toBeNull();
     // A rentabilidade continua à vista.
-    expect(within(screen.getByRole("region", { name: "Últimos 12 meses" })).getByText("+1,23%")).toBeInTheDocument();
+    expect(within(await stat("Últimos 12 meses")).getByText("+1,23%")).toBeInTheDocument();
   });
 
   it("a legenda liga e desliga cada índice", async () => {
@@ -246,7 +264,7 @@ describe("Desempenho", () => {
   it("troca o período pelo chip", async () => {
     serve(worthFixture(), perfFixture());
     const { user } = await open();
-    await screen.findByRole("region", { name: "Últimos 12 meses" });
+    await stat("Últimos 12 meses");
     await user.click(screen.getByRole("button", { name: "Desde o início" }));
     expect(screen.getByRole("button", { name: "Desde o início" })).toHaveAttribute("aria-pressed", "true");
     expect(asked).toContain("/api/v1/performance?period=12m&benchmarks=cdi,ipca,ibov");
@@ -287,7 +305,7 @@ describe("Desempenho", () => {
     expect(within(worthCard).getByRole("img", { name: /Patrimônio de 01\/03\/2023 a 25\/11\/2026/ })).toBeInTheDocument();
     // As pontas do eixo levam o ano.
     expect(worthCard.querySelector(".chart__dates")).toHaveTextContent("01/03/2023");
-    expect(within(worthCard).getByText(`R$ ${(dates.length - 1).toLocaleString("pt-BR")},00`)).toBeInTheDocument();
+    expect(await stat("Proventos")).toHaveTextContent(`R$ ${(dates.length - 1).toLocaleString("pt-BR")},00`);
     const returns = screen.getByRole("region", { name: "Rentabilidade contra os índices" });
     expect(within(returns).getByRole("img", { name: /de 01\/03\/2023 a 25\/11\/2026/ })).toBeInTheDocument();
 

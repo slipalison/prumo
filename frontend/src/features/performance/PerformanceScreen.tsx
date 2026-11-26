@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { errorMessage } from "../../api/client";
 import { useNetWorth, usePerformance } from "../../api/performance";
 import type {
@@ -11,10 +11,12 @@ import type {
 } from "../../api/performanceTypes";
 import { CountUp } from "../../components/CountUp";
 import { GlassCard } from "../../components/GlassCard";
+import { Grid, Page, PageHeader, Panel, StatStrip, type Stat } from "../../components/Layout";
 import { MagneticButton } from "../../components/MagneticButton";
 import { Skeleton } from "../../components/Skeleton";
 import { cx } from "../../lib/cx";
 import { formatPercent } from "../../lib/format";
+import type { Money } from "../../lib/money";
 import { useMoney } from "../../lib/privacy";
 import { LineChart, type ChartSeries } from "./LineChart";
 import "./performance.css";
@@ -42,32 +44,31 @@ export function PerformanceScreen() {
   const perf = usePerformance(period);
 
   return (
-    <div className="screen performance">
-      <header className="screen__header">
-        <p className="eyebrow">Desempenho</p>
-        <h1 className="screen__title">Você está ganhando do CDI?</h1>
-        <p className="screen__lead">
-          Rentabilidade pelo método de cotas: o aporte não conta como ganho, só o que o preço e os proventos fizeram.
-        </p>
-      </header>
-
-      <div className="chips" role="group" aria-label="Período">
-        {PERIODS.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            className={cx("chip chip--quick", period === p.id && "is-active")}
-            aria-pressed={period === p.id}
-            onClick={() => setPeriod(p.id)}
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
+    <Page className="performance">
+      <PageHeader
+        title="Você está ganhando do CDI?"
+        info="Rentabilidade pelo método de cotas: o aporte não conta como ganho, só o que o preço e os proventos fizeram."
+        infoLabel="Sobre a tela Desempenho"
+        actions={
+          <div className="chips" role="group" aria-label="Período">
+            {PERIODS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className={cx("chip chip--quick", period === p.id && "is-active")}
+                aria-pressed={period === p.id}
+                onClick={() => setPeriod(p.id)}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        }
+      />
 
       {(worth.isPending || perf.isPending) && (
         <div className="performance__loading" role="status" aria-label="Carregando o desempenho">
-          <Skeleton height={120} radius={22} />
+          <Skeleton height={96} radius={22} />
           <Skeleton height={260} radius={22} />
         </div>
       )}
@@ -86,11 +87,12 @@ export function PerformanceScreen() {
         </GlassCard>
       )}
       {worth.data && perf.data && <Loaded worth={worth.data} perf={perf.data} />}
-    </div>
+    </Page>
   );
 }
 
 function Loaded({ worth, perf }: { worth: NetWorth; perf: Performance }) {
+  const money = useMoney();
   if (!perf.starts_on) {
     return (
       <GlassCard as="section" className="state-card">
@@ -120,50 +122,78 @@ function Loaded({ worth, perf }: { worth: NetWorth; perf: Performance }) {
           todo dia, às 19h, a carteira ganha uma foto.
         </p>
       )}
-      <div className="performance__cards">
-        <VersusCard title="Últimos 12 meses" data={perf.summary.twelve_months} twelveMonths />
-        <VersusCard title="Desde o início" data={since} />
-      </div>
-      <NetWorthCard worth={worth} />
-      <ReturnCard perf={perf} />
+      <section aria-label="Resumo do desempenho">
+        <StatStrip items={statsOf(perf, worth, money)} />
+      </section>
+      <Grid cols={2}>
+        <NetWorthCard worth={worth} />
+        <ReturnCard perf={perf} />
+      </Grid>
       <MonthTable years={perf.years} />
     </>
   );
 }
 
-function VersusCard({ title, data, twelveMonths = false }: { title: string; data: VersusCdi | null; twelveMonths?: boolean }) {
-  if (!data) return null;
-  const started = data.from !== data.to;
-  return (
-    <GlassCard as="section" className="versus-card" aria-label={title}>
-      <h2 className="versus-card__title">{title}</h2>
-      <p className={cx("versus-card__value", `is-${trend(data.return_percent)}`)}>
-        {started ? formatSignedPercent(data.return_percent) : "—"}
-      </p>
-      {started && data.excess_over_cdi !== null && data.cdi_percent !== null ? (
-        <p className="versus-card__text">
-          <strong>{versusText(data.excess_over_cdi)}</strong>
-          {data.percent_of_cdi !== null && ` (${formatPercent(data.percent_of_cdi, 0)} do CDI)`}. O CDI rendeu{" "}
-          {formatSignedPercent(data.cdi_percent)}.
-        </p>
-      ) : (
-        <p className="versus-card__text">
-          {started ? "O CDI do período ainda não foi publicado." : "Ainda não há dois fechamentos para comparar."}
-        </p>
-      )}
-      <p className="versus-card__meta">
-        {started ? `De ${formatDay(data.from, true)} a ${formatDay(data.to, true)}` : `Começa em ${formatDay(data.from, true)}`}
-        {twelveMonths && started && !data.full_window && " · a série ainda não tem 12 meses"}
-      </p>
-    </GlassCard>
-  );
+/**
+ * Os seis números do topo: a rentabilidade (12 meses e desde o início, cada uma
+ * com a frase do CDI) e o patrimônio de hoje. Com o olho fechado, todo R$ sai
+ * pela máscara e o sinal do ganho também, para não dizer o sentido; os
+ * percentuais ficam, como na Carteira.
+ */
+function statsOf(perf: Performance, worth: NetWorth, money: Money): Stat[] {
+  const items: Stat[] = [];
+  const twelve = versusStat("twelve", "Últimos 12 meses", perf.summary.twelve_months, true);
+  if (twelve) items.push(twelve);
+  const since = versusStat("since", "Desde o início", perf.summary.since_start, false);
+  if (since) items.push(since);
+  const last = worth.points[worth.points.length - 1];
+  if (last) {
+    items.push(
+      { id: "worth", label: "Patrimônio", value: <CountUp value={last.market_value} />, tone: "gold" },
+      { id: "invested", label: "Aplicado", value: money.brl(last.invested) },
+      {
+        id: "gain",
+        label: "Ganho",
+        value: `${money.hidden ? "" : last.gain > 0 ? "+" : last.gain < 0 ? "−" : ""}${money.brl(Math.abs(last.gain))}`,
+        info: "O ganho é o do preço; os proventos recebidos ficam ao lado e entram na rentabilidade.",
+        ...(money.hidden || trend(last.gain) === "flat" ? {} : { tone: trend(last.gain) as "up" | "down" }),
+      },
+      { id: "income", label: "Proventos", value: money.brl(last.income) },
+    );
+  }
+  return items;
 }
 
-/**
- * Com o olho fechado, todo valor em R$ (números, eixo, régua e o resumo do
- * leitor de tela) sai pela máscara de `useMoney()`; o sinal do ganho também
- * some, para não dizer o sentido. Os percentuais ficam, como na Carteira.
- */
+function versusStat(id: string, label: string, data: VersusCdi | null, twelveMonths: boolean): Stat | null {
+  if (!data) return null;
+  const started = data.from !== data.to;
+  const when = started ? `De ${formatDay(data.from, true)} a ${formatDay(data.to, true)}.` : `Começa em ${formatDay(data.from, true)}.`;
+  const short = twelveMonths && started && !data.full_window;
+  let detail: ReactNode;
+  if (started && data.excess_over_cdi !== null && data.cdi_percent !== null) {
+    detail = (
+      <>
+        {versusText(data.excess_over_cdi)}
+        {data.percent_of_cdi !== null && ` (${formatPercent(data.percent_of_cdi, 0)} do CDI)`}
+        {short && <span className="stat__note">a série ainda não tem 12 meses</span>}
+      </>
+    );
+  } else {
+    detail = started ? "O CDI do período ainda não foi publicado." : "Ainda não há dois fechamentos para comparar.";
+  }
+  return {
+    id,
+    label,
+    value: started ? formatSignedPercent(data.return_percent) : "—",
+    detail,
+    info:
+      started && data.cdi_percent !== null
+        ? `${when} O CDI rendeu ${formatSignedPercent(data.cdi_percent)} no período.`
+        : when,
+    ...(started && trend(data.return_percent) !== "flat" ? { tone: trend(data.return_percent) as "up" | "down" } : {}),
+  };
+}
+
 function NetWorthCard({ worth }: { worth: NetWorth }) {
   const money = useMoney();
   const last = worth.points[worth.points.length - 1];
@@ -187,39 +217,17 @@ function NetWorthCard({ worth }: { worth: NetWorth }) {
     },
   ];
   return (
-    <GlassCard as="section" className="perf-card" aria-labelledby="net-worth-title">
-      <header className="perf-card__head">
-        <h2 id="net-worth-title" className="section-title">
-          Patrimônio no tempo
-        </h2>
-        {last.partial && <span className="perf-card__badge">Hoje é parcial</span>}
-      </header>
-      <dl className="perf-stats">
-        <div>
-          <dt>Patrimônio</dt>
-          <dd>
-            <CountUp value={last.market_value} />
-          </dd>
-        </div>
-        <div>
-          <dt>Aplicado</dt>
-          <dd>{money.brl(last.invested)}</dd>
-        </div>
-        <div>
-          <dt>Ganho</dt>
-          <dd className={cx(!money.hidden && `is-${trend(last.gain)}`)}>
-            {!money.hidden && (last.gain > 0 ? "+" : last.gain < 0 ? "−" : "")}
-            {money.brl(Math.abs(last.gain))}
-          </dd>
-        </div>
-        <div>
-          <dt>Proventos</dt>
-          <dd>{money.brl(last.income)}</dd>
-        </div>
-      </dl>
-      <p className="field__hint">
-        O ganho é o do preço; os proventos recebidos ficam ao lado e entram na rentabilidade.
-      </p>
+    <Panel
+      title="Patrimônio no tempo"
+      info={
+        <>
+          O ganho é o do preço; os proventos recebidos ficam ao lado e entram na rentabilidade.
+          {last.partial && ` O ponto de hoje (${formatDay(last.date)}) usa o preço do momento; a foto do dia é tirada depois do fechamento.`}
+        </>
+      }
+      infoLabel="Como ler o patrimônio no tempo"
+      actions={last.partial ? <span className="perf-card__badge">Hoje é parcial</span> : undefined}
+    >
       <Legend items={series.map((s) => ({ key: s.key, label: s.label, color: s.color, dash: s.dash }))} />
       <LineChart
         dates={worth.points.map((p) => p.date)}
@@ -230,12 +238,7 @@ function NetWorthCard({ worth }: { worth: NetWorth }) {
           last.market_value,
         )}, com ${money.brl(last.invested)} aplicados.`}
       />
-      {last.partial && (
-        <p className="field__hint">
-          O ponto de hoje ({formatDay(last.date)}) usa o preço do momento; a foto do dia é tirada depois do fechamento.
-        </p>
-      )}
-    </GlassCard>
+    </Panel>
   );
 }
 
@@ -289,13 +292,13 @@ function ReturnCard({ perf }: { perf: Performance }) {
       (b) => `${b.label} ${b.return_percent === null ? "sem dado" : formatSignedPercent(b.return_percent)}`,
     ),
   ].join(", ");
+  const notes = indexNotes(perf);
   return (
-    <GlassCard as="section" className="perf-card" aria-labelledby="return-title">
-      <header className="perf-card__head">
-        <h2 id="return-title" className="section-title">
-          Rentabilidade contra os índices
-        </h2>
-      </header>
+    <Panel
+      title="Rentabilidade contra os índices"
+      info={notes ?? "Cada linha é a rentabilidade acumulada no período, a partir de zero no primeiro fechamento."}
+      infoLabel="De quando é cada índice"
+    >
       <ul className="legend" aria-label="Linhas do gráfico">
         <li className="legend__item">
           <Swatch color={LINE.portfolio.color} />
@@ -334,34 +337,28 @@ function ReturnCard({ perf }: { perf: Performance }) {
       ) : (
         <p className="field__hint">A linha aparece com dois fechamentos no período.</p>
       )}
-      <IndexNotes perf={perf} />
-    </GlassCard>
+    </Panel>
   );
 }
 
 /** De quando é cada índice: o IPCA sai uma vez por mês, o CDI no dia seguinte. */
-function IndexNotes({ perf }: { perf: Performance }) {
+function indexNotes(perf: Performance): ReactNode {
   const notes = perf.benchmarks
     .filter((b) => b.as_of && perf.window && b.as_of < perf.window.to)
     .map((b) => `${b.label} até ${formatDay(b.as_of ?? "", true)}`);
   const missing = perf.benchmarks.filter((b) => b.return_percent === null).map((b) => b.label);
   if (notes.length === 0 && missing.length === 0) return null;
   return (
-    <p className="field__hint">
+    <>
       {notes.length > 0 && `Índices publicados: ${notes.join(" · ")}. `}
       {missing.length > 0 && `Ainda sem dado no período: ${missing.join(", ")}.`}
-    </p>
+    </>
   );
 }
 
 function MonthTable({ years }: { years: PerformanceYear[] }) {
   return (
-    <GlassCard as="section" className="perf-card" aria-labelledby="months-title">
-      <header className="perf-card__head">
-        <h2 id="months-title" className="section-title">
-          Mês a mês
-        </h2>
-      </header>
+    <Panel title="Mês a mês">
       {years.length === 0 ? (
         <p className="field__hint">A tabela aparece quando um mês tiver dois fechamentos.</p>
       ) : (
@@ -409,7 +406,7 @@ function MonthTable({ years }: { years: PerformanceYear[] }) {
           </table>
         </div>
       )}
-    </GlassCard>
+    </Panel>
   );
 }
 

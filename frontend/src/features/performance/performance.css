@@ -30,115 +30,39 @@
 
 .performance__loading {
   display: grid;
-  gap: 16px;
+  gap: var(--gap-stack);
 }
 
 .performance__notice {
   margin: 0;
-  padding: 14px 18px;
+  padding: var(--space-2) var(--space-4);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--surface-sunken);
   color: var(--text-muted);
+  font-size: var(--text-md);
 }
 
-.performance__cards {
-  display: grid;
-  gap: 16px;
-}
-
-@media (min-width: 720px) {
-  .performance__cards {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-.versus-card {
-  display: grid;
-  gap: 6px;
-  padding: 20px 22px;
-}
-
-.versus-card__title {
-  margin: 0;
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--text-muted);
-}
-
-.versus-card__value {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: clamp(2rem, 6vw, 2.6rem);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
-}
-
-.versus-card__text,
-.versus-card__meta {
-  margin: 0;
-  color: var(--text-muted);
-}
-
-.versus-card__meta {
-  font-size: 0.85rem;
+/* A nota sob o detalhe de um número: menor, em outra linha. */
+.performance .stat__note {
+  display: block;
   color: var(--text-subtle);
-}
-
-/* O sinal (+/−) diz o sentido; a cor só reforça. */
-.performance .is-up {
-  color: var(--perf-up);
-}
-
-.performance .is-down {
-  color: var(--perf-down);
-}
-
-.perf-card {
-  display: grid;
-  gap: 14px;
-  padding: 20px 22px;
-}
-
-.perf-card__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  font-size: var(--text-xs);
 }
 
 .perf-card__badge {
-  padding: 4px 10px;
+  padding: 2px var(--space-2);
   border: 1px solid var(--border-strong);
   border-radius: var(--r-pill);
   color: var(--text-muted);
-  font-size: 0.8rem;
-}
-
-.perf-stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 28px;
-  margin: 0;
-}
-
-.perf-stats dt {
-  color: var(--text-subtle);
-  font-size: 0.85rem;
-}
-
-.perf-stats dd {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: 1.25rem;
-  font-variant-numeric: tabular-nums;
+  font-size: var(--text-xs);
+  white-space: nowrap;
 }
 
 .legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 16px;
+  gap: var(--space-1) var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -147,9 +71,14 @@
 .legend__item {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   color: var(--text-muted);
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
+}
+
+.legend__swatch {
+  width: 20px;
+  flex: none;
 }
 
 .legend__item strong {
@@ -158,13 +87,23 @@
 }
 
 .legend__toggle {
-  min-height: 44px;
-  padding: 0 12px;
+  min-height: 32px;
+  padding: 0 var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--r-pill);
   background: var(--surface-sunken);
   font: inherit;
   cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out);
+}
+
+/* No toque o alvo volta aos 44 px. */
+@media (pointer: coarse) {
+  .legend__toggle {
+    min-height: var(--touch);
+  }
 }
 
 .legend__toggle:hover {
@@ -179,11 +118,23 @@
   filter: grayscale(1);
 }
 
+.performance {
+  --chart-height: 196px;
+}
+
+@container page (min-width: 1500px) {
+  .performance .chart {
+    --chart-height: 270px;
+  }
+}
+
+/* O gráfico cresce com o painel (os dois lado a lado terminam na mesma altura). */
 .chart {
   display: grid;
+  flex: 1;
   grid-template-columns: auto 1fr;
-  grid-template-rows: 220px auto;
-  column-gap: 10px;
+  grid-template-rows: minmax(var(--chart-height, 240px), 1fr) auto;
+  column-gap: var(--space-2);
 }
 
 .chart__axis {
@@ -229,9 +180,9 @@
   grid-column: 2;
   display: flex;
   justify-content: space-between;
-  padding-top: 6px;
+  padding-top: var(--space-1);
   color: var(--text-subtle);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
 }
 
 .chart__crosshair {
@@ -297,24 +248,39 @@
   border-radius: 3px;
 }
 
+/* Posicionado: o texto só para leitor de tela das células (position: absolute) fica preso aqui e não alarga a página. */
 .month-table__scroll {
+  position: relative;
   overflow-x: auto;
   border-radius: var(--r-sm);
 }
 
 .month-table {
   width: 100%;
+  min-width: 760px;
   border-collapse: collapse;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
 
 .month-table th,
 .month-table td {
-  padding: 8px 10px;
+  padding: var(--space-2) var(--space-1);
   border-bottom: 1px solid var(--border);
   text-align: right;
   white-space: nowrap;
+}
+
+.month-table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.month-table tbody tr {
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.month-table tbody tr:hover {
+  background: var(--surface-hover);
 }
 
 .month-table th {
@@ -334,4 +300,20 @@
 
 .month-table__total {
   font-weight: 700;
+}
+
+/* Os números do topo cabem em duas colunas no celular sem quebrar o valor ao meio. */
+.performance .stat__value {
+  overflow-wrap: normal;
+  font-size: clamp(0.98rem, 4.2vw, 1.3rem);
+}
+
+/* O período cabe em uma linha no celular. */
+.performance .page-header__actions .chip {
+  padding-inline: var(--space-3);
+  font-size: var(--text-md);
+}
+
+.performance .page-header__actions .chips {
+  gap: var(--space-2);
 }
