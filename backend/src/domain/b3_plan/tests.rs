@@ -872,10 +872,10 @@ fn the_received_payment_replaces_the_provisioned_one() {
     let write = &asset.writes.income[0];
     assert_eq!(write.replace, Some(provisional_id));
     assert!(!write.provisional);
-    // JCP: bruto = líquido / 0,85; retenção = a diferença.
+    // JCP pago em 2026: bruto = líquido / (1 − 17,5%); retenção = a diferença.
     assert_eq!(
         (write.gross, write.withholding, write.net),
-        (dec!(60), dec!(9), dec!(51))
+        (dec!(61.82), dec!(10.82), dec!(51))
     );
     assert_eq!(
         asset.action,
@@ -1009,6 +1009,34 @@ fn income_kinds_and_values() {
     assert_eq!(income_values(&line, None).amount_per_unit, Decimal::ZERO);
     let held = income_values(&line, Some(dec!(7)));
     assert_eq!((held.quantity, held.amount_per_unit), (dec!(7), dec!(1.43)));
+}
+
+#[test]
+fn jcp_gross_follows_the_withholding_rate_of_the_payment_date() {
+    let jcp = |date| {
+        income(
+            "jcp",
+            B3IncomeKind::Jcp,
+            B3IncomeStatus::Received,
+            date,
+            dec!(82.50),
+        )
+    };
+    // Até 2025: 15% retido; o líquido de 85 vem de um bruto de 100.
+    let values = income_values(&jcp(Some(date!(2025 - 12 - 30))), None);
+    assert_eq!(
+        (values.gross, values.withholding),
+        (dec!(97.06), dec!(14.56))
+    );
+    // Desde 2026 (LC 224/2025): 17,5%; o mesmo líquido vem de um bruto de 100.
+    let values = income_values(&jcp(Some(date!(2026 - 01 - 02))), None);
+    assert_eq!(
+        (values.gross, values.withholding),
+        (dec!(100.00), dec!(17.50))
+    );
+    // Provisionado sem data é pagamento futuro: regra de 2026.
+    let values = income_values(&jcp(None), None);
+    assert_eq!(values.gross, dec!(100.00));
 }
 
 #[test]

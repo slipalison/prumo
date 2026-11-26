@@ -52,7 +52,7 @@ use super::b3_import::{
     IncomeKind as B3IncomeKind, IncomeLine, IncomeStatus as B3IncomeStatus, Preview, TradeSide,
 };
 use super::entitlement::{quantity_on, record_date};
-use super::income::{IncomeKind, JCP_WITHHOLDING_RATE};
+use super::income::{jcp_withholding_rate, IncomeKind, JCP_WITHHOLDING_RATE_2026};
 use super::ledger::{self, check_for_unit, Entry, Kind, LedgerError, Position};
 use super::treasury::{Bond, BondKind};
 
@@ -1328,8 +1328,9 @@ pub struct IncomeValues {
 }
 
 /// Os valores gravados de uma linha de provento. A B3 manda o **líquido**; no
-/// JCP o bruto é o líquido ÷ 0,85 (o IR de 15% retido na fonte) e a retenção
-/// é a diferença. Nos outros tipos, bruto = líquido.
+/// JCP o bruto é o líquido ÷ (1 − alíquota retida na fonte), com a alíquota da
+/// data do pagamento — 15% até 2025, 17,5% desde 2026 (LC 224/2025) — e a
+/// retenção é a diferença. Nos outros tipos, bruto = líquido.
 ///
 /// A quantidade é a da B3 quando ela traz; sem ela, `held`: as cotas que o
 /// livro tinha na data com (a mesma regra de `GET /income/entitlement`).
@@ -1345,7 +1346,11 @@ pub fn income_values(line: &IncomeLine, held: Option<Decimal>) -> IncomeValues {
         .or_else(|| per_unit(Some(net), quantity))
         .unwrap_or(Decimal::ZERO);
     let gross = if line.kind == B3IncomeKind::Jcp {
-        net.checked_div(Decimal::ONE - JCP_WITHHOLDING_RATE)
+        // Sem data só chega provisionado, que é pagamento futuro: já na regra de 2026.
+        let rate = line
+            .date
+            .map_or(JCP_WITHHOLDING_RATE_2026, jcp_withholding_rate);
+        net.checked_div(Decimal::ONE - rate)
             .map(round_cents)
             .unwrap_or(net)
     } else {

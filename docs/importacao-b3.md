@@ -237,8 +237,10 @@ O preço é o da planilha ou valor ÷ quantidade; a quantidade, em centésimos.
 | `Reembolso`, `Leilão de Frações` | `other` |
 
 `source = b3_import`, `external_ref` da linha, sem data ex (a B3 não traz).
-O valor da B3 é o **líquido**. No JCP o bruto é **líquido ÷ 0,85** (o IR de
-15% retido na fonte) e a retenção é a diferença; nos outros, bruto = líquido.
+O valor da B3 é o **líquido**. No JCP o bruto é **líquido ÷ (1 − alíquota)**,
+com a alíquota retida na fonte da data do pagamento — 15% até 2025, 17,5% desde
+2026 (LC 224/2025; provisionado sem data já entra na de 2026) — e a retenção é a
+diferença; nos outros, bruto = líquido.
 Quantidade: a da B3 quando ela traz; sem ela, as cotas que o livro tem na
 **data com** (a regra de `GET /income/entitlement`: sem data ex, a data do
 pagamento, nunca depois de hoje), já contando os lançamentos desta mesma
