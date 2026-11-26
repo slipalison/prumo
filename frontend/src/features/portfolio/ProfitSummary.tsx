@@ -1,4 +1,6 @@
 import type { Profit, ProfitGap } from "../../api/types";
+import { GlassCard } from "../../components/GlassCard";
+import { InfoTip } from "../../components/InfoTip";
 import { cx } from "../../lib/cx";
 import { useMoney } from "../../lib/privacy";
 import { signedBRL } from "../ledger/format";
@@ -20,48 +22,50 @@ function partialNote(profit: Profit): string {
 
 /**
  * "Lucro total = ganho de capital (realizado + não realizado) + proventos
- * recebidos". O que o Prumo não sabe fica de fora e é dito: o total vira
- * "parcial", sem nenhum número inventado. Com o olho fechado, todo valor é
- * mascarado.
+ * recebidos". O que o Prumo não sabe fica de fora e é dito: o rótulo vira
+ * "(parcial)", sem nenhum número inventado. As três parcelas e o que falta
+ * moram no ⓘ. Com o olho fechado, todo valor é mascarado, inclusive no ⓘ.
  */
 export function ProfitSummary({ profit }: { profit: Profit }) {
   const money = useMoney();
   const capital = profit.realized + profit.unrealized;
   return (
-    <section className="profit" aria-label="Lucro total">
-      <span className="eyebrow">Lucro total{profit.partial ? " (parcial)" : ""}</span>
-      <strong className={cx("profit__value", !money.hidden && profit.total > 0 && "is-up", !money.hidden && profit.total < 0 && "is-down")}>
+    <GlassCard as="section" className="stat-card" aria-label="Lucro total">
+      <span className="stat-card__label">
+        Lucro total{profit.partial ? " (parcial)" : ""}
+        <InfoTip label="Como se chega no lucro total" align="start">
+          <dl className="profit__parts">
+            <div>
+              <dt>Ganho de capital</dt>
+              <dd>{signedBRL(money, capital)}</dd>
+            </div>
+            <div>
+              <dt>não realizado</dt>
+              <dd>{signedBRL(money, profit.unrealized)}</dd>
+            </div>
+            <div>
+              <dt>realizado (vendas)</dt>
+              <dd>{signedBRL(money, profit.realized)}</dd>
+            </div>
+            <div>
+              <dt>Proventos recebidos</dt>
+              <dd>{signedBRL(money, profit.income_received)}</dd>
+            </div>
+          </dl>
+          {profit.partial && (
+            <p className="profit__note">
+              Parcial: {partialNote(profit)}. Esses ativos ficam fora da soma até você informar; nada aqui é estimado.
+            </p>
+          )}
+          {profit.removed_assets && (
+            <p className="profit__note">Não inclui o resultado de vendas de ativos que já saíram da carteira.</p>
+          )}
+        </InfoTip>
+      </span>
+      <strong className={cx("stat-card__value", !money.hidden && profit.total > 0 && "is-up", !money.hidden && profit.total < 0 && "is-down")}>
         {signedBRL(money, profit.total)}
       </strong>
-      <details className="profit__detail">
-        <summary>Como se chega nesse número</summary>
-        <dl className="profit__parts">
-          <div>
-            <dt>Ganho de capital</dt>
-            <dd>{signedBRL(money, capital)}</dd>
-          </div>
-          <div>
-            <dt>não realizado</dt>
-            <dd>{signedBRL(money, profit.unrealized)}</dd>
-          </div>
-          <div>
-            <dt>realizado (vendas)</dt>
-            <dd>{signedBRL(money, profit.realized)}</dd>
-          </div>
-          <div>
-            <dt>Proventos recebidos</dt>
-            <dd>{signedBRL(money, profit.income_received)}</dd>
-          </div>
-        </dl>
-        {profit.partial && (
-          <p className="field__hint">
-            Parcial: {partialNote(profit)}. Esses ativos ficam fora da soma até você informar; nada aqui é estimado.
-          </p>
-        )}
-        {profit.removed_assets && (
-          <p className="field__hint">Não inclui o resultado de vendas de ativos que já saíram da carteira.</p>
-        )}
-      </details>
-    </section>
+      <span className="stat-card__detail">capital e proventos{profit.partial ? ", sem o que falta" : ""}</span>
+    </GlassCard>
   );
 }

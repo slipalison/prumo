@@ -1,10 +1,12 @@
-import { useId, useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { errorMessage } from "../../api/client";
 import { useDeleteAsset, useUpdateAsset } from "../../api/queries";
 import type { Asset, Portfolio, UpdateAssetRequest } from "../../api/types";
 import { TAX_INSTRUMENTS, type TaxInstrument } from "../../api/taxTypes";
 import { AnswerToggle } from "../../components/AnswerToggle";
 import { IconAlert, IconSparkle, IconTrash } from "../../components/icons";
+import { InfoTip } from "../../components/InfoTip";
+import { Grid } from "../../components/Layout";
 import { MagneticButton } from "../../components/MagneticButton";
 import { MoneyInput } from "../../components/MoneyInput";
 import { QuantityInput } from "../../components/QuantityInput";
@@ -41,6 +43,7 @@ export function EditAssetSheet({ asset, portfolio, onClose, intro, onSaved }: Ed
       onClose={onClose}
       title={asset ? assetName(asset) : ""}
       description={asset ? sheetDescription(asset) : undefined}
+      size="wide"
     >
       {asset && (
         <EditAssetForm key={asset.id} asset={asset} portfolio={portfolio} intro={intro} onDone={onClose} onSaved={onSaved} />
@@ -61,6 +64,53 @@ function priceCaption(asset: Asset): string {
   // O Tesouro publica um preço por dia: a data-base diz de quando ele é.
   if (asset.treasury && asset.quote_updated_at) return `preço de resgate de ${formatDay(asset.quote_updated_at)}`;
   return `cotação ${formatRelative(asset.quote_updated_at)}`;
+}
+
+type SwitchRowProps = {
+  id: string;
+  label: string;
+  /** A explicação de uma frase, sob demanda (ⓘ ao lado do nome). */
+  tip?: ReactNode;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+};
+
+/** Interruptor de uma linha: o nome, o ⓘ com o porquê e a chave à direita. */
+function SwitchRow({ id, label, tip, checked, onChange }: SwitchRowProps) {
+  return (
+    <div className="switch-row edit-asset__switch">
+      <span className="edit-asset__switch-label">
+        <label htmlFor={id} className="switch-row__label">
+          {label}
+        </label>
+        {tip && (
+          <InfoTip label={`Sobre ${label.toLowerCase()}`} align="start">
+            {tip}
+          </InfoTip>
+        )}
+      </span>
+      <input
+        id={id}
+        type="checkbox"
+        role="switch"
+        className="switch"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+    </div>
+  );
+}
+
+/** Um campo com o ⓘ na linha do rótulo (canto direito), no lugar da dica sob o campo. */
+function FieldTip({ label, tip, children }: { label: string; tip: ReactNode; children: ReactNode }) {
+  return (
+    <div className="field-tip">
+      {children}
+      <InfoTip label={label} align="end">
+        {tip}
+      </InfoTip>
+    </div>
+  );
 }
 
 type EditAssetFormProps = {
@@ -187,90 +237,69 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
   };
 
   const b3Block = b3Editable && (
-    <div className="switch-row">
-      <label htmlFor={ids.b3Toggle} className="switch-row__label">
-        Negociado na B3
-        <span className="field__hint">ETF ou BDR da B3: cotado em reais pelo ticker, cota inteira.</span>
-      </label>
-      <input
-        id={ids.b3Toggle}
-        type="checkbox"
-        role="switch"
-        className="switch"
-        checked={listedOnB3}
-        onChange={(event) => setListedOnB3(event.target.checked)}
-      />
-    </div>
+    <SwitchRow
+      id={ids.b3Toggle}
+      label="Negociado na B3"
+      tip="ETF ou BDR da B3: cotado em reais pelo ticker, cota inteira."
+      checked={listedOnB3}
+      onChange={setListedOnB3}
+    />
   );
 
   const amountBlock = (
     <>
       {b3Block}
       {valueBased ? (
-        <>
+        <FieldTip label="Sobre o valor atual" tip="Mudar o valor aqui grava uma atualização do saldo em Lançamentos.">
           <MoneyInput id={ids.amount} label="Valor atual" value={quantity} onChange={setQuantity} />
-          <p className="field__hint">Mudar o valor aqui grava uma atualização do saldo em Lançamentos.</p>
-        </>
+        </FieldTip>
       ) : (
-        <QuantityInput
-          id={ids.quantity}
-          label={asset.treasury ? "Quantidade de títulos" : "Quantidade"}
-          value={quantity}
-          onChange={setQuantity}
-          fractional={unit === "fraction"}
-          hint={
+        <FieldTip
+          label="Sobre a quantidade"
+          tip={
             asset.treasury
               ? "Pode ser fração, como 0,35. Mudar aqui grava um ajuste em Lançamentos; compra e venda, lance lá, com data e preço."
               : "Mudar aqui grava um ajuste em Lançamentos. Compra e venda, lance lá, com data e preço."
           }
-        />
+        >
+          <QuantityInput
+            id={ids.quantity}
+            label={asset.treasury ? "Quantidade de títulos" : "Quantidade"}
+            value={quantity}
+            onChange={setQuantity}
+            fractional={unit === "fraction"}
+          />
+        </FieldTip>
       )}
     </>
   );
 
-  const priceBlock = !valueBased && (
-    <>
-      <div className="switch-row">
-        <label htmlFor={ids.priceToggle} className="switch-row__label">
-          Usar preço manual
-          <span className="field__hint">Vence a cotação automática.</span>
-        </label>
-        <input
-          id={ids.priceToggle}
-          type="checkbox"
-          role="switch"
-          className="switch"
-          checked={useManualPrice}
-          onChange={(event) => setUseManualPrice(event.target.checked)}
-        />
-      </div>
-      {useManualPrice && <MoneyInput id={ids.price} label="Preço por unidade" value={manualPrice} onChange={setManualPrice} />}
-    </>
-  );
-
-  // O preço que o motor vai ver (o manual em edição vence a cotação) contra o
-  // teto que a pessoa está digitando.
+  // O preço de hoje que o motor vai ver (o manual em edição vence a cotação)
+  // contra o teto que a pessoa está digitando.
   const priceNow = useManualPrice ? manualPrice : asset.price_source === "missing" ? null : asset.unit_price;
   const aboveNow = useCeiling && maxPrice > 0 && priceNow !== null && priceNow > maxPrice;
 
-  const ceilingBlock = !valueBased && (
+  // Preço manual e teto: dois interruptores lado a lado quando a coluna comporta;
+  // o campo de cada um abre embaixo.
+  const priceBlock = !valueBased && (
     <>
-      <div className="switch-row">
-        <label htmlFor={ids.ceilingToggle} className="switch-row__label">
-          Teto de preço
-          <span className="field__hint">
-            Seu critério: acima deste preço o ativo fica fora do aporte até voltar. Não é preço justo de ninguém.
-          </span>
-        </label>
-        <input
+      <div className="edit-asset__switches">
+        <SwitchRow
+          id={ids.priceToggle}
+          label="Usar preço manual"
+          tip="Vence a cotação automática."
+          checked={useManualPrice}
+          onChange={setUseManualPrice}
+        />
+        <SwitchRow
           id={ids.ceilingToggle}
-          type="checkbox"
-          role="switch"
-          className="switch"
+          label="Teto de preço"
+          tip="Seu critério: acima deste preço o ativo fica fora do aporte até voltar. Não é preço justo de ninguém."
           checked={useCeiling}
-          onChange={(event) => setUseCeiling(event.target.checked)}
+          onChange={setUseCeiling}
         />
       </div>
+      {useManualPrice && <MoneyInput id={ids.price} label="Preço por unidade" value={manualPrice} onChange={setManualPrice} />}
       {useCeiling && (
         <MoneyInput id={ids.ceiling} label="Pagar no máximo, por unidade" value={maxPrice} onChange={setMaxPrice} />
       )}
@@ -282,6 +311,8 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
     </>
   );
 
+  // A dica do imposto muda com a escolha e diz o que o Prumo faria sozinho: fica
+  // à vista, numa linha pequena (a tela de Impostos confere o texto).
   const taxBlock = !valueBased && (
     <div className="field">
       <label htmlFor={ids.tax} className="field__label">
@@ -333,24 +364,25 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
               {questions.length === 0 && <p className="field__hint">Nenhuma pergunta. Crie as suas em Critérios.</p>}
             </div>
           )}
-          <div className="switch-row">
-            <label htmlFor={ids.manualToggle} className="switch-row__label">
-              Definir a nota na mão
-              <span className="field__hint">Ignora o checklist para este ativo.</span>
-            </label>
-            <input
-              id={ids.manualToggle}
-              type="checkbox"
-              role="switch"
-              className="switch"
-              checked={useManualScore}
-              onChange={(event) => setUseManualScore(event.target.checked)}
-            />
-          </div>
+          <SwitchRow
+            id={ids.manualToggle}
+            label="Definir a nota na mão"
+            tip="Ignora o checklist para este ativo."
+            checked={useManualScore}
+            onChange={setUseManualScore}
+          />
         </section>
       )}
       {manualScoreActive && <ScoreSlider id={ids.score} value={scoreOverride} onChange={setScoreOverride} />}
       {liveScore === 0 && <p className="inline-notice">Com nota 0, este ativo não recebe aporte.</p>}
+    </>
+  );
+
+  const fieldsBlock = (
+    <>
+      {amountBlock}
+      {priceBlock}
+      {taxBlock}
     </>
   );
 
@@ -362,41 +394,40 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
         </p>
       )}
 
-      <div className="edit-asset__summary">
-        <div>
-          <span className="eyebrow">Hoje</span>
-          <strong className="edit-asset__value">{money.brl(asset.current_value)}</strong>
-          {!valueBased && (
-            <span className="edit-asset__caption">
-              {asset.unit_price !== null && asset.price_source !== "missing" ? money.brl(asset.unit_price) : "—"} ·{" "}
-              {priceCaption(asset)}
-            </span>
+      <Grid cols={2} alignStart className="edit-asset__cols">
+        <div className="edit-asset__col">
+          <div className="edit-asset__summary">
+            <div>
+              <span className="eyebrow">Hoje</span>
+              <strong className="edit-asset__value">{money.brl(asset.current_value)}</strong>
+              {!valueBased && (
+                <span className="edit-asset__caption">
+                  {asset.unit_price !== null && asset.price_source !== "missing" ? money.brl(asset.unit_price) : "—"} ·{" "}
+                  {priceCaption(asset)}
+                </span>
+              )}
+            </div>
+            <ScoreBadge score={liveScore} size="lg" />
+          </div>
+
+          {intro ? (
+            <>
+              {scoreBlock}
+              {fieldsBlock}
+            </>
+          ) : (
+            <>
+              {fieldsBlock}
+              {scoreBlock}
+            </>
           )}
         </div>
-        <ScoreBadge score={liveScore} size="lg" />
-      </div>
 
-      {intro ? (
-        <>
-          {scoreBlock}
-          {amountBlock}
-          {priceBlock}
-          {ceilingBlock}
-          {taxBlock}
+        <div className="edit-asset__col">
           <TransactionsSection asset={asset} />
           <FundamentalsSection asset={asset} />
-        </>
-      ) : (
-        <>
-          {amountBlock}
-          {priceBlock}
-          {ceilingBlock}
-          {taxBlock}
-          <TransactionsSection asset={asset} />
-          <FundamentalsSection asset={asset} />
-          {scoreBlock}
-        </>
-      )}
+        </div>
+      </Grid>
 
       {(update.isError || remove.isError) && (
         <p className="form-error" role="alert">
@@ -404,11 +435,7 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
         </p>
       )}
 
-      <MagneticButton onClick={save} loading={update.isPending} className="edit-asset__save">
-        Salvar
-      </MagneticButton>
-
-      <div className="danger-zone">
+      <div className="edit-asset__bar">
         {confirmDelete ? (
           <div className="danger-zone__confirm" role="group" aria-label="Confirmar remoção">
             <span>Remover {name} da carteira?</span>
@@ -424,6 +451,9 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
             <IconTrash /> Remover da carteira
           </button>
         )}
+        <MagneticButton onClick={save} loading={update.isPending} className="edit-asset__save">
+          Salvar
+        </MagneticButton>
       </div>
     </div>
   );

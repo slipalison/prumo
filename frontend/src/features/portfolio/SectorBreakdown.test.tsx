@@ -9,11 +9,11 @@ async function openPortfolio() {
   return rendered;
 }
 
+/* A rosca por setor mora no painel lateral da Carteira, um painel por classe. */
 describe("Rosca por setor na Carteira", () => {
   it("mostra os FIIs por tipo, com nome e fatia escritos", async () => {
     await openPortfolio();
-    const fiis = screen.getByRole("region", { name: "Fundos Imobiliários" });
-    const breakdown = within(fiis).getByRole("region", { name: "Por tipo de fundo em Fundos Imobiliários" });
+    const breakdown = screen.getByRole("region", { name: "Por tipo de fundo em Fundos Imobiliários" });
     const rows = within(breakdown).getAllByRole("listitem");
     expect(rows.map((li) => li.textContent)).toEqual(["Tijolo70,3%", "Papel13,0%", "Sem setor16,7%"]);
     expect(within(breakdown).getByRole("img", { name: /Por tipo de fundo: Tijolo 70,3%/ })).toBeInTheDocument();
@@ -21,21 +21,20 @@ describe("Rosca por setor na Carteira", () => {
 
   it("mostra as ações por setor", async () => {
     await openPortfolio();
-    const stocks = screen.getByRole("region", { name: "Ações Nacionais" });
-    const breakdown = within(stocks).getByRole("region", { name: "Por setor em Ações Nacionais" });
+    const breakdown = screen.getByRole("region", { name: "Por setor em Ações Nacionais" });
     expect(within(breakdown).getByText("Financeiro")).toBeInTheDocument();
     expect(within(breakdown).getByText("100,0%")).toBeInTheDocument();
     expect(within(breakdown).getByRole("heading", { name: "Por setor" })).toBeInTheDocument();
+    // O painel diz de qual classe é, por escrito.
+    expect(within(breakdown).getByText("Ações Nacionais")).toBeInTheDocument();
   });
 
   it("só aparece onde há fonte de setor", async () => {
     await openPortfolio();
-    for (const name of ["Criptomoedas", "Renda Fixa"]) {
-      const card = screen.getByRole("region", { name });
-      expect(within(card).queryByRole("heading", { name: "Por setor" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { name: /^Por (setor|tipo de fundo)$/ })).toHaveLength(2);
+    for (const name of ["Criptomoedas", "Renda Fixa", "Ações Internacionais"]) {
+      expect(screen.queryByRole("region", { name: new RegExp(`^Por (setor|tipo de fundo) em ${name}$`) })).not.toBeInTheDocument();
     }
-    const intl = screen.getByRole("region", { name: "Ações Internacionais" });
-    expect(within(intl).queryByRole("heading", { name: "Por setor" })).not.toBeInTheDocument();
   });
 
   it("diz que o setor está indisponível quando a fonte ainda não respondeu", async () => {
@@ -45,9 +44,9 @@ describe("Rosca por setor na Carteira", () => {
       delete asset.segment;
     }
     await openPortfolio();
-    const stocks = screen.getByRole("region", { name: "Ações Nacionais" });
+    const stocks = screen.getByRole("region", { name: "Por setor em Ações Nacionais" });
     expect(within(stocks).getByText(/Setor indisponível por enquanto: a B3 ainda não respondeu/)).toBeInTheDocument();
-    const fiis = screen.getByRole("region", { name: "Fundos Imobiliários" });
+    const fiis = screen.getByRole("region", { name: "Por tipo de fundo em Fundos Imobiliários" });
     expect(within(fiis).getByText(/Setor indisponível por enquanto: a CVM ainda não respondeu/)).toBeInTheDocument();
     expect(within(fiis).queryByRole("img", { name: /Por tipo de fundo/ })).not.toBeInTheDocument();
   });

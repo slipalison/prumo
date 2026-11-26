@@ -4,24 +4,28 @@
 .ledger {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .ledger__head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-1);
+}
+
+.ledger__head .link-btn {
+  margin-left: auto;
 }
 
 /* Preço médio, custo, resultado e lucro realizado: rótulo pequeno em cima,
-   número tabular embaixo. Duas colunas no celular, quatro no desktop. */
+   número tabular embaixo. Duas colunas no celular, quatro quando a coluna da
+   folha comporta (a coluna é o contêiner, ver portfolio.css). */
 .ledger__summary {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 16px;
+  gap: var(--space-2) var(--space-4);
   margin: 0;
-  padding: 12px 14px;
+  padding: var(--space-3);
   border-radius: var(--r-md);
   background: var(--surface-sunken);
 }
@@ -38,7 +42,7 @@
   font-weight: 650;
 }
 
-@media (min-width: 720px) {
+@container (min-width: 440px) {
   .ledger__summary {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -65,9 +69,9 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 4px 12px;
-  min-height: 52px;
-  padding: 6px 4px;
+  gap: 4px var(--space-3);
+  min-height: 44px;
+  padding: 2px 4px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -117,7 +121,12 @@
 .ledger-row__confirm {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
+}
+
+.ledger-row__actions .icon-btn {
+  width: 36px;
+  height: 36px;
 }
 
 /* Confirmar apagar ocupa a linha inteira no celular, sem espremer o texto. */

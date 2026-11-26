@@ -13,6 +13,9 @@ async function openPortfolio() {
   return rendered;
 }
 
+/** O número "abaixo do ideal" da faixa do topo. */
+const belowStat = () => screen.getByRole("region", { name: "Abaixo do ideal" });
+
 const row = (region: HTMLElement, symbol: string) => within(region).getByRole("button", { name: new RegExp(symbol) });
 
 /** O evento `prices` que o servidor mandaria para a carteira falsa de agora. */
@@ -101,7 +104,8 @@ describe("Carteira: atual × ideal", () => {
   it("o topo diz quantos ativos estão abaixo do ideal", async () => {
     await openPortfolio();
     // KNRI11 e TRXF11; as outras classes têm um ativo só, no ideal.
-    expect(screen.getByText("2 ativos abaixo do ideal")).toBeInTheDocument();
+    expect(within(belowStat()).getByText("2 ativos")).toBeInTheDocument();
+    expect(belowStat()).toHaveTextContent("abaixo do ideal da classe");
   });
 
   it("com um só, o texto vai no singular", async () => {
@@ -110,26 +114,28 @@ describe("Carteira: atual × ideal", () => {
     if (!btlg) throw new Error("fixture sem BTLG11");
     btlg.quote_price = 80;
     await openPortfolio();
-    expect(screen.getByText("1 ativo abaixo do ideal")).toBeInTheDocument();
+    expect(within(belowStat()).getByText("1 ativo")).toBeInTheDocument();
   });
 
   it("com todos no ideal, avisa que nenhum está abaixo", async () => {
     resetDb({ assets: defaultAssets().filter((a) => a.asset_class !== "br_reits") });
     await openPortfolio();
-    expect(await screen.findByText("Nenhum ativo abaixo do ideal")).toBeInTheDocument();
+    expect(await within(await screen.findByRole("region", { name: "Abaixo do ideal" })).findByText("Nenhum ativo")).toBeInTheDocument();
+    expect(belowStat()).not.toHaveTextContent("da classe");
   });
 
   it("sem ativo que receba aporte, a linha do topo não aparece", async () => {
     resetDb({ assets: [] });
     renderApp("carteira");
     await screen.findByRole("heading", { name: "Tudo o que você tem, no eixo certo" });
+    expect(screen.queryByRole("region", { name: "Abaixo do ideal" })).not.toBeInTheDocument();
     expect(screen.queryByText(/abaixo do ideal/)).not.toBeInTheDocument();
   });
 
   it("acompanha o preço ao vivo: o evento leva o ideal e o selo se acerta sozinho", async () => {
     await openPortfolio();
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
-    expect(screen.getByText("2 ativos abaixo do ideal")).toBeInTheDocument();
+    expect(within(belowStat()).getByText("2 ativos")).toBeInTheDocument();
 
     // A BTLG11 cai para R$ 80: a TRXF11 chega na fatia dela, só a KNRI11 fica abaixo.
     const btlg = getDb().assets.find((a) => a.symbol === "BTLG11");
@@ -137,7 +143,7 @@ describe("Carteira: atual × ideal", () => {
     btlg.quote_price = 80;
     act(() => FakeEventSource.latest().emit("prices", pricesNow()));
 
-    expect(await screen.findByText("1 ativo abaixo do ideal")).toBeInTheDocument();
+    expect(await within(belowStat()).findByText("1 ativo")).toBeInTheDocument();
     const fiis = screen.getByRole("region", { name: "Fundos Imobiliários" });
     expect(within(row(fiis, "TRXF11")).queryByText("abaixo do ideal")).not.toBeInTheDocument();
     expect(within(row(fiis, "KNRI11")).getByText("abaixo do ideal")).toBeInTheDocument();

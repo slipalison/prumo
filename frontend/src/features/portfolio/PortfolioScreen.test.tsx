@@ -21,12 +21,50 @@ describe("Carteira", () => {
     await waitFor(() => expect(screen.getByRole("region", { name: "Patrimônio" })).toHaveTextContent(/R\$\s120\.132,23/));
     const fiis = screen.getByRole("region", { name: "Fundos Imobiliários" });
     expect(within(fiis).getAllByRole("button")).toHaveLength(5);
+    // A linha traz tudo: quantidade, valor, rentabilidade, fatia × ideal e nota.
+    expect(within(fiis).getByRole("button", { name: /KNRI11/ })).toHaveTextContent(/rentabilidade \+9,2%/);
     expect(within(fiis).getByText(/15 cotas · R\$\s94,55/)).toBeInTheDocument();
     const intl = screen.getByRole("region", { name: "Ações Internacionais" });
     expect(within(intl).getByText(/Tem meta e nenhum ativo/)).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Outras classes" })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /Carteira por classe: Ações Nacionais/ })).toBeInTheDocument();
     expect(screen.getByText("Nenhum aporte registrado ainda.", { exact: false })).toBeInTheDocument();
+  });
+
+  it("a rosca por classe tem legenda escrita; o botão de adicionar fica no cabeçalho", async () => {
+    await openPortfolio();
+    const donut = screen.getByRole("region", { name: "Por classe" });
+    expect(within(donut).getByRole("img", { name: /Carteira por classe: Ações Nacionais/ })).toBeInTheDocument();
+    // O nome e a fatia estão escritos: a cor só ajuda a achar.
+    expect(within(donut).getByText("Ações Nacionais")).toBeInTheDocument();
+    expect(within(donut).getByText("23,3%")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Adicionar ativo" })).toHaveLength(1);
+  });
+
+  it("o histórico de aportes começa recolhido e diz quantos há", async () => {
+    getDb().contributions.push({
+      id: "c-2",
+      created_at: "2026-11-20T15:00:00Z",
+      amount: 1000,
+      cash_used: 0,
+      invested: 990.3,
+      items: [{ asset_id: "a-trxf", symbol: "TRXF11", display_name: "TRX Real Estate", quantity: 10, unit_price: 53.81, value: 538.1 }],
+    });
+    await openPortfolio();
+    const history = screen.getByRole("region", { name: "Histórico de aportes" });
+    await within(history).findByText("1");
+    expect(history.querySelector("details")).not.toHaveAttribute("open");
+  });
+
+  it("o texto explicativo da folha mora nos ⓘ: abre no clique e fecha com Esc", async () => {
+    const { user } = await openPortfolio();
+    await user.click(screen.getByRole("button", { name: /TRXF11/ }));
+    const dialog = await screen.findByRole("dialog", { name: "TRXF11" });
+    expect(within(dialog).queryByText(/Seu critério: acima deste preço/)).toBeNull();
+    await user.click(within(dialog).getByRole("button", { name: "Sobre teto de preço" }));
+    expect(within(dialog).getByText(/Seu critério: acima deste preço/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Sobre a quantidade" }));
+    expect(within(dialog).getByText(/Mudar aqui grava um ajuste em Lançamentos/)).toBeInTheDocument();
   });
 
   it("atualiza as cotações e avisa quem falhou", async () => {

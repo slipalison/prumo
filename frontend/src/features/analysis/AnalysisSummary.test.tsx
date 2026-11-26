@@ -28,7 +28,10 @@ describe("Resumo da análise na Carteira", () => {
   it("conta os pontos a ver, mostra os dois primeiros e leva à tela", async () => {
     const { user } = await openPortfolio();
     const summary = await screen.findByRole("region", { name: "Análise da carteira" });
-    expect(within(summary).getByRole("heading", { name: "Análise: 13 pontos a ver" })).toBeInTheDocument();
+    expect(within(summary).getByRole("heading", { name: "13 pontos a ver" })).toBeInTheDocument();
+    // Os dois primeiros ficam no ⓘ, que abre no clique.
+    expect(within(summary).queryAllByRole("listitem")).toHaveLength(0);
+    await user.click(within(summary).getByRole("button", { name: "Os primeiros pontos a ver" }));
     const items = within(summary).getAllByRole("listitem");
     expect(items.map((li) => li.textContent)).toEqual([
       "Tesouro IPCA+ 2035 é 70,76% da carteira",
@@ -42,9 +45,10 @@ describe("Resumo da análise na Carteira", () => {
 
   it("as regras novas entram no resumo com o número de agora", async () => {
     analysisState().analysis = withWarnings(["min_abroad", "max_loss", "min_paying_share"]);
-    await openPortfolio();
+    const { user } = await openPortfolio();
     const summary = await screen.findByRole("region", { name: "Análise da carteira" });
-    expect(within(summary).getByRole("heading", { name: "Análise: 3 pontos a ver" })).toBeInTheDocument();
+    expect(within(summary).getByRole("heading", { name: "3 pontos a ver" })).toBeInTheDocument();
+    await user.click(within(summary).getByRole("button", { name: "Os primeiros pontos a ver" }));
     expect(within(summary).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
       "Pelo menos 10% da carteira no exterior: agora 0%",
       "Pelo menos 70% dos ativos de renda variável pagaram provento em 12 meses: agora 50%",
@@ -55,18 +59,21 @@ describe("Resumo da análise na Carteira", () => {
   it("diz quando não há ponto a ver, e quando ainda não há o que medir", async () => {
     analysisState().analysis = withWarnings([]);
     const first = await openPortfolio();
-    expect(await screen.findByRole("heading", { name: "Análise: nenhum ponto a ver" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Nenhum ponto a ver" })).toBeInTheDocument();
+    // Sem ponto a ver, não há ⓘ para abrir.
+    expect(screen.queryByRole("button", { name: "Os primeiros pontos a ver" })).not.toBeInTheDocument();
     first.unmount();
 
     analysisState().analysis = withWarnings([], false);
     await openPortfolio();
-    expect(await screen.findByRole("heading", { name: "Análise: ainda sem o que medir" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Ainda sem o que medir" })).toBeInTheDocument();
   });
 
   it("um ponto só usa o singular e não tem 'e mais'", async () => {
     analysisState().analysis = withWarnings(["max_loss"]);
-    await openPortfolio();
-    expect(await screen.findByRole("heading", { name: "Análise: 1 ponto a ver" })).toBeInTheDocument();
+    const { user } = await openPortfolio();
+    expect(await screen.findByRole("heading", { name: "1 ponto a ver" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Os primeiros pontos a ver" }));
     expect(screen.queryByText(/^e mais/)).not.toBeInTheDocument();
   });
 

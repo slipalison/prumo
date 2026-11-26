@@ -10,6 +10,7 @@ import type {
 } from "../../api/fundamentalsTypes";
 import type { Asset } from "../../api/types";
 import { IconAlert } from "../../components/icons";
+import { InfoTip } from "../../components/InfoTip";
 import { Skeleton } from "../../components/Skeleton";
 import { formatDay, formatPercent } from "../../lib/format";
 import { formatIsoDate } from "../../lib/income";
@@ -71,6 +72,13 @@ function sourceLine(company: CompanyFundamentals): string {
   const doc = filing ? `${filing.kind === "annual" ? "DFP" : "ITR"} de ${formatIsoDate(filing.reference_date)}` : "";
   const checked = company.synced_at ? ` · conferido em ${formatDay(company.synced_at)}` : "";
   return `Fonte: CVM${doc ? `, ${doc}` : ""}${checked}`;
+}
+
+/** De onde vêm os números do fundo: o informe mensal, a vacância e quando foi conferido. */
+function fundSourceLine(fund: FundFundamentals): string {
+  const vacancyDate = fund.vacancy_reference_date ? `; vacância do trimestre encerrado em ${formatIsoDate(fund.vacancy_reference_date)}` : "";
+  const checked = fund.synced_at ? ` · conferido em ${formatDay(fund.synced_at)}` : "";
+  return `Fonte: CVM, informe mensal de ${formatIsoDate(fund.reference_date).slice(3)}${vacancyDate}${checked}.`;
 }
 
 function CompanyBody({ company, money }: { company: CompanyFundamentals; money: Money }) {
@@ -165,7 +173,6 @@ function CompanyBody({ company, money }: { company: CompanyFundamentals; money: 
           instituição financeira.
         </p>
       )}
-      <p className="field__hint">{sourceLine(company)}. EBITDA aproximado: EBIT + depreciação e amortização.</p>
     </>
   );
 }
@@ -178,7 +185,6 @@ function FundBody({ fund, asset, money }: { fund: FundFundamentals; asset: Asset
     price === null || nav === null || nav <= 0
       ? fund.price_to_book
       : { value: price / nav, gap: null };
-  const vacancyDate = fund.vacancy_reference_date ? `; vacância do trimestre encerrado em ${formatIsoDate(fund.vacancy_reference_date)}` : "";
   return (
     <>
       <dl className="fundamentals__grid">
@@ -205,11 +211,6 @@ function FundBody({ fund, asset, money }: { fund: FundFundamentals; asset: Asset
           <dd>{reais(money, fund.net_assets)}</dd>
         </div>
       </dl>
-      <p className="field__hint">
-        Fonte: CVM, informe mensal de {formatIsoDate(fund.reference_date).slice(3)}
-        {vacancyDate}
-        {fund.synced_at ? ` · conferido em ${formatDay(fund.synced_at)}` : ""}.
-      </p>
     </>
   );
 }
@@ -229,6 +230,7 @@ export function FundamentalsSection({ asset }: FundamentalsSectionProps) {
   const entry = query.data?.assets.find((a) => a.asset_id === asset.id);
 
   let body;
+  let source: string | null = null;
   if (query.isPending) {
     body = <Skeleton height={56} />;
   } else if (query.isError) {
@@ -237,17 +239,26 @@ export function FundamentalsSection({ asset }: FundamentalsSectionProps) {
     body = <p className="field__hint">{UNSUPPORTED_TEXT.pending}</p>;
   } else if (entry.kind === "company") {
     body = <CompanyBody company={entry.company} money={money} />;
+    source = `${sourceLine(entry.company)}. EBITDA aproximado: EBIT + depreciação e amortização.`;
   } else if (entry.kind === "fund") {
     body = <FundBody fund={entry.fund} asset={asset} money={money} />;
+    source = fundSourceLine(entry.fund);
   } else {
     body = <p className="field__hint">{UNSUPPORTED_TEXT[entry.reason]}</p>;
   }
 
   return (
     <section className="fundamentals" aria-labelledby={headingId}>
-      <h3 id={headingId} className="section-title">
-        Fundamentos
-      </h3>
+      <div className="fundamentals__head">
+        <h3 id={headingId} className="section-title">
+          Fundamentos
+        </h3>
+        {source && (
+          <InfoTip label="De onde vêm os fundamentos" align="start">
+            {source}
+          </InfoTip>
+        )}
+      </div>
       {body}
     </section>
   );

@@ -1,4 +1,5 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
+import type { UserEvent } from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import type { LivePrices, Portfolio, Profit } from "../../api/types";
@@ -33,12 +34,19 @@ async function openPortfolio() {
   return { ...rendered, region };
 }
 
+/** As parcelas e o que falta moram no ⓘ do rótulo. */
+const openParts = (user: UserEvent, region: HTMLElement) =>
+  user.click(within(region).getByRole("button", { name: "Como se chega no lucro total" }));
+
 describe("Carteira: lucro total", () => {
   it("soma ganho de capital (realizado e não realizado) e proventos recebidos", async () => {
     withProfit(whole);
-    const { region } = await openPortfolio();
+    const { region, user } = await openPortfolio();
     expect(region).toHaveTextContent(/Lucro total\s*\+R\$\s3\.150,00/);
     expect(region).not.toHaveTextContent("parcial");
+    // As parcelas não ficam à vista: abrem no ⓘ.
+    expect(region).not.toHaveTextContent("Ganho de capital");
+    await openParts(user, region);
     expect(region).toHaveTextContent(/Ganho de capital\s*\+R\$\s3\.100,00/);
     expect(region).toHaveTextContent(/não realizado\s*\+R\$\s3\.000,00/);
     expect(region).toHaveTextContent(/realizado \(vendas\)\s*\+R\$\s100,00/);
@@ -62,10 +70,11 @@ describe("Carteira: lucro total", () => {
         { asset_id: "a-btc", label: "BTC", reason: "missing_price" },
       ],
     });
-    const { region } = await openPortfolio();
+    const { region, user } = await openPortfolio();
     expect(region).toHaveTextContent("Lucro total (parcial)");
     // O total é só do que se sabe: o mesmo número do servidor, sem ajuste.
     expect(region).toHaveTextContent(/\+R\$\s3\.150,00/);
+    await openParts(user, region);
     expect(region).toHaveTextContent(
       "Parcial: falta o preço médio de HGLG11; falta o preço médio da venda de CDB; sem cotação: BTC.",
     );
@@ -73,7 +82,8 @@ describe("Carteira: lucro total", () => {
 
   it("avisa quando há venda de ativo que já saiu da carteira", async () => {
     withProfit({ ...whole, removed_assets: true });
-    const { region } = await openPortfolio();
+    const { region, user } = await openPortfolio();
+    await openParts(user, region);
     expect(region).toHaveTextContent(/não inclui o resultado de vendas de ativos que já saíram da carteira/i);
   });
 
@@ -118,7 +128,8 @@ describe("Carteira com o olho fechado: lucro total", () => {
       partial: true,
       partial_assets: [{ asset_id: "a-hglg", label: "HGLG11", reason: "unknown_cost" }],
     });
-    const { region } = await openPortfolio();
+    const { region, user } = await openPortfolio();
+    await openParts(user, region);
     expect(region).toHaveTextContent(MASK_BRL);
     expect(region).not.toHaveTextContent("+");
     expect(region).not.toHaveTextContent("−");

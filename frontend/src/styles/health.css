@@ -44,40 +44,34 @@
   }
 }
 
-/* ---------- Rosca por setor, dentro da classe ---------- */
+/* ---------- Rosca por setor, no painel lateral da Carteira ---------- */
 
 .sector-breakdown {
+  gap: var(--space-3);
+}
+
+.sector-breakdown__class {
+  margin-left: auto;
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
+
+.sector-breakdown__body {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 16px 22px;
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
+  gap: var(--space-3) var(--space-4);
 }
 
-.sector-breakdown__empty {
-  margin-top: 12px;
-}
-
-.sector-breakdown__list {
-  flex: 1 1 200px;
+.sector-breakdown .sector-legend {
+  flex: 1 1 150px;
   min-width: 0;
-}
-
-.sector-breakdown__title {
-  margin-bottom: 8px;
-  color: var(--text-subtle);
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
 }
 
 .sector-legend {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-1);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -87,14 +81,14 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  font-size: 0.92rem;
+  gap: var(--space-2);
+  font-size: var(--text-md);
 }
 
 .sector-legend__dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
 }
 
 .sector-legend__name {
@@ -109,27 +103,7 @@
   font-weight: 600;
 }
 
-/* ---------- Resumo na Carteira ---------- */
-
-.health-summary {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px 18px;
-}
-
-.health-summary__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-}
-
-.health-summary__title {
-  flex: 1 1 220px;
-  font-size: 1rem;
-  font-weight: 650;
-}
+/* ---------- Resumo da Análise, na faixa de números da Carteira ---------- */
 
 .health-summary__icon {
   flex: none;
@@ -143,12 +117,25 @@
   color: var(--success);
 }
 
+.health-summary__title {
+  font-size: 1.3rem;
+}
+
+.health-summary__link {
+  align-self: flex-start;
+  color: var(--gold-text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.health-summary__link:hover {
+  text-decoration: underline;
+}
+
 .health-summary__list {
   display: flex;
   flex-direction: column;
   gap: 4px;
   margin: 0;
-  padding-left: 22px;
-  color: var(--text-muted);
-  font-size: 0.92rem;
+  padding-left: 18px;
 }

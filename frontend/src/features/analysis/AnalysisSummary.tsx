@@ -1,6 +1,7 @@
 import type { RuleResult } from "../../api/analysisTypes";
 import { GlassCard } from "../../components/GlassCard";
 import { IconAlert, IconCheck } from "../../components/icons";
+import { InfoTip } from "../../components/InfoTip";
 import { attentionText, ruleSentence } from "../../lib/analysisText";
 import { formatRuleValue, warningTitle } from "../../lib/healthText";
 import { useAnalysis } from "./useAnalysis";
@@ -15,8 +16,9 @@ function attentionLine(result: RuleResult): string {
 }
 
 /**
- * Resumo curto da Análise para a Carteira, com o caminho para a tela. Nunca
- * atrapalha a carteira: enquanto carrega ou se falhar, não aparece.
+ * Resumo curto da Análise para a faixa de números da Carteira: quantos pontos
+ * a ver e o caminho para a tela; os dois primeiros ficam no ⓘ. Nunca atrapalha
+ * a carteira: enquanto carrega ou se falhar, não aparece.
  */
 export function AnalysisSummary() {
   const analysis = useAnalysis();
@@ -28,32 +30,31 @@ export function AnalysisSummary() {
   const extra = warnings.length - SHOWN;
 
   return (
-    <GlassCard as="section" className="health-summary" aria-label="Análise da carteira">
-      <div className="health-summary__head">
+    <GlassCard as="section" className="stat-card health-summary" aria-label="Análise da carteira">
+      <span className="stat-card__label">
         {attention > 0 ? (
-          <IconAlert className="health-summary__icon health-summary__icon--warn" />
+          <IconAlert className="health-summary__icon health-summary__icon--warn" width={14} height={14} />
         ) : (
-          <IconCheck className="health-summary__icon health-summary__icon--ok" />
+          <IconCheck className="health-summary__icon health-summary__icon--ok" width={14} height={14} />
         )}
-        <h2 className="health-summary__title">
-          {attention > 0
-            ? `Análise: ${attentionText(attention)}`
-            : measured
-              ? "Análise: nenhum ponto a ver"
-              : "Análise: ainda sem o que medir"}
-        </h2>
-        <a className="link-btn" href="#/analise">
-          Ver análise
-        </a>
-      </div>
-      {warnings.length > 0 && (
-        <ul className="health-summary__list">
-          {warnings.slice(0, SHOWN).map((result) => (
-            <li key={result.rule}>{attentionLine(result)}</li>
-          ))}
-          {extra > 0 && <li className="muted">e mais {extra}</li>}
-        </ul>
-      )}
+        Análise
+        {warnings.length > 0 && (
+          <InfoTip label="Os primeiros pontos a ver" align="start">
+            <ul className="health-summary__list">
+              {warnings.slice(0, SHOWN).map((result) => (
+                <li key={result.rule}>{attentionLine(result)}</li>
+              ))}
+              {extra > 0 && <li className="muted">e mais {extra}</li>}
+            </ul>
+          </InfoTip>
+        )}
+      </span>
+      <h2 className="stat-card__value health-summary__title">
+        {attention > 0 ? attentionText(attention) : measured ? "Nenhum ponto a ver" : "Ainda sem o que medir"}
+      </h2>
+      <a className="stat-card__detail health-summary__link" href="#/analise">
+        Ver análise
+      </a>
     </GlassCard>
   );
 }

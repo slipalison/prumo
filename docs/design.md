@@ -208,22 +208,35 @@ estão em [layout.md](layout.md).
 
 ### 2. Carteira
 
-- Topo: patrimônio total (count-up) e a rosca por classe. Embaixo do total,
-  de onde vem o número: **● Ao vivo** (ponto que pulsa) com o aviso "B3 com
-  15 min de atraso" quando a carteira tem papel da B3; "Conectando ao vivo…"
-  enquanto abre; fora do ao vivo, a hora da última cotação. O botão de
-  atualizar continua ao lado.
-- **Lucro total**, logo abaixo do patrimônio: "Lucro total +R$ 3.150" — o ganho
-  de capital (realizado + não realizado) mais os proventos recebidos. Um
-  detalhe recolhido, "Como se chega nesse número", abre as três parcelas. O
-  sinal é escrito (`+` / `−`), nunca só cor, e anda com o preço ao vivo (o evento
-  `prices` leva o bloco). Quando algum ativo está sem preço médio, sem cotação ou
-  com uma venda de custo desconhecido, o rótulo vira "Lucro total (parcial)" e o
-  detalhe diz quem falta ("Parcial: falta o preço médio de HGLG11 …"): o número
-  é só do que se sabe, nada é estimado. Venda de ativo que já saiu da carteira
-  tem aviso próprio.
-- Uma seção por classe, na ordem fixa: nome, % atual vs meta com barra e
-  marcador de prumo, e a lista dos ativos (ticker, quantidade, valor, nota).
+- Layout denso (docs/layout.md § 7.3): `<Page>` com título e um botão
+  **Adicionar ativo** no cabeçalho (some o botão flutuante), uma **faixa de
+  quatro cartões** e, abaixo, a grade `main-aside` (2/3 + 1/3): à esquerda um
+  painel por classe, à direita a rosca por classe, as roscas por setor e o
+  histórico de aportes recolhido. Em 1440×900 a tela mede ~1,3 (antes 3,0).
+- A faixa: **Patrimônio** (count-up; a linha do rótulo traz o **● Ao vivo**
+  com o aviso "B3 com 15 min de atraso", "Conectando ao vivo…" ou a hora da
+  última cotação, e o botão de atualizar), **Lucro total**, **Abaixo do ideal**
+  e **Análise**. No celular o patrimônio e a análise ocupam a linha inteira.
+- **Lucro total**: "+R$ 3.150" — o ganho de capital (realizado + não
+  realizado) mais os proventos recebidos. Um ⓘ ("Como se chega no lucro
+  total") abre as três parcelas. O sinal é escrito (`+` / `−`), nunca só cor, e
+  anda com o preço ao vivo (o evento `prices` leva o bloco). Quando algum ativo
+  está sem preço médio, sem cotação ou com uma venda de custo desconhecido, o
+  rótulo vira "Lucro total (parcial)" e o ⓘ diz quem falta ("Parcial: falta o
+  preço médio de HGLG11 …"): o número é só do que se sabe, nada é estimado.
+  Venda de ativo que já saiu da carteira tem aviso próprio no mesmo ⓘ. Com o
+  olho fechado, o ⓘ também sai mascarado.
+- Um painel por classe, na ordem fixa: numa linha, o nome, a barra com o
+  marcador de prumo e "% atual · meta %"; embaixo, **uma linha por ativo**
+  (botão que abre a folha): ícone, ticker e nome, quantidade · preço · PM, valor,
+  rentabilidade, fatia da classe × ideal (com a barra fina) e a nota. A linha
+  inteira é um botão (e não uma `<table>`) porque o teste de privacidade
+  (`components/privacy.test.tsx`, congelado) lê quantidade e "da classe" no
+  próprio botão da linha. Classe sem ativo diz "Tem meta e nenhum ativo." (o
+  resto no ⓘ) com o botão Adicionar; classes sem meta e sem ativo ficam numa
+  linha de chips.
+- A rosca por classe tem **legenda escrita** (nome e %). Cada classe com setor
+  conhecido ganha o seu painel de rosca por setor (por tipo de fundo nos FIIs).
 - **Atual × ideal por ativo.** Sob cada ativo que recebe aporte (nota > 0 e
   preço), uma barra fina com um traço no ideal, e o texto "25,3% da classe ·
   ideal 30,0%". O ideal é a fatia `nota ÷ soma das notas` que o motor usa
@@ -234,30 +247,35 @@ estão em [layout.md](layout.md).
   tom neutro): o ideal não muda por causa do teto, e o selo explica por que o
   ativo não recebe agora. Ativo sem nota ou sem
   preço não tem ideal nem selo: mostra só "% da classe" e o aviso que já tinha.
-  No topo da tela, "N ativos abaixo do ideal" (ou "Nenhum ativo abaixo do
-  ideal"); a linha não aparece sem nenhum ativo que receba. Tudo acompanha o
-  preço ao vivo, porque o evento `prices` leva o ideal.
-- Na linha do ativo, a **rentabilidade** fica embaixo do valor: `+9,2%` /
-  `−3,0%`, em verde ou vermelho, com o **sinal escrito** (cor nunca sozinha; a
-  seta ▲/▼ continua sendo só do preço que acabou de andar, para as duas coisas
-  não se confundirem). Sem ideal, ela divide a linha com o "% da classe"; com
-  ideal, o "% da classe" já está na linha do ideal embaixo e a rentabilidade
-  fica sozinha sob o valor — cada número aparece uma vez. O **preço médio**
-  entra na coluna de quantidade ("10 cotas · R$ 142,00 · PM R$ 130,00"), que
-  só existe do desktop (≥ 720px) para cima: no celular a linha fica com
-  valor, rentabilidade e o ideal, e o PM está na folha do ativo. Sem custo
-  conhecido, nem PM nem rentabilidade aparecem — nada de "0%" que não é
-  verdade. A rentabilidade anda com o preço ao vivo.
-- Botão flutuante **+** abre uma folha (sheet) com **um campo só**: digita o
+  Na faixa do topo, o cartão **Abaixo do ideal** ("2 ativos", ou "Nenhum
+  ativo"; o ⓘ explica o ideal); ele não aparece sem nenhum ativo que receba.
+  Tudo acompanha o preço ao vivo, porque o evento `prices` leva o ideal.
+- A **rentabilidade** é a própria coluna: `+9,2%` / `−3,0%`, em verde ou
+  vermelho, com o **sinal escrito** (cor nunca sozinha; a seta ▲/▼ continua
+  sendo só do preço que acabou de andar, para as duas coisas não se
+  confundirem). O **preço médio** entra na coluna de quantidade ("10 cotas ·
+  R$ 142,00 · PM R$ 130,00"). A linha responde à largura do painel (≥ 640 px:
+  uma linha em colunas; abaixo, três linhas: nome · valor · nota, quantidade ·
+  rentabilidade, atual × ideal). Sem custo conhecido, nem PM nem rentabilidade
+  aparecem — nada de "0%" que não é verdade. A rentabilidade anda com o preço
+  ao vivo.
+- O botão **Adicionar ativo** abre uma folha (sheet) com **um campo só**: digita o
   ticker, aparece o autocompletar (`/symbols`), escolhe, a classe já vem
   sugerida em chips (troca com um toque), informa a quantidade, pronto. Para
   renda fixa: nome + valor, ou "Tesouro Direto" (busca pelo nome, quantidade
   fracionária, preço automático).
-- Tocar num ativo abre a folha de edição: quantidade com stepper, preço manual
-  opcional, **teto de preço** opcional, os **Lançamentos**, o checklist (perguntas com sim/não/sem
-  resposta) e a nota ao vivo; ou o controle de nota manual (0–10) para cripto e
-  renda fixa.
-- Teto de preço: uma chave "Teto de preço" com a explicação curta ("Seu
+- Tocar num ativo abre a **folha larga** (`Sheet size="wide"`, ~1,0–1,2 do
+  tamanho da folha; antes 1,9–2,4), em duas colunas: à esquerda o resumo
+  ("Hoje" e a nota ao vivo), a quantidade com stepper, as chaves **Usar preço
+  manual** e **Teto de preço** lado a lado, o imposto e o checklist em linhas
+  (pergunta e sim/não na mesma linha) ou o controle de nota manual (0–10) para
+  cripto e renda fixa; à direita os **Lançamentos** e os **Fundamentos**. As
+  dicas (quantidade, preço manual, teto, nota na mão, fonte dos fundamentos,
+  o que são os lançamentos) são ⓘ; a do imposto fica à vista porque muda com a
+  escolha. **Salvar** e **Remover da carteira** ficam numa barra que acompanha a
+  rolagem. A folha do checklist aberta do plano (`RateAssetSheet`) é a mesma.
+  Abaixo de 640 px de largura a folha volta a uma coluna.
+- Teto de preço: uma chave "Teto de preço" com a explicação curta no ⓘ ("Seu
   critério: acima deste preço o ativo fica fora do aporte até voltar. Não é
   preço justo de ninguém.") e, ligada, o campo "Pagar no máximo, por unidade".
   Com o preço de hoje acima do teto digitado, um aviso com ícone e texto diz
@@ -288,7 +306,7 @@ estão em [layout.md](layout.md).
 - **Fundamentos**, dentro da folha, depois de Lançamentos, só em Ações
   Nacionais e FIIs. Mesmo desenho do resumo de Lançamentos (rótulo pequeno em
   cima, número tabular embaixo, fundo afundado), duas colunas no celular e três
-  no desktop:
+  quando a coluna da folha comporta:
   - companhia: "Últimos 12 meses, até 30/09/2026" (ou "Exercício encerrado em
     …"), receita, lucro, ROE, margem líquida, dívida líquida sobre EBITDA e
     sobre o PL, LPA e VPA; embaixo, anos com lucro e com caixa operacional
@@ -300,8 +318,8 @@ estão em [layout.md](layout.md).
     vacância física e patrimônio líquido;
   - número que falta é "—", com o motivo no `title` e em texto `sr-only`
     ("base zero ou negativa", "não se aplica a banco ou seguradora"), nunca zero;
-  - a fonte e as datas embaixo, em dica: "Fonte: CVM, ITR de 30/09/2026 ·
-    conferido em 26/11/2026";
+  - a fonte e as datas no ⓘ do título ("De onde vêm os fundamentos"): "Fonte:
+    CVM, ITR de 30/09/2026 · conferido em 26/11/2026";
   - ainda sem dado: "Buscando os dados na CVM"; sem fundamentos (ETF em Ações
     Nacionais, fundo fora do informe), a frase do motivo;
   - com o olho fechado, todo R$ (receita, lucro, LPA, VPA, valor patrimonial,
@@ -439,13 +457,14 @@ recuperação judicial só liga e desliga). Um painel à parte guarda o
 
 Na **Carteira**:
 
-- Abaixo do patrimônio, um **resumo curto** ("Análise: 3 pontos a ver", os dois
-  primeiros com o número de agora e "e mais N") com o link "Ver análise" para
-  `#/analise`. Junto com o "N ativos abaixo do ideal" do cabeçalho, são os dois
-  resumos do topo: o do ideal diz onde aportar, o da análise diz o que passou do
-  limite. Some se a análise não carrega, para nunca atrapalhar a carteira.
-- Dentro de **Ações Nacionais** e **Fundos Imobiliários**, uma **rosca por
-  setor** (por tipo de fundo nos FIIs) com a lista ao lado: nome e fatia sempre
+- Na faixa do topo, o cartão **Análise** ("3 pontos a ver", "Nenhum ponto a
+  ver" ou "Ainda sem o que medir") com o link "Ver análise" para `#/analise`; os
+  dois primeiros pontos, com o número de agora e "e mais N", moram no ⓘ. Junto
+  com o "Abaixo do ideal", são os dois resumos do topo: o do ideal diz onde
+  aportar, o da análise diz o que passou do limite. Some se a análise não
+  carrega, para nunca atrapalhar a carteira.
+- No painel lateral, uma **rosca por setor** de **Ações Nacionais** e de
+  **Fundos Imobiliários** (por tipo de fundo nos FIIs) com a lista ao lado: nome e fatia sempre
   escritos; a cor só ajuda a achar. Sete setores têm cor; o resto vira "Outros
   setores", e o que a fonte não conhece vira "Sem setor" (cinza). Se a fonte
   nunca respondeu, uma linha diz isso no lugar da rosca.
@@ -521,16 +540,19 @@ Responde "estou ganhando do CDI?". Método e limites em
 
 ### 7. Ajustes › Importar da B3
 
-- Passo a passo em texto de como baixar as planilhas na Área do Investidor (sem
-  imagem de terceiros) e o aviso do que a planilha não traz (corretagem).
+- Duas colunas: "Suas planilhas" e, ao lado, o passo a passo em quatro itens
+  de como baixar as planilhas na Área do Investidor (sem imagem de terceiros);
+  o que a planilha não traz (corretagem), o limite do histórico e o prazo dos
+  arquivos ficam num recolher "Limites da B3 e o que a planilha não traz". A
+  frase de cima diz o que importa: nada é gravado antes de Importar.
 - Seletor de um ou mais `.xlsx`; cada arquivo da lista mostra o que foi lido
   (tipo, linhas, quantas entram, quantas não foram entendidas) ou, se não abriu,
   o motivo em português.
-- Prévia: contadores do que foi lido e, contra a carteira, quantas linhas
-  **entram**, **já existem**, **conflitam** e **ficam de fora**. Tabela
-  agrupada por ativo: classe (num ativo novo, um seletor com a sugestão; no que
-  já está na carteira, a classe dele), a situação ("entra na carteira", "já
-  está na carteira", "nada novo", "deixado de fora", com os selos "conflito" e
+- Prévia: duas faixas de números (o que foi lido; e, contra a carteira,
+  quantas linhas **entram**, **já existem**, **conflitam** e **ficam de
+  fora**). Tabela compacta agrupada por ativo (rola de lado no celular): classe (num ativo novo, um seletor com a sugestão; no que
+  já está na carteira, a classe dele), a situação (selo com texto: "entra na carteira",
+  "já está na carteira", "nada novo", "deixado de fora", mais "conflito" e
   "confira a classe"), compras, vendas, saldo dos negócios e proventos. Cada
   linha que expande diz o destino dela: "— entra", "— já existe: é o
   lançamento que você já fez", "— fica de fora: a receber sem data"...

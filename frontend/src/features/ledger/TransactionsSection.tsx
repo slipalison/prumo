@@ -5,6 +5,7 @@ import { useDeleteTransaction, useTransactions } from "../../api/ledger";
 import type { Transaction } from "../../api/ledgerTypes";
 import type { Asset } from "../../api/types";
 import { IconEdit, IconPlus, IconTrash } from "../../components/icons";
+import { InfoTip } from "../../components/InfoTip";
 import { MagneticButton } from "../../components/MagneticButton";
 import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/toastContext";
@@ -104,6 +105,9 @@ export function TransactionsSection({ asset }: TransactionsSectionProps) {
         <h3 id={headingId} className="section-title">
           Lançamentos
         </h3>
+        <InfoTip label="Sobre os lançamentos" align="start">
+          Toda compra, venda ou evento entra aqui, com data: é daqui que saem a quantidade e o preço médio.
+        </InfoTip>
         {editing !== "new" && (
           <button
             type="button"
@@ -175,9 +179,7 @@ export function TransactionsSection({ asset }: TransactionsSectionProps) {
       {list.isPending && <Skeleton height={48} radius={14} />}
       {list.isError && <p className="field__hint">Não consegui carregar os lançamentos agora.</p>}
       {list.data && list.data.length === 0 && (
-        <p className="field__hint">
-          Nenhum lançamento ainda. Toda compra, venda ou evento entra aqui, com data — é daqui que saem a quantidade e o preço médio.
-        </p>
+        <p className="field__hint">Nenhum lançamento ainda.</p>
       )}
       {list.data && list.data.length > 0 && (
         <ol className="ledger__list">

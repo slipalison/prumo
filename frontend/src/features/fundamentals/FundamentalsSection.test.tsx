@@ -1,4 +1,5 @@
 import { screen, within } from "@testing-library/react";
+import type { UserEvent } from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import type { AssetFundamentals, CompanyFundamentals, FundFundamentals } from "../../api/fundamentalsTypes";
@@ -73,12 +74,16 @@ async function openSection(symbol: RegExp, name: string) {
   return { ...rendered, dialog, section };
 }
 
+/** Abre o ⓘ da fonte (a data e o documento moram nele, não na folha). */
+const openSource = (user: UserEvent, section: HTMLElement) =>
+  user.click(within(section).getByRole("button", { name: "De onde vêm os fundamentos" }));
+
 const value = (section: HTMLElement, label: string) => within(section).getByText(label).nextSibling as HTMLElement;
 
 describe("Fundamentos na folha do ativo", () => {
   it("mostra os números da companhia com o período, a fonte e a data", async () => {
     setFundamentals([company()]);
-    const { section } = await openSection(/ITSA4/, "ITSA4");
+    const { section, user } = await openSection(/ITSA4/, "ITSA4");
     expect(await within(section).findByText("Últimos 12 meses, até 30/09/2026")).toBeInTheDocument();
     expect(value(section, "Receita líquida")).toHaveTextContent(/R\$\s1,5\sbi/);
     expect(value(section, "Lucro líquido")).toHaveTextContent(/R\$\s180\smi/);
@@ -92,6 +97,9 @@ describe("Fundamentos na folha do ativo", () => {
     expect(value(section, "Anos com caixa operacional positivo")).toHaveTextContent("5 de 5");
     expect(value(section, "Receita, CAGR 5 anos")).toHaveTextContent("+10,0% a.a.");
     expect(value(section, "Lucro, CAGR 5 anos")).toHaveTextContent("−3,2% a.a.");
+    // A fonte não ocupa a folha: abre no ⓘ.
+    expect(section).not.toHaveTextContent("Fonte:");
+    await openSource(user, section);
     expect(section).toHaveTextContent("Fonte: CVM, ITR de 30/09/2026 · conferido em 26/11/2026");
     expect(section).toHaveTextContent("EBITDA aproximado: EBIT + depreciação e amortização.");
     expect(within(section).queryByText(/recuperação judicial/)).toBeNull();
@@ -109,8 +117,9 @@ describe("Fundamentos na folha do ativo", () => {
         synced_at: null,
       }),
     ]);
-    const { section } = await openSection(/ITSA4/, "ITSA4");
+    const { section, user } = await openSection(/ITSA4/, "ITSA4");
     expect(await within(section).findByText("Exercício encerrado em 31/12/2025")).toBeInTheDocument();
+    await openSource(user, section);
     expect(section).toHaveTextContent("Fonte: CVM, DFP de 31/12/2025.");
   });
 
@@ -202,13 +211,14 @@ describe("Fundamentos na folha do ativo", () => {
 
   it("FII: valor patrimonial, P/VP com o preço ao vivo e vacância", async () => {
     setFundamentals([fund()]);
-    const { section } = await openSection(/KNRI11/, "KNRI11");
+    const { section, user } = await openSection(/KNRI11/, "KNRI11");
     expect(await within(section).findByText("Valor patrimonial por cota")).toBeInTheDocument();
     expect(value(section, "Valor patrimonial por cota")).toHaveTextContent(/R\$\s100,00/);
     // 142 (o preço da carteira) ÷ 100, não o 0,9 da última leitura.
     expect(value(section, "P/VP")).toHaveTextContent("1,42");
     expect(value(section, "Vacância física")).toHaveTextContent("15,0%");
     expect(value(section, "Patrimônio líquido")).toHaveTextContent(/R\$\s1\sbi/);
+    await openSource(user, section);
     expect(section).toHaveTextContent("Fonte: CVM, informe mensal de 10/2026; vacância do trimestre encerrado em 30/09/2026 · conferido em 26/11/2026.");
   });
 
@@ -223,11 +233,12 @@ describe("Fundamentos na folha do ativo", () => {
         synced_at: null,
       }),
     ]);
-    const { section } = await openSection(/KNRI11/, "KNRI11");
+    const { section, user } = await openSection(/KNRI11/, "KNRI11");
     expect(await within(section).findByText("Vacância física")).toBeInTheDocument();
     expect(within(value(section, "Vacância física")).getByText(GAP_TEXT.no_rental_property)).toBeInTheDocument();
     expect(within(value(section, "P/VP")).getByText(GAP_TEXT.no_shares)).toBeInTheDocument();
     expect(within(value(section, "Valor patrimonial por cota")).getByText(GAP_TEXT.no_shares)).toBeInTheDocument();
+    await openSource(user, section);
     expect(section).toHaveTextContent("Fonte: CVM, informe mensal de 10/2026.");
   });
 
