@@ -3,7 +3,8 @@
 export const INCOME_KINDS = ["dividend", "jcp", "reit_income", "amortization", "other"] as const;
 export type IncomeKind = (typeof INCOME_KINDS)[number];
 
-export type IncomeSource = "manual" | "estimate" | "b3_import";
+/** `b3_announcement`: o provento automático, calculado do anúncio da B3 e do livro. */
+export type IncomeSource = "manual" | "estimate" | "b3_import" | "b3_announcement";
 export type IncomeStatus = "received" | "upcoming";
 
 export type IncomeEvent = {

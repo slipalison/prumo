@@ -30,6 +30,12 @@
   color: var(--gold-text);
 }
 
+/* O provento que o Prumo calculou do anúncio da B3. */
+.income-tag--auto {
+  margin-left: 6px;
+  border-style: dotted;
+}
+
 /* --- Meta --- */
 
 .income-goal,

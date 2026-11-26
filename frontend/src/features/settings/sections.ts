@@ -5,6 +5,7 @@ import { CriteriaScreen } from "../criteria/CriteriaScreen";
 import { GoalsScreen } from "../goals/GoalsScreen";
 import { HealthScreen } from "../health/HealthScreen";
 import { ImportB3Screen } from "../importB3/ImportB3Screen";
+import { IncomeAutoScreen } from "../incomeAuto/IncomeAutoScreen";
 import { ObjectivesScreen } from "../objectives/ObjectivesScreen";
 import { TaxScreen } from "../tax/TaxScreen";
 
@@ -28,4 +29,5 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { id: "importar-b3", label: "Importar da B3", Component: ImportB3Screen },
   { id: "impostos", label: "Impostos", Component: TaxScreen },
   { id: "alertas", label: "Alertas", Component: AlertsScreen },
+  { id: "proventos-automaticos", label: "Proventos automáticos", Component: IncomeAutoScreen },
 ];

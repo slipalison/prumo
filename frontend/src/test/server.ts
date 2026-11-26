@@ -17,6 +17,7 @@ import type { AllocationSettings } from "../api/allocationTypes";
 import type { HealthRule, HealthWarning, RuleId, RulesRequest, SectorSourceInfo } from "../api/healthTypes";
 import type { CreateTransactionRequest, Transaction, UpdateTransactionRequest } from "../api/ledgerTypes";
 import { iconsHandlers } from "./iconsHandlers";
+import { defaultIncomeAutoHandlers } from "./incomeAutoHandlers";
 import { incomeHandlers } from "./incomeHandlers";
 import { objectivesHandlers } from "./objectivesHandlers";
 import { taxHandlers } from "./taxHandlers";
@@ -464,4 +465,11 @@ export const handlers = [
   ),
 ];
 
-export const server = setupServer(...handlers, ...iconsHandlers, ...incomeHandlers, ...objectivesHandlers, ...taxHandlers);
+export const server = setupServer(
+  ...handlers,
+  ...iconsHandlers,
+  ...incomeHandlers,
+  ...defaultIncomeAutoHandlers,
+  ...objectivesHandlers,
+  ...taxHandlers,
+);

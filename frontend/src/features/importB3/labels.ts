@@ -107,6 +107,7 @@ export const LINE_REASON_TEXT: Record<string, string> = {
   same_entry: "é o lançamento que você já fez (mesma data, quantidade e preço próximo)",
   same_income: "é o provento que já está na Renda",
   replaces_provisioned: "substitui o provento a receber",
+  replaces_automatic: "substitui o provento automático (B3)",
   superseded_by_received: "o recebido do mesmo provento já entra",
   provisioned_without_date: "a receber sem data: entra quando a B3 marcar a data",
   asset_skipped: "você deixou o ativo de fora",

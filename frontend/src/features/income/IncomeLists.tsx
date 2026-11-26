@@ -12,6 +12,12 @@ import { useMoney } from "../../lib/privacy";
 
 const payer = (event: IncomeEvent) => event.symbol ?? event.display_name;
 
+/** O selo do provento que o Prumo calculou do anúncio da B3. */
+function AutoTag({ event }: { event: IncomeEvent }) {
+  if (event.source !== "b3_announcement") return null;
+  return <span className="income-tag income-tag--auto">automático (B3)</span>;
+}
+
 /** Os próximos pagamentos, do mais perto para o mais longe. */
 export function UpcomingList({ events }: { events: IncomeEvent[] }) {
   const money = useMoney();
@@ -33,6 +39,7 @@ export function UpcomingList({ events }: { events: IncomeEvent[] }) {
           <span className="income-row__who">
             <strong>{payer(event)}</strong>
             <span className="muted"> · {KIND_LABEL[event.kind]}</span>
+            <AutoTag event={event} />
           </span>
           <strong className="income-row__value">{money.brl(event.net)}</strong>
         </motion.li>
@@ -76,13 +83,22 @@ export function EventList({ events }: { events: IncomeEvent[] }) {
                 · {KIND_LABEL[event.kind]}
                 {event.withholding > 0 && ` · IR ${money.brl(event.withholding)}`}
               </span>
+              <AutoTag event={event} />
             </span>
             <span className={cx("income-tag", event.status === "upcoming" && "income-tag--upcoming")}>
               {STATUS_LABEL[event.status]}
             </span>
             <strong className="income-row__value">{money.brl(event.net)}</strong>
             {asking ? (
-              <span className="income-row__confirm" role="group" aria-label={`Apagar provento de ${payer(event)}?`}>
+              <span
+                className="income-row__confirm"
+                role="group"
+                aria-label={
+                  event.source === "b3_announcement"
+                    ? `Apagar o provento automático de ${payer(event)}? Ele não volta na próxima busca.`
+                    : `Apagar provento de ${payer(event)}?`
+                }
+              >
                 <button type="button" className="link-btn" onClick={() => confirmRemove(event)}>
                   Apagar
                 </button>

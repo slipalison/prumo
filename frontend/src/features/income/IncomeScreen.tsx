@@ -10,6 +10,7 @@ import { Skeleton } from "../../components/Skeleton";
 import { useMoney } from "../../lib/privacy";
 import { yieldText } from "../../lib/yieldOnCost";
 import { AddIncomeSheet } from "./AddIncomeSheet";
+import { PendingEventsCard } from "../incomeAuto/PendingEvents";
 import { EstimateCard } from "./EstimateCard";
 import { IncomeGoalCard } from "./IncomeGoalCard";
 import { EventList, UpcomingList } from "./IncomeLists";
@@ -89,6 +90,8 @@ function Loaded({ summary }: { summary: IncomeSummary }) {
         </h2>
         <UpcomingList events={summary.upcoming} />
       </GlassCard>
+
+      <PendingEventsCard />
 
       <EstimateCard estimate={summary.estimate} />
 

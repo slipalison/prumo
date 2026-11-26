@@ -1,0 +1,41 @@
+/* ================= Proventos automáticos ================= */
+
+.income-auto__card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+}
+
+.income-auto__facts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.auto-pending {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.auto-pending__item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+}
+
+.auto-pending__text {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

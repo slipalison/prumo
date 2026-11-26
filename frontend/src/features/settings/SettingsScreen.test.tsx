@@ -38,6 +38,7 @@ describe("Navegação e Ajustes", () => {
       "Importar da B3",
       "Impostos",
       "Alertas",
+      "Proventos automáticos",
     ]);
     expect(within(sections).getByRole("link", { name: "Metas por classe" })).toHaveAttribute("aria-current", "page");
     expect(within(sections).getByRole("link", { name: "Critérios" })).not.toHaveAttribute("aria-current");
