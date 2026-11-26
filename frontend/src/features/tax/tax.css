@@ -137,6 +137,14 @@
   vertical-align: middle;
 }
 
+/* A coluna de 2/3 ao lado do ano e do isentômetro tem de 627 px (iPad deitado) a
+   690 px (1440): as cinco colunas só cabem sem rolar de lado com o recheio
+   menor entre elas. */
+.tax-months th,
+.tax-months td {
+  padding-inline: var(--space-2);
+}
+
 /* Empilhada (celular), a célula vazia não ocupa linha: o mês sem nada fica só com o nome. */
 @container (max-width: 560px) {
   .tax-months tbody td:empty,

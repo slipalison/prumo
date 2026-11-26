@@ -27,9 +27,9 @@ function Amount({ value }: { value: number }) {
 }
 
 /**
- * Os doze meses do ano numa tabela: vendas de ações, imposto, DARF, vencimento
- * e a situação (a pagar ou pago, com o botão que muda). O que fica depois da
- * tabela é o saldo que passa para o ano seguinte.
+ * Os doze meses do ano numa tabela: vendas de ações, imposto, DARF (com o
+ * vencimento embaixo) e a situação (a pagar ou pago, com o botão que muda). O
+ * que fica depois da tabela é o saldo que passa para o ano seguinte.
  */
 export function MonthsPanel({ data }: { data: TaxMonths }) {
   const money = useMoney();
@@ -45,22 +45,6 @@ export function MonthsPanel({ data }: { data: TaxMonths }) {
     { key: "sales", label: "Vendas de ações", align: "end", cell: (month) => <Amount value={stockSales(month)} /> },
     { key: "tax", label: "Imposto do mês", align: "end", cell: (month) => <Amount value={monthTax(month)} /> },
     { key: "darf", label: "DARF", cell: (month) => <DarfCell month={month} /> },
-    {
-      key: "due",
-      label: "Vencimento",
-      cell: (month) => {
-        const payable = month.darfs.filter((d) => d.payable);
-        return payable.length === 0 ? (
-          <span className="tax-empty">–</span>
-        ) : (
-          payable.map((d) => (
-            <span key={d.code} className="tax-line">
-              {isoDay(d.due_date)}
-            </span>
-          ))
-        );
-      },
-    },
     {
       key: "status",
       label: "Situação",
@@ -100,6 +84,7 @@ function DarfCell({ month }: { month: TaxMonth }) {
       {payable.map((darf) => (
         <span key={darf.code} className="tax-line">
           {darf.code} · {money.brl(darf.amount)}
+          <span className="tax-line tax-line--muted">vence em {isoDay(darf.due_date)}</span>
         </span>
       ))}
       {pending.map((darf) => (
