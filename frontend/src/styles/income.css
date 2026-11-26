@@ -322,9 +322,11 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* O recheio lateral de metade do passo de 4 px faz as 13 colunas caberem no
+   iPad em pé (1024 px) sem rolar de lado; abaixo disso a tabela rola por dentro. */
 .income-table th,
 .income-table td {
-  padding: var(--space-2) var(--space-1);
+  padding: var(--space-2) calc(var(--space-1) / 2);
   border-bottom: 1px solid var(--border);
   text-align: right;
   white-space: nowrap;

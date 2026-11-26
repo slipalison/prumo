@@ -1,7 +1,8 @@
 /*
  * Ajustes: a casca das seções (docs/layout.md § 7.5). Com ≥ 1000 px de
  * conteúdo, a lista de seções é uma coluna à esquerda, fixa ao rolar; mais
- * estreito, uma linha de pílulas que rola de lado.
+ * estreito, pílulas: em duas linhas de 640 a 999 px e em uma linha que rola de
+ * lado abaixo disso (celular).
  */
 
 .settings__layout {
@@ -77,6 +78,17 @@
 /* Seção que ainda não usa a grade nova fica na coluna de antes. */
 .settings__section:not(:has(.page)) {
   max-width: var(--content-legacy);
+}
+
+/* iPad em pé (640 a 999 px de conteúdo): as oito pílulas quebram em duas linhas
+   em vez de esconder as últimas atrás de uma rolagem de lado. */
+@container page (min-width: 640px) and (max-width: 999px) {
+  .settings__list {
+    flex-wrap: wrap;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+  }
 }
 
 @container page (min-width: 1000px) {
