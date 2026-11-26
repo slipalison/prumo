@@ -1,0 +1,52 @@
+/*
+ * Ajustes: a navegação entre as seções.
+ */
+
+/* ---------- Ajustes ---------- */
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.settings__nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 0 4px;
+}
+
+.settings__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.settings__link:hover {
+  color: var(--text);
+}
+
+.settings__link.is-active {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--gold-1), var(--gold) 45%, var(--gold-2));
+  color: var(--gold-ink);
+}

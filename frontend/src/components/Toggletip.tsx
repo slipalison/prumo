@@ -1,5 +1,17 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { cx } from "../lib/cx";
+
+/** Folga mínima entre o balão e a borda da janela. */
+const EDGE = 8;
+
+export type ToggletipPlacement = "top" | "bottom";
+/**
+ * - `center`: centrado no gatilho (o padrão).
+ * - `start` / `end`: alinhado à esquerda / à direita do gatilho.
+ * - `stretch`: na largura do bloco posicionado mais próximo (o balão das
+ *   referências de preço ocupa a largura do bloco, não a do chip).
+ */
+export type ToggletipAlign = "center" | "start" | "end" | "stretch";
 
 type ToggletipProps = {
   /** O nome acessível do gatilho: o que ele é, já com o veredito (não só a cor). */
@@ -9,6 +21,9 @@ type ToggletipProps = {
   /** O que aparece no gatilho (um chip, um ícone). */
   children: ReactNode;
   className?: string;
+  /** De que lado abre; vira para o outro se não couber na janela. */
+  placement?: ToggletipPlacement;
+  align?: ToggletipAlign;
 };
 
 /**
@@ -17,11 +32,17 @@ type ToggletipProps = {
  * Aberta por toque/clique, fica aberta ao tirar o mouse. O texto entra numa
  * região `role="status"`, que o leitor de tela lê quando abre (o padrão
  * "toggletip"), e some do DOM quando fecha.
+ *
+ * O balão fica no DOM junto do gatilho (a ordem de leitura é a da tela) e,
+ * aberto, se desloca para não passar da borda da janela; sem espaço em cima,
+ * abre embaixo. Quando usar: docs/layout.md, "Tooltip, recolher ou folha".
  */
-export function Toggletip({ label, content, children, className }: ToggletipProps) {
+export function Toggletip({ label, content, children, className, placement = "top", align = "center" }: ToggletipProps) {
   const [open, setOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
+  const [fit, setFit] = useState<{ shift: number; flipped: boolean }>({ shift: 0, flipped: false });
   const root = useRef<HTMLSpanElement>(null);
+  const bubble = useRef<HTMLSpanElement>(null);
   const bubbleId = useId();
 
   useEffect(() => {
@@ -44,10 +65,29 @@ export function Toggletip({ label, content, children, className }: ToggletipProp
     };
   }, [open]);
 
+  // Aberto, mede o balão uma vez e o empurra para dentro da janela.
+  useLayoutEffect(() => {
+    if (!open) {
+      setFit({ shift: 0, flipped: false });
+      return;
+    }
+    const rect = bubble.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return;
+    const width = document.documentElement.clientWidth;
+    const shift = rect.left < EDGE ? EDGE - rect.left : rect.right > width - EDGE ? width - EDGE - rect.right : 0;
+    const flipped =
+      placement === "top" ? rect.top < EDGE : rect.bottom > document.documentElement.clientHeight - EDGE;
+    setFit({ shift: Math.round(shift), flipped });
+  }, [open, placement]);
+
+  const side = fit.flipped ? (placement === "top" ? "bottom" : "top") : placement;
+
   return (
     <span
       ref={root}
       className="toggletip"
+      data-placement={side}
+      data-align={align}
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => {
         if (!pinned) setOpen(false);
@@ -74,7 +114,13 @@ export function Toggletip({ label, content, children, className }: ToggletipProp
       >
         {children}
       </button>
-      <span id={bubbleId} role="status" className="toggletip__bubble">
+      <span
+        ref={bubble}
+        id={bubbleId}
+        role="status"
+        className="toggletip__bubble"
+        style={fit.shift === 0 ? undefined : ({ "--tip-shift": `${fit.shift}px` } as CSSProperties)}
+      >
         {open ? content : null}
       </span>
     </span>

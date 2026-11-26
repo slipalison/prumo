@@ -16,6 +16,7 @@ import { NO_CEILING_TIP, noticeText, referenceChecks, unitLine } from "../../lib
 import { useMoney } from "../../lib/privacy";
 import { assetName, findAssetByLabel, isAboveCeiling } from "../../lib/rating";
 import { ItemIncome, PlanIncomeLine } from "../income/PlanIncomeLine";
+import { DURATION, SPRING, STAGGER } from "../../lib/motion";
 
 type AssetActions = {
   /** Abre a folha do ativo no checklist, para dar nota. */
@@ -111,12 +112,12 @@ function NoticeAction({ notice, assets, onRateAsset, onEditAsset, onAddAsset }: 
 
 const list = {
   hidden: {},
-  show: { transition: { staggerChildren: 0.06, delayChildren: 0.08 } },
+  show: { transition: { staggerChildren: STAGGER, delayChildren: DURATION.instant } },
 };
 
 const card = {
   hidden: { opacity: 0, y: 18, scale: 0.97, filter: "blur(6px)" },
-  show: { opacity: 1, y: 0, scale: 1, filter: "blur(0px)", transition: { type: "spring" as const, stiffness: 260, damping: 24 } },
+  show: { opacity: 1, y: 0, scale: 1, filter: "blur(0px)", transition: SPRING.enter },
 };
 
 export function PlanResult({ plan, assets, onConfirm, ...actions }: PlanResultProps) {
@@ -127,7 +128,7 @@ export function PlanResult({ plan, assets, onConfirm, ...actions }: PlanResultPr
   // A rosca nasce no "antes" e escorrega para o "depois" sozinha.
   useEffect(() => {
     if (reduce) return undefined;
-    const timer = window.setTimeout(() => setView("after"), 650);
+    const timer = window.setTimeout(() => setView("after"), 400);
     return () => window.clearTimeout(timer);
   }, [reduce, plan]);
 
@@ -203,7 +204,7 @@ export function PlanResult({ plan, assets, onConfirm, ...actions }: PlanResultPr
                   <div className="price-refs" role="note" aria-label={`Referências de preço de ${assetName(item)}`}>
                     <span className="price-refs__label">
                       Sem teto
-                      <Toggletip label="O que são estas referências" content={NO_CEILING_TIP} className="price-refs__info">
+                      <Toggletip label="O que são estas referências" content={NO_CEILING_TIP} className="price-refs__info" align="stretch">
                         <IconInfo width={16} height={16} />
                       </Toggletip>
                     </span>
@@ -213,6 +214,7 @@ export function PlanResult({ plan, assets, onConfirm, ...actions }: PlanResultPr
                           <Toggletip
                             label={check.label}
                             content={check.tip}
+                            align="stretch"
                             className={cx("price-ref", check.approves ? "price-ref--approves" : "price-ref--rejects")}
                           >
                             {check.approves ? <IconCheck width={15} height={15} /> : <IconClose width={15} height={15} />}
@@ -238,7 +240,7 @@ export function PlanResult({ plan, assets, onConfirm, ...actions }: PlanResultPr
               className={cx("notice glass", `notice--${notice.code}`)}
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.2 + index * 0.05 }}
+              transition={{ duration: DURATION.base, delay: DURATION.instant + index * STAGGER }}
             >
               <IconAlert className="notice__icon" />
               <span>{noticeText(notice, assets, money)}</span>

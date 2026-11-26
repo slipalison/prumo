@@ -1,6 +1,7 @@
 import { motion } from "motion/react";
 import { cx } from "../../lib/cx";
 import { formatPercent } from "../../lib/format";
+import { DURATION, SPRING } from "../../lib/motion";
 
 type SumRingProps = { sum: number };
 
@@ -20,7 +21,7 @@ export function SumRing({ sum }: SumRingProps) {
     <motion.div
       className={cx("sum-ring", complete && "is-complete", over && "is-over")}
       animate={complete ? { scale: [1, 1.08, 1] } : { scale: 1 }}
-      transition={{ duration: 0.4 }}
+      transition={{ duration: DURATION.slow }}
       role="status"
       aria-live="polite"
       aria-label={`Soma das metas: ${formatPercent(sum, 0)}. ${status}`}
@@ -38,7 +39,7 @@ export function SumRing({ sum }: SumRingProps) {
           transform={`rotate(-90 ${SIZE / 2} ${SIZE / 2})`}
           strokeDasharray={CIRCUMFERENCE}
           animate={{ strokeDashoffset: CIRCUMFERENCE * (1 - fraction) }}
-          transition={{ type: "spring", stiffness: 90, damping: 18 }}
+          transition={SPRING.value}
         />
       </svg>
       <div className="sum-ring__center" aria-hidden="true">

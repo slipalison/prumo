@@ -1,6 +1,7 @@
 import { motion } from "motion/react";
 import type { Answer } from "../lib/score";
 import { cx } from "../lib/cx";
+import { SPRING } from "../lib/motion";
 
 type AnswerToggleProps = {
   questionId: string;
@@ -39,7 +40,7 @@ export function AnswerToggle({ questionId, prompt, value, onChange, disabled }: 
                 <motion.span
                   layoutId={`answer-knob-${questionId}`}
                   className="answer__knob"
-                  transition={{ type: "spring", stiffness: 520, damping: 34 }}
+                  transition={SPRING.snappy}
                 />
               )}
               <span className="answer__label">{option.label}</span>

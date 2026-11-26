@@ -3,6 +3,7 @@ import { useId } from "react";
 import type { IncomeMonth } from "../../api/incomeTypes";
 import { useMoney } from "../../lib/privacy";
 import { barGeometry, barsSummary, monthLabel, monthShort, niceCeiling } from "../../lib/income";
+import { DURATION, SPRING, STAGGER } from "../../lib/motion";
 
 type MonthlyBarsProps = {
   months: IncomeMonth[];
@@ -76,7 +77,7 @@ export function MonthlyBars({ months, goal }: MonthlyBarsProps) {
                 className="income-bars__received"
                 initial={{ height: 0, y: BASE_Y }}
                 animate={{ height: bar.receivedHeight, y: BASE_Y - bar.receivedHeight }}
-                transition={{ type: "spring", stiffness: 90, damping: 18, delay: index * 0.025 }}
+                transition={{ ...SPRING.value, delay: index * STAGGER }}
               />
               {bar.upcomingHeight > 0 && (
                 <motion.rect
@@ -90,7 +91,7 @@ export function MonthlyBars({ months, goal }: MonthlyBarsProps) {
                     height: bar.upcomingHeight,
                     y: BASE_Y - bar.receivedHeight - bar.upcomingHeight,
                   }}
-                  transition={{ type: "spring", stiffness: 90, damping: 18, delay: 0.2 + index * 0.025 }}
+                  transition={{ ...SPRING.value, delay: DURATION.fast + index * STAGGER }}
                 />
               )}
               <text x={x + bar.width / 2} y={HEIGHT - 8} textAnchor="middle" className="income-bars__axis">

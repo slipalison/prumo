@@ -1,6 +1,7 @@
 import { motion, useReducedMotion, useSpring, type HTMLMotionProps } from "motion/react";
 import type { PointerEvent, ReactNode } from "react";
 import { cx } from "../lib/cx";
+import { SPRING } from "../lib/motion";
 
 type MagneticButtonProps = Omit<HTMLMotionProps<"button">, "children"> & {
   children: ReactNode;
@@ -28,8 +29,8 @@ export function MagneticButton({
   ...rest
 }: MagneticButtonProps) {
   const reduce = useReducedMotion();
-  const x = useSpring(0, { stiffness: 260, damping: 18 });
-  const y = useSpring(0, { stiffness: 260, damping: 18 });
+  const x = useSpring(0, SPRING.magnet);
+  const y = useSpring(0, SPRING.magnet);
 
   const handleMove = (event: PointerEvent<HTMLButtonElement>) => {
     if (magnetic && !reduce && !disabled) {

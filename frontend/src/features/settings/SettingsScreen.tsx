@@ -3,6 +3,7 @@ import type { Portfolio } from "../../api/types";
 import { cx } from "../../lib/cx";
 import { parseSection, useHash } from "../../lib/route";
 import { SETTINGS_SECTIONS } from "./sections";
+import { enterUp } from "../../lib/motion";
 
 type SettingsScreenProps = { portfolio: Portfolio };
 
@@ -40,9 +41,9 @@ export function SettingsScreen({ portfolio }: SettingsScreenProps) {
       </nav>
       <motion.div
         key={section.id}
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2, ease: "easeOut" }}
+        initial={enterUp.initial}
+        animate={enterUp.animate}
+        transition={enterUp.transition}
       >
         <Component portfolio={portfolio} />
       </motion.div>

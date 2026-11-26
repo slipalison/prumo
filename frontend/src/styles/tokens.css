@@ -15,13 +15,56 @@
   --r-sm: 12px;
   --r-pill: 999px;
 
+  /* Movimento (docs/layout.md, "Movimento"). Os mesmos números de
+     `lib/motion.ts`; um teste confere que não se separam. */
+  --dur-instant: 90ms;
+  --dur-fast: 140ms;
+  --dur-base: 200ms;
+  --dur-slow: 280ms;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Espaço: escala de 4 px. Tela nova usa só estes passos. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Densidade: o recheio dos painéis, o vão entre eles e a altura de uma
+     linha de tabela. Celular e desktop têm o mesmo ritmo; o desktop ganha
+     colunas, não espaço em branco. */
+  --pad-panel: var(--space-4);
+  --pad-panel-compact: var(--space-3);
+  --gap-grid: var(--space-3);
+  --gap-stack: var(--space-3);
+  --row-height: 40px;
+  --touch: 44px;
+
+  /* Texto: os tamanhos que a interface densa usa. */
+  --text-2xs: 0.7rem;
+  --text-xs: 0.75rem;
+  --text-sm: 0.85rem;
+  --text-md: 0.92rem;
+  --text-lg: 1.05rem;
+
+  /* Casca: trilho, margens e a largura do conteúdo. */
+  --nav-width: 0px;
+  --shell-pad-x: 16px;
+  --shell-gap: 0px;
+  --content-max: 1680px;
+  --content-legacy: 1100px;
 
   --bg: #070a14;
   --bg-2: #0c1124;
   --surface: rgba(17, 22, 42, 0.56);
   --surface-strong: rgba(20, 26, 48, 0.88);
+  /* O que flutua sobre o texto (toggletip): quase opaco, para o de baixo não
+     vazar através do balão. */
+  --surface-popover: rgba(16, 21, 40, 0.97);
   --surface-sunken: rgba(255, 255, 255, 0.045);
   --surface-hover: rgba(255, 255, 255, 0.07);
   --border: rgba(255, 255, 255, 0.09);
@@ -70,6 +113,7 @@
   --bg-2: #e2e7f3;
   --surface: rgba(255, 255, 255, 0.6);
   --surface-strong: rgba(255, 255, 255, 0.92);
+  --surface-popover: rgba(255, 255, 255, 0.98);
   --surface-sunken: rgba(15, 23, 42, 0.05);
   --surface-hover: rgba(15, 23, 42, 0.06);
   --border: rgba(15, 23, 42, 0.09);
@@ -119,6 +163,7 @@
     --bg-2: #e2e7f3;
     --surface: rgba(255, 255, 255, 0.6);
     --surface-strong: rgba(255, 255, 255, 0.92);
+  --surface-popover: rgba(255, 255, 255, 0.98);
     --surface-sunken: rgba(15, 23, 42, 0.05);
     --surface-hover: rgba(15, 23, 42, 0.06);
     --border: rgba(15, 23, 42, 0.09);

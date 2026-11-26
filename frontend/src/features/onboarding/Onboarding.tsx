@@ -11,6 +11,7 @@ import { cx } from "../../lib/cx";
 import { isComplete, PRESETS, sameTargets, targetsFromClasses, type PresetId } from "../../lib/goals";
 import { assetName, needsRating } from "../../lib/rating";
 import { AssetForm } from "../portfolio/AssetForm";
+import { DURATION } from "../../lib/motion";
 
 type OnboardingProps = {
   open: boolean;
@@ -57,7 +58,7 @@ export function Onboarding({ open, portfolio, onClose, onRateAsset }: Onboarding
           initial={{ opacity: 0, x: 24 }}
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: -24 }}
-          transition={{ duration: 0.22 }}
+          transition={{ duration: DURATION.base }}
         >
           {step === 0 && <ProfileStep portfolio={portfolio} onNext={() => setStep(1)} />}
           {step === 1 && (

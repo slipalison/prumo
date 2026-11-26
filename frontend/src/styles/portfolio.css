@@ -1,0 +1,524 @@
+/*
+ * Carteira e as folhas do ativo.
+ */
+
+/* ================= Carteira ================= */
+
+/* O "+" flutuante (62px) fica sobre o fim da tela. O layout já reserva a
+   barra de abas no celular (108px) e 48px no desktop; somando 86px aqui, o
+   último conteúdo termina acima do botão nos dois: no celular o topo dele fica
+   a 162px do rodapé (100 + 62), no desktop a 102px (40 + 62). */
+.portfolio {
+  padding-bottom: 86px;
+}
+
+.portfolio__hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 22px;
+}
+
+.portfolio__total {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.display-number {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 7vw, 2.9rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(135deg, var(--text), var(--gold-text));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.portfolio__quotes {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.portfolio__total-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ---------- Ao vivo ---------- */
+
+.live-badge {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 0.82rem;
+}
+
+.live-badge__dot {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.live-badge__dot::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--success);
+  animation: live-pulse 1.8s ease-out infinite;
+  content: "";
+}
+
+.live-badge__label {
+  color: var(--success);
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.live-badge__note {
+  color: var(--text-subtle);
+}
+
+@keyframes live-pulse {
+  from {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+
+/* Preço que andou: a cor do sentido, e volta ao normal. A seta diz o mesmo
+   sem depender da cor. */
+.price-flash {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.price-flash__value--up {
+  animation: flash-up 1.6s ease-out;
+}
+
+.price-flash__value--down {
+  animation: flash-down 1.6s ease-out;
+}
+
+@keyframes flash-up {
+  from {
+    color: var(--success);
+  }
+}
+
+@keyframes flash-down {
+  from {
+    color: var(--danger);
+  }
+}
+
+.trend-mark {
+  font-size: 0.7rem;
+  line-height: 1;
+  animation: trend-fade 1.6s ease-out forwards;
+}
+
+.portfolio__total-line .trend-mark {
+  font-size: 1rem;
+}
+
+.trend-mark--up {
+  color: var(--success);
+  --trend-from: 4px;
+}
+
+.trend-mark--down {
+  color: var(--danger);
+  --trend-from: -4px;
+}
+
+@keyframes trend-fade {
+  0% {
+    opacity: 0;
+    transform: translateY(var(--trend-from));
+  }
+  15% {
+    opacity: 1;
+    transform: none;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.class-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.class-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+}
+
+.class-card__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.class-card__dot {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--class-color);
+  box-shadow: 0 0 14px var(--class-color);
+}
+
+.class-card__title {
+  flex: 1;
+  font-size: 1.08rem;
+}
+
+.class-card__numbers {
+  font-family: var(--font-display);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.class-card__empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.asset-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 -8px;
+}
+
+.asset-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  text-align: left;
+  transition: background var(--dur-fast), transform var(--dur-fast) var(--ease-spring);
+}
+
+.asset-row:hover {
+  background: var(--surface-hover);
+}
+
+.asset-row:active {
+  transform: scale(0.99);
+}
+
+.asset-row__id {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.asset-row__symbol {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+/* ETF ou BDR da B3 dentro de outra classe: a etiqueta explica a cota inteira. */
+.asset-row__tag {
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--class-color, var(--gold)) 55%, transparent);
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+/* Ativo da lista, ainda não comprado: presente, mas um passo atrás. */
+.asset-row--wish .asset-row__symbol,
+.asset-row--wish .asset-row__value {
+  opacity: 0.72;
+}
+
+.asset-row__name,
+.asset-row__qty {
+  overflow: hidden;
+  color: var(--text-subtle);
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-row__qty {
+  display: none;
+}
+
+.asset-row__value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.asset-row__share {
+  color: var(--text-subtle);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+/* A linha do ideal ocupa a largura toda, sob o resto da linha do ativo. */
+.asset-row__ideal {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  color: var(--text-subtle);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.portfolio__ideal {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.portfolio__ideal.is-below {
+  color: var(--gold-text);
+}
+
+.asset-row__score {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.asset-row__warn {
+  color: var(--gold-text);
+}
+
+@media (min-width: 720px) {
+  .asset-row {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto auto;
+  }
+
+  .asset-row__qty {
+    display: block;
+  }
+}
+
+.more-classes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+}
+
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+}
+
+.history__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.history__item {
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+}
+
+.history__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.history__date {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+.history__value {
+  color: var(--gold-text);
+  font-family: var(--font-display);
+}
+
+.history__items {
+  margin-top: 2px;
+  color: var(--text-subtle);
+  font-size: 0.85rem;
+}
+
+/* Adicionar / editar */
+
+.asset-form__picked {
+  margin-top: -8px;
+  color: var(--gold-text);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.asset-form__submit,
+.edit-asset__save {
+  width: 100%;
+  min-height: 54px;
+}
+
+.edit-asset {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.edit-asset__intro {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--gold) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold) 35%, transparent);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.edit-asset__intro svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--gold-text);
+}
+
+.edit-asset__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+}
+
+.edit-asset__value {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.edit-asset__caption {
+  color: var(--text-subtle);
+  font-size: 0.85rem;
+}
+
+.edit-asset__checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.edit-asset__checklist-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+
+/* ---------- Lucro total ---------- */
+
+.profit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 4px;
+}
+
+.profit__value {
+  font-family: var(--font-display);
+  font-size: clamp(1.3rem, 4.6vw, 1.8rem);
+  font-variant-numeric: tabular-nums;
+}
+
+.profit__value.is-up {
+  color: var(--positive, var(--gold-text));
+}
+
+.profit__value.is-down {
+  color: var(--negative, var(--danger, var(--text)));
+}
+
+.profit__detail summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.profit__parts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+}
+
+.profit__parts div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.profit__parts dt {
+  color: var(--text-muted);
+}
+
+.profit__parts dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}

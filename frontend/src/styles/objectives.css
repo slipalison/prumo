@@ -121,39 +121,3 @@
   flex-direction: column;
   gap: 2px;
 }
-
-/* --- No aporte --- */
-
-.plan-objectives {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin-top: 16px;
-  padding: 20px;
-}
-
-.plan-objectives__list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.plan-objectives__item {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
-}
-
-.plan-objectives__item:first-child {
-  padding-top: 0;
-  border-top: 0;
-}
-
-.plan-objectives__name {
-  font-family: var(--font-display);
-}

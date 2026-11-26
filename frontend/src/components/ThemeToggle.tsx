@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { THEME_LABEL, useTheme } from "../lib/theme";
 import { IconMonitor, IconMoon, IconSun } from "./icons";
+import { DURATION } from "../lib/motion";
 
 const ICON = { dark: IconMoon, light: IconSun, system: IconMonitor } as const;
 
@@ -22,7 +23,7 @@ export function ThemeToggle() {
           initial={{ rotate: -90, opacity: 0, scale: 0.6 }}
           animate={{ rotate: 0, opacity: 1, scale: 1 }}
           exit={{ rotate: 90, opacity: 0, scale: 0.6 }}
-          transition={{ duration: 0.25 }}
+          transition={{ duration: DURATION.base }}
         >
           <Icon />
         </motion.span>

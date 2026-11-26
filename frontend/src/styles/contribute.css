@@ -1,0 +1,595 @@
+/*
+ * Aportar: o campo do valor, o plano, o registro, o caixa, os objetivos no
+ * plano e o assistente do primeiro uso.
+ */
+
+/* ================= Aportar ================= */
+
+.ask {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 22px 26px;
+  overflow: hidden;
+}
+
+
+.ask__plumb {
+  display: grid;
+  place-items: center;
+  height: 70px;
+  margin-top: -8px;
+}
+
+.ask__form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  width: min(520px, 100%);
+}
+
+.ask__title {
+  font-size: clamp(1.5rem, 5vw, 2.2rem);
+  font-weight: 650;
+  text-align: center;
+}
+
+.ask__form .money-field {
+  width: 100%;
+}
+
+.quick {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.ask__submit {
+  min-width: 220px;
+  min-height: 58px;
+  font-size: 1.1rem;
+}
+
+.ask__hint {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 40px 26px 30px;
+  text-align: center;
+}
+
+.welcome__title {
+  font-size: clamp(1.6rem, 5vw, 2.3rem);
+  font-weight: 650;
+}
+
+.welcome__text {
+  max-width: 44ch;
+  color: var(--text-muted);
+}
+
+.welcome .btn {
+  max-width: 360px;
+  margin-top: 8px;
+}
+
+.registered {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 18px 22px;
+}
+
+.registered__title {
+  font-size: 1.35rem;
+}
+
+/* Resultado */
+
+/* A doca do "Já comprei" (botão de 58px + 10px de respiro em cima e embaixo)
+   fica fixa no rodapé; o resultado termina com o mesmo tanto de espaço, para a
+   última barra nunca ficar escondida atrás dela no fim da rolagem. */
+.plan {
+  --dock-space: 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.plan:has(.plan__actions) {
+  padding-bottom: var(--dock-space);
+}
+
+.plan__headline {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 4px 0;
+}
+
+.plan__title {
+  font-size: clamp(1.5rem, 4.6vw, 2.1rem);
+  font-weight: 650;
+}
+
+.plan__subtitle {
+  color: var(--text-muted);
+  font-size: 1.05rem;
+}
+
+.plan__subtitle .count-up {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+}
+
+.plan__unallocated {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--gold-text);
+  font-weight: 600;
+}
+
+.plan__items {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.plan-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+  height: 100%;
+  min-height: 132px;
+  padding: 16px 18px 16px 22px;
+  overflow: hidden;
+}
+
+.plan-card__stripe {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 5px;
+  background: var(--class-color);
+  box-shadow: 0 0 22px var(--class-color);
+}
+
+.plan-card__head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.plan-card__class {
+  color: var(--class-color);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.plan-card__symbol {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+/* Renda fixa não tem ticker: o nome entra no lugar dele, em fonte menor, com
+   no máximo duas linhas. */
+.plan-card__symbol--name {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 1.15rem;
+  line-height: 1.25;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.plan-card__name {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-subtle);
+  font-size: 0.85rem;
+  line-height: 1.35;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.plan-card__foot {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.plan-card__value {
+  color: var(--gold-text);
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.plan-card__units {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* As referências do ativo sem teto: chips com o veredito (ícone + nome
+   acessível; a cor só reforça) e a explicação no toque. O balão abre acima
+   do bloco, na largura dele (`align="stretch"`): o cartão corta o que passa
+   da borda. */
+.price-refs {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.price-refs__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--text-subtle);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.price-refs__info {
+  display: inline-flex;
+  padding: 4px;
+  border-radius: 999px;
+  color: var(--text-subtle);
+}
+
+.price-refs__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.price-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.price-ref--approves {
+  border-color: color-mix(in srgb, var(--success) 45%, transparent);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+
+.price-ref--approves svg {
+  color: var(--success);
+}
+
+.price-ref--rejects {
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  background: var(--danger-surface);
+}
+
+.price-ref--rejects svg {
+  color: var(--danger);
+}
+
+.price-ref__value {
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.plan__balance {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px;
+}
+
+.plan__balance-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.plan__balance-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+}
+
+.plan__bars {
+  display: flex;
+  flex: 1 1 300px;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.plan__bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.plan__bar-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.9rem;
+}
+
+.plan__bar-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.plan__bar-numbers {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.plan__actions {
+  position: fixed;
+  left: 50%;
+  bottom: calc(96px + env(safe-area-inset-bottom));
+  z-index: 12;
+  display: flex;
+  justify-content: center;
+  width: min(440px, calc(100% - 32px));
+  padding: 10px;
+  transform: translateX(-50%);
+  border-radius: calc(var(--r-pill));
+  background: color-mix(in srgb, var(--surface-strong) 70%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
+  box-shadow: var(--shadow-md);
+}
+
+.plan__actions .btn {
+  min-height: 58px;
+  font-size: 1.1rem;
+}
+
+@media (min-width: 960px) {
+  /* Centralizada na coluna do conteúdo, não na janela (o trilho fica à
+     esquerda): `--content-center-x` vem da casca, em base.css. */
+  .plan__actions {
+    left: var(--content-center-x);
+    bottom: 24px;
+  }
+}
+
+/* Registrar */
+
+.contribution-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.contribution-form__list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.contribution-form__row {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.6fr) 1fr;
+  align-items: end;
+  gap: 12px;
+  padding: 12px;
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+}
+
+.contribution-form__id {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 12px;
+}
+
+.contribution-form__id strong {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+}
+
+.contribution-form__total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 4px 4px 0;
+  font-weight: 600;
+}
+
+.contribution-form__total strong {
+  color: var(--gold-text);
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+}
+
+
+/* --- No aporte --- */
+
+.plan__income {
+  margin-top: 6px;
+  color: var(--text-muted);
+}
+
+.plan-card__income {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.cash-suggestion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 12px;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  text-align: center;
+}
+
+
+/* --- Caixa no campo do aporte --- */
+
+.cash-suggestion {
+  flex-direction: column;
+}
+
+.cash-suggestion__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 12px;
+  margin: 0;
+}
+
+.cash-detail {
+  width: 100%;
+  max-width: 460px;
+  text-align: left;
+}
+
+.cash-detail summary {
+  cursor: pointer;
+  text-align: center;
+}
+
+.cash-detail__sources {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 10px 0 6px;
+}
+
+.cash-detail__sources div,
+.cash-detail__recent li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cash-detail__sources dt {
+  color: var(--text-muted);
+}
+
+.cash-detail__sources dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.cash-detail__recent {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.85rem;
+}
+
+.cash-detail__recent strong {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+
+/* --- No aporte --- */
+
+.plan-objectives {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 20px;
+}
+
+.plan-objectives__list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plan-objectives__item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.plan-objectives__item:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.plan-objectives__name {
+  font-family: var(--font-display);
+}
+
+
+/* ================= Assistente ================= */
+
+.onboarding__step {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.onboarding__title {
+  font-size: 1.3rem;
+}
+
+.onboarding__done {
+  align-items: center;
+  padding: 10px 0;
+  text-align: center;
+}

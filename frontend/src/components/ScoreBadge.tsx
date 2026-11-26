@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { cx } from "../lib/cx";
+import { SPRING } from "../lib/motion";
 
 type ScoreBadgeProps = {
   score: number;
@@ -25,7 +26,7 @@ export function ScoreBadge({ score, size = "sm" }: ScoreBadgeProps) {
           initial={{ rotateX: -90, opacity: 0 }}
           animate={{ rotateX: 0, opacity: 1 }}
           exit={{ rotateX: 90, opacity: 0 }}
-          transition={{ type: "spring", stiffness: 420, damping: 26 }}
+          transition={SPRING.snappy}
         >
           {score}
         </motion.span>

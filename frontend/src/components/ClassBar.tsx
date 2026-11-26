@@ -2,6 +2,7 @@ import { motion } from "motion/react";
 import type { AssetClass } from "../api/types";
 import { CLASS_META, classColor } from "../lib/assetClasses";
 import { formatPercent } from "../lib/format";
+import { DURATION, SPRING } from "../lib/motion";
 
 type ClassBarProps = {
   assetClass: AssetClass;
@@ -42,14 +43,14 @@ export function ClassBar({ assetClass, current, target, after }: ClassBarProps) 
           style={{ background: classColor(assetClass) }}
           initial={{ width: "0%" }}
           animate={{ width: toWidth(current) }}
-          transition={{ type: "spring", stiffness: 80, damping: 18 }}
+          transition={SPRING.value}
         />
         {added && (
           <motion.div
             className="class-bar__added"
             initial={{ left: toWidth(current), width: "0%" }}
             animate={{ left: toWidth(current), width: toWidth(after - current) }}
-            transition={{ type: "spring", stiffness: 70, damping: 16, delay: 0.25 }}
+            transition={{ ...SPRING.value, delay: DURATION.fast }}
           />
         )}
         {target > 0 && (

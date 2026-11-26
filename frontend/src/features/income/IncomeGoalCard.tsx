@@ -13,6 +13,7 @@ import { useToast } from "../../components/toastContext";
 import { formatPercent } from "../../lib/format";
 import { formatDay } from "../../lib/income";
 import { useMoney } from "../../lib/privacy";
+import { SPRING } from "../../lib/motion";
 
 type IncomeGoalCardProps = {
   goal: IncomeGoal | null;
@@ -73,7 +74,7 @@ export function IncomeGoalCard({ goal, monthlyAverage, estimatedMonthly }: Incom
               className={basis === "estimate" ? "income-progress__fill income-progress__fill--estimate" : "income-progress__fill"}
               initial={{ width: "0%" }}
               animate={{ width: `${shown}%` }}
-              transition={{ type: "spring", stiffness: 80, damping: 18 }}
+              transition={SPRING.value}
             />
           </div>
           <p className="income-goal__legend">

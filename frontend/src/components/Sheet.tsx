@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { cx } from "../lib/cx";
 import { openModal } from "../lib/useFocusOnMount";
 import { IconClose } from "./icons";
+import { DURATION, SPRING } from "../lib/motion";
 
 type SheetProps = {
   open: boolean;
@@ -13,6 +14,12 @@ type SheetProps = {
   children: ReactNode;
   footer?: ReactNode;
   className?: string;
+  /**
+   * `wide`: no desktop, até 1040 px de largura, para a folha que tem duas
+   * colunas (a do ativo: dados à esquerda, lançamentos e fundamentos à
+   * direita). No celular não muda nada.
+   */
+  size?: "default" | "wide";
 };
 
 const FOCUSABLE =
@@ -48,7 +55,7 @@ function restoreFocus(previous: HTMLElement | null, panel: HTMLElement | null): 
  * enquanto aberta, fecha com Esc e com toque fora, e devolve o foco a quem a
  * abriu. Elemento com `data-autofocus` ganha o foco ao abrir.
  */
-export function Sheet({ open, onClose, title, description, children, footer, className }: SheetProps) {
+export function Sheet({ open, onClose, title, description, children, footer, className, size = "default" }: SheetProps) {
   const titleId = useId();
   const descriptionId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -114,6 +121,7 @@ export function Sheet({ open, onClose, title, description, children, footer, cla
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            transition={{ duration: DURATION.fast }}
           />
           <motion.div
             ref={panelRef}
@@ -122,11 +130,11 @@ export function Sheet({ open, onClose, title, description, children, footer, cla
             aria-labelledby={titleId}
             aria-describedby={description ? descriptionId : undefined}
             tabIndex={-1}
-            className={cx("sheet glass", className)}
+            className={cx("sheet glass", size === "wide" && "sheet--wide", className)}
             initial={{ y: 48, opacity: 0, scale: 0.98 }}
             animate={{ y: 0, opacity: 1, scale: 1 }}
             exit={{ y: 48, opacity: 0, scale: 0.98 }}
-            transition={{ type: "spring", stiffness: 320, damping: 30 }}
+            transition={SPRING.enter}
           >
             <span className="sheet__grabber" aria-hidden="true" />
             <header className="sheet__header">

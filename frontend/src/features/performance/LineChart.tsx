@@ -1,6 +1,7 @@
 import { motion } from "motion/react";
 import { useId, useState, type PointerEvent } from "react";
 import { formatDay, spansYears } from "./performanceFormat";
+import { DURATION, SPRING } from "../../lib/motion";
 
 export type ChartSeries = {
   key: string;
@@ -133,7 +134,7 @@ export function LineChart({ dates, series, format, label, zeroLine = false, from
                     fill={`url(#${gradient})`}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    transition={{ duration: 0.5 }}
+                    transition={{ duration: DURATION.slow }}
                   />
                 )}
                 {d && !lone && (
@@ -148,7 +149,7 @@ export function LineChart({ dates, series, format, label, zeroLine = false, from
                     vectorEffect="non-scaling-stroke"
                     initial={{ pathLength: 0 }}
                     animate={{ pathLength: 1 }}
-                    transition={{ type: "spring", stiffness: 70, damping: 20 }}
+                    transition={SPRING.value}
                   />
                 )}
               </g>

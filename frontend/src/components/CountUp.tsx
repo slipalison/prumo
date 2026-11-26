@@ -2,6 +2,7 @@ import { animate, useMotionValue, useMotionValueEvent, useReducedMotion } from "
 import { useEffect, useState } from "react";
 import { cx } from "../lib/cx";
 import { useMoney } from "../lib/privacy";
+import { SPRING } from "../lib/motion";
 
 type CountUpProps = {
   value: number;
@@ -32,7 +33,7 @@ export function CountUp({ value, format, className }: CountUpProps) {
       setCurrent(value);
       return undefined;
     }
-    const controls = animate(motionValue, value, { type: "spring", stiffness: 70, damping: 18, restDelta: 0.001 });
+    const controls = animate(motionValue, value, { ...SPRING.value, restDelta: 0.001 });
     return () => controls.stop();
   }, [value, reduce, motionValue]);
 

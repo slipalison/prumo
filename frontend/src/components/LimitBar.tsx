@@ -1,4 +1,5 @@
 import { motion } from "motion/react";
+import { SPRING } from "../lib/motion";
 
 type LimitBarProps = {
   /** Onde a carteira está (0–100). */
@@ -33,7 +34,7 @@ export function LimitBar({ current, limit, label }: LimitBarProps) {
           className={over ? "class-bar__fill limit-bar__fill limit-bar__fill--over" : "class-bar__fill limit-bar__fill"}
           initial={{ width: "0%" }}
           animate={{ width: toWidth(current) }}
-          transition={{ type: "spring", stiffness: 80, damping: 18 }}
+          transition={SPRING.value}
         />
         <span className="class-bar__target" style={{ left: toWidth(limit) }} aria-hidden="true">
           <svg viewBox="0 0 10 14" width="10" height="14">

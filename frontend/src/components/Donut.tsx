@@ -1,5 +1,6 @@
 import { motion } from "motion/react";
 import type { ReactNode } from "react";
+import { SPRING } from "../lib/motion";
 
 export type DonutSegment = {
   key: string;
@@ -63,7 +64,7 @@ export function Donut({ segments, label, size = 220, thickness = 18, children }:
               strokeLinecap="round"
               initial={{ strokeDasharray: `0 ${circumference}`, strokeDashoffset: offset }}
               animate={{ strokeDasharray: `${dash} ${circumference}`, strokeDashoffset: offset }}
-              transition={{ type: "spring", stiffness: 60, damping: 16 }}
+              transition={SPRING.value}
             />
           ))}
         </g>

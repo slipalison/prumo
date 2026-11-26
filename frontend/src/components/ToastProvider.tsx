@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { cx } from "../lib/cx";
 import { IconAlert, IconCheck, IconClose, IconSparkle } from "./icons";
 import { ToastContext, type ToastInput } from "./toastContext";
+import { SPRING } from "../lib/motion";
 
 type Toast = ToastInput & { id: number };
 
@@ -53,7 +54,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 initial={{ opacity: 0, y: 24, scale: 0.94 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 12, scale: 0.96 }}
-                transition={{ type: "spring", stiffness: 380, damping: 28 }}
+                transition={SPRING.enter}
               >
                 <Icon className="toast__icon" />
                 <span className="toast__message">{toast.message}</span>

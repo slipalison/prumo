@@ -28,6 +28,7 @@ import { ContributionHistory } from "./ContributionHistory";
 import { ProfitSummary } from "./ProfitSummary";
 import { EditAssetSheet } from "./EditAssetSheet";
 import { SectorBreakdown } from "./SectorBreakdown";
+import { SPRING, STAGGER } from "../../lib/motion";
 
 type PortfolioScreenProps = { portfolio: Portfolio };
 
@@ -207,7 +208,7 @@ function ClassSection({ index, summary, assets, onEdit, onAdd }: ClassSectionPro
     <motion.div
       initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.05, type: "spring", stiffness: 260, damping: 26 }}
+      transition={{ ...SPRING.enter, delay: index * STAGGER }}
     >
       <GlassCard
         as="section"

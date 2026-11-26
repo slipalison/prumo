@@ -9,6 +9,7 @@ import { ScreenSkeleton } from "../components/Skeleton";
 import { useRoute } from "../lib/route";
 import { APP_ROUTES, ROUTE_IDS } from "./routes";
 import { useLivePrices } from "./useLivePrices";
+import { screenTransition } from "../lib/motion";
 
 /**
  * Cada tela abre do topo, e não na rolagem da anterior. Sem animação de
@@ -53,10 +54,9 @@ export function Shell() {
               <motion.div
                 key={route.id}
                 className="route"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.22, ease: "easeOut" }}
+                initial={screenTransition.initial}
+                animate={screenTransition.animate}
+                exit={screenTransition.exit}
               >
                 <Screen route={route} portfolio={portfolio.data} />
               </motion.div>

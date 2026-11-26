@@ -11,7 +11,7 @@ export function Logo() {
         width="26"
         height="32"
         aria-hidden="true"
-        whileHover={reduce ? undefined : { rotate: [0, -12, 9, -5, 2, 0], transition: { duration: 1 } }}
+        whileHover={reduce ? undefined : { rotate: [0, -12, 9, -5, 2, 0], transition: { duration: 0.7 } }}
         style={{ originX: 0.5, originY: 0 }}
       >
         <defs>

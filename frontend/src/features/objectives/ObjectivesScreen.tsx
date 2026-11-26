@@ -13,6 +13,7 @@ import { formatDay, formatPercent } from "../../lib/format";
 import { assumptionLines, objectiveName, projectionText } from "../../lib/objectives";
 import { useMoney } from "../../lib/privacy";
 import { ObjectiveSheet } from "./ObjectiveSheet";
+import { SPRING } from "../../lib/motion";
 
 /** Ajustes › Objetivos: metas de patrimônio e de valor numa classe, com data estimada. */
 export function ObjectivesScreen() {
@@ -162,7 +163,7 @@ function ObjectiveCard({ objective, onEdit }: { objective: Objective; onEdit: (o
             className="objective-progress__fill"
             initial={{ width: "0%" }}
             animate={{ width: `${shown}%` }}
-            transition={{ type: "spring", stiffness: 80, damping: 18 }}
+            transition={SPRING.value}
           />
         </div>
         <p className="objective-card__legend">

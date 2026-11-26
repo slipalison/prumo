@@ -4,6 +4,7 @@ import { cx } from "../lib/cx";
 import { Logo } from "./Logo";
 import { PrivacyToggle } from "./PrivacyToggle";
 import { ThemeToggle } from "./ThemeToggle";
+import { SPRING } from "../lib/motion";
 
 type NavBarProps = {
   route: RouteId;
@@ -36,7 +37,7 @@ export function NavBar({ route, email, version }: NavBarProps) {
                   <motion.span
                     layoutId="nav-indicator"
                     className="nav__indicator"
-                    transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                    transition={SPRING.snappy}
                   />
                 )}
                 <Icon className="nav__icon" />
