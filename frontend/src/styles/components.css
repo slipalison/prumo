@@ -204,6 +204,25 @@
   color: var(--text);
 }
 
+/* Em 360 px (e 320) os seis nomes na barra de baixo passam da largura dela:
+   "Desempenho" é o mais largo. Letra e recheio cedem, o nome continua inteiro. */
+@media (max-width: 380px) {
+  .nav__list {
+    gap: 2px;
+  }
+
+  .nav__item {
+    padding-inline: 2px;
+    font-size: 0.66rem;
+  }
+}
+
+@media (max-width: 340px) {
+  .nav__item {
+    padding-inline: 0;
+  }
+}
+
 .nav__item.is-active {
   color: var(--gold-ink);
 }
@@ -289,7 +308,7 @@
     align-items: stretch;
     gap: var(--space-4);
     height: calc(100dvh - 32px);
-    padding: var(--space-4) var(--space-2);
+    padding: var(--space-4) var(--space-1);
     border: 1px solid var(--border);
     border-radius: var(--r-lg);
     background: var(--surface);
@@ -337,12 +356,15 @@
     box-shadow: none;
   }
 
+  /* 84 px de trilho deixam 74 px por item: "Desempenho" (11,2 px, 73 px) cabe
+     inteiro, sem reticências, porque o trilho e o item quase não têm recheio. */
   .nav__item {
     min-height: 58px;
-    padding: 6px 2px;
+    padding: 6px 0;
     border-radius: var(--r-md);
     font-size: var(--text-2xs);
-    letter-spacing: 0.01em;
+    letter-spacing: 0;
+    text-align: center;
   }
 
   .nav__footer {
