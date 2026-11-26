@@ -6,12 +6,13 @@ import { ClassBar } from "../../components/ClassBar";
 import { CountUp } from "../../components/CountUp";
 import { Donut } from "../../components/Donut";
 import { GlassCard } from "../../components/GlassCard";
-import { IconAlert, IconArrowRight, IconCheck, IconPlus } from "../../components/icons";
+import { IconAlert, IconArrowRight, IconCheck, IconClose, IconInfo, IconPlus } from "../../components/icons";
 import { MagneticButton } from "../../components/MagneticButton";
+import { Toggletip } from "../../components/Toggletip";
 import { CLASS_META, classColor } from "../../lib/assetClasses";
 import { cx } from "../../lib/cx";
 import { formatPercent, plural } from "../../lib/format";
-import { noticeText, referenceNoteText, unitLine } from "../../lib/planText";
+import { NO_CEILING_TIP, noticeText, referenceChecks, unitLine } from "../../lib/planText";
 import { useMoney } from "../../lib/privacy";
 import { assetName, findAssetByLabel, isAboveCeiling } from "../../lib/rating";
 import { ItemIncome, PlanIncomeLine } from "../income/PlanIncomeLine";
@@ -199,9 +200,29 @@ export function PlanResult({ plan, assets, onConfirm, ...actions }: PlanResultPr
                 </div>
                 <ItemIncome monthly={item.estimated_monthly_income} />
                 {item.price_references && (
-                  <p className="plan-card__reference" role="note">
-                    {referenceNoteText(item, item.price_references, money)}
-                  </p>
+                  <div className="price-refs" role="note" aria-label={`Referências de preço de ${assetName(item)}`}>
+                    <span className="price-refs__label">
+                      Sem teto
+                      <Toggletip label="O que são estas referências" content={NO_CEILING_TIP} className="price-refs__info">
+                        <IconInfo width={16} height={16} />
+                      </Toggletip>
+                    </span>
+                    <ul className="price-refs__list">
+                      {referenceChecks(item, item.price_references, money).map((check) => (
+                        <li key={check.name}>
+                          <Toggletip
+                            label={check.label}
+                            content={check.tip}
+                            className={cx("price-ref", check.approves ? "price-ref--approves" : "price-ref--rejects")}
+                          >
+                            {check.approves ? <IconCheck width={15} height={15} /> : <IconClose width={15} height={15} />}
+                            <span>{check.name}</span>
+                            <span className="price-ref__value">{money.brl(check.value)}</span>
+                          </Toggletip>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
               </GlassCard>
             </motion.li>

@@ -93,32 +93,55 @@ function sideOf(price: number, reference: number): Side {
 }
 
 const SIDE_WORD: Record<Side, string> = { above: "acima do", below: "abaixo do", equal: "igual ao" };
-/** A preposição do segundo nome quando os dois estão do mesmo lado: "acima do Bazin e do Graham". */
-const SIDE_AND: Record<Side, string> = { above: "do", below: "do", equal: "ao" };
+
+/** O que cada método é, em uma frase, para a explicação do chip. */
+const METHOD_TIP = {
+  Bazin: "Bazin: o preço em que a média de dividendos por cota renderia o seu rendimento-alvo.",
+  Graham: "Graham: a raiz de 22,5 × lucro por ação × patrimônio por ação, dos balanços da CVM.",
+} as const;
+
+/** Um método de referência no cartão do ativo sem teto. */
+export type ReferenceCheck = {
+  name: keyof typeof METHOD_TIP;
+  value: number;
+  /** Preço de hoje até o do método (no centavo; igual conta, como no teto). */
+  approves: boolean;
+  /** O nome acessível do chip, já com o veredito: a cor e o ícone não falam sozinhos. */
+  label: string;
+  /** A explicação que abre no toque. */
+  tip: string;
+};
 
 /**
- * O aviso do ativo sem teto: as referências públicas de Bazin e de Graham, o
- * preço de hoje e de que lado dele está cada uma, dito em palavras. É só
- * informação: o texto não recomenda nada e deixa a decisão com a pessoa.
+ * As referências públicas do ativo sem teto, uma por método: o preço de cada
+ * uma e se o preço de hoje passa nela ("o método aprova a compra a esse
+ * preço"). É só informação: o plano não muda e a decisão é da pessoa.
  */
-export function referenceNoteText(item: Pick<PlanItem, "unit_price">, references: PriceReferences, money: Money): string {
-  const found: Array<{ name: string; value: number; side: Side }> = [];
+export function referenceChecks(
+  item: Pick<PlanItem, "unit_price">,
+  references: PriceReferences,
+  money: Money,
+): ReferenceCheck[] {
+  const checks: ReferenceCheck[] = [];
   for (const [name, value] of [
     ["Bazin", references.bazin],
     ["Graham", references.graham],
   ] as const) {
-    if (value !== null) found.push({ name, value, side: sideOf(item.unit_price, value) });
+    if (value === null) continue;
+    const side = sideOf(item.unit_price, value);
+    const approves = side !== "above";
+    const verdict = approves ? "aprova" : "não aprova";
+    checks.push({
+      name,
+      value,
+      approves,
+      label: `${name} ${money.brl(value)}: ${verdict}`,
+      tip: `${METHOD_TIP[name]} Hoje ${money.brl(item.unit_price)}, ${SIDE_WORD[side]} preço do método (${money.brl(value)}): ${verdict} a compra a esse preço.`,
+    });
   }
-  const [first, second] = found;
-  let where = "";
-  if (first && second) {
-    where =
-      first.side === second.side
-        ? `${SIDE_WORD[first.side]} ${first.name} e ${SIDE_AND[first.side]} ${second.name}`
-        : `${SIDE_WORD[first.side]} ${first.name}, ${SIDE_WORD[second.side]} ${second.name}`;
-  } else if (first) {
-    where = `${SIDE_WORD[first.side]} ${first.name}`;
-  }
-  const shown = joinNames(found.map(({ name, value }) => `${name} ${money.brl(value)}`));
-  return `Sem teto de preço. ${found.length > 1 ? "Referências públicas" : "Referência pública"}: ${shown}; hoje ${money.brl(item.unit_price)} (${where}). A decisão de aportar é sua.`;
+  return checks;
 }
+
+/** A explicação do "Sem teto": o que são as referências e de quem é a decisão. */
+export const NO_CEILING_TIP =
+  "Você não definiu teto de preço para este ativo, e o aporte segue sem ele. Bazin e Graham são referências públicas, não recomendação: a decisão de aportar é sua. Para usar um teto, edite o ativo.";

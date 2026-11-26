@@ -193,9 +193,10 @@ nenhum, é da pessoa: nada bloqueia, nada preenche o teto sozinho e o motor não
 olha para o aviso. No resultado do plano, cada ativo que **recebe** dinheiro e
 **não tem teto** ganha, quando há, as referências públicas de Bazin e de
 Graham (as da Análise, ver [`analise.md`](analise.md#referências-de-preço)) ao
-lado do preço de hoje, com o lado de cada uma dito em texto: "Sem teto de
-preço. Referências públicas: Bazin R$ 18,69 e Graham R$ 77,77; hoje R$ 55,15
-(acima do Bazin, abaixo do Graham). A decisão de aportar é sua."
+lado do preço de hoje: a tela mostra um chip por método com o veredito ("✓
+Bazin R$ 18,69" quando o preço de hoje está até o do método, "✗" quando está
+acima) e a explicação no toque (ver [`design.md`](design.md)). A decisão de
+aportar é da pessoa.
 
 - É só informação, calculada **depois** do plano (`analysis::plan_references`),
   só com o que já está guardado (dividendos em cache e fundamentos gravados), sem

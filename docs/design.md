@@ -163,14 +163,21 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
      limite de 15% da carteira" (e a classe bloqueada pelo limite) leva ao
      controle do limite.
    - Ativo **sem teto** de preço, com Bazin e/ou Graham: o cartão leva, abaixo
-     da renda, uma nota (`role="note"`, texto pequeno e discreto, separada por um
-     filete) como "Sem teto de preço. Referências públicas: Bazin R$ 18,69 e
-     Graham R$ 77,77; hoje R$ 55,15 (acima do Bazin, abaixo do Graham). A decisão
-     de aportar é sua." O lado vem sempre em palavras (acima, abaixo, igual no
-     centavo), nunca só por cor. Só informa: não bloqueia, não preenche o teto
-     e não tem botão. Com o olho fechado, os R$ saem mascarados (inclusive para o
-     leitor de tela) e o "acima/abaixo" continua. Ativo com teto, ou sem nenhuma
-     das duas referências, não tem nota.
+     da renda e separado por um filete, um bloco curto (`role="note"`): o rótulo
+     "Sem teto" com um ⓘ e um chip por método, "✓ Bazin R$ 18,69" ou
+     "✗ Graham R$ 77,77". ✓ = o preço de hoje está até o do método (igual, no
+     centavo, conta, como no teto): o método **aprova** a compra a esse preço;
+     ✗ = acima, **não aprova**. O veredito está no ícone e no nome acessível do
+     chip ("Bazin R$ 18,69: não aprova"); a cor (verde/vermelho) só reforça. A
+     explicação fica num **toggletip** (`components/Toggletip.tsx`): abre no
+     toque (iPad), no foco e ao passar o mouse, fecha com Esc ou tocando fora, e
+     entra numa região `role="status"`; o balão abre acima do bloco, porque o
+     cartão corta o que passa da borda. O ⓘ diz que o teto é opcional, que são
+     referências públicas e que a decisão de aportar é da pessoa. Só informa:
+     não bloqueia, não preenche o teto e não tem botão de ação. Com o olho
+     fechado, os R$ saem mascarados (chip, nome acessível e explicação) e o
+     veredito continua. Ativo com teto, ou sem nenhuma das duas referências, não
+     tem o bloco.
    - Botão **"Já comprei"** → registra o aporte (com chance de ajustar
      quantidades antes) → confete.
 6. Carteira vazia: o prumo balançando e um convite de um toque para montar a
