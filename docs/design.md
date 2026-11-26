@@ -85,8 +85,11 @@ lado, então o ícone é **enfeite**: `aria-hidden`, e a imagem leva `alt=""`.
 
 ## Movimento
 
-Biblioteca `motion` (Framer Motion). Molas em vez de curvas de tempo; nada dura
-mais que 600 ms, exceto o prumo e o fundo.
+Biblioteca `motion` (Framer Motion). Molas em vez de curvas de tempo, com os
+tokens de `lib/motion.ts` e `--dur-*` em `styles/tokens.css` (os números e o
+porquê em [layout.md](layout.md), § 6): nada que a pessoa espera passa de
+~300 ms; ficam de fora o fundo, o prumo que balança, o esqueleto, o pulso do
+"Ao vivo" e o lampejo do preço.
 
 - **Números contam** até o valor (count-up com mola) sempre que mudam.
 - **Preço ao vivo:** o valor que andou pisca na cor do sentido (verde sobe,
@@ -97,14 +100,15 @@ mais que 600 ms, exceto o prumo e o fundo.
 - **Barras de classe:** a parte atual cresce da esquerda; a parte que o aporte
   acrescenta aparece em listras douradas animadas ("vai entrar"), até o marcador
   de meta.
-- **Cartões do plano** entram em cascata (stagger 60 ms), cada um com mola e um
+- **Cartões do plano** entram em cascata (`STAGGER`, 30 ms), cada um com mola e um
   leve blur→nítido. O valor de cada um conta até o final.
 - **Botão principal** magnético (desloca alguns pixels em direção ao cursor),
   brilho que atravessa a superfície no hover, compressão ao clicar.
 - **Registrar aporte:** confete dourado (`canvas-confetti`) a partir do botão +
   check desenhado; as barras da carteira já aparecem atualizadas.
-- **Abas:** indicador que desliza entre elas (`layoutId`); telas entram com fade
-  + 8px de deslocamento (`AnimatePresence`).
+- **Abas:** indicador que desliza entre elas (`layoutId`); a tela que sai some
+  em 90 ms e a nova entra com fade + 6 px de deslocamento em 200 ms
+  (`screenTransition`).
 - **Toggles do checklist:** pílulas grandes com botão de mola; a nota do ativo
   vira (flip) a cada resposta.
 - **Esqueletos** com brilho deslizante enquanto carrega.
@@ -113,8 +117,12 @@ mais que 600 ms, exceto o prumo e o fundo.
 
 ## Telas
 
-Celular primeiro. No celular, barra de abas embaixo; no desktop (≥ 960px), um
-trilho à esquerda e conteúdo centralizado (máx. ~1100px).
+Celular primeiro. No celular, barra de abas embaixo; de 960 px para cima, um
+trilho à esquerda — estreito (84 px, ícone com o nome embaixo) até 1599 px e
+com o nome ao lado do ícone a partir de 1600 px. O conteúdo vai até 1680 px
+nas telas redesenhadas (`<Page>`) e fica na coluna de 1100 px nas outras. A
+grade, a densidade, a tabela compacta e quando usar ⓘ, recolher ou folha
+estão em [layout.md](layout.md).
 
 ### Navegação
 
