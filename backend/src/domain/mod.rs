@@ -11,6 +11,7 @@ pub mod entitlement;
 pub mod health;
 pub mod icon;
 pub mod income;
+pub mod income_auto;
 pub mod ledger;
 pub mod objectives;
 pub mod performance;

@@ -56,6 +56,35 @@ struct BookRow {
     fx_rate: Option<Decimal>,
 }
 
+/// O livro de cada ativo da pessoa, na ordem do livro, numa conexão (ou
+/// transação) que quem chama já tem.
+pub(super) async fn entries_by_asset_in(
+    conn: &mut PgConnection,
+    user: Uuid,
+) -> Result<HashMap<Uuid, Vec<Entry>>, StoreError> {
+    let rows: Vec<BookRow> = sqlx::query_as(
+        "select asset_id, seq, kind, trade_date, quantity, unit_price, fees, fx_rate
+           from transactions where user_id = $1 and asset_id is not null
+          order by trade_date, seq",
+    )
+    .bind(user)
+    .fetch_all(&mut *conn)
+    .await?;
+    let mut by_asset: HashMap<Uuid, Vec<Entry>> = HashMap::new();
+    for row in rows {
+        by_asset.entry(row.asset_id).or_default().push(Entry {
+            kind: Kind::parse(&row.kind).ok_or_else(|| decode_error(&row.kind))?,
+            trade_date: row.trade_date,
+            seq: row.seq,
+            quantity: row.quantity,
+            unit_price: row.unit_price,
+            fees: row.fees,
+            fx_rate: row.fx_rate.unwrap_or(Decimal::ONE),
+        });
+    }
+    Ok(by_asset)
+}
+
 /// O dia (Brasília) em que o caixa da pessoa começa a contar.
 async fn cash_since(conn: &mut PgConnection, user: Uuid) -> Result<Date, StoreError> {
     let (since,): (Date,) = sqlx::query_as("select cash_since from users where id = $1")
@@ -230,27 +259,8 @@ impl Store {
         &self,
         user: Uuid,
     ) -> Result<HashMap<Uuid, Vec<Entry>>, StoreError> {
-        let rows: Vec<BookRow> = sqlx::query_as(
-            "select asset_id, seq, kind, trade_date, quantity, unit_price, fees, fx_rate
-               from transactions where user_id = $1 and asset_id is not null
-              order by trade_date, seq",
-        )
-        .bind(user)
-        .fetch_all(&self.pool)
-        .await?;
-        let mut by_asset: HashMap<Uuid, Vec<Entry>> = HashMap::new();
-        for row in rows {
-            by_asset.entry(row.asset_id).or_default().push(Entry {
-                kind: Kind::parse(&row.kind).ok_or_else(|| decode_error(&row.kind))?,
-                trade_date: row.trade_date,
-                seq: row.seq,
-                quantity: row.quantity,
-                unit_price: row.unit_price,
-                fees: row.fees,
-                fx_rate: row.fx_rate.unwrap_or(Decimal::ONE),
-            });
-        }
-        Ok(by_asset)
+        let mut conn = self.pool.acquire().await?;
+        entries_by_asset_in(&mut conn, user).await
     }
 
     /// O livro de um ativo da pessoa (vazio se o ativo não existe ou não tem lançamento).

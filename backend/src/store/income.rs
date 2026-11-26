@@ -353,13 +353,26 @@ impl Store {
         Ok(row.map(IncomeEvent::try_from).transpose()?)
     }
 
+    /// Apaga um provento. O automático apagado (`b3_announcement`) fica
+    /// lembrado na mesma instrução, para a próxima rodada não o recriar.
     pub async fn delete_income_event(&self, user: Uuid, id: Uuid) -> Result<bool, StoreError> {
-        let done = sqlx::query("delete from income_events where user_id = $1 and id = $2")
-            .bind(user)
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
-        Ok(done.rows_affected() == 1)
+        let (deleted,): (i64,) = sqlx::query_as(
+            "with gone as (
+                 delete from income_events where user_id = $1 and id = $2
+                 returning source, external_ref
+             ), remembered as (
+                 insert into income_auto_dismissed (user_id, external_ref)
+                 select $1, external_ref from gone
+                  where source = 'b3_announcement' and external_ref is not null
+                 on conflict do nothing
+             )
+             select count(*) from gone",
+        )
+        .bind(user)
+        .bind(id)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(deleted == 1)
     }
 
     /// A meta de renda mensal da pessoa, se houver.

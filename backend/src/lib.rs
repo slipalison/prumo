@@ -16,6 +16,7 @@ pub mod history;
 pub mod http;
 pub mod icons;
 pub mod income;
+pub mod income_auto;
 pub mod live;
 pub mod objectives;
 pub mod performance;
@@ -41,6 +42,7 @@ use crate::history::{DisabledHistory, HistoryProvider, PublicHistory};
 use crate::http::{AppState, BuildInfo};
 use crate::icons::IconService;
 use crate::income::IncomeService;
+use crate::income_auto::{B3Listed, IncomeAutoService};
 use crate::live::yahoo::YahooStreamer;
 use crate::live::LiveQuotes;
 use crate::quotes::{QuoteError, QuoteProvider, SymbolMatch, YahooProvider};
@@ -180,6 +182,16 @@ pub async fn run(config: Config) -> Result<(), StartError> {
             tokio::spawn(YahooStreamer::default().run(live.symbols(), live.ticks()));
         }
     }
+
+    // Proventos automáticos: o anúncio da B3 vezes o livro. A busca na B3 só
+    // com as fontes externas ligadas; a rodada (que refaz com o que já está no
+    // banco) roda sempre, porque o livro muda no passado.
+    let income_auto = if config.quotes_enabled {
+        IncomeAutoService::new(store.clone(), Arc::new(B3Listed::new(http.clone())))
+    } else {
+        IncomeAutoService::disabled(store.clone())
+    };
+    Arc::new(income_auto).spawn(income_auto::CHECK_EVERY);
 
     // Alertas: só com o token do bot. Sem ele a tela diz que estão desligados.
     let alerts = Arc::new(AlertService::new(

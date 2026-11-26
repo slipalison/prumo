@@ -78,6 +78,7 @@ struct IncomeRow {
     kind: String,
     pay_date: Date,
     amount_per_unit: Decimal,
+    gross: Decimal,
     net: Decimal,
     source: String,
     provisional: bool,
@@ -113,7 +114,7 @@ async fn load_book(conn: &mut PgConnection, user: Uuid, lock: bool) -> Result<Bo
     .fetch_all(&mut *conn)
     .await?;
     let income: Vec<IncomeRow> = sqlx::query_as(
-        "select id, symbol, kind, pay_date, amount_per_unit, net, source, provisional, external_ref
+        "select id, symbol, kind, pay_date, amount_per_unit, gross, net, source, provisional, external_ref
            from income_events where user_id = $1 order by pay_date, id",
     )
     .bind(user)
@@ -171,8 +172,10 @@ async fn load_book(conn: &mut PgConnection, user: Uuid, lock: bool) -> Result<Bo
                     kind: IncomeKind::parse(&r.kind).ok_or_else(|| decode_error(&r.kind))?,
                     pay_date: r.pay_date,
                     amount_per_unit: r.amount_per_unit.normalize(),
+                    gross: r.gross,
                     net: r.net,
                     imported: r.source == "b3_import",
+                    automatic: r.source == "b3_announcement",
                     provisional: r.provisional,
                     external_ref: r.external_ref,
                 })
@@ -201,6 +204,12 @@ impl Store {
         let mut tx = self.pool.begin().await?;
         sqlx::query("select pg_advisory_xact_lock(hashtextextended($1::text, 0))")
             .bind(format!("b3_import:{user}"))
+            .execute(&mut *tx)
+            .await?;
+        // A rodada dos proventos automáticos da pessoa espera: a importação
+        // pode trocar um automático pelo provento do extrato.
+        sqlx::query("select pg_advisory_xact_lock(hashtextextended($1::text, 0))")
+            .bind(super::income_auto::income_auto_lock(user))
             .execute(&mut *tx)
             .await?;
         let book = load_book(&mut tx, user, true).await?;
@@ -330,7 +339,8 @@ async fn write_income(
                 "update income_events set
                     asset_id = coalesce($3, asset_id), kind = $4, pay_date = $5,
                     amount_per_unit = $6, quantity = $7, gross = $8, withholding = $9, net = $10,
-                    provisional = $11, external_ref = $12
+                    provisional = $11, external_ref = $12, source = 'b3_import',
+                    ex_date = case when ex_date <= $5 then ex_date end
                   where user_id = $1 and id = $2",
             )
             .bind(user)

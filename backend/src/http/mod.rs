@@ -9,6 +9,7 @@ mod handlers;
 pub(crate) mod health;
 mod icons;
 mod income;
+mod income_auto;
 mod ledger;
 mod live;
 mod objectives;
@@ -290,6 +291,7 @@ pub fn public_router(state: AppState, static_dir: &str) -> Router {
         .route("/income/summary", get(income::summary))
         .route("/income/entitlement", get(income::entitlement))
         .route("/income/yield-on-cost", get(yoc::show))
+        .route("/income/auto", get(income_auto::get).put(income_auto::save))
         .route("/cash", get(cash::show))
         .route(
             "/income/goal",

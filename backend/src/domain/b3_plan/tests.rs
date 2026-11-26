@@ -365,8 +365,10 @@ fn reimporting_finds_everything_and_writes_nothing() {
             kind: IncomeKind::Dividend,
             pay_date: date!(2020 - 05 - 10),
             amount_per_unit: dec!(0.15),
+            gross: dec!(15),
             net: dec!(15),
             imported: true,
+            automatic: false,
             provisional: false,
             external_ref: Some("b3:v1:income:i".into()),
         }],
@@ -844,8 +846,10 @@ fn the_received_payment_replaces_the_provisioned_one() {
             kind: IncomeKind::Jcp,
             pay_date: date!(2026 - 06 - 10),
             amount_per_unit: dec!(0.5),
+            gross: dec!(50),
             net: dec!(42.5),
             imported: true,
+            automatic: false,
             provisional: true,
             external_ref: Some("b3:v1:income:old".into()),
         }],
@@ -884,6 +888,57 @@ fn the_received_payment_replaces_the_provisioned_one() {
     );
     assert_eq!(p.summary.income_replaced, 1);
     assert_eq!(p.summary.income_new, 0);
+}
+
+#[test]
+fn the_imported_payment_replaces_the_automatic_one() {
+    let automatic_id = Uuid::new_v4();
+    // O automático: JCP de 0,50 bruto por ação, 120 ações, pago em 10/06/2026.
+    let automatic = BookIncome {
+        id: automatic_id,
+        symbol: Some("WEGE3".into()),
+        kind: IncomeKind::Jcp,
+        pay_date: date!(2026 - 06 - 10),
+        amount_per_unit: dec!(0.5),
+        gross: dec!(60),
+        net: dec!(49.5),
+        imported: false,
+        automatic: true,
+        provisional: false,
+        external_ref: Some("b3a:BRWEGEACNOR0:JRS-CAP-PROPRIO:2026-05-20:0.5".into()),
+    };
+    let book = Book {
+        income: vec![automatic.clone()],
+        ..empty_book()
+    };
+    let mut g = group("WEGE3");
+    // O extrato traz o líquido (49,50) sem valor por cota.
+    let mut paid = income(
+        "paid",
+        B3IncomeKind::Jcp,
+        B3IncomeStatus::Received,
+        Some(date!(2026 - 06 - 10)),
+        dec!(49.5),
+    );
+    paid.quantity = Some(dec!(120));
+    paid.unit_price = None;
+    g.income = vec![paid.clone()];
+    let p = plan(&preview(vec![g]), &book, &Decisions::default());
+    assert_eq!(
+        status(&p, "b3:v1:income:paid"),
+        (LineState::New, Some("replaces_automatic"))
+    );
+    assert_eq!(only(&p).writes.income[0].replace, Some(automatic_id));
+    assert_eq!(p.summary.income_replaced, 1);
+
+    // Outro valor ou outro dia: é outro provento, e o automático fica.
+    let mut other = paid;
+    other.net_amount = dec!(30);
+    let mut g = group("WEGE3");
+    g.income = vec![other];
+    let p = plan(&preview(vec![g]), &book, &Decisions::default());
+    assert_eq!(status(&p, "b3:v1:income:paid"), (LineState::New, None));
+    assert_eq!(only(&p).writes.income[0].replace, None);
 }
 
 #[test]
@@ -945,8 +1000,10 @@ fn provisioned_lines_are_matched_or_left_out() {
             kind: IncomeKind::Dividend,
             pay_date: date!(2026 - 05 - 20),
             amount_per_unit: dec!(1.5),
+            gross: dec!(150),
             net: dec!(150),
             imported: false,
+            automatic: false,
             provisional: false,
             external_ref: None,
         }],

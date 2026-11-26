@@ -41,11 +41,13 @@ pub use retro::{DirtySeries, HeldSymbol};
 pub use cash::{CashReport, RECENT_SHOWN};
 
 mod income;
+mod income_auto;
 mod objectives;
 
 pub use income::{
     CachedDividends, IncomeEvent, IncomeFields, IncomeFilter, NewIncomeEvent, Objective,
 };
+pub use income_auto::{AutoOutcome, IncomeAutoState};
 pub use objectives::{NewObjective, ObjectiveChanges};
 
 /// Padrão do teto do pool por réplica (ver `Config::database_max_connections`).

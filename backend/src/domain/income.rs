@@ -75,19 +75,23 @@ impl IncomeKind {
 
 /// De onde o evento veio. `Estimate` existe no esquema para a projeção ser
 /// gravável um dia; hoje a estimativa mora no cache de histórico por cota.
+/// `B3Announcement` é o provento automático (`domain::income_auto`): derivado
+/// do anúncio da B3 e do livro, refeito a cada rodada.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IncomeSource {
     Manual,
     Estimate,
     B3Import,
+    B3Announcement,
 }
 
 impl IncomeSource {
-    pub const ALL: [IncomeSource; 3] = [
+    pub const ALL: [IncomeSource; 4] = [
         IncomeSource::Manual,
         IncomeSource::Estimate,
         IncomeSource::B3Import,
+        IncomeSource::B3Announcement,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -95,6 +99,7 @@ impl IncomeSource {
             IncomeSource::Manual => "manual",
             IncomeSource::Estimate => "estimate",
             IncomeSource::B3Import => "b3_import",
+            IncomeSource::B3Announcement => "b3_announcement",
         }
     }
 

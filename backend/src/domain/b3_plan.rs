@@ -53,6 +53,7 @@ use super::b3_import::{
 };
 use super::entitlement::{quantity_on, record_date};
 use super::income::{jcp_withholding_rate, IncomeKind, JCP_WITHHOLDING_RATE_2026};
+use super::income_auto::{same_value, Payment};
 use super::ledger::{self, check_for_unit, Entry, Kind, LedgerError, Position};
 use super::treasury::{Bond, BondKind};
 
@@ -103,9 +104,13 @@ pub struct BookIncome {
     pub kind: IncomeKind,
     pub pay_date: Date,
     pub amount_per_unit: Decimal,
+    pub gross: Decimal,
     pub net: Decimal,
     /// Veio de uma importação da B3.
     pub imported: bool,
+    /// Provento automático (anúncio da B3 × livro): o importado do mesmo
+    /// provento o substitui.
+    pub automatic: bool,
     /// Veio de "Proventos a receber": o recebido do mesmo provento o substitui.
     pub provisional: bool,
     pub external_ref: Option<String>,
@@ -1467,12 +1472,41 @@ fn plan_income(
             })
             .min_by_key(|i| ((i.pay_date - date).whole_days().abs(), (i.net - net).abs()))
             .map(|i| i.id);
+        // Sem provisionado, o automático do mesmo provento (mesmo pagamento e o
+        // mesmo valor, a 1%): o extrato vence o anúncio, e a linha toma o lugar dele.
+        let replaces_automatic = replace.is_none();
+        let replace = replace.or_else(|| {
+            mine.iter()
+                .filter(|i| i.automatic && !used.income.contains(&i.id) && i.pay_date == date)
+                .find(|i| {
+                    let auto = Payment {
+                        kind: i.kind,
+                        pay_date: i.pay_date,
+                        per_unit: i.amount_per_unit,
+                        gross: i.gross,
+                        net: i.net,
+                    };
+                    same_value(
+                        &Payment {
+                            kind,
+                            pay_date: date,
+                            per_unit: amount_per_unit,
+                            gross: values.gross,
+                            net,
+                        },
+                        &auto,
+                    )
+                })
+                .map(|i| i.id)
+        });
+        let replaces_automatic = replaces_automatic && replace.is_some();
         if let Some(id) = replace {
             used.income.insert(id);
         } else {
             // Já recebido (de outra importação) ou digitado à mão.
             let known = mine.iter().find(|i| {
                 !used.income.contains(&i.id)
+                    && !i.automatic
                     && ((provisional
                         && !i.provisional
                         && same_event(
@@ -1495,7 +1529,10 @@ fn plan_income(
                 continue;
             }
         }
-        if replace.is_some() {
+        if replaces_automatic {
+            plan.counts.replaced_income += 1;
+            set(LineStatus::of(LineState::New, "replaces_automatic"));
+        } else if replace.is_some() {
             plan.counts.replaced_income += 1;
             set(LineStatus::of(LineState::New, "replaces_provisioned"));
         } else {

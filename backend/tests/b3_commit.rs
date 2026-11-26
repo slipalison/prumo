@@ -1177,3 +1177,76 @@ async fn migration_0011_keeps_existing_income_as_not_provisional() {
         .await;
     assert!(refused.is_err());
 }
+
+// --- importado → automático -------------------------------------------------------
+
+#[tokio::test]
+async fn the_imported_payment_replaces_the_automatic_one() {
+    let db = database().await;
+    let pool = PgPool::connect(&db.url).await.unwrap();
+    let dir = tempfile_dir::Dir::new();
+    let app = app(
+        &db.store,
+        "automatico@prumo.test",
+        FakeQuotes::with_market(),
+        &dir.path(),
+    );
+    let user = db.store.ensure_user("automatico@prumo.test").await.unwrap();
+    let asset = post(
+        &app.router,
+        "/api/v1/assets",
+        json!({ "asset_class": "br_stocks", "symbol": "WEGE3", "quantity": 100 }),
+    )
+    .await;
+    assert_eq!(asset.status, StatusCode::CREATED, "{}", asset.text);
+    let asset_id = Uuid::from_str(asset.body["id"].as_str().unwrap()).unwrap();
+    // O automático (anúncio × livro): JCP de 0,50 bruto, pago em 12/06/2025.
+    let automatic = Uuid::new_v4();
+    sqlx::query(
+        "insert into income_events (id, user_id, asset_id, symbol, display_name, kind, ex_date,
+             pay_date, amount_per_unit, quantity, gross, withholding, net, source, external_ref)
+         values ($1, $2, $3, 'WEGE3', 'WEG', 'jcp', '2025-05-21', '2025-06-12', 0.5, 100, 50,
+                 7.5, 42.5, 'b3_announcement', 'b3a:BRWEGEACNOR0:JRS-CAP-PROPRIO:2025-05-20:0.5')",
+    )
+    .bind(automatic)
+    .bind(user)
+    .bind(asset_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // O extrato traz o mesmo JCP, líquido: toma o lugar do automático.
+    let paid = vec![(
+        "recebidos.xlsx",
+        received(&[(
+            WEG,
+            "12/06/2025",
+            "Juros Sobre Capital Próprio",
+            100.0,
+            0.425,
+            42.5,
+        )]),
+    )];
+    let (seen, done) = import(&app.router, &paid, json!({})).await;
+    assert_eq!(done.status, StatusCode::OK, "{}", done.text);
+    assert_eq!(
+        line(&seen, "WEGE3", "income", 0)["reason_code"],
+        "replaces_automatic"
+    );
+    assert_eq!(done.body["summary"]["income_replaced"], 1);
+    let income = db.store.income_ledger(user).await.unwrap();
+    assert_eq!(income.len(), 1);
+    assert_eq!(income[0].id, automatic);
+    assert_eq!(income[0].source.as_str(), "b3_import");
+    assert_eq!(income[0].net, dec!(42.5));
+    assert!(income[0]
+        .external_ref
+        .as_deref()
+        .unwrap()
+        .starts_with("b3:v1:"));
+
+    // A rodada seguinte nunca mexe no importado.
+    let outcome = db.store.regenerate_income_auto(user).await.unwrap();
+    assert_eq!(outcome.inserted, 0);
+    assert_eq!(db.store.income_ledger(user).await.unwrap().len(), 1);
+}
