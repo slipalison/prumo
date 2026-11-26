@@ -100,6 +100,18 @@ describe("Alertas: tipos, horário e valores", () => {
     expect(screen.getByRole("switch", { name: "Provento que cai amanhã" })).toBeChecked();
   });
 
+  it("quando cada tipo avisa e por que tirar os valores ficam no ⓘ", async () => {
+    const { user } = open(linkedAlerts());
+    await screen.findAllByRole("switch");
+    expect(screen.queryByText(/Só avisa quando a classe passa a ficar fora/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Quando avisa: Classe fora da meta" }));
+    expect(screen.getByText(/Só avisa quando a classe passa a ficar fora/)).toBeInTheDocument();
+    // O essencial da opção fica à vista; o porquê, no ⓘ.
+    expect(screen.getByText("Só nomes e percentuais, nenhum valor em reais.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Por que tirar os valores do resumo" }));
+    expect(screen.getByText(/passa pelos servidores do Telegram/)).toBeInTheDocument();
+  });
+
   it("ano sem regra de IR: o isentômetro fica desligado, travado e diz por quê", async () => {
     open(withoutTaxRules(linkedAlerts()));
     const exemption = await screen.findByRole("switch", { name: "Isentômetro de ações" });

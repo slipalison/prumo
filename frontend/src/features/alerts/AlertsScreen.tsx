@@ -1,7 +1,9 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { errorMessage } from "../../api/client";
 import type { Alerts, AlertKind, AlertsRequest, AlertType, LinkCode } from "../../api/alertsTypes";
 import { GlassCard } from "../../components/GlassCard";
+import { InfoTip } from "../../components/InfoTip";
+import { Grid, Page, PageHeader, Panel } from "../../components/Layout";
 import { MagneticButton } from "../../components/MagneticButton";
 import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/toastContext";
@@ -30,15 +32,12 @@ export function AlertsScreen() {
   }, [pairing, linked, toast]);
 
   return (
-    <div className="screen alerts">
-      <header className="screen__header">
-        <p className="eyebrow">Alertas</p>
-        <h1 className="screen__title">Alertas no Telegram</h1>
-        <p className="screen__lead">
-          Um resumo por dia, só quando há algo a dizer: nunca uma mensagem por evento. Você escolhe o que avisar, a hora e
-          se o resumo leva valores.
-        </p>
-      </header>
+    <Page className="alerts">
+      <PageHeader
+        title="Alertas no Telegram"
+        infoLabel="Sobre os alertas"
+        info="Um resumo por dia, só quando há algo a dizer: nunca uma mensagem por evento. Você escolhe o que avisar, a hora e se o resumo leva valores."
+      />
 
       {alerts.isPending && (
         <GlassCard as="section" aria-label="Carregando os alertas" className="alerts__loading">
@@ -54,13 +53,16 @@ export function AlertsScreen() {
           </MagneticButton>
         </GlassCard>
       )}
-      {alerts.data && (
-        <>
+      {alerts.data &&
+        (alerts.data.telegram.configured ? (
+          <PreferencesCard
+            alerts={alerts.data}
+            telegram={<TelegramCard alerts={alerts.data} pairing={pairing} onPairing={setPairing} />}
+          />
+        ) : (
           <TelegramCard alerts={alerts.data} pairing={pairing} onPairing={setPairing} />
-          {alerts.data.telegram.configured && <PreferencesCard alerts={alerts.data} />}
-        </>
-      )}
-    </div>
+        ))}
+    </Page>
   );
 }
 
@@ -74,7 +76,6 @@ function TelegramCard({
   onPairing: (code: LinkCode | null) => void;
 }) {
   const { telegram } = alerts;
-  const titleId = useId();
   const toast = useToast();
   const link = useLinkTelegram();
   const unlink = useUnlinkTelegram();
@@ -82,10 +83,7 @@ function TelegramCard({
 
   if (!telegram.configured) {
     return (
-      <GlassCard as="section" className="alerts__card" aria-labelledby={titleId}>
-        <h2 id={titleId} className="section-title">
-          Telegram
-        </h2>
+      <Panel className="alerts__card" title="Telegram">
         <p role="status">
           Os alertas estão desligados neste servidor: falta o token do bot do Telegram (a variável{" "}
           <code>TELEGRAM_BOT_TOKEN</code>). Nada é enviado enquanto ele não existir.
@@ -93,7 +91,7 @@ function TelegramCard({
         <p className="field__hint">
           O passo a passo, do bot no @BotFather ao segredo no servidor, está em <code>docs/alertas.md</code>.
         </p>
-      </GlassCard>
+      </Panel>
     );
   }
 
@@ -114,10 +112,7 @@ function TelegramCard({
     });
 
   return (
-    <GlassCard as="section" className="alerts__card" aria-labelledby={titleId}>
-      <h2 id={titleId} className="section-title">
-        Telegram
-      </h2>
+    <Panel className="alerts__card" title="Telegram">
       {telegram.linked ? (
         <>
           <p role="status">
@@ -148,7 +143,7 @@ function TelegramCard({
           </div>
         </>
       )}
-    </GlassCard>
+    </Panel>
   );
 }
 
@@ -212,7 +207,11 @@ function thresholdError(type: AlertType, text: string): string | null {
   return null;
 }
 
-function PreferencesCard({ alerts }: { alerts: Alerts }) {
+/**
+ * O resto da tela, com o Telegram já configurado, em duas colunas: à esquerda
+ * o vínculo e o que avisar; à direita quando e com quê, e o exemplo do resumo.
+ */
+function PreferencesCard({ alerts, telegram }: { alerts: Alerts; telegram: ReactNode }) {
   const saved = useMemo(() => toDraft(alerts), [alerts]);
   const [draft, setDraft] = useState<Draft>(saved);
   const [touched, setTouched] = useState(false);
@@ -288,147 +287,153 @@ function PreferencesCard({ alerts }: { alerts: Alerts }) {
   );
 
   return (
-    <>
-      <GlassCard as="section" className="alerts__card" aria-labelledby={`${baseId}-types`}>
-        <h2 id={`${baseId}-types`} className="section-title">
-          O que avisar
-        </h2>
-        <ul className="rule-list">
-          {alerts.types.map((type) => {
-            const text = KIND_TEXT[type.kind];
-            const id = `${baseId}-${type.kind}`;
-            const state = draft.types[type.kind];
-            const error = errors[type.kind];
-            return (
-              <li key={type.kind} className="rule-row">
-                <div className="rule-row__main">
-                  <div className="rule-row__sentence">
-                    {type.unit === null || !text.lead ? (
-                      <span className="rule-row__lead">{text.name}</span>
-                    ) : (
-                      <>
-                        <span className="rule-row__lead">{text.lead}</span>
-                        <span className="rule-row__field">
-                          <input
-                            id={`${id}-limit`}
-                            className="text-input rule-row__input"
-                            inputMode="decimal"
-                            value={state.threshold}
-                            aria-label={`Limite: ${text.name}`}
-                            aria-invalid={error ? true : undefined}
-                            aria-describedby={error ? `${id}-error` : undefined}
-                            disabled={!type.available || !state.enabled}
-                            onChange={(event) => editType(type.kind, { threshold: event.target.value })}
-                          />
-                        </span>
-                        {text.tail && <span className="rule-row__tail">{text.tail}</span>}
-                      </>
+    <Grid cols={2} alignStart>
+      <div className="alerts__column">
+        {telegram}
+        <Panel className="alerts__card" title="O que avisar">
+          <ul className="rule-list">
+            {alerts.types.map((type) => {
+              const text = KIND_TEXT[type.kind];
+              const id = `${baseId}-${type.kind}`;
+              const state = draft.types[type.kind];
+              const error = errors[type.kind];
+              return (
+                <li key={type.kind} className="rule-row">
+                  <div className="rule-row__main">
+                    <div className="rule-row__sentence">
+                      {type.unit === null || !text.lead ? (
+                        <span className="rule-row__lead">{text.name}</span>
+                      ) : (
+                        <>
+                          <span className="rule-row__lead">{text.lead}</span>
+                          <span className="rule-row__field">
+                            <input
+                              id={`${id}-limit`}
+                              className="text-input rule-row__input"
+                              inputMode="decimal"
+                              value={state.threshold}
+                              aria-label={`Limite: ${text.name}`}
+                              aria-invalid={error ? true : undefined}
+                              aria-describedby={error ? `${id}-error` : undefined}
+                              disabled={!type.available || !state.enabled}
+                              onChange={(event) => editType(type.kind, { threshold: event.target.value })}
+                            />
+                          </span>
+                          {text.tail && <span className="rule-row__tail">{text.tail}</span>}
+                        </>
+                      )}
+                      <InfoTip label={`Quando avisa: ${text.name}`}>{text.why}</InfoTip>
+                    </div>
+                    {!type.available && text.unavailable && <p className="rule-row__note">{text.unavailable}</p>}
+                    {error && state.enabled && (
+                      <p id={`${id}-error`} className="rule-row__error" role="alert">
+                        {error}
+                      </p>
                     )}
                   </div>
-                  <p className="field__hint">{!type.available && text.unavailable ? text.unavailable : text.why}</p>
-                  {error && state.enabled && (
-                    <p id={`${id}-error`} className="rule-row__error" role="alert">
-                      {error}
-                    </p>
-                  )}
-                </div>
-                <input
-                  id={`${id}-switch`}
-                  type="checkbox"
-                  role="switch"
-                  className="switch"
-                  aria-label={kindName(type.kind)}
-                  checked={type.available && state.enabled}
-                  disabled={!type.available}
-                  onChange={(event) => editType(type.kind, { enabled: event.target.checked })}
-                />
-              </li>
-            );
-          })}
-        </ul>
-      </GlassCard>
+                  <input
+                    id={`${id}-switch`}
+                    type="checkbox"
+                    role="switch"
+                    className="switch"
+                    aria-label={kindName(type.kind)}
+                    checked={type.available && state.enabled}
+                    disabled={!type.available}
+                    onChange={(event) => editType(type.kind, { enabled: event.target.checked })}
+                  />
+                </li>
+              );
+            })}
+          </ul>
+        </Panel>
+      </div>
 
-      <GlassCard as="section" className="alerts__card" aria-labelledby={`${baseId}-when`}>
-        <h2 id={`${baseId}-when`} className="section-title">
-          Quando e com quê
-        </h2>
-        <div className="field">
-          <label className="field__label" htmlFor={`${baseId}-time`}>
-            Hora do resumo (horário de Brasília)
-          </label>
-          <input
-            id={`${baseId}-time`}
-            type="time"
-            className="text-input alerts__time"
-            value={draft.send_at}
-            aria-invalid={hourError ? true : undefined}
-            aria-describedby={hourError ? `${baseId}-time-error` : undefined}
-            onChange={(event) => edit({ send_at: event.target.value })}
-          />
-          {hourError && (
-            <p id={`${baseId}-time-error`} className="rule-row__error" role="alert">
-              {hourError}
+      <div className="alerts__column">
+        <Panel className="alerts__card" title="Quando e com quê">
+          <div className="field">
+            <label className="field__label" htmlFor={`${baseId}-time`}>
+              Hora do resumo (horário de Brasília)
+            </label>
+            <input
+              id={`${baseId}-time`}
+              type="time"
+              className="text-input alerts__time"
+              value={draft.send_at}
+              aria-invalid={hourError ? true : undefined}
+              aria-describedby={hourError ? `${baseId}-time-error` : `${baseId}-time-hint`}
+              onChange={(event) => edit({ send_at: event.target.value })}
+            />
+            {hourError && (
+              <p id={`${baseId}-time-error`} className="rule-row__error" role="alert">
+                {hourError}
+              </p>
+            )}
+            <p id={`${baseId}-time-hint`} className="field__hint">
+              Uma vez por dia, só quando há algo a dizer.
             </p>
-          )}
-          <p className="field__hint">Sai uma vez por dia, só quando há algo a dizer.</p>
-        </div>
-        <div className="switch-row">
-          <span className="switch-row__label">
-            <label htmlFor={`${baseId}-hide`}>Sem valores no resumo</label>
-            <span className="field__hint">
-              O resumo passa pelos servidores do Telegram. Com esta opção ele leva só nomes e percentuais, nenhum valor em
-              reais. Isto vale para o que vai ao Telegram; o olho da barra só esconde a tela.
-            </span>
-          </span>
-          <input
-            id={`${baseId}-hide`}
-            type="checkbox"
-            role="switch"
-            className="switch"
-            checked={draft.hide_values}
-            onChange={(event) => edit({ hide_values: event.target.checked })}
-          />
-        </div>
-        <div className="alerts__actions">
-          <MagneticButton disabled={!dirty || invalid} loading={save.isPending} onClick={submit}>
-            Salvar alertas
-          </MagneticButton>
-          {dirty && (
-            <button
-              type="button"
-              className="link-btn"
-              onClick={() => {
-                setTouched(false);
-                setDraft(saved);
-              }}
-            >
-              Descartar mudanças
-            </button>
-          )}
-        </div>
-      </GlassCard>
-
-      <GlassCard as="section" className="alerts__card" aria-labelledby={`${baseId}-preview`}>
-        <h2 id={`${baseId}-preview`} className="section-title">
-          Como o resumo fica
-        </h2>
-        <p className="field__hint">Exemplo com dados fictícios, só para mostrar o formato.</p>
-        {preview.length === 0 ? (
-          <p>Nenhum tipo ligado: nada será enviado.</p>
-        ) : (
-          <div className="alerts__digest" role="group" aria-label="Exemplo do resumo">
-            <p className="alerts__digest-title">Prumo – resumo de 25/11</p>
-            {preview.map((section) => (
-              <div key={section.title}>
-                <p className="alerts__digest-section">{section.title}</p>
-                {section.lines.map((line) => (
-                  <p key={line}>{line}</p>
-                ))}
-              </div>
-            ))}
           </div>
-        )}
-      </GlassCard>
-    </>
+          <div className="switch-row">
+            <span className="switch-row__label">
+              <span className="alerts__label-line">
+                <label htmlFor={`${baseId}-hide`}>Sem valores no resumo</label>
+                <InfoTip label="Por que tirar os valores do resumo" align="end">
+                  O resumo passa pelos servidores do Telegram. Com esta opção ele leva só nomes e percentuais, nenhum
+                  valor em reais. Isto vale para o que vai ao Telegram; o olho da barra só esconde a tela.
+                </InfoTip>
+              </span>
+              <span className="field__hint">Só nomes e percentuais, nenhum valor em reais.</span>
+            </span>
+            <input
+              id={`${baseId}-hide`}
+              type="checkbox"
+              role="switch"
+              className="switch"
+              checked={draft.hide_values}
+              onChange={(event) => edit({ hide_values: event.target.checked })}
+            />
+          </div>
+          <div className="alerts__actions">
+            <MagneticButton disabled={!dirty || invalid} loading={save.isPending} onClick={submit}>
+              Salvar alertas
+            </MagneticButton>
+            {dirty && (
+              <button
+                type="button"
+                className="link-btn"
+                onClick={() => {
+                  setTouched(false);
+                  setDraft(saved);
+                }}
+              >
+                Descartar mudanças
+              </button>
+            )}
+          </div>
+        </Panel>
+
+        <Panel
+          className="alerts__card"
+          title="Como o resumo fica"
+          infoLabel="Sobre o exemplo do resumo"
+          info="Exemplo com dados fictícios, só para mostrar o formato. Acompanha os tipos ligados e a escolha de sem valores."
+        >
+          {preview.length === 0 ? (
+            <p>Nenhum tipo ligado: nada será enviado.</p>
+          ) : (
+            <div className="alerts__digest" role="group" aria-label="Exemplo do resumo">
+              <p className="alerts__digest-title">Prumo – resumo de 25/11</p>
+              {preview.map((section) => (
+                <div key={section.title}>
+                  <p className="alerts__digest-section">{section.title}</p>
+                  {section.lines.map((line) => (
+                    <p key={line}>{line}</p>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
+      </div>
+    </Grid>
   );
 }
