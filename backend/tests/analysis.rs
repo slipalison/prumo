@@ -587,6 +587,8 @@ async fn price_references_follow_the_dividend_history(db: &Database, dir: &tempf
     // 2,40 ÷ 6% = 40.
     assert_eq!(items[0]["bazin"]["price"], 40.0);
     assert_eq!(items[0]["graham"], Value::Null);
+    // Só o Bazin: o teto pelas duas é ele.
+    assert_eq!(items[0]["ceiling"], 40.0);
     assert_eq!(items[0]["max_price"], Value::Null);
     close(&items[0]["unit_price"], 142.0);
 

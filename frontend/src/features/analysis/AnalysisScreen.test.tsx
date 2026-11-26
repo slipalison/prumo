@@ -355,22 +355,22 @@ describe("tela Análise", () => {
   it("aplica a referência como teto só depois de confirmar", async () => {
     const { user } = await openAnalysis();
     const references = card("Referências de preço");
-    await user.click(references.getByRole("button", { name: "Usar a referência de Bazin como teto de ITSA4" }));
+    await user.click(references.getByRole("button", { name: "Usar a referência como teto de ITSA4" }));
     const dialog = await screen.findByRole("dialog", { name: "Usar como teto de preço?" });
-    expect(within(dialog).getByText(/Definir R\$\s12,50 como teto de preço de ITSA4\?/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/Definir R\$\s9,50 como teto de preço de ITSA4\?/)).toBeInTheDocument();
     expect(getDb().requests.filter((r) => r.method === "PATCH")).toHaveLength(0);
 
     await user.click(within(dialog).getByRole("button", { name: "Cancelar" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(getDb().requests.filter((r) => r.method === "PATCH")).toHaveLength(0);
 
-    await user.click(references.getByRole("button", { name: "Usar a referência de Bazin como teto de ITSA4" }));
+    await user.click(references.getByRole("button", { name: "Usar a referência como teto de ITSA4" }));
     const again = await screen.findByRole("dialog", { name: "Usar como teto de preço?" });
     await user.click(within(again).getByRole("button", { name: "Definir teto" }));
     await screen.findByText("Teto de ITSA4 atualizado.");
     const patch = getDb().requests.filter((r) => r.method === "PATCH" && r.path === "/api/v1/assets/a-itsa").at(-1);
-    expect(patch?.body).toEqual({ max_price: 12.5 });
-    expect(getDb().assets.find((a) => a.id === "a-itsa")?.max_price).toBe(12.5);
+    expect(patch?.body).toEqual({ max_price: 9.5 });
+    expect(getDb().assets.find((a) => a.id === "a-itsa")?.max_price).toBe(9.5);
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
@@ -380,7 +380,7 @@ describe("tela Análise", () => {
       ...base,
       references: {
         ...base.references,
-        items: base.references.items.map((i) => (i.label === "ITSA4" ? { ...i, max_price: 12.5 } : i)),
+        items: base.references.items.map((i) => (i.label === "ITSA4" ? { ...i, max_price: 9.5 } : i)),
       },
     };
     server.use(
@@ -393,9 +393,8 @@ describe("tela Análise", () => {
     );
     const { user } = await openAnalysis();
     const references = card("Referências de preço");
-    expect(references.queryByRole("button", { name: /Bazin como teto de ITSA4/ })).not.toBeInTheDocument();
-    expect(references.getByRole("button", { name: /Graham como teto de ITSA4/ })).toBeInTheDocument();
-    await user.click(references.getByRole("button", { name: "Usar a referência de Bazin como teto de KNRI11" }));
+    expect(references.queryByRole("button", { name: /teto de ITSA4/ })).not.toBeInTheDocument();
+    await user.click(references.getByRole("button", { name: "Usar a referência como teto de KNRI11" }));
     await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Definir teto" }));
     expect(await screen.findByText(/Teto ruim\./)).toBeInTheDocument();
     // O diálogo continua aberto para tentar de novo ou cancelar.
@@ -409,17 +408,23 @@ describe("tela Análise", () => {
     expect(card("Referências de preço").getByText(/Sem referência por enquanto/)).toBeInTheDocument();
   });
 
-  it("o Graham também vira teto, com a mesma confirmação", async () => {
+  it("oferece um teto só, pelas duas referências, e não pede para escolher uma", async () => {
     const { user } = await openAnalysis();
     const references = card("Referências de preço");
-    await user.click(references.getByRole("button", { name: "Usar a referência de Graham como teto de ITSA4" }));
+    const itsa = within(references.getByRole("heading", { name: "ITSA4" }).closest("li") as HTMLElement);
+    const knri = within(references.getByRole("heading", { name: "KNRI11" }).closest("li") as HTMLElement);
+    // Com as duas, o teto é o menor (Graham 9,50 < Bazin 12,50).
+    expect(itsa.getByText("Pelas duas").nextSibling).toHaveTextContent(/R\$\s9,50/);
+    expect(itsa.getAllByRole("button")).toHaveLength(1);
+    expect(itsa.getByRole("button", { name: "Usar a referência como teto de ITSA4" })).toHaveTextContent(
+      /Usar R\$\s9,50 como meu teto/,
+    );
+    // Com uma só (KNRI11 não tem Graham), o teto é ela, sem a coluna "Pelas duas".
+    expect(knri.queryByText("Pelas duas")).not.toBeInTheDocument();
+    await user.click(knri.getByRole("button", { name: "Usar a referência como teto de KNRI11" }));
     const dialog = await screen.findByRole("dialog", { name: "Usar como teto de preço?" });
-    expect(dialog).toHaveTextContent(/Definir R\$\s9,50 como teto de preço de ITSA4\?/);
-    expect(getDb().requests.filter((r) => r.method === "PATCH")).toHaveLength(0);
-    await user.click(within(dialog).getByRole("button", { name: "Definir teto" }));
-    await screen.findByText("Teto de ITSA4 atualizado.");
-    const patch = getDb().requests.filter((r) => r.method === "PATCH" && r.path === "/api/v1/assets/a-itsa").at(-1);
-    expect(patch?.body).toEqual({ max_price: 9.5 });
+    expect(dialog).toHaveTextContent(/Definir R\$\s140,00 como teto de preço de KNRI11\?/);
+    expect(document.body.textContent).not.toMatch(/Usar Bazin|Usar Graham/);
   });
 
   it("diz de onde vêm os dados, quando foram buscados e o que ficou de fora", async () => {

@@ -386,6 +386,7 @@ export function defaultAnalysis(): Analysis {
           max_price: 10,
           bazin: { price: 12.5, annual_average: 0.75, years: 4 },
           graham: 9.5,
+          ceiling: 9.5,
         },
         {
           asset_id: "a-knri",
@@ -395,6 +396,7 @@ export function defaultAnalysis(): Analysis {
           max_price: null,
           bazin: { price: 140, annual_average: 8.4, years: 2 },
           graham: null,
+          ceiling: 140,
         },
       ],
     },

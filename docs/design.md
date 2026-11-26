@@ -354,11 +354,11 @@ Na tela (`AnalysisScreen`), de cima para baixo:
   diz o sentido, a cor só reforça. Vazio explica por quê.
 - **Referências de preço**: um aviso fixo (`role="note"`) "Referência pública,
   não é recomendação"; por ativo, **Bazin** e **Graham** (este só com lucro e patrimônio por ação
-  positivos), **Seu teto** e **Preço de hoje**, e a média de dividendos
-  usada. O botão "Usar Bazin como meu teto" abre uma folha de **confirmação**
-  ("Definir R$ 12,50 como teto de preço de ITSA4?") antes do `PATCH`. Cada
-  referência tem o seu botão ("Usar Graham como meu teto"), com a mesma
-  confirmação. Nada de "oportunidade",
+  positivos), **Pelas duas** (o menor dos dois, só quando há os dois), **Seu
+  teto** e **Preço de hoje**, e a média de dividendos usada. Um botão só
+  ("Usar R$ 9,50 como meu teto", com o valor pelas duas; a pessoa não escolhe
+  fórmula) abre uma folha de **confirmação** ("Definir R$ 9,50 como teto de
+  preço de ITSA4?") antes do `PATCH`. Nada de "oportunidade",
   "compre", "preço justo" ou "upside".
 - **De onde vêm os dados**: a fonte de setor de cada classe, de quando é, se a
   última busca falhou, quantos ativos ficaram sem setor e por que os EUA não têm

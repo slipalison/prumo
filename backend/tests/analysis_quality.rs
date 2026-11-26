@@ -429,6 +429,8 @@ async fn quality_attention_and_graham_contract() {
     let fort_ref = references.iter().find(|r| r["label"] == "FORT3").unwrap();
     close(&fort_ref["graham"], 20.12);
     assert_eq!(fort_ref["bazin"], Value::Null);
+    // Só o Graham: o teto pelas duas é ele.
+    close(&fort_ref["ceiling"], 20.12);
     close(&fort_ref["unit_price"], 40.0);
     let frac_ref = references.iter().find(|r| r["label"] == "FRAC3").unwrap();
     close(&frac_ref["graham"], 6.71);

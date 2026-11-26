@@ -23,7 +23,7 @@ use crate::analysis::{self as service, AnalysisReport};
 use crate::domain::analysis::highlights::{Mover, Ranking};
 use crate::domain::analysis::profile::{self, Mix};
 use crate::domain::analysis::quality::{Attention, Point};
-use crate::domain::analysis::references::{validate_bazin_yield, Bazin};
+use crate::domain::analysis::references::{combined_ceiling, validate_bazin_yield, Bazin};
 use crate::domain::analysis::{
     AnalysisConfig, Detail, Dimension, DimensionReport, Direction, RuleId, RuleResult, Score,
     Status,
@@ -393,6 +393,9 @@ pub struct ReferenceDto {
     pub bazin: Option<BazinDto>,
     #[serde(with = "number::option")]
     pub graham: Option<Decimal>,
+    /// O teto pelas duas: o menor de Bazin e Graham, ou o que existir.
+    #[serde(with = "number::option")]
+    pub ceiling: Option<Decimal>,
 }
 
 #[derive(Debug, Serialize)]
@@ -537,6 +540,7 @@ impl AnalysisDto {
                         max_price: item.max_price,
                         bazin: item.bazin.map(BazinDto::from),
                         graham: item.graham,
+                        ceiling: combined_ceiling(item.bazin.map(|b| b.price), item.graham),
                     })
                     .collect(),
             },

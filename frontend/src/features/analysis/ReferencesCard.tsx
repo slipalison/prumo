@@ -19,8 +19,10 @@ type References = Analysis["references"];
  * Referências de preço: Bazin (a média de até 5 anos de dividendos por cota
  * dividida pelo rendimento-alvo) e Graham (a raiz de 22,5 vezes o lucro e o
  * patrimônio por ação, dos balanços da CVM). São fórmulas públicas, mostradas
- * como referência: não são preço justo, nem alvo, nem recomendação. Cada uma pode virar o teto de preço do ativo, com
- * confirmação; o resto o Prumo não diz.
+ * como referência: não são preço justo, nem alvo, nem recomendação. O valor que
+ * a tela oferece como teto é um só, pelas duas: o menor deles (abaixo dele o
+ * preço passa nos dois critérios), ou o que existir. Vira o teto de preço do
+ * ativo só com confirmação; o resto o Prumo não diz.
  */
 export function ReferencesCard({ references }: { references: References }) {
   const titleId = useId();
@@ -51,8 +53,8 @@ export function ReferencesCard({ references }: { references: References }) {
         Referências de preço
       </h2>
       <p className="references__disclaimer" role="note">
-        Referência pública, não é recomendação. São fórmulas abertas sobre o histórico de dividendos: não dizem se um
-        ativo está barato, caro ou se vale comprar.
+        Referência pública, não é recomendação. São fórmulas abertas sobre dividendos, lucro e patrimônio: não dizem
+        se um ativo está barato, caro ou se vale comprar.
       </p>
       <p className="field__hint">
         Bazin: a média anual de dividendos por cota (até 5 anos) dividida pelo seu rendimento-alvo, hoje{" "}
@@ -64,6 +66,10 @@ export function ReferencesCard({ references }: { references: References }) {
       <p className="field__hint">
         Graham: a raiz de 22,5 vezes o lucro por ação vezes o patrimônio por ação, com os dois positivos (balanços da
         CVM e número de ações da B3). Sem eles, a referência não aparece.
+      </p>
+      <p className="field__hint">
+        Pelas duas: o menor valor entre Bazin e Graham. Abaixo dele, o preço passa nos dois critérios; com uma
+        referência só, é ela.
       </p>
 
       {references.items.length === 0 ? (
@@ -92,6 +98,12 @@ export function ReferencesCard({ references }: { references: References }) {
                     <dd>{money.brl(item.graham)}</dd>
                   </div>
                 )}
+                {item.bazin && item.graham !== null && item.ceiling !== null && (
+                  <div>
+                    <dt>Pelas duas</dt>
+                    <dd>{money.brl(item.ceiling)}</dd>
+                  </div>
+                )}
                 <div>
                   <dt>Seu teto</dt>
                   <dd>{item.max_price === null ? "Sem teto" : money.brl(item.max_price)}</dd>
@@ -107,28 +119,18 @@ export function ReferencesCard({ references }: { references: References }) {
                   {money.brl(item.bazin.annual_average)} por cota ao ano.
                 </p>
               )}
-              <div className="reference__actions">
-                {item.bazin && item.max_price !== item.bazin.price && (
+              {item.ceiling !== null && item.max_price !== item.ceiling && (
+                <div className="reference__actions">
                   <MagneticButton
                     variant="ghost"
                     magnetic={false}
-                    aria-label={`Usar a referência de Bazin como teto de ${item.label}`}
-                    onClick={() => item.bazin && setPending({ item, price: item.bazin.price })}
+                    aria-label={`Usar a referência como teto de ${item.label}`}
+                    onClick={() => item.ceiling !== null && setPending({ item, price: item.ceiling })}
                   >
-                    Usar Bazin como meu teto
+                    Usar {money.brl(item.ceiling)} como meu teto
                   </MagneticButton>
-                )}
-                {item.graham !== null && item.max_price !== item.graham && (
-                  <MagneticButton
-                    variant="ghost"
-                    magnetic={false}
-                    aria-label={`Usar a referência de Graham como teto de ${item.label}`}
-                    onClick={() => item.graham !== null && setPending({ item, price: item.graham })}
-                  >
-                    Usar Graham como meu teto
-                  </MagneticButton>
-                )}
-              </div>
+                </div>
+              )}
             </li>
           ))}
         </ul>

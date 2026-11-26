@@ -136,6 +136,8 @@ export type Reference = {
   max_price: number | null;
   bazin: { price: number; annual_average: number; years: number } | null;
   graham: number | null;
+  /** O teto pelas duas: o menor de Bazin e Graham, ou o que existir. */
+  ceiling: number | null;
 };
 
 /** Um ponto de atenção de um ativo: curto e factual, sem recomendação. */

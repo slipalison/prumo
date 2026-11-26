@@ -7,6 +7,8 @@
 //!   cota pagaria o rendimento-alvo se repetisse a média.
 //! - **Graham**: `√(22,5 × LPA × VPA)`. Precisa do lucro (LPA) e do patrimônio
 //!   (VPA) por ação, que vêm dos fundamentos da CVM; sem eles, fica de fora.
+//! - **Pelas duas** ([`combined_ceiling`]): o menor dos dois, o valor que a tela
+//!   oferece como teto.
 
 use rust_decimal::{Decimal, MathematicalOps};
 use time::Date;
@@ -93,6 +95,16 @@ pub fn graham(earnings_per_share: Decimal, book_value_per_share: Decimal) -> Opt
     product.sqrt().map(round_cents)
 }
 
+/// O teto pelas duas referências: o **menor** dos valores que existem. Abaixo
+/// dele, o preço passa nos dois critérios (dividendos e lucro com patrimônio);
+/// a média deixaria passar um preço acima de um deles. Com uma só, é ela.
+pub fn combined_ceiling(bazin: Option<Decimal>, graham: Option<Decimal>) -> Option<Decimal> {
+    match (bazin, graham) {
+        (Some(bazin), Some(graham)) => Some(bazin.min(graham)),
+        (one, other) => one.or(other),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -166,6 +178,22 @@ mod tests {
     }
 
     #[test]
+    fn the_combined_ceiling_is_the_lower_of_the_two() {
+        assert_eq!(
+            combined_ceiling(Some(dec!(18.69)), Some(dec!(77.77))),
+            Some(dec!(18.69))
+        );
+        assert_eq!(
+            combined_ceiling(Some(dec!(17.36)), Some(dec!(16.89))),
+            Some(dec!(16.89))
+        );
+        // Com uma só referência, o teto é ela.
+        assert_eq!(combined_ceiling(Some(dec!(40)), None), Some(dec!(40)));
+        assert_eq!(combined_ceiling(None, Some(dec!(20.12))), Some(dec!(20.12)));
+        assert_eq!(combined_ceiling(None, None), None);
+    }
+
+    #[test]
     fn graham_is_the_root_of_22_5_eps_bvps() {
         // 22,5 × 4 × 10 = 900 => 30.
         assert_eq!(graham(dec!(4), dec!(10)), Some(dec!(30)));
@@ -204,6 +232,22 @@ mod tests {
         }
 
         /// Mais lucro por ação nunca baixa o número de Graham.
+        #[test]
+        fn the_combined_ceiling_never_passes_either_reference(
+            bazin in proptest::option::of(1i64..1_000_000),
+            graham in proptest::option::of(1i64..1_000_000),
+        ) {
+            let bazin = bazin.map(|c| Decimal::new(c, 2));
+            let graham = graham.map(|c| Decimal::new(c, 2));
+            let ceiling = combined_ceiling(bazin, graham);
+            prop_assert_eq!(ceiling.is_some(), bazin.is_some() || graham.is_some());
+            if let Some(ceiling) = ceiling {
+                prop_assert!(bazin.is_none_or(|b| ceiling <= b));
+                prop_assert!(graham.is_none_or(|g| ceiling <= g));
+                prop_assert!(Some(ceiling) == bazin || Some(ceiling) == graham);
+            }
+        }
+
         #[test]
         fn graham_grows_with_earnings(eps in 1i64..10_000, bvps in 1i64..10_000, more in 1i64..1000) {
             let base = graham(Decimal::new(eps, 2), Decimal::new(bvps, 2)).unwrap();

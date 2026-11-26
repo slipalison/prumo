@@ -254,11 +254,15 @@ sobre o histórico de dividendos, sem dizer se o ativo está barato ou caro.
   não existe e nada é mostrado. Fica ao lado do Bazin, com o mesmo rótulo
   ("referência pública, não é recomendação") e o mesmo botão de teto. Vale para
   ações; FII não tem LPA.
-- **Teto de preço**: a tela mostra a referência ao lado do teto que a pessoa pôs
-  no ativo (`max_price`) e do preço de hoje. Um botão ("Usar Bazin como meu
-  teto", ou "Usar Graham como meu teto") aplica o valor como teto **depois de uma confirmação**, pelo mesmo
-  `PATCH /assets/{id}` do resto do app. O Prumo não calcula "margem" nem
-  "potencial".
+- **Pelas duas** (`ceiling`): o **menor** valor entre Bazin e Graham; com uma
+  referência só, é ela. Abaixo dele, o preço passa nos dois critérios
+  (dividendos e lucro com patrimônio). Não é a média: a média deixaria passar
+  um preço acima de uma das duas. A pessoa não escolhe fórmula.
+- **Teto de preço**: a tela mostra as referências ao lado do teto que a pessoa
+  pôs no ativo (`max_price`) e do preço de hoje. Um botão só ("Usar R$ X como
+  meu teto") aplica o valor pelas duas como teto **depois de uma confirmação**,
+  pelo mesmo `PATCH /assets/{id}` do resto do app. O Prumo não calcula
+  "margem" nem "potencial".
 
 ## Configuração e migração
 

@@ -910,7 +910,8 @@ que a Análise não faz estão em [analise.md](analise.md). Tudo pelo dono.
         "unit_price": 11.2,
         "max_price": 10.0,
         "bazin": { "price": 12.5, "annual_average": 0.75, "years": 4 },
-        "graham": 9.5
+        "graham": 9.5,
+        "ceiling": 9.5
       }
     ]
   },
@@ -966,7 +967,8 @@ que a Análise não faz estão em [analise.md](analise.md). Tudo pelo dono.
   `worst`; ativo sem histórico não entra (`price_12m` ajusta desdobramentos).
 - `references`: `bazin_yield` é o rendimento-alvo da pessoa; `items` só tem
   ativos da B3 com Bazin (histórico de dividendos) ou Graham (lucro e patrimônio
-  por ação, os dois positivos; `null` se faltar um). Referência pública,
+  por ação, os dois positivos; `null` se faltar um). `ceiling` é o teto pelas
+  duas: o menor de `bazin.price` e `graham`, ou o que existir. Referência pública,
   não é recomendação; o teto é o `max_price` do ativo, que a tela só muda com o
   `PATCH /assets/{id}` e uma confirmação.
 - `unclassified_count` e `sources`: como em `GET /health`.

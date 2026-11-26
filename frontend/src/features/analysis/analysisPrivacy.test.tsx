@@ -75,7 +75,7 @@ describe("Análise com o olho fechado", () => {
     window.localStorage.setItem(HIDE_VALUES_KEY, "1");
     const { user } = renderApp("analise");
     const references = within(await screen.findByRole("region", { name: "Referências de preço" }));
-    await user.click(references.getByRole("button", { name: "Usar a referência de Bazin como teto de ITSA4" }));
+    await user.click(references.getByRole("button", { name: "Usar a referência como teto de ITSA4" }));
     const dialog = await screen.findByRole("dialog", { name: "Usar como teto de preço?" });
     expect(within(dialog).getByText(/Definir R\$ •••• como teto de preço de ITSA4\?/)).toBeInTheDocument();
     expectNoMoney(document.body);
