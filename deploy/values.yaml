@@ -85,11 +85,27 @@ egress:
   # preco ao vivo: o WebSocket do streamer do Yahoo
   - host: streamer.finance.yahoo.com
     port: 443
+  # preco do Tesouro Direto: CSV do Tesouro Transparente (CKAN)
+  - host: www.tesourotransparente.gov.br
+    port: 443
   # desempenho: CDI, Selic e IPCA do SGS do Banco Central (o fechamento
   # diario e o Ibovespa vem do `chart` do Yahoo, ja liberado acima)
   - host: api.bcb.gov.br
     port: 443
-  # setor da Saude e proventos automaticos: paginas publicas da B3
+  # setor das acoes, proventos automaticos e, nos fundamentos, o codigo CVM e
+  # o numero de acoes de cada emissor: paginas publicas da B3
   - host: sistemaswebb3-listados.b3.com.br
+    port: 443
+  # setor e tipo dos FIIs e fundamentos (DFP, ITR, cadastro, informes de FII):
+  # dados abertos da CVM
+  - host: dados.cvm.gov.br
+    port: 443
+  # alertas: Bot API do Telegram (polling e envio do resumo diario)
+  - host: api.telegram.org
+    port: 443
+  # logo dos ativos: API e icones da brapi.dev
+  - host: brapi.dev
+    port: 443
+  - host: icons.brapi.dev
     port: 443
 versao: 0.1.0

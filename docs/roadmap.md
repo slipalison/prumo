@@ -322,10 +322,11 @@ testes, docs, deploy e conferência em produção.
 
 ### 3.12 Fora do escopo, por ora
 
-- **Notas e indicadores de fundamentos automáticos** (ROE, dívida/EBITDA,
-  margens). Dá para fazer com os **dados abertos da CVM** (DFP/ITR). Poderia
-  **sugerir** respostas do checklist do Prumo, mas a pessoa sempre confirma. É
-  esforço G+ e fica para depois do resto.
+- **Notas automáticas a partir dos fundamentos.** Os indicadores (ROE,
+  dívida/EBITDA, margens, CAGR, P/VP, vacância) já vêm dos dados abertos da CVM
+  ([`fundamentos.md`](fundamentos.md)) e alimentam a Análise; **sugerir**
+  respostas do checklist a partir deles, com a pessoa sempre confirmando, fica
+  para depois.
 - **Várias carteiras:** pouco valor para uma pessoa só. Se vier, é coluna
   `portfolio_id` em tudo.
 
@@ -431,5 +432,5 @@ Assim ficam 5 itens na navegação, e nenhum é tela de "painel pelo painel".
 | Setor e segmento das ações | B3, Classificação Setorial (planilha pública) | Atualização periódica |
 | Setor das empresas dos EUA | SEC EDGAR (código SIC) | API pública |
 | Tesouro Direto (preço e taxa diários) | Tesouro Transparente, CSV público | Atualiza 1×/dia |
-| Fundamentos (fase futura) | CVM dados abertos, DFP/ITR | Grande; só para sugerir respostas do checklist |
+| Fundamentos (feito: [`fundamentos.md`](fundamentos.md)) | CVM dados abertos, DFP/ITR e informe trimestral de FII; ações pela B3 | Lidos em fluxo, só as companhias da carteira, conferidos 1×/dia |
 | Regras de IR | Receita Federal (legislação e Perguntas e Respostas do IRPF) | Versionar por ano |

@@ -246,6 +246,27 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
   - salvar refaz a posição no servidor; a quantidade da folha acompanha o
     livro. Venda maior que a posição numa data volta com a frase que diz o
     que conferir, sem fechar o formulário.
+- **Fundamentos**, dentro da folha, depois de Lançamentos, só em Ações
+  Nacionais e FIIs. Mesmo desenho do resumo de Lançamentos (rótulo pequeno em
+  cima, número tabular embaixo, fundo afundado), duas colunas no celular e três
+  no desktop:
+  - companhia: "Últimos 12 meses, até 30/09/2026" (ou "Exercício encerrado em
+    …"), receita, lucro, ROE, margem líquida, dívida líquida sobre EBITDA e
+    sobre o PL, LPA e VPA; embaixo, anos com lucro e com caixa operacional
+    positivo ("4 de 5") e o crescimento de receita e lucro em 5 anos ("+10,0%
+    a.a.", sinal escrito). Banco e seguradora não mostram as linhas que não se
+    aplicam e dizem por quê numa dica. Recuperação judicial (ou outra situação
+    do emissor que não a operacional) é um aviso dourado com ícone e texto;
+  - FII: valor patrimonial por cota, P/VP (com o preço ao vivo da carteira),
+    vacância física e patrimônio líquido;
+  - número que falta é "—", com o motivo no `title` e em texto `sr-only`
+    ("base zero ou negativa", "não se aplica a banco ou seguradora"), nunca zero;
+  - a fonte e as datas embaixo, em dica: "Fonte: CVM, ITR de 30/09/2026 ·
+    conferido em 26/11/2026";
+  - ainda sem dado: "Buscando os dados na CVM"; sem fundamentos (ETF em Ações
+    Nacionais, fundo fora do informe), a frase do motivo;
+  - com o olho fechado, todo R$ (receita, lucro, LPA, VPA, valor patrimonial,
+    patrimônio) sai como `R$ ••••`; percentuais, múltiplos e o P/VP ficam.
 - A quantidade editada na própria folha vira um "ajuste" em Lançamentos (a
   dica sob o campo diz isso); compra e venda vão em Lançamentos, com data e
   preço.

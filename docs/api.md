@@ -2306,6 +2306,122 @@ carteira, e responde `200` com `{ "sent": true }`.
 | `429` (`too_many_requests`) | outro teste há menos de 10 segundos |
 | `502` (`telegram_unavailable`) | o Telegram não aceitou a mensagem; o motivo cru vai para o log, não para a resposta |
 
+## Fundamentos
+
+Os indicadores da CVM de cada ativo da carteira: companhias pela DFP e pelo
+ITR, FIIs pelos informes mensal e trimestral. Fontes, contas da CVM, fórmulas e
+limites em [`fundamentos.md`](fundamentos.md). A tela lê o que a tarefa diária
+gravou: nenhuma requisição espera a CVM.
+
+**Medida** (`Figure`): sempre `{ "value": número | null, "gap": motivo | null }`,
+exatamente um dos dois. Razões vêm como fração (`0.15` é 15%); valores em reais
+(não em milhares). Os motivos (`gap`) e os de ativo sem fundamentos (`reason`)
+estão em [`fundamentos.md`](fundamentos.md#motivos-gap).
+
+### `GET /api/v1/fundamentals`
+
+Na ordem da carteira; ativo sem símbolo (renda fixa por valor) fica fora.
+Números fictícios:
+
+```json
+{
+  "assets": [
+    {
+      "asset_id": "6f1c…",
+      "symbol": "WEGE3",
+      "kind": "company",
+      "company": {
+        "cvm_code": 99901,
+        "name": "CIA FICTICIA S.A.",
+        "template": "commercial",
+        "judicial_recovery": false,
+        "issuer_status": "FASE OPERACIONAL",
+        "registration_status": "ATIVO",
+        "latest_filing": { "kind": "quarterly", "reference_date": "2026-09-30", "version": 1, "scope": "consolidated", "column": "current" },
+        "synced_at": "2026-11-26T15:00:00Z",
+        "trailing": {
+          "period_start": "2025-10-01",
+          "period_end": "2026-09-30",
+          "template": "commercial",
+          "sources": [
+            { "kind": "annual", "reference_date": "2025-12-31", "version": 1, "scope": "consolidated", "column": "current" },
+            { "kind": "quarterly", "reference_date": "2026-09-30", "version": 1, "scope": "consolidated", "column": "current" },
+            { "kind": "quarterly", "reference_date": "2026-09-30", "version": 1, "scope": "consolidated", "column": "previous" }
+          ],
+          "revenue": { "value": 1500000000.0, "gap": null },
+          "net_income": { "value": 180000000.0, "gap": null },
+          "equity": { "value": 1200000000.0, "gap": null },
+          "equity_controlling": { "value": 1100000000.0, "gap": null },
+          "gross_debt": { "value": 400000000.0, "gap": null },
+          "cash": { "value": 100000000.0, "gap": null },
+          "net_debt": { "value": 300000000.0, "gap": null },
+          "ebit": { "value": 250000000.0, "gap": null },
+          "depreciation_amortization": { "value": 50000000.0, "gap": null },
+          "ebitda": { "value": 300000000.0, "gap": null },
+          "operating_cash_flow": { "value": 200000000.0, "gap": null },
+          "roe": { "value": 0.163636, "gap": null },
+          "net_margin": { "value": 0.12, "gap": null },
+          "ebitda_margin": { "value": 0.2, "gap": null },
+          "net_debt_to_ebitda": { "value": 1.0, "gap": null },
+          "net_debt_to_equity": { "value": 0.25, "gap": null }
+        },
+        "years": [
+          { "year": 2021, "figures": null },
+          { "year": 2022, "figures": { "…": "o mesmo formato de trailing" } }
+        ],
+        "profitable_years": { "positive": 4, "known": 4, "window": 5, "gap": null },
+        "positive_operating_cash_years": { "positive": 4, "known": 4, "window": 5, "gap": null },
+        "revenue_cagr": { "value": null, "gap": "insufficient_history" },
+        "earnings_cagr": { "value": null, "gap": "insufficient_history" },
+        "shares": 1000000000.0,
+        "earnings_per_share": { "value": 0.18, "gap": null },
+        "book_value_per_share": { "value": 1.1, "gap": null }
+      },
+      "fund": null,
+      "reason": null
+    },
+    {
+      "asset_id": "9a2e…",
+      "symbol": "FICT11",
+      "kind": "fund",
+      "company": null,
+      "fund": {
+        "cnpj": "00.000.000/0001-91",
+        "name": "FUNDO FICTICIO FII",
+        "reference_date": "2026-10-01",
+        "net_assets": { "value": 1000000000.0, "gap": null },
+        "shares": { "value": 10000000.0, "gap": null },
+        "nav_per_share": { "value": 100.0, "gap": null },
+        "price": 90.0,
+        "price_to_book": { "value": 0.9, "gap": null },
+        "vacancy": { "value": 0.15, "gap": null },
+        "vacancy_reference_date": "2026-09-30",
+        "synced_at": "2026-11-26T15:00:00Z"
+      },
+      "reason": null
+    },
+    { "asset_id": "c3d4…", "symbol": "BOVA11", "kind": "unsupported", "company": null, "fund": null, "reason": "no_cvm_code" }
+  ]
+}
+```
+
+- `kind`: `company`, `fund` ou `unsupported` (com `reason`).
+- `template`: `commercial`, `bank`, `insurer` ou `unknown`. Em banco e
+  seguradora, receita, EBIT, dívida, caixa, EBITDA, margens e caixa operacional
+  vêm com `gap: "financial_template"`.
+- `trailing`: os últimos 12 meses (exercício + acumulado do ITR − acumulado do
+  ano anterior) ou, sem trimestre depois do exercício, o próprio exercício; as
+  datas e `sources` dizem qual. `null` sem nenhuma DFP.
+- `years`: os cinco exercícios da janela, do mais velho ao mais novo;
+  `figures: null` é ano sem balanço.
+- `shares`: total de ações (ON + PN) da página do emissor na B3, com as em
+  tesouraria; `earnings_per_share` (LPA) e `book_value_per_share` (VPA) usam os
+  12 meses de `trailing`.
+- `price` e `price_to_book` do FII usam a cotação gravada no Prumo; a tela
+  recalcula o P/VP com o preço ao vivo da carteira.
+- `synced_at`: a última vez que o Prumo conferiu a CVM com sucesso (empresas:
+  os arquivos de DFP; FIIs: o informe mensal).
+
 ## Logos dos ativos
 
 Cada ativo da B3 mostra o logo da empresa ou do fundo. O navegador **nunca** fala

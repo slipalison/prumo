@@ -88,6 +88,15 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   (Bazin, e Graham quando houver fundamentos) para comparar com o seu teto, sem
   recomendar nada. O setor vem da B3 (ações) e da CVM (FIIs). Detalhes em
   [`docs/analise.md`](docs/analise.md) e [`docs/saude.md`](docs/saude.md).
+- **Fundamentos** — na folha de cada ação e FII da B3, os números da CVM com a
+  fonte e a data: receita, lucro, ROE, margem, dívida líquida sobre EBITDA e
+  sobre o patrimônio, LPA e VPA, anos com lucro e com caixa operacional
+  positivo, crescimento de receita e lucro em 5 anos e o aviso de recuperação
+  judicial; nos FIIs, valor patrimonial por cota, P/VP com o preço ao vivo e a
+  vacância física declarada. Banco e seguradora mostram só o que o plano de
+  contas deles tem. Tudo dos dados abertos da CVM, conferidos uma vez por dia;
+  número que falta aparece como "—" com o motivo, nunca como zero. Detalhes em
+  [`docs/fundamentos.md`](docs/fundamentos.md).
 - **Alertas** — um resumo por dia no Telegram, só quando há algo a dizer:
   provento que cai amanhã, classe fora da meta, ativo de volta ao teto de
   preço, objetivo atingido, aviso novo de saúde e isentômetro de ações do mês. Cada tipo liga e desliga, a
@@ -143,6 +152,7 @@ Documentos:
 - [`docs/ir.md`](docs/ir.md) — regras de IR por ano, com fonte, e o que não é calculado
 - [`docs/alertas.md`](docs/alertas.md) — alertas no Telegram: criar o bot, vincular, tipos, privacidade
 - [`docs/icones.md`](docs/icones.md) — logos dos ativos: fonte (brapi), como ligar, segurança do SVG e licença
+- [`docs/fundamentos.md`](docs/fundamentos.md) — fundamentos da CVM: fontes, contas, fórmulas, limites e o contrato
 - [`docs/desempenho.md`](docs/desempenho.md) — rentabilidade por cotas, índices e fontes
 - [`deploy/README.md`](deploy/README.md) — como o app chega ao cluster
 
@@ -183,6 +193,7 @@ npm run dev
 | `QUOTES_STREAM` | `true` | `false` desliga o preço ao vivo (fica o `chart` a cada `QUOTES_REFRESH_SECS`) |
 | `QUOTES_REFRESH_SECS` | `900` | intervalo da atualização automática (mín. 60) |
 | `SECTORS_ENABLED` | `true` | `false` desliga a busca de setor (B3 e CVM, a cada 30 dias) |
+| `FUNDAMENTALS_ENABLED` | `true` | `false` desliga a busca de fundamentos (CVM e página do emissor na B3, conferidas uma vez por dia) |
 | `SNAPSHOT_AT` | `19:00` | horário de Brasília da foto diária do desempenho (`HH:MM`), ou `off` |
 | `BRAPI_TOKEN` | — | segredo: chave da brapi (conta gratuita em brapi.dev), só do servidor. Sem ela, os logos dos ativos ficam desligados (iniciais no lugar); precisa de saída HTTPS para `brapi.dev` e `icons.brapi.dev` |
 | `TELEGRAM_BOT_TOKEN` | — | segredo: token do bot do Telegram (criado por você no @BotFather). Sem ele, os alertas ficam desligados e a tela diz isso; precisa de saída HTTPS para `api.telegram.org` |
