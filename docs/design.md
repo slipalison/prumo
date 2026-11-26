@@ -425,7 +425,13 @@ planilha: uma meta no topo, o resto por baixo.
    classe). O recebido é cheio e embaixo; o a receber é **listrado** e em cima;
    a meta é uma linha tracejada com o valor. A legenda dá nome a cada um e uma
    tabela escondida (`sr-only`) traz os 12 meses para o leitor de tela.
-4. **Próximos pagamentos:** data, ativo, tipo e líquido.
+4. **Próximos pagamentos:** data, ativo, tipo e líquido. O provento que o
+   Prumo calculou do anúncio da B3 leva o selo **"automático (B3)"** (borda
+   pontilhada, texto: o selo não depende de cor).
+   Logo abaixo, só com os automáticos ligados e alguma pendência, o cartão
+   **Eventos anunciados pela B3**: uma frase por bonificação, desdobramento ou
+   grupamento ("A B3 anunciou bonificação de 2% em ITSA4 com data com
+   18/12/2025; lance no livro.") e as cotas da data com.
 5. **Estimativa da carteira de hoje:** "~R$ 410/mês" com a etiqueta
    "estimativa" e o aviso de que é o que a cota pagou nos últimos 12 meses, sem
    separar JCP e sem ser extrato. Papéis sem histórico são listados.
@@ -440,6 +446,8 @@ planilha: uma meta no topo, o resto por baixo.
    **yield on cost** de cada um ("yield on cost 6,2%" ou "informe o preço
    médio"); do sétimo em diante vira "Outros (N)", sem yield (junta vários).
 9. **Proventos lançados:** lista com apagar (confirmação na própria linha).
+   O automático tem o mesmo selo, e a confirmação diz que ele não volta na
+   próxima busca.
 10. **Lançar provento:** folha com ativo, tipo (chips), data de pagamento, valor
    por cota, quantidade e data ex opcional. **Em branco, a quantidade vale a do
    livro na data com** (não a de hoje): o campo mostra o número que o servidor
@@ -464,7 +472,7 @@ Na tela **Aportar**:
 - Com o olho fechado (ver "Ocultar valores"), tudo isso sai mascarado — meta,
   barras, tabelas, rosca, prévia do lançamento e a quantidade em branco (o que o
   livro tinha na data com), a renda do plano, o caixa (saldo, detalhe e
-  movimentos), o lucro total e os valores do yield on cost —, inclusive o que só o leitor de tela lê (`aria-label`,
+  movimentos), o lucro total, os valores do yield on cost e as cotas da data com das pendências da B3 —, inclusive o que só o leitor de tela lê (`aria-label`,
   `aria-valuetext`, tabelas `sr-only`). Só a proporção (percentual) continua — o yield on cost é percentual e fica; o
   motivo de um yield ausente ("informe o preço médio") e o "parcial" do lucro
   total também, porque são texto, não valor.
@@ -599,6 +607,27 @@ Com o olho fechado (ver "Ocultar valores"): a tela só tem valor em reais no
 exemplo do resumo, e ali cada `R$` vira `R$ ••••`, inclusive para o leitor de
 tela. O olho **não** muda o que o servidor envia: isso é "Sem valores no
 resumo".
+
+### 12. Ajustes › Proventos automáticos
+
+Seção `#/ajustes/proventos-automaticos` (uma linha em `SETTINGS_SECTIONS`).
+Responde "o Prumo calcula meus proventos?" em três cartões de vidro; a regra
+está em [proventos-automaticos.md](proventos-automaticos.md).
+
+1. **Calcular pela B3.** O interruptor **Proventos automáticos** (`role="switch"`),
+   com a frase do que ligar e desligar faz. Ligado, a situação da busca
+   ("Anúncios da B3 conferidos em 26/11/2026 09:00. A busca é diária." ou "A
+   primeira busca na B3 acontece em até uma hora."), os códigos acompanhados e
+   os que ficaram sem anúncio. Trocar a chave grava na hora, com aviso.
+2. **Eventos em ações.** As pendências, na mesma frase do cartão da Renda, ou
+   "Nenhuma bonificação, desdobramento ou grupamento pendente".
+3. **Como funciona.** Os limites em seis linhas: data com, IR do JCP, data a
+   definir, 12 a 18 meses de histórico, o que não duplica (e que apagar é
+   definitivo) e ETF/ação como "Outro".
+
+Com o olho fechado, a quantidade da data com vira `••` ("Você tinha •• cotas
+na data com"), sem singular que entregue o número; o fator do evento é
+percentual e fica.
 
 ### Histórico
 

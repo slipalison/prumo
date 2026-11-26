@@ -1054,7 +1054,8 @@ e quantidade são número JSON.
     `reason_code`: `same_ref` (já importada), `same_entry` (é o lançamento
     digitado igual: mesmo ativo, tipo, data, quantidade e preço até 2% —
     o "Já comprei"), `same_income`, `replaces_provisioned` (entra no lugar do
-    provento a receber), `superseded_by_received`, `provisioned_without_date`,
+    provento a receber), `replaces_automatic` (entra no lugar do provento
+    automático do mesmo pagamento e valor), `superseded_by_received`, `provisioned_without_date`,
     `asset_skipped`, `treasury_unidentified`, `treasury_interest`,
     `fraction_in_kind`, `event_debit`, `reverse_split_unclear`,
     `missing_quantity`, `missing_value`, `exceeds_position`, `unit`, `invalid`.
@@ -1342,9 +1343,11 @@ hoje já é recebido). Tudo é filtrado pela pessoa dona; id de outra pessoa é
   `pay_date`; LC 224/2025), zero nos demais (dividendo e rendimento de
   FII são isentos para pessoa física); `net = gross − withholding`.
 - `status`: `received` ou `upcoming`, pela `pay_date`.
-- `source`: `manual` (lançado pela pessoa), `b3_import` (extrato da B3) ou
-  `estimate`. Só `manual` se edita; `external_ref` é único por pessoa (a
-  importação repetida não duplica).
+- `source`: `manual` (lançado pela pessoa), `b3_import` (extrato da B3),
+  `b3_announcement` (o **automático**: anúncio da B3 × livro na data com, ver
+  [Proventos automáticos](#proventos-automáticos)) ou `estimate`. Só `manual`
+  se edita; `external_ref` é único por pessoa (a importação repetida não
+  duplica; no automático é `b3a:<isin>:<rótulo>:<data com>:<valor>`).
 - `asset_id` vira `null` se o ativo for apagado da carteira; o evento guarda
   `symbol` e `display_name`, e a renda passada continua de pé.
 
@@ -1409,7 +1412,8 @@ os de extrato respondem `422`. `200` com o evento.
 ### `DELETE /api/v1/income/{id}`
 
 `204`. Apaga qualquer evento da pessoa (um evento importado volta se o extrato
-for importado de novo).
+for importado de novo). O automático apagado **não volta**: o `external_ref`
+dele fica lembrado e a rodada não o recria.
 
 ### `GET /api/v1/income/summary`
 
@@ -1570,6 +1574,66 @@ enquanto não há nada recebido nos 12 meses, a estimativa da carteira
 (`basis: "estimate"`). `percent` pode passar de 100. `reached` só vale com o
 recebido: a estimativa não conquista meta. Na primeira vez que o recebido
 alcança a meta, `achieved_at` guarda o instante e fica.
+
+### Proventos automáticos
+
+O Prumo calcula os proventos de cada ativo da B3 da pessoa: o anúncio da
+empresa (página pública de eventos da B3, buscada uma vez por dia em segundo
+plano) vezes a quantidade do livro na data com. Cada um vira um `IncomeEvent`
+com `source: "b3_announcement"`, recebido ou a receber pela `pay_date`, e conta
+na Renda, no caixa, no desempenho, no IR e nos alertas como qualquer outro.
+Regra inteira (fonte, data com, tipos, deduplicação, recálculo, limites) em
+[proventos-automaticos.md](proventos-automaticos.md). Em resumo:
+
+- quantidade = posição do livro no fim da data com (`lastDatePrior`), a mesma
+  regra de `GET /income/entitlement`; zero, nada;
+- `DIVIDENDO` → `dividend`; `JRS CAP PROPRIO` → `jcp`, com o IR retido pela
+  `pay_date` (15% até 2025, 17,5% desde 2026); `RENDIMENTO` → `reit_income` em
+  FII e `other` em ação ou ETF; amortização → `amortization`; o resto → `other`;
+- anúncio sem data de pagamento fica guardado e só vira provento quando a
+  empresa define a data;
+- igual a um `manual` ou `b3_import` do mesmo ativo (tipo, data com ou de
+  pagamento, valor por cota a 1%) não é criado: o da pessoa vence. O
+  importado que chega depois toma o lugar do automático
+  (`reason_code: replaces_automatic` na prévia);
+- de hora em hora a rodada refaz os automáticos: livro mudado antes da data com
+  refaz a quantidade; posição zerada ou anúncio cancelado, o automático some.
+
+#### `GET /api/v1/income/auto`
+
+```json
+{
+  "enabled": true,
+  "fetched_at": "2026-11-26T09:00:00Z",
+  "covered": ["ITSA4", "KNRI11"],
+  "unmatched": ["XPTO11"],
+  "pending_events": [
+    { "asset_id": "…", "symbol": "ITSA4", "kind": "bonus", "record_date": "2025-12-18", "factor": 2.0, "quantity": 140.0 }
+  ]
+}
+```
+
+- `enabled`: a chave da pessoa (ligada por padrão).
+- `fetched_at`: a busca mais velha entre os emissores da carteira; `null`
+  antes da primeira.
+- `covered`: ativos da B3 da pessoa com ISIN conhecido; `unmatched`: os sem
+  (sem anúncio na B3, ou código que a regra não resolve) — ficam sem
+  automático.
+- `pending_events`: bonificação (`bonus`), desdobramento (`split`) e
+  grupamento (`reverse_split`) que a B3 anunciou nos últimos 18 meses, com cota
+  na data com, depois do saldo inicial e ainda sem o lançamento do mesmo tipo
+  no livro (até 90 dias depois da data com). **Não são lançados sozinhos**
+  (falta o custo atribuído): a tela pede para lançar. `factor` é como a B3
+  publica: percentual na bonificação e no desdobramento (`100` = cada ação vira
+  duas), multiplicador no grupamento (`0.1` = dez viram uma). `quantity` é a
+  posição do livro no fim da data com.
+
+#### `PUT /api/v1/income/auto`
+
+`{ "enabled": false }` apaga os automáticos da pessoa na hora (os `manual` e
+`b3_import` ficam); `{ "enabled": true }` os refaz na hora com os anúncios que
+já estão no banco, sem ir à B3. `200` com o mesmo corpo do `GET`; campo que
+não é booleano, `422`.
 
 ## Caixa
 

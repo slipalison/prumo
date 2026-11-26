@@ -47,7 +47,11 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   (histórico por cota do Yahoo, bruto, buscado em segundo plano: nenhuma tela
   espera por ele): o que você lança, e depois o que importa da B3, vale mais. O
   provento lançado sem quantidade vale as cotas que o livro tinha na **data com**,
-  não as de hoje. Cada pagador, o ativo e a carteira mostram o **yield on cost**
+  não as de hoje. **Proventos automáticos:** o Prumo lê na B3 os dividendos, JCP
+  e rendimentos anunciados para os seus ativos e calcula o que você recebe com
+  as cotas do livro na data com (selo "automático (B3)"); o que você lançou à
+  mão ou importou sempre vence, e bonificação, desdobramento e grupamento
+  aparecem como pendência para lançar. Liga e desliga em Ajustes. Cada pagador, o ativo e a carteira mostram o **yield on cost**
   (renda de 12 meses ÷ o que você pagou; sem preço médio, a tela pede o preço
   médio em vez de inventar).
 - **Caixa** — o que os proventos recebidos e as vendas deixaram e você ainda não

@@ -89,4 +89,7 @@ egress:
   # diario e o Ibovespa vem do `chart` do Yahoo, ja liberado acima)
   - host: api.bcb.gov.br
     port: 443
+  # setor da Saude e proventos automaticos: paginas publicas da B3
+  - host: sistemaswebb3-listados.b3.com.br
+    port: 443
 versao: 0.1.0

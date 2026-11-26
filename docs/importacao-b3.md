@@ -237,6 +237,11 @@ O preço é o da planilha ou valor ÷ quantidade; a quantidade, em centésimos.
 | `Reembolso`, `Leilão de Frações` | `other` |
 
 `source = b3_import`, `external_ref` da linha, sem data ex (a B3 não traz).
+O provento importado **vence o automático** (`b3_announcement`, ver
+[proventos-automaticos.md](proventos-automaticos.md)): mesma data de
+pagamento, mesmo tipo e o mesmo valor por cota a 1% (no JCP vale também o
+líquido por cota) — a linha sai `replaces_automatic` e a gravação troca o
+automático pelo importado no mesmo registro.
 O valor da B3 é o **líquido**. No JCP o bruto é **líquido ÷ (1 − alíquota)**,
 com a alíquota retida na fonte da data do pagamento — 15% até 2025, 17,5% desde
 2026 (LC 224/2025; provisionado sem data já entra na de 2026) — e a retenção é a
