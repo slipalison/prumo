@@ -16,6 +16,11 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 use time::{Date, OffsetDateTime};
 
+/// A janela de dividendos que o provedor devolve. A estimativa de renda olha
+/// 12 meses; a referência de Bazin da Análise tira a média de até 5 anos
+/// (`domain::analysis::references::MAX_YEARS`).
+const HISTORY_RANGE: &str = "5y";
+
 /// Um dividendo por cota, bruto, na data ex.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DividendEvent {
@@ -40,7 +45,7 @@ pub enum DividendError {
 
 #[async_trait]
 pub trait DividendProvider: Send + Sync {
-    /// O histórico dos últimos 2 anos de `provider_symbol` (`KNRI11.SA`). Um
+    /// O histórico dos últimos 5 anos de `provider_symbol` (`KNRI11.SA`). Um
     /// símbolo que não paga nada volta com `events` vazio.
     async fn history(&self, provider_symbol: &str) -> Result<DividendHistory, DividendError>;
 }
@@ -118,7 +123,11 @@ impl DividendProvider for YahooDividends {
         let response = self
             .http
             .get(url)
-            .query(&[("range", "2y"), ("interval", "1d"), ("events", "div")])
+            .query(&[
+                ("range", HISTORY_RANGE),
+                ("interval", "1d"),
+                ("events", "div"),
+            ])
             .timeout(Duration::from_secs(8))
             .send()
             .await

@@ -1,36 +1,17 @@
 //! As regras de saúde que cada pessoa ligou, desligou ou ajustou.
 
-use rust_decimal::Decimal;
 use uuid::Uuid;
 
-use super::{decode_error, Store, StoreError};
+use super::{Store, StoreError};
 use crate::domain::health::{HealthConfig, IncomeHistory, RuleId, RuleSetting};
 use crate::domain::income::Entry;
 use time::Date;
 
 impl Store {
-    /// As regras da pessoa: o que ela salvou por cima do padrão.
+    /// As sete regras originais da pessoa (as da Saúde). A configuração é a
+    /// mesma da Análise: as regras novas ficam de fora.
     pub async fn health_config(&self, user: Uuid) -> Result<HealthConfig, StoreError> {
-        let rows: Vec<(String, bool, Option<Decimal>)> =
-            sqlx::query_as("select rule, enabled, threshold from health_rules where user_id = $1")
-                .bind(user)
-                .fetch_all(&self.pool)
-                .await?;
-        let mut config = HealthConfig::default();
-        for (rule, enabled, threshold) in rows {
-            let rule = RuleId::parse(&rule).ok_or_else(|| decode_error(&rule))?;
-            config.set(
-                rule,
-                RuleSetting {
-                    enabled,
-                    // Sem limite salvo (regra que não tem, ou linha sem ele), vale o padrão.
-                    threshold: threshold
-                        .map(|t| t.normalize())
-                        .or_else(|| rule.default_threshold()),
-                },
-            );
-        }
-        Ok(config)
+        Ok(self.analysis_config(user).await?.health())
     }
 
     /// Os proventos da pessoa como as regras de renda os leem: o livro todo,

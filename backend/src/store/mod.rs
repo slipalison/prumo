@@ -6,6 +6,7 @@
 
 mod alerts;
 mod allocation;
+mod analysis;
 mod b3_import;
 mod cash;
 pub mod health;

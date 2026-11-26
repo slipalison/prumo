@@ -5,6 +5,7 @@
 //! Tesouro Direto; `service` junta tudo; `http` expõe a API e os estáticos.
 
 pub mod alerts;
+pub mod analysis;
 pub mod auth;
 pub mod b3_xlsx;
 pub mod brapi;

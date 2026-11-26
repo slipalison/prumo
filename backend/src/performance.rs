@@ -535,7 +535,7 @@ fn default_currency(market: Market) -> &'static str {
 /// O símbolo do histórico de preço do ativo. `None` para quem não tem preço de
 /// mercado: renda fixa por valor e ativo com preço manual (o manual vence a
 /// cotação, como na tela).
-fn price_symbol(view: &AssetView) -> Option<String> {
+pub(crate) fn price_symbol(view: &AssetView) -> Option<String> {
     if view.asset.manual_price.is_some() {
         return None;
     }
@@ -548,7 +548,7 @@ fn price_symbol(view: &AssetView) -> Option<String> {
 
 /// A moeda do histórico do ativo: a da cotação ou, sem cotação ainda, a do
 /// mercado.
-fn price_currency(view: &AssetView) -> String {
+pub(crate) fn price_currency(view: &AssetView) -> String {
     if view.price_source == PriceSource::Missing && view.currency == "BRL" {
         default_currency(view.asset.market()).to_owned()
     } else {
@@ -740,7 +740,7 @@ pub async fn series(
     Ok(points)
 }
 
-fn quota_points(points: &[SeriesPoint]) -> Vec<QuotaPoint> {
+pub(crate) fn quota_points(points: &[SeriesPoint]) -> Vec<QuotaPoint> {
     points
         .iter()
         .map(|p| QuotaPoint {

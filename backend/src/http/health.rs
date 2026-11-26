@@ -29,7 +29,7 @@ use crate::error::{ApiError, ApiResult};
 use crate::service::{self, PortfolioView};
 use crate::store::sectors::SyncState;
 
-mod number {
+pub(crate) mod number {
     use super::{Decimal, ToPrimitive};
     use serde::Serializer;
 
@@ -272,7 +272,7 @@ pub(crate) fn health_assets(view: &PortfolioView) -> Vec<HealthAsset> {
         .collect()
 }
 
-fn sources_dto(states: &[(SectorSource, SyncState)]) -> Vec<SectorSourceDto> {
+pub(crate) fn sources_dto(states: &[(SectorSource, SyncState)]) -> Vec<SectorSourceDto> {
     SectorSource::ALL
         .into_iter()
         .map(|source| {
@@ -299,17 +299,7 @@ pub async fn health(
     let evaluation = health::evaluate(&config, &assets, view.targets, &income);
     let states = state.store.sector_sync_states().await?;
 
-    let unclassified_count = view
-        .assets
-        .iter()
-        .filter(|a| {
-            a.current_value > Decimal::ZERO
-                && a.sector.is_none()
-                && SectorSource::ALL
-                    .iter()
-                    .any(|s| s.class() == a.asset.asset_class)
-        })
-        .count();
+    let unclassified_count = crate::analysis::unclassified_count(&view);
 
     Ok(Json(HealthDto {
         total_value: view.total_value,

@@ -2,6 +2,7 @@
 
 mod alerts;
 mod allocation;
+mod analysis;
 mod b3_import;
 mod cash;
 pub mod dto;
@@ -279,6 +280,11 @@ pub fn public_router(state: AppState, static_dir: &str) -> Router {
         .route(
             "/contributions",
             get(handlers::contributions).post(handlers::record_contribution),
+        )
+        .route("/analysis", get(analysis::analysis))
+        .route(
+            "/analysis/rules",
+            get(analysis::rules).put(analysis::save_rules),
         )
         .route("/health", get(health::health))
         .route("/health/rules", get(health::rules).put(health::save_rules))

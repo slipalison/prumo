@@ -296,6 +296,18 @@ pub struct RuleReport {
     pub enabled: bool,
     pub threshold: Option<Decimal>,
     pub status: RuleStatus,
+    /// O número de agora que a regra mede, tenha passado do limite ou não
+    /// (a maior fatia, os cinco maiores, quantos meses de renda...). `None`
+    /// com a regra desligada ou sem o que medir.
+    pub current: Option<Decimal>,
+}
+
+/// O que uma regra mediu: o número de agora e os avisos (vazio = dentro do
+/// limite).
+#[derive(Debug, Clone, PartialEq)]
+struct Outcome {
+    current: Decimal,
+    warnings: Vec<Warning>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -340,7 +352,7 @@ pub fn evaluate(
         let status = match (&outcome, setting.enabled) {
             (_, false) => RuleStatus::Off,
             (None, true) => RuleStatus::NotApplicable,
-            (Some(found), true) if found.is_empty() => RuleStatus::Ok,
+            (Some(found), true) if found.warnings.is_empty() => RuleStatus::Ok,
             (Some(_), true) => RuleStatus::Warning,
         };
         rules.push(RuleReport {
@@ -348,8 +360,9 @@ pub fn evaluate(
             enabled: setting.enabled,
             threshold: setting.threshold,
             status,
+            current: outcome.as_ref().map(|found| found.current),
         });
-        warnings.extend(outcome.unwrap_or_default());
+        warnings.extend(outcome.map(|found| found.warnings).unwrap_or_default());
     }
     Evaluation { rules, warnings }
 }
@@ -361,12 +374,17 @@ fn contribution_to_reach(part: Decimal, whole: Decimal, limit: Decimal) -> Decim
     needed.max(Decimal::ZERO).round_dp(2)
 }
 
-fn max_asset(owned: &[&HealthAsset], total: Decimal, limit: Decimal) -> Option<Vec<Warning>> {
+fn max_asset(owned: &[&HealthAsset], total: Decimal, limit: Decimal) -> Option<Outcome> {
     if total <= Decimal::ZERO {
         return None;
     }
-    Some(
-        owned
+    // `owned` vem do maior para o menor: o primeiro é a maior fatia.
+    let current = owned
+        .first()
+        .map_or(Decimal::ZERO, |asset| percent(asset.value, total));
+    Some(Outcome {
+        current,
+        warnings: owned
             .iter()
             .filter_map(|asset| {
                 let share = percent(asset.value, total);
@@ -382,10 +400,10 @@ fn max_asset(owned: &[&HealthAsset], total: Decimal, limit: Decimal) -> Option<V
                 })
             })
             .collect(),
-    )
+    })
 }
 
-fn top_five(owned: &[&HealthAsset], total: Decimal, limit: Decimal) -> Option<Vec<Warning>> {
+fn top_five(owned: &[&HealthAsset], total: Decimal, limit: Decimal) -> Option<Outcome> {
     // Com cinco ativos ou menos os cinco maiores são a carteira toda (100%):
     // a regra não diz nada, quem fala é `min_assets`.
     if owned.len() <= TOP_COUNT || total <= Decimal::ZERO {
@@ -395,22 +413,29 @@ fn top_five(owned: &[&HealthAsset], total: Decimal, limit: Decimal) -> Option<Ve
     let sum: Decimal = top.iter().map(|a| a.value).sum();
     let share = percent(sum, total);
     if share <= limit {
-        return Some(Vec::new());
+        return Some(Outcome {
+            current: share,
+            warnings: Vec::new(),
+        });
     }
-    Some(vec![Warning {
-        rule: RuleId::TopFive,
-        subject: Subject::TopAssets {
-            labels: top.iter().map(|a| a.label.clone()).collect(),
-        },
+    Some(Outcome {
         current: share,
-        limit,
-        needed_contribution: Some(contribution_to_reach(sum, total, limit)),
-    }])
+        warnings: vec![Warning {
+            rule: RuleId::TopFive,
+            subject: Subject::TopAssets {
+                labels: top.iter().map(|a| a.label.clone()).collect(),
+            },
+            current: share,
+            limit,
+            needed_contribution: Some(contribution_to_reach(sum, total, limit)),
+        }],
+    })
 }
 
-fn max_sector(owned: &[&HealthAsset], limit: Decimal) -> Option<Vec<Warning>> {
+fn max_sector(owned: &[&HealthAsset], limit: Decimal) -> Option<Outcome> {
     let mut evaluated = false;
     let mut found = Vec::new();
+    let mut biggest = Decimal::ZERO;
     for class in SECTOR_CLASSES {
         let group: Vec<&&HealthAsset> = owned.iter().filter(|a| a.asset_class == class).collect();
         // Um ativo só é sempre 100% de um setor: dizer isso não ajuda.
@@ -427,6 +452,7 @@ fn max_sector(owned: &[&HealthAsset], limit: Decimal) -> Option<Vec<Warning>> {
         }
         for (sector, value) in by_sector {
             let share = percent(value, class_total);
+            biggest = biggest.max(share);
             if share > limit {
                 found.push(Warning {
                     rule: RuleId::MaxSector,
@@ -443,7 +469,10 @@ fn max_sector(owned: &[&HealthAsset], limit: Decimal) -> Option<Vec<Warning>> {
     }
     evaluated.then(|| {
         found.sort_by_key(|w| std::cmp::Reverse(w.current));
-        found
+        Outcome {
+            current: biggest,
+            warnings: found,
+        }
     })
 }
 
@@ -455,7 +484,7 @@ fn count_by_class(owned: &[&HealthAsset]) -> [usize; 7] {
     counts
 }
 
-fn min_assets(owned: &[&HealthAsset], targets: Targets, limit: Decimal) -> Option<Vec<Warning>> {
+fn min_assets(owned: &[&HealthAsset], targets: Targets, limit: Decimal) -> Option<Outcome> {
     let counts = count_by_class(owned);
     // Classe sem nenhum ativo é assunto de `empty_class`: aqui só a que já tem
     // algum e ainda é rasa.
@@ -466,8 +495,15 @@ fn min_assets(owned: &[&HealthAsset], targets: Targets, limit: Decimal) -> Optio
     if candidates.is_empty() {
         return None;
     }
-    Some(
-        candidates
+    // A classe mais rasa é o número de agora.
+    let shallowest = candidates
+        .iter()
+        .map(|c| counts[*c as usize])
+        .min()
+        .unwrap_or(0);
+    Some(Outcome {
+        current: Decimal::from(shallowest),
+        warnings: candidates
             .into_iter()
             .filter(|c| Decimal::from(counts[*c as usize]) < limit)
             .map(|class| Warning {
@@ -478,10 +514,10 @@ fn min_assets(owned: &[&HealthAsset], targets: Targets, limit: Decimal) -> Optio
                 needed_contribution: None,
             })
             .collect(),
-    )
+    })
 }
 
-fn empty_class(owned: &[&HealthAsset], targets: Targets) -> Option<Vec<Warning>> {
+fn empty_class(owned: &[&HealthAsset], targets: Targets) -> Option<Outcome> {
     let counts = count_by_class(owned);
     let with_target: Vec<AssetClass> = AssetClass::ALL
         .into_iter()
@@ -490,24 +526,27 @@ fn empty_class(owned: &[&HealthAsset], targets: Targets) -> Option<Vec<Warning>>
     if with_target.is_empty() {
         return None;
     }
-    Some(
-        with_target
-            .into_iter()
-            .filter(|c| counts[*c as usize] == 0)
-            .map(|class| Warning {
-                rule: RuleId::EmptyClass,
-                subject: Subject::Class(class),
-                current: Decimal::ZERO,
-                limit: Decimal::ONE,
-                needed_contribution: None,
-            })
-            .collect(),
-    )
+    let warnings: Vec<Warning> = with_target
+        .into_iter()
+        .filter(|c| counts[*c as usize] == 0)
+        .map(|class| Warning {
+            rule: RuleId::EmptyClass,
+            subject: Subject::Class(class),
+            current: Decimal::ZERO,
+            limit: Decimal::ONE,
+            needed_contribution: None,
+        })
+        .collect();
+    // O número de agora é quantas classes com meta estão vazias.
+    Some(Outcome {
+        current: Decimal::from(warnings.len()),
+        warnings,
+    })
 }
 
 /// Quantos meses de calendário o histórico cobre: do mês do primeiro provento
 /// recebido até o de hoje, inclusive. Zero sem nenhum recebido.
-fn history_months(received: &[&income::Entry], today: Date) -> i32 {
+pub(super) fn history_months(received: &[&income::Entry], today: Date) -> i32 {
     let Some(first) = received.iter().map(|e| e.pay_date).min() else {
         return 0;
     };
@@ -515,7 +554,7 @@ fn history_months(received: &[&income::Entry], today: Date) -> i32 {
     (now.year - first.year) * 12 + i32::from(now.month) - i32::from(first.month) + 1
 }
 
-fn received_entries(income: &IncomeHistory) -> Vec<&income::Entry> {
+pub(super) fn received_entries(income: &IncomeHistory) -> Vec<&income::Entry> {
     income
         .entries
         .iter()
@@ -530,7 +569,7 @@ fn income_every_month(
     owned: &[&HealthAsset],
     income: &IncomeHistory,
     limit: Decimal,
-) -> Option<Vec<Warning>> {
+) -> Option<Outcome> {
     let received = received_entries(income);
     if history_months(&received, income.today) < MIN_HISTORY_MONTHS {
         return None;
@@ -548,7 +587,10 @@ fn income_every_month(
         .collect();
     let covered = Decimal::from(WINDOW_MONTHS - empty_months.len());
     if covered >= limit {
-        return Some(Vec::new());
+        return Some(Outcome {
+            current: covered,
+            warnings: Vec::new(),
+        });
     }
 
     // Quem da carteira de hoje já pagou nesses meses do calendário.
@@ -581,22 +623,25 @@ fn income_every_month(
             .cmp(&a.months.len())
             .then_with(|| a.label.cmp(&b.label))
     });
-    Some(vec![Warning {
-        rule: RuleId::IncomeEveryMonth,
-        subject: Subject::IncomeGaps {
-            empty_months,
-            payers,
-        },
+    Some(Outcome {
         current: covered,
-        limit,
-        needed_contribution: None,
-    }])
+        warnings: vec![Warning {
+            rule: RuleId::IncomeEveryMonth,
+            subject: Subject::IncomeGaps {
+                empty_months,
+                payers,
+            },
+            current: covered,
+            limit,
+            needed_contribution: None,
+        }],
+    })
 }
 
 /// Nenhum pagador acima de `limit`% da renda recebida nos 12 meses que
 /// terminam no mês de hoje (a mesma janela da tela Renda). Com um pagador só,
 /// ele é sempre 100%: dizer isso não ajuda, e a regra fica sem o que medir.
-fn max_payer(income: &IncomeHistory, limit: Decimal) -> Option<Vec<Warning>> {
+fn max_payer(income: &IncomeHistory, limit: Decimal) -> Option<Outcome> {
     if history_months(&received_entries(income), income.today) < MIN_HISTORY_MONTHS {
         return None;
     }
@@ -609,8 +654,11 @@ fn max_payer(income: &IncomeHistory, limit: Decimal) -> Option<Vec<Warning>> {
     if payers.len() < 2 {
         return None;
     }
-    Some(
-        payers
+    // `by_payer` vem do maior para o menor.
+    let biggest = payers.first().map_or(Decimal::ZERO, |p| p.percent);
+    Some(Outcome {
+        current: biggest,
+        warnings: payers
             .into_iter()
             .filter(|p| p.percent > limit)
             .map(|p| Warning {
@@ -626,7 +674,7 @@ fn max_payer(income: &IncomeHistory, limit: Decimal) -> Option<Vec<Warning>> {
                 needed_contribution: None,
             })
             .collect(),
-    )
+    })
 }
 
 #[cfg(test)]
@@ -1274,6 +1322,47 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    fn current_of(evaluation: &Evaluation, rule: RuleId) -> Option<Decimal> {
+        evaluation
+            .rules
+            .iter()
+            .find(|r| r.rule == rule)
+            .and_then(|r| r.current)
+    }
+
+    #[test]
+    fn every_rule_reports_the_number_it_measured_even_inside_the_limit() {
+        let assets = [
+            asset("AAAA3", AssetClass::BrStocks, dec!(500), Some("Financeiro")),
+            asset("BBBB3", AssetClass::BrStocks, dec!(300), Some("Energia")),
+            asset("CCCC3", AssetClass::BrStocks, dec!(200), Some("Energia")),
+            asset("DDDD11", AssetClass::BrReits, dec!(0), None),
+        ];
+        let goals = targets(&[(AssetClass::BrStocks, 5000), (AssetClass::BrReits, 5000)]);
+        let e = evaluate(&HealthConfig::default(), &assets, goals, &no_income());
+        // A maior fatia, os cinco maiores (com 3 ativos a regra não mede), o
+        // maior setor dentro das ações, a classe mais rasa e as classes vazias.
+        assert_eq!(current_of(&e, RuleId::MaxAsset), Some(dec!(50)));
+        assert_eq!(current_of(&e, RuleId::TopFive), None);
+        assert_eq!(current_of(&e, RuleId::MaxSector), Some(dec!(50)));
+        assert_eq!(current_of(&e, RuleId::MinAssets), Some(dec!(3)));
+        assert_eq!(current_of(&e, RuleId::EmptyClass), Some(dec!(1)));
+        // Sem proventos, as de renda não têm o que medir.
+        assert_eq!(current_of(&e, RuleId::IncomeEveryMonth), None);
+        assert_eq!(current_of(&e, RuleId::MaxPayer), None);
+        // Desligada: sem número.
+        let mut off = HealthConfig::default();
+        off.set(
+            RuleId::MaxAsset,
+            RuleSetting {
+                enabled: false,
+                threshold: Some(dec!(15)),
+            },
+        );
+        let e = evaluate(&off, &assets, goals, &no_income());
+        assert_eq!(current_of(&e, RuleId::MaxAsset), None);
     }
 
     proptest! {
