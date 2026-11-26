@@ -17,6 +17,10 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   do teto que você define, o ativo fica fora do aporte; com o limite, nenhum
   ativo passa de X% da carteira, e o excedente vai para os outros da classe.
   Preço médio não entra na conta: o Prumo não compra mais só porque caiu.
+  O teto é opcional: sem ele, o aporte segue pelo preço de hoje (a escolha é
+  sua) e o ativo que recebe dinheiro traz uma nota com as referências públicas
+  de Bazin e de Graham e se o preço está acima ou abaixo de cada uma, só para
+  informar.
 - **Negociado na B3** — um ETF de bitcoin conta em Cripto, um BDR ou ETF de
   S&P 500 em Ações Internacionais, cotados na B3 em cota inteira.
 - **Atual × ideal por ativo** — a Carteira mostra, em cada ativo, quanto ele é

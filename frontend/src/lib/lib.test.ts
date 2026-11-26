@@ -28,7 +28,7 @@ import {
 import { balanceTargets, isComplete, PRESETS, sameTargets, sumTargets, targetsFromClasses } from "./goals";
 import { centsFromInput, formatMoneyInput, reaisFromInput } from "./moneyMask";
 import { createMoney, MASK_BRL, MASK_QUANTITY } from "./money";
-import { looksMissingB3Flag, noticeText, unitLine } from "./planText";
+import { looksMissingB3Flag, noticeText, referenceNoteText, unitLine } from "./planText";
 import { HIDE_VALUES_KEY, readHideValues, saveHideValues } from "./privacy";
 import { assetName } from "./rating";
 import { hashSegments, navigate, parseRoute, parseSection } from "./route";
@@ -286,6 +286,32 @@ describe("planText", () => {
     expect(noticeText({ code: "assets_without_price", symbols: ["XYZW11"] }, [], shown)).toContain("XYZW11");
     expect(noticeText({ code: "assets_without_score", symbols: ["MXRF11", "ITSA4"] }, [], shown)).toContain("MXRF11, ITSA4");
     expect(noticeText({ code: "no_targets" }, [], shown)).toContain("metas");
+  });
+
+  it("o aviso do ativo sem teto diz, em palavras, de que lado do Bazin e do Graham o preço está", () => {
+    const note = (price: number, bazin: number | null, graham: number | null, money = shown) =>
+      nbsp(referenceNoteText({ unit_price: price }, { bazin, graham }, money));
+    expect(note(55.15, 18.69, 77.77)).toBe(
+      "Sem teto de preço. Referências públicas: Bazin R$ 18,69 e Graham R$ 77,77; hoje R$ 55,15 (acima do Bazin, abaixo do Graham). A decisão de aportar é sua.",
+    );
+    expect(note(10, 18.69, 77.77)).toContain("(abaixo do Bazin e do Graham)");
+    expect(note(90, 18.69, 77.77)).toContain("(acima do Bazin e do Graham)");
+    expect(note(90, 100, 77.77)).toContain("(abaixo do Bazin, acima do Graham)");
+    // No centavo: 18,69 é igual a 18,694, e o texto não força um lado.
+    expect(note(18.694, 18.69, 77.77)).toContain("(igual ao Bazin, abaixo do Graham)");
+    expect(note(20.12, 20.12, 20.121)).toContain("(igual ao Bazin e ao Graham)");
+    // Uma referência só: texto no singular, sem a outra.
+    expect(note(55.15, null, 20.12)).toBe(
+      "Sem teto de preço. Referência pública: Graham R$ 20,12; hoje R$ 55,15 (acima do Graham). A decisão de aportar é sua.",
+    );
+    expect(note(15, 18.69, null)).toContain("Referência pública: Bazin R$ 18,69; hoje R$ 15,00 (abaixo do Bazin)");
+    // Olho fechado: nenhum valor em reais; o lado (acima/abaixo) continua.
+    const hidden = note(55.15, 18.69, 77.77, createMoney(true));
+    expect(hidden).not.toMatch(/R\$\s*\d/);
+    expect(hidden).toContain(MASK_BRL);
+    expect(hidden).toContain("(acima do Bazin, abaixo do Graham)");
+    // Sem recomendação: nada de "compre", "oportunidade", "preço justo" ou "upside".
+    expect(note(10, 18.69, 77.77)).not.toMatch(/compre|oportunidade|justo|upside/i);
   });
 
   it("a classe bloqueada diz o que falta nela", () => {

@@ -17,6 +17,7 @@ mod live;
 mod objectives;
 mod ops;
 mod performance;
+mod price_references;
 mod profit;
 pub(crate) mod tax;
 mod treasury;

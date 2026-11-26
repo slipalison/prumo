@@ -13,10 +13,11 @@ use rust_decimal::Decimal;
 use time::{Date, Duration, OffsetDateTime};
 use uuid::Uuid;
 
+use crate::domain::allocation::Plan;
 use crate::domain::analysis::highlights::{self, Mover, Ranking};
 use crate::domain::analysis::profile::{self, Mix};
-use crate::domain::analysis::quality::{self, Attention, Facts, QualityAsset};
-use crate::domain::analysis::references::{self, Bazin};
+use crate::domain::analysis::quality::{self, Attention};
+use crate::domain::analysis::references::{self, Bazin, PriceReferences};
 use crate::domain::analysis::returns::{self, Benchmark, Horizon, ReturnsFacts};
 use crate::domain::analysis::{
     self as rules, AnalysisAsset, AnalysisConfig, DimensionReport, Input, RuleResult,
@@ -31,7 +32,7 @@ use crate::history::IndexCode;
 use crate::performance::{self as series, Indexes};
 use crate::quotes::fx_symbol;
 use crate::service::{self, AssetView, PortfolioView};
-use crate::store::{Store, StoreError};
+use crate::store::{Asset, Store, StoreError};
 
 /// O fechamento de base dos 12 meses pode ser de até 10 dias antes da data
 /// (fim de semana, feriado, papel sem negócio): mais velho que isso o preço
@@ -226,74 +227,127 @@ fn rank(movers: impl Iterator<Item = Mover>) -> Ranking {
     highlights::rank(movers.collect())
 }
 
-/// Bazin (e Graham, quando houver fundamentos) dos ativos da B3 que pagam
-/// dividendo. O histórico por cota vem do cache do Yahoo (em reais); o que o
-/// cache não conhece fica sem referência.
-async fn build_references(
+/// O símbolo da cotação (a chave do cache de dividendos) de um ativo que pode
+/// ter referência de preço: Ação Nacional ou FII da B3, com símbolo.
+fn reference_symbol(asset: &Asset) -> Option<String> {
+    let listed = matches!(
+        asset.asset_class,
+        AssetClass::BrStocks | AssetClass::BrReits
+    ) && asset.market() == Market::B3;
+    if !listed {
+        return None;
+    }
+    asset.market().quote_symbol(asset.symbol.as_deref()?)
+}
+
+/// As referências de Bazin e de Graham de cada ativo dado, só com o que já está
+/// guardado: o histórico de dividendos por cota do cache do Yahoo (em reais) e
+/// os `fundamentals` que o chamador leu. Não espera a rede. O rendimento-alvo é
+/// o da pessoa. Ativo fora de Ações Nacionais e FIIs da B3, ou sem nenhuma das
+/// duas referências, não entra no mapa.
+///
+/// É a conta única que a Análise (`build_references`) e o aviso do aporte
+/// (`plan_references`) usam.
+pub async fn price_references(
     store: &Store,
     user: Uuid,
-    view: &PortfolioView,
+    assets: &[&Asset],
     today: Date,
-    quality: &[QualityAsset],
-) -> Result<ReferencesReport, StoreError> {
+    fundamentals: &HashMap<String, AssetFundamentals>,
+) -> Result<(Decimal, HashMap<Uuid, PriceReferences>), StoreError> {
     let bazin_yield = store.bazin_yield(user).await?;
-    let payers: Vec<(&AssetView, String)> = view
-        .assets
+    let payers: Vec<(&Asset, String)> = assets
         .iter()
-        .filter(|a| {
-            matches!(
-                a.asset.asset_class,
-                AssetClass::BrStocks | AssetClass::BrReits
-            ) && a.asset.market() == Market::B3
-        })
-        .filter_map(|a| {
-            Some((
-                a,
-                a.asset.market().quote_symbol(a.asset.symbol.as_deref()?)?,
-            ))
-        })
+        .filter_map(|asset| Some((*asset, reference_symbol(asset)?)))
         .collect();
     let symbols: Vec<String> = payers.iter().map(|(_, s)| s.clone()).collect();
     let cache = store.dividend_cache(&symbols).await?;
-    let mut items: Vec<ReferenceItem> = payers
+    let found = payers
         .into_iter()
-        .filter_map(|(asset, symbol)| {
-            let bazin = cache
-                .get(&symbol)
+        .filter_map(|(asset, quote_symbol)| {
+            let points: Option<Vec<DividendPoint>> = cache
+                .get(&quote_symbol)
                 .filter(|c| c.currency == "BRL")
-                .and_then(|cached| {
-                    let points: Vec<DividendPoint> = cached
+                .map(|cached| {
+                    cached
                         .events
                         .iter()
                         .map(|e| DividendPoint {
                             ex_date: e.ex_date,
                             amount: e.amount,
                         })
-                        .collect();
-                    references::bazin(&points, today, bazin_yield)
+                        .collect()
                 });
-            // O Graham pede lucro e patrimônio por ação, os dois positivos.
-            let graham = quality
-                .iter()
-                .find(|q| q.id == asset.asset.id)
-                .and_then(|q| match &q.facts {
-                    Facts::Company(c) => c.per_share,
-                    Facts::Fund(_) => None,
-                })
-                .and_then(|(earnings, book)| references::graham(earnings, book));
-            (bazin.is_some() || graham.is_some()).then(|| ReferenceItem {
+            let references = references::price_references(
+                points.as_deref(),
+                asset
+                    .symbol
+                    .as_deref()
+                    .and_then(|symbol| fundamentals.get(symbol)),
+                today,
+                bazin_yield,
+            );
+            references.any().then_some((asset.id, references))
+        })
+        .collect();
+    Ok((bazin_yield, found))
+}
+
+/// Bazin (e Graham, quando houver fundamentos) dos ativos da carteira, para a
+/// tela de Análise.
+async fn build_references(
+    store: &Store,
+    user: Uuid,
+    view: &PortfolioView,
+    today: Date,
+    fundamentals: &HashMap<String, AssetFundamentals>,
+) -> Result<ReferencesReport, StoreError> {
+    let assets: Vec<&Asset> = view.assets.iter().map(|a| &a.asset).collect();
+    let (bazin_yield, found) = price_references(store, user, &assets, today, fundamentals).await?;
+    let mut items: Vec<ReferenceItem> = view
+        .assets
+        .iter()
+        .filter_map(|asset| {
+            let references = found.get(&asset.asset.id)?;
+            Some(ReferenceItem {
                 asset_id: asset.asset.id,
                 label: asset.label(),
                 asset_class: asset.asset.asset_class,
                 unit_price: asset.unit_price,
                 max_price: asset.asset.max_price,
-                bazin,
-                graham,
+                bazin: references.bazin,
+                graham: references.graham,
             })
         })
         .collect();
     items.sort_by(|a, b| a.label.cmp(&b.label));
     Ok(ReferencesReport { bazin_yield, items })
+}
+
+/// As referências dos ativos que o plano manda comprar e que **não têm teto**:
+/// é o aviso informativo do aporte (nada bloqueia, nada preenche o teto). Lê
+/// os fundamentos só desses ativos e nada da rede. Ativo com teto, ou sem
+/// nenhuma das duas referências, não entra.
+pub async fn plan_references(
+    store: &Store,
+    user: Uuid,
+    plan: &Plan,
+    view: &PortfolioView,
+    today: Date,
+) -> Result<HashMap<Uuid, PriceReferences>, StoreError> {
+    let without_ceiling: Vec<&Asset> = plan
+        .items
+        .iter()
+        .filter_map(|item| view.asset(item.asset_id))
+        .map(|view| &view.asset)
+        .filter(|asset| asset.max_price.is_none() && reference_symbol(asset).is_some())
+        .collect();
+    if without_ceiling.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let fundamentals = store.fundamentals_for_assets(&without_ceiling).await?;
+    let (_, found) = price_references(store, user, &without_ceiling, today, &fundamentals).await?;
+    Ok(found)
 }
 
 /// A análise inteira da carteira da pessoa.
@@ -336,7 +390,7 @@ pub async fn report(
             target: profile::target(view.targets),
         },
         highlights: build_highlights(store, user, &view, today).await?,
-        references: build_references(store, user, &view, today, &quality).await?,
+        references: build_references(store, user, &view, today, fundamentals).await?,
         unclassified_count: unclassified_count(&view),
     })
 }

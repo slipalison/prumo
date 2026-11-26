@@ -1,4 +1,4 @@
-import type { Asset, PlanItem, PlanNotice } from "../api/types";
+import type { Asset, PlanItem, PlanNotice, PriceReferences } from "../api/types";
 import { acceptsB3Listing, CLASS_META, looksLikeB3Ticker, nounOf, unitOf } from "./assetClasses";
 import { formatPercent, plural } from "./format";
 import type { Money } from "./money";
@@ -80,4 +80,45 @@ export function unitLine(item: PlanItem, money: Money): string {
     return `${money.quantity(item.quantity, true)} ${item.symbol ?? ""} × ${money.brl(item.unit_price)}`;
   }
   return `${money.quantity(item.quantity, unit === "fraction")} ${plural(item.quantity, nounOf(item.asset_class, item.listed_on_b3, item.treasury))} × ${money.brl(item.unit_price)}`;
+}
+
+type Side = "above" | "below" | "equal";
+
+/** De que lado da referência o preço de hoje está, no centavo. */
+function sideOf(price: number, reference: number): Side {
+  const cents = Math.round(price * 100);
+  const referenceCents = Math.round(reference * 100);
+  if (cents === referenceCents) return "equal";
+  return cents > referenceCents ? "above" : "below";
+}
+
+const SIDE_WORD: Record<Side, string> = { above: "acima do", below: "abaixo do", equal: "igual ao" };
+/** A preposição do segundo nome quando os dois estão do mesmo lado: "acima do Bazin e do Graham". */
+const SIDE_AND: Record<Side, string> = { above: "do", below: "do", equal: "ao" };
+
+/**
+ * O aviso do ativo sem teto: as referências públicas de Bazin e de Graham, o
+ * preço de hoje e de que lado dele está cada uma, dito em palavras. É só
+ * informação: o texto não recomenda nada e deixa a decisão com a pessoa.
+ */
+export function referenceNoteText(item: Pick<PlanItem, "unit_price">, references: PriceReferences, money: Money): string {
+  const found: Array<{ name: string; value: number; side: Side }> = [];
+  for (const [name, value] of [
+    ["Bazin", references.bazin],
+    ["Graham", references.graham],
+  ] as const) {
+    if (value !== null) found.push({ name, value, side: sideOf(item.unit_price, value) });
+  }
+  const [first, second] = found;
+  let where = "";
+  if (first && second) {
+    where =
+      first.side === second.side
+        ? `${SIDE_WORD[first.side]} ${first.name} e ${SIDE_AND[first.side]} ${second.name}`
+        : `${SIDE_WORD[first.side]} ${first.name}, ${SIDE_WORD[second.side]} ${second.name}`;
+  } else if (first) {
+    where = `${SIDE_WORD[first.side]} ${first.name}`;
+  }
+  const shown = joinNames(found.map(({ name, value }) => `${name} ${money.brl(value)}`));
+  return `Sem teto de preço. ${found.length > 1 ? "Referências públicas" : "Referência pública"}: ${shown}; hoje ${money.brl(item.unit_price)} (${where}). A decisão de aportar é sua.`;
 }

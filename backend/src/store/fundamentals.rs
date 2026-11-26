@@ -17,7 +17,7 @@ use sqlx::{FromRow, Postgres, Transaction};
 use time::{Date, OffsetDateTime};
 use uuid::Uuid;
 
-use super::{decode_error, Store, StoreError};
+use super::{decode_error, Asset, Store, StoreError};
 use crate::domain::asset_class::{AssetClass, Market};
 use crate::domain::fundamentals::{
     company_metrics, coverage, fund_metrics, AssetFundamentals, Column, Coverage, Figure, Filing,
@@ -698,10 +698,20 @@ impl Store {
         user: Uuid,
     ) -> Result<HashMap<String, AssetFundamentals>, StoreError> {
         let assets = self.assets(user).await?;
+        let assets: Vec<&Asset> = assets.iter().collect();
+        self.fundamentals_for_assets(&assets).await
+    }
+
+    /// Os indicadores só dos ativos dados (o aviso do aporte lê só os do
+    /// plano). Mesmo resultado de [`Store::fundamentals_for_user`] para eles.
+    pub async fn fundamentals_for_assets(
+        &self,
+        assets: &[&Asset],
+    ) -> Result<HashMap<String, AssetFundamentals>, StoreError> {
         let mut out = HashMap::new();
         let mut companies: Vec<(String, String)> = Vec::new();
         let mut funds: Vec<(String, String)> = Vec::new();
-        for asset in &assets {
+        for asset in assets.iter().copied() {
             let Some(symbol) = asset.symbol.clone() else {
                 continue;
             };

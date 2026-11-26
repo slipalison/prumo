@@ -186,6 +186,27 @@ leva o aporte inteiro. O teto é por ativo e serve para quem tem preço por
 unidade (renda fixa por valor não tem). Em ativo cotado em dólar, o teto é em
 reais, contra o preço já convertido.
 
+### Sem teto: o aviso do aporte (informativo)
+
+O teto é **opcional**, e a escolha de aportar ao preço de hoje, sem teto
+nenhum, é da pessoa: nada bloqueia, nada preenche o teto sozinho e o motor não
+olha para o aviso. No resultado do plano, cada ativo que **recebe** dinheiro e
+**não tem teto** ganha, quando há, as referências públicas de Bazin e de
+Graham (as da Análise, ver [`analise.md`](analise.md#referências-de-preço)) ao
+lado do preço de hoje, com o lado de cada uma dito em texto: "Sem teto de
+preço. Referências públicas: Bazin R$ 18,69 e Graham R$ 77,77; hoje R$ 55,15
+(acima do Bazin, abaixo do Graham). A decisão de aportar é sua."
+
+- É só informação, calculada **depois** do plano (`analysis::plan_references`),
+  só com o que já está guardado (dividendos em cache e fundamentos gravados), sem
+  rede, e só para os ativos do plano. As quantidades, os valores, as sobras e os
+  avisos do motor são **idênticos** com e sem ela (há teste de integração).
+- Ativo **com** teto não ganha aviso: o critério já é o da pessoa. Ativo sem
+  nenhuma das duas referências (cripto, exterior, renda fixa, sem dividendo e sem
+  lucro e patrimônio por ação) também não.
+- O texto não diz "compre", "oportunidade", "preço justo" nem "upside": são
+  referências públicas, não recomendação.
+
 ### Limite de concentração (`max_asset_percent`)
 
 Um percentual por pessoa: nenhum ativo passa de X% de `N`, a carteira depois do
@@ -254,6 +275,8 @@ cada execução):
   máximo meia unidade de cada item.
 - Com o limite ligado, nenhum ativo que recebe termina acima de X% de `N` (com
   a folga do centavo do arredondamento do valor).
+- O aviso de quem está sem teto não entra na conta: o plano com e sem ele é o
+  mesmo, número por número.
 - Sem teto e sem limite, o plano é **idêntico** ao do motor anterior às duas
   regras (uma cópia congelada dele, `domain/allocation/legacy.rs`, é o
   oráculo); e um limite de 100% não muda nada.

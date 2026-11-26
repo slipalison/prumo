@@ -258,6 +258,14 @@ sobre o histórico de dividendos, sem dizer se o ativo está barato ou caro.
   referência só, é ela. Abaixo dele, o preço passa nos dois critérios
   (dividendos e lucro com patrimônio). Não é a média: a média deixaria passar
   um preço acima de uma das duas. A pessoa não escolhe fórmula.
+- **Uma conta só**: a Análise (`analysis::build_references`) e o aviso do aporte
+  para ativo sem teto (`analysis::plan_references`, ver
+  [`alocacao.md`](alocacao.md#sem-teto-o-aviso-do-aporte-informativo)) usam a
+  mesma função, `analysis::price_references`, que por sua vez chama
+  `references::price_references` (domínio puro: dividendos + fundamentos →
+  Bazin e Graham). O rendimento-alvo é sempre o da pessoa. Como a conta não
+  depende do valor em carteira, um ativo recém-cadastrado, ainda sem quantidade,
+  também recebe Graham.
 - **Teto de preço**: a tela mostra as referências ao lado do teto que a pessoa
   pôs no ativo (`max_price`) e do preço de hoje. Um botão só ("Usar R$ X como
   meu teto") aplica o valor pelas duas como teto **depois de uma confirmação**,

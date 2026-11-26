@@ -331,6 +331,7 @@ export function samplePlan(amount = 6000): Plan {
         divisible: false,
         class_percent_after: 100,
         estimated_monthly_income: null,
+        price_references: null,
       },
       {
         asset_id: "a-btlg",
@@ -345,6 +346,7 @@ export function samplePlan(amount = 6000): Plan {
         divisible: false,
         class_percent_after: 26.8,
         estimated_monthly_income: null,
+        price_references: null,
       },
       {
         asset_id: "a-trxf",
@@ -359,6 +361,7 @@ export function samplePlan(amount = 6000): Plan {
         divisible: false,
         class_percent_after: 24.6,
         estimated_monthly_income: null,
+        price_references: null,
       },
       {
         asset_id: "a-btc",
@@ -373,6 +376,7 @@ export function samplePlan(amount = 6000): Plan {
         divisible: true,
         class_percent_after: 100,
         estimated_monthly_income: null,
+        price_references: null,
       },
     ],
     classes: [

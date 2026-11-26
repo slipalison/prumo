@@ -11,7 +11,7 @@ import { MagneticButton } from "../../components/MagneticButton";
 import { CLASS_META, classColor } from "../../lib/assetClasses";
 import { cx } from "../../lib/cx";
 import { formatPercent, plural } from "../../lib/format";
-import { noticeText, unitLine } from "../../lib/planText";
+import { noticeText, referenceNoteText, unitLine } from "../../lib/planText";
 import { useMoney } from "../../lib/privacy";
 import { assetName, findAssetByLabel, isAboveCeiling } from "../../lib/rating";
 import { ItemIncome, PlanIncomeLine } from "../income/PlanIncomeLine";
@@ -198,6 +198,11 @@ export function PlanResult({ plan, assets, onConfirm, ...actions }: PlanResultPr
                   <span className="plan-card__units">{unitLine(item, money)}</span>
                 </div>
                 <ItemIncome monthly={item.estimated_monthly_income} />
+                {item.price_references && (
+                  <p className="plan-card__reference" role="note">
+                    {referenceNoteText(item, item.price_references, money)}
+                  </p>
+                )}
               </GlassCard>
             </motion.li>
           ))}

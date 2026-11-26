@@ -13,6 +13,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use super::income::PlanIncomeDto;
+use super::price_references::PriceReferencesDto;
 use super::profit::ProfitDto;
 use crate::domain::allocation::{ClassOutcome, Notice, Plan};
 use crate::domain::asset_class::{AssetClass, Checklist};
@@ -477,6 +478,9 @@ pub struct PlanItemDto {
     /// Renda mensal que o item soma, estimada (`null` sem histórico do ativo).
     #[serde(with = "decimal_out::option")]
     pub estimated_monthly_income: Option<Decimal>,
+    /// As referências de Bazin e de Graham, só informativas: presente quando o
+    /// ativo não tem teto e há ao menos uma. `null` nos demais.
+    pub price_references: Option<PriceReferencesDto>,
 }
 
 #[derive(Debug, Serialize)]
@@ -625,6 +629,7 @@ impl PlanDto {
                     divisible: item.divisible,
                     class_percent_after: item.class_percent_after,
                     estimated_monthly_income: None,
+                    price_references: None,
                 }
             })
             .collect();

@@ -499,6 +499,15 @@ Calcula, não grava.
   **estimada** (o que a cota pagou em 12 meses × a quantidade comprada ÷ 12,
   em reais, bruto). `null` quando o ativo não tem histórico em cache (renda
   fixa, cripto, histórico ainda não buscado ou provedor fora do ar).
+- `items[].price_references`: o aviso de quem está **sem teto**
+  (`max_price` nulo), só informativo: `{ "bazin": 18.69, "graham": 77.77 }`, cada
+  um `null` quando falta dado (Bazin: histórico de dividendos em cache; Graham:
+  lucro e patrimônio por ação positivos). O objeto inteiro é `null` quando o
+  ativo tem teto ou não tem nenhuma das duas referências (cripto, exterior, renda
+  fixa). São os mesmos números de `GET /analysis` (`references.items[]`, com o
+  rendimento-alvo do Bazin da pessoa), lidos só do que já está guardado, sem
+  rede. O plano não muda por causa dele; a tela compara com `unit_price`.
+  Referência pública, não é recomendação.
 - `income`: o que o aporte soma por mês (`added_monthly`, a soma dos itens) e a
   renda mensal estimada da carteira antes e depois. É estimativa, nunca
   extrato; o motor não olha para ela.

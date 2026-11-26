@@ -14,6 +14,7 @@ use rust_decimal::{Decimal, MathematicalOps};
 use time::Date;
 
 use crate::domain::allocation::round_cents;
+use crate::domain::fundamentals::{AssetFundamentals, CompanyMetrics};
 use crate::domain::income::DividendPoint;
 use crate::domain::performance::months_before;
 
@@ -95,6 +96,48 @@ pub fn graham(earnings_per_share: Decimal, book_value_per_share: Decimal) -> Opt
     product.sqrt().map(round_cents)
 }
 
+/// Lucro e patrimônio por ação (reais) de uma companhia, quando a B3 informou
+/// as ações e os dois números existem. É o que o Graham pede.
+pub fn company_per_share(metrics: &CompanyMetrics) -> Option<(Decimal, Decimal)> {
+    metrics
+        .earnings_per_share
+        .value()
+        .zip(metrics.book_value_per_share.value())
+}
+
+/// As duas referências de preço de um ativo, as que existem.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PriceReferences {
+    pub bazin: Option<Bazin>,
+    pub graham: Option<Decimal>,
+}
+
+impl PriceReferences {
+    /// Se o ativo tem ao menos uma das duas.
+    pub fn any(&self) -> bool {
+        self.bazin.is_some() || self.graham.is_some()
+    }
+}
+
+/// As referências de um ativo a partir do que já está guardado: o histórico de
+/// dividendos por cota (em reais; `None` se nunca foi buscado) e os
+/// fundamentos. A Análise e o aviso do aporte chamam esta mesma conta.
+pub fn price_references(
+    dividends: Option<&[DividendPoint]>,
+    fundamentals: Option<&AssetFundamentals>,
+    today: Date,
+    target_yield: Decimal,
+) -> PriceReferences {
+    let bazin = dividends.and_then(|points| bazin(points, today, target_yield));
+    // O Graham pede lucro e patrimônio por ação, os dois positivos.
+    let graham = match fundamentals {
+        Some(AssetFundamentals::Company(metrics)) => company_per_share(metrics),
+        _ => None,
+    }
+    .and_then(|(earnings, book)| graham(earnings, book));
+    PriceReferences { bazin, graham }
+}
+
 /// O teto pelas duas referências: o **menor** dos valores que existem. Abaixo
 /// dele, o preço passa nos dois critérios (dividendos e lucro com patrimônio);
 /// a média deixaria passar um preço acima de um deles. Com uma só, é ela.
@@ -108,6 +151,7 @@ pub fn combined_ceiling(bazin: Option<Decimal>, graham: Option<Decimal>) -> Opti
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::fundamentals::{Figure, Gap, Template, Unsupported, YearCount};
     use proptest::prelude::*;
     use rust_decimal_macros::dec;
     use time::macros::date;
@@ -200,6 +244,99 @@ mod tests {
         assert_eq!(graham(dec!(0), dec!(10)), None);
         assert_eq!(graham(dec!(-1), dec!(10)), None);
         assert_eq!(graham(dec!(4), dec!(-10)), None);
+    }
+
+    fn company(
+        earnings_per_share: Option<Decimal>,
+        book_value_per_share: Option<Decimal>,
+    ) -> AssetFundamentals {
+        let figure = |value: Option<Decimal>| {
+            value.map_or_else(|| Figure::missing(Gap::NoShares), Figure::known)
+        };
+        AssetFundamentals::Company(Box::new(CompanyMetrics {
+            cvm_code: 1,
+            name: "EMPRESA FICTICIA".to_owned(),
+            template: Template::Commercial,
+            judicial_recovery: None,
+            issuer_status: None,
+            registration_status: None,
+            years: Vec::new(),
+            trailing: None,
+            profitable_years: YearCount {
+                positive: 0,
+                known: 0,
+                window: 0,
+                gap: None,
+            },
+            positive_operating_cash_years: YearCount {
+                positive: 0,
+                known: 0,
+                window: 0,
+                gap: None,
+            },
+            revenue_cagr: Figure::missing(Gap::NoFiling),
+            earnings_cagr: Figure::missing(Gap::NoFiling),
+            latest_filing: None,
+            shares: None,
+            earnings_per_share: figure(earnings_per_share),
+            book_value_per_share: figure(book_value_per_share),
+            synced_at: None,
+        }))
+    }
+
+    #[test]
+    fn price_references_join_the_dividends_and_the_fundamentals() {
+        let points = [
+            point(date!(2026 - 08 - 10), dec!(0.30)),
+            point(date!(2026 - 02 - 10), dec!(0.30)),
+        ];
+        // Bazin 0,60 ÷ 6% = 10; Graham √(22,5 × 4 × 10) = 30.
+        let both = price_references(
+            Some(&points),
+            Some(&company(Some(dec!(4)), Some(dec!(10)))),
+            TODAY,
+            dec!(6),
+        );
+        assert_eq!(both.bazin.map(|b| b.price), Some(dec!(10)));
+        assert_eq!(both.graham, Some(dec!(30)));
+        assert!(both.any());
+        // A mesma conta que as funções soltas: nada de segunda fórmula.
+        assert_eq!(both.bazin, bazin(&points, TODAY, dec!(6)));
+        assert_eq!(both.graham, graham(dec!(4), dec!(10)));
+        // Só o Bazin: sem fundamentos, ou fundamentos sem lucro e patrimônio.
+        for fundamentals in [None, Some(company(None, Some(dec!(10))))] {
+            let only = price_references(Some(&points), fundamentals.as_ref(), TODAY, dec!(6));
+            assert_eq!(only.graham, None);
+            assert_eq!(only.bazin.map(|b| b.price), Some(dec!(10)));
+        }
+        // Só o Graham: dividendo nunca buscado ou sem pagamento.
+        for dividends in [None, Some(&[][..])] {
+            let only = price_references(
+                dividends,
+                Some(&company(Some(dec!(4)), Some(dec!(10)))),
+                TODAY,
+                dec!(6),
+            );
+            assert_eq!(only.bazin, None);
+            assert_eq!(only.graham, Some(dec!(30)));
+        }
+    }
+
+    #[test]
+    fn no_reference_means_none_and_loss_makes_no_graham() {
+        assert_eq!(
+            price_references(None, None, TODAY, dec!(6)),
+            PriceReferences::default()
+        );
+        assert!(!PriceReferences::default().any());
+        // Prejuízo (LPA negativo) e fundo: a raiz não existe.
+        let loss = company(Some(dec!(-1)), Some(dec!(10)));
+        assert_eq!(
+            price_references(None, Some(&loss), TODAY, dec!(6)).graham,
+            None
+        );
+        let unsupported = AssetFundamentals::Unsupported(Unsupported::NotListedOnB3);
+        assert!(!price_references(None, Some(&unsupported), TODAY, dec!(6)).any());
     }
 
     #[test]

@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use super::dto::*;
 use super::{treasury, ApiJson, ApiPath, ApiQuery, AppState, CurrentUser};
+use crate::analysis;
 use crate::domain::allocation::{round_cents, Targets, FULL_BP};
 use crate::domain::asset_class::{normalize_symbol, AssetClass, Checklist, Market, UnitKind};
 use crate::domain::income::today_in_brazil;
@@ -469,11 +470,15 @@ pub async fn plan(
     let amount = non_negative("O valor do aporte", body.amount)?;
     let (plan, view) = service::plan(&state.store, user.id, amount).await?;
     // Só o cache: o plano não espera o provedor de dividendos.
-    let income = state
-        .income
-        .estimate(&view, today_in_brazil(time::OffsetDateTime::now_utc()))
-        .await;
-    Ok(Json(PlanDto::new(&plan, &view).with_income(&income)))
+    let today = today_in_brazil(time::OffsetDateTime::now_utc());
+    let income = state.income.estimate(&view, today).await;
+    // O aviso de quem está sem teto: só o que já está guardado, nunca a rede.
+    let references = analysis::plan_references(&state.store, user.id, &plan, &view, today).await?;
+    Ok(Json(
+        PlanDto::new(&plan, &view)
+            .with_income(&income)
+            .with_price_references(&references),
+    ))
 }
 
 pub async fn record_contribution(

@@ -204,6 +204,17 @@ export type PlanItem = {
   class_percent_after: number;
   /** Renda mensal que este item soma, estimada pelo histórico por cota; `null` sem histórico. */
   estimated_monthly_income: number | null;
+  /**
+   * Referências públicas de preço (Bazin e Graham), só informativas: presente
+   * quando o ativo não tem teto e há ao menos uma. `null` nos demais.
+   */
+  price_references: PriceReferences | null;
+};
+
+/** Cada referência é `null` quando falta dado (sem dividendo, sem lucro ou patrimônio por ação). */
+export type PriceReferences = {
+  bazin: number | null;
+  graham: number | null;
 };
 
 export type PlanClassStatus =

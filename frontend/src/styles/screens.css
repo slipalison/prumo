@@ -231,6 +231,16 @@
   white-space: nowrap;
 }
 
+/* O aviso do ativo sem teto: informativo, discreto, com a mesma largura do cartão. */
+.plan-card__reference {
+  margin: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
 .plan__balance {
   display: flex;
   flex-direction: column;

@@ -162,6 +162,15 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
      R$ 30,00" abre a folha do ativo, onde o teto está; "XPTO3 chegou no seu
      limite de 15% da carteira" (e a classe bloqueada pelo limite) leva ao
      controle do limite.
+   - Ativo **sem teto** de preço, com Bazin e/ou Graham: o cartão leva, abaixo
+     da renda, uma nota (`role="note"`, texto pequeno e discreto, separada por um
+     filete) como "Sem teto de preço. Referências públicas: Bazin R$ 18,69 e
+     Graham R$ 77,77; hoje R$ 55,15 (acima do Bazin, abaixo do Graham). A decisão
+     de aportar é sua." O lado vem sempre em palavras (acima, abaixo, igual no
+     centavo), nunca só por cor. Só informa: não bloqueia, não preenche o teto
+     e não tem botão. Com o olho fechado, os R$ saem mascarados (inclusive para o
+     leitor de tela) e o "acima/abaixo" continua. Ativo com teto, ou sem nenhuma
+     das duas referências, não tem nota.
    - Botão **"Já comprei"** → registra o aporte (com chance de ajustar
      quantidades antes) → confete.
 6. Carteira vazia: o prumo balançando e um convite de um toque para montar a

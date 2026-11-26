@@ -529,3 +529,176 @@ fn rule_warnings(body: &Value) -> usize {
         .filter(|r| r["status"] == "warning")
         .count()
 }
+
+// ------------------------------------------- aviso do aporte sem teto --
+
+fn plan_item<'a>(plan: &'a Value, symbol: &str) -> &'a Value {
+    plan["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["symbol"] == symbol)
+        .unwrap_or_else(|| panic!("{symbol} fora do plano: {plan}"))
+}
+
+async fn plan_of(app: &TestApp, amount: u32) -> (Value, std::time::Duration) {
+    let started = std::time::Instant::now();
+    let reply = post(&app.router, "/api/v1/plans", json!({ "amount": amount })).await;
+    let took = started.elapsed();
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text);
+    (reply.body, took)
+}
+
+/// O plano sem o aviso: o que o motor decidiu, para comparar.
+fn numbers(plan: &Value) -> Value {
+    let mut plan = plan.clone();
+    for item in plan["items"].as_array_mut().unwrap() {
+        item.as_object_mut().unwrap().remove("price_references");
+    }
+    plan
+}
+
+#[tokio::test]
+async fn the_plan_shows_references_only_for_assets_without_a_ceiling() {
+    let db = database().await;
+    let dir = tempfile_dir::Dir::new();
+    seed_fundamentals(&db.store).await;
+    // Dividendos de R$ 1,20 em 12 meses (a 6% ao ano, Bazin de R$ 20) para o
+    // FORT3 e para o KNRI11. O MXRF11 nunca teve histórico buscado.
+    let today = prumo::domain::income::today_in_brazil(OffsetDateTime::now_utc());
+    let events = [30, 200]
+        .into_iter()
+        .map(|back| prumo::dividends::DividendEvent {
+            ex_date: today - time::Duration::days(back),
+            amount: dec!(0.60),
+        })
+        .collect::<Vec<_>>();
+    for symbol in ["FORT3.SA", "KNRI11.SA"] {
+        db.store
+            .save_dividends(
+                symbol,
+                &prumo::dividends::DividendHistory {
+                    currency: "BRL".into(),
+                    events: events.clone(),
+                },
+                OffsetDateTime::now_utc(),
+            )
+            .await
+            .unwrap();
+    }
+
+    let app = app(
+        &db.store,
+        "aviso-sem-teto@prumo.test",
+        quotes(),
+        &dir.path(),
+    );
+    let goals = put(
+        &app.router,
+        "/api/v1/goals",
+        json!({ "targets": { "br_stocks": 40, "br_reits": 40, "crypto": 20 } }),
+    )
+    .await;
+    assert_eq!(goals.status, StatusCode::OK, "{}", goals.text);
+    let mut ids = std::collections::HashMap::new();
+    for (symbol, class, score, ceiling) in [
+        ("FORT3", "br_stocks", 8, None),
+        ("FRAC3", "br_stocks", 6, None),
+        ("KNRI11", "br_reits", 8, Some(150)),
+        ("MXRF11", "br_reits", 5, None),
+        ("BTC", "crypto", 5, None),
+    ] {
+        let mut body = json!({
+            "asset_class": class, "symbol": symbol, "quantity": 0, "score_override": score
+        });
+        if let Some(ceiling) = ceiling {
+            body["max_price"] = json!(ceiling);
+        }
+        let created = post(&app.router, "/api/v1/assets", body).await;
+        assert_eq!(created.status, StatusCode::CREATED, "{}", created.text);
+        ids.insert(symbol, created.body["id"].as_str().unwrap().to_owned());
+    }
+
+    let (plan, with_warning) = plan_of(&app, 10_000).await;
+    // Sem teto e com as duas referências: o Bazin dos dividendos e o Graham dos
+    // fundamentos (os mesmos números da Análise), cada um por si.
+    let fort = &plan_item(&plan, "FORT3")["price_references"];
+    close(&fort["bazin"], 20.0);
+    close(&fort["graham"], 20.12);
+    // Só o Graham: sem dividendo guardado.
+    let frac = &plan_item(&plan, "FRAC3")["price_references"];
+    assert_eq!(frac["bazin"], Value::Null);
+    close(&frac["graham"], 6.71);
+    // Com teto, o critério já é o da pessoa: nenhum aviso, mesmo com Bazin.
+    assert_eq!(plan_item(&plan, "KNRI11")["price_references"], Value::Null);
+    // Fundo sem dividendo guardado e cripto: sem nenhuma referência.
+    assert_eq!(plan_item(&plan, "MXRF11")["price_references"], Value::Null);
+    assert_eq!(plan_item(&plan, "BTC")["price_references"], Value::Null);
+
+    // O que a Análise mostra para os mesmos ativos é o mesmo número.
+    let body = analysis(&app).await;
+    for (symbol, bazin, graham) in [("FORT3", 20.0, 20.12), ("FRAC3", 0.0, 6.71)] {
+        let reference = body["references"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["label"] == symbol)
+            .unwrap();
+        let shown = &plan_item(&plan, symbol)["price_references"];
+        close(&reference["graham"], graham);
+        close(&shown["graham"], graham);
+        if bazin > 0.0 {
+            close(&reference["bazin"]["price"], bazin);
+            close(&shown["bazin"], bazin);
+        }
+    }
+
+    // O rendimento-alvo é o da pessoa: com 8%, o Bazin cai para R$ 15.
+    let tuned = put(
+        &app.router,
+        "/api/v1/analysis/rules",
+        json!({ "bazin_yield": 8 }),
+    )
+    .await;
+    assert_eq!(tuned.status, StatusCode::OK, "{}", tuned.text);
+    let (eight, _) = plan_of(&app, 10_000).await;
+    close(
+        &plan_item(&eight, "FORT3")["price_references"]["bazin"],
+        15.0,
+    );
+    assert_eq!(numbers(&eight), numbers(&plan));
+
+    // O aviso não muda o plano: com teto folgado em todos (sem aviso nenhum),
+    // as quantidades, os valores e os avisos do motor são os mesmos.
+    for id in ids.values() {
+        let raised = patch(
+            &app.router,
+            &format!("/api/v1/assets/{id}"),
+            json!({ "max_price": 1_000_000 }),
+        )
+        .await;
+        assert_eq!(raised.status, StatusCode::OK, "{}", raised.text);
+    }
+    let (ceilinged, without_warning) = plan_of(&app, 10_000).await;
+    for item in ceilinged["items"].as_array().unwrap() {
+        assert_eq!(item["price_references"], Value::Null);
+    }
+    assert_eq!(numbers(&ceilinged), numbers(&plan));
+    // O aviso só lê o cache: o plano com ele não vira outra ordem de grandeza.
+    eprintln!("plano com aviso: {with_warning:?}; sem aviso: {without_warning:?}");
+    assert!(with_warning < std::time::Duration::from_secs(2));
+
+    // Tirar o teto devolve o aviso; o teto é opcional e a escolha é da pessoa.
+    let cleared = patch(
+        &app.router,
+        &format!("/api/v1/assets/{}", ids["KNRI11"]),
+        json!({ "max_price": null }),
+    )
+    .await;
+    assert_eq!(cleared.status, StatusCode::OK, "{}", cleared.text);
+    let (again, _) = plan_of(&app, 10_000).await;
+    close(
+        &plan_item(&again, "KNRI11")["price_references"]["bazin"],
+        15.0,
+    );
+}

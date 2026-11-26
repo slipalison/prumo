@@ -132,10 +132,7 @@ impl CompanyFacts {
             revenue_cagr: metrics.revenue_cagr.value(),
             earnings_cagr: metrics.earnings_cagr.value(),
             judicial_recovery: metrics.judicial_recovery,
-            per_share: metrics
-                .earnings_per_share
-                .value()
-                .zip(metrics.book_value_per_share.value()),
+            per_share: super::references::company_per_share(metrics),
         }
     }
 }
