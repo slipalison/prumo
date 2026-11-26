@@ -6,6 +6,7 @@ import { Disclosure } from "./Disclosure";
 import { InfoTip } from "./InfoTip";
 import { Grid, Page, PageHeader, Panel, StatStrip } from "./Layout";
 import { Sheet } from "./Sheet";
+import { placeBubble } from "../lib/placeBubble";
 import { Toggletip } from "./Toggletip";
 
 afterEach(() => vi.restoreAllMocks());
@@ -145,6 +146,36 @@ const COLUMNS: DataColumn<Row>[] = [
 ];
 
 describe("DataTable", () => {
+  it("só rola de lado quando a tabela não cabe (data-scrolls), e acompanha o redimensionamento", () => {
+    let notify: () => void = () => {};
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: () => void) {
+          notify = callback;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    let tableWidth = 500;
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) {
+      return this.tagName === "TABLE" ? tableWidth : 0;
+    });
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains("data-table") ? 400 : 0;
+    });
+    const { container } = render(
+      <DataTable caption="Larga" columns={COLUMNS} rows={[{ id: "a", name: "Exterior", now: "0%", status: "ok" }]} rowKey={(r) => r.id} />,
+    );
+    const block = container.querySelector(".data-table") as HTMLElement;
+    expect(block).toHaveAttribute("data-scrolls");
+    tableWidth = 400;
+    act(() => notify());
+    expect(block).not.toHaveAttribute("data-scrolls");
+    vi.unstubAllGlobals();
+  });
+
   it("é uma tabela de verdade: legenda, cabeçalhos de coluna e de linha, rótulo por célula", () => {
     render(
       <DataTable
@@ -321,6 +352,52 @@ describe("Toggletip", () => {
     const root = container.firstElementChild as HTMLElement;
     expect(root).toHaveAttribute("data-placement", "top");
     expect((root.querySelector(".toggletip__bubble") as HTMLElement).style.getPropertyValue("--tip-shift")).toBe("38px");
+  });
+});
+
+describe("Toggletip na camada de topo", () => {
+  const box = (left: number, top: number, width: number, height: number) => ({ left, top, width, right: left + width, bottom: top + height });
+  const viewport = { width: 1000, height: 800 };
+
+  it("posiciona na janela: centrado, alinhado, empurrado para dentro e virado se não couber", () => {
+    const trigger = box(500, 300, 16, 16);
+    const bubble = { width: 200, height: 60 };
+    const anchor = box(0, 0, 400, 100);
+    expect(placeBubble(trigger, anchor, bubble, "center", "top", viewport)).toEqual({ left: 408, top: 232, flipped: false });
+    expect(placeBubble(trigger, anchor, bubble, "start", "top", viewport).left).toBe(500);
+    expect(placeBubble(trigger, anchor, bubble, "end", "top", viewport).left).toBe(316);
+    expect(placeBubble(trigger, anchor, bubble, "stretch", "top", viewport).left).toBe(0 + 8);
+    expect(placeBubble(box(990, 300, 16, 16), anchor, bubble, "start", "top", viewport).left).toBe(792);
+    expect(placeBubble(box(500, 20, 16, 16), anchor, bubble, "center", "top", viewport)).toMatchObject({ top: 44, flipped: true });
+    expect(placeBubble(box(500, 760, 16, 16), anchor, bubble, "center", "bottom", viewport)).toMatchObject({ top: 692, flipped: true });
+  });
+
+  it("com `popover` no navegador, o balão abre na camada de topo e fecha ao sair", async () => {
+    const user = userEvent.setup();
+    const show = vi.fn();
+    const hide = vi.fn();
+    Object.assign(HTMLElement.prototype, { showPopover: show, hidePopover: hide });
+    try {
+      render(
+        <div style={{ overflow: "auto" }}>
+          <Toggletip label="Info" content="Dentro de uma tabela que rola">
+            i
+          </Toggletip>
+        </div>,
+      );
+      const bubble = screen.getByRole("status");
+      expect(bubble).toHaveAttribute("popover", "manual");
+      await user.click(screen.getByRole("button", { name: "Info" }));
+      expect(show).toHaveBeenCalledTimes(1);
+      expect(bubble).toHaveTextContent("Dentro de uma tabela que rola");
+      expect(bubble.style.left).not.toBe("");
+      await user.keyboard("{Escape}");
+      expect(hide).toHaveBeenCalled();
+      expect(bubble.style.left).toBe("");
+    } finally {
+      Reflect.deleteProperty(HTMLElement.prototype, "showPopover");
+      Reflect.deleteProperty(HTMLElement.prototype, "hidePopover");
+    }
   });
 });
 

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { cx } from "../lib/cx";
 import { IconAlert, IconCheck, IconClose, IconInfo } from "./icons";
 
@@ -45,6 +45,11 @@ const ALIGN = { start: undefined, end: "is-end", center: "is-center" } as const;
  * preço, ativos): uma linha de 40 px por item, cabeçalho pequeno, números
  * tabulares à direita. É uma `<table>` de verdade (o leitor de tela navega por
  * linha e coluna); larga demais, rola de lado; estreita, empilha.
+ *
+ * O bloco só vira rolagem lateral (`data-scrolls`) quando a tabela de fato não
+ * cabe: tabela que cabe não tem `overflow`, e a área de toque do ⓘ no canto não
+ * cria uma rolagem de 2 px. O balão do ⓘ vai para a camada de topo (`Toggletip`),
+ * então nem a tabela que rola o corta.
  */
 export function DataTable<T>({
   caption,
@@ -58,11 +63,29 @@ export function DataTable<T>({
   rowClassName,
   className,
 }: DataTableProps<T>) {
-  if (rows.length === 0 && empty !== undefined) {
+  const isEmpty = rows.length === 0 && empty !== undefined;
+  const wrap = useRef<HTMLDivElement>(null);
+  const [scrolls, setScrolls] = useState(false);
+  useLayoutEffect(() => {
+    const block = wrap.current;
+    const table = block?.firstElementChild;
+    if (!block || !(table instanceof HTMLElement) || typeof ResizeObserver === "undefined") return;
+    const measure = () => setScrolls(table.offsetWidth > block.clientWidth + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(block);
+    observer.observe(table);
+    return () => observer.disconnect();
+  }, [isEmpty]);
+  if (isEmpty) {
     return <p className="data-table__empty">{empty}</p>;
   }
   return (
-    <div className={cx("data-table", cozy && "data-table--cozy", stack && "data-table--stack", className)}>
+    <div
+      ref={wrap}
+      data-scrolls={scrolls ? "" : undefined}
+      className={cx("data-table", cozy && "data-table--cozy", stack && "data-table--stack", className)}
+    >
       <table className="data-table__table">
         <caption className={showCaption ? "data-table__caption" : "sr-only"}>{caption}</caption>
         <thead>

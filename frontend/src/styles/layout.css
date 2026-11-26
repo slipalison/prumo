@@ -228,10 +228,17 @@
 
 /* ================= Tabela compacta ================= */
 
+/* Posicionado: o texto só para leitor de tela das células (`position: absolute`)
+   fica preso ao bloco e não alarga a página quando a tabela rola por dentro. */
 .data-table {
+  position: relative;
   min-width: 0;
-  overflow-x: auto;
   container-type: inline-size;
+}
+
+/* Só a tabela que não cabe rola de lado (o `DataTable` marca `data-scrolls`). */
+.data-table[data-scrolls] {
+  overflow-x: auto;
 }
 
 .data-table__table {
@@ -558,6 +565,17 @@
   right: 0;
   width: auto;
   max-width: none;
+  transform: none;
+}
+
+/* Na camada de topo (`popover`): nada corta o balão (tabela que rola, painel,
+   folha) e o vidro não prende a posição. O `Toggletip` escreve `left`/`top` na
+   janela; aqui só se desfazem o `inset` e o recheio que o navegador põe. */
+.toggletip > .toggletip__bubble[popover] {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  overflow: visible;
   transform: none;
 }
 

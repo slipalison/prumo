@@ -1,17 +1,18 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { cx } from "../lib/cx";
+import { EDGE, placeBubble, type ToggletipAlign, type ToggletipPlacement } from "../lib/placeBubble";
 
-/** Folga mínima entre o balão e a borda da janela. */
-const EDGE = 8;
+export type { ToggletipAlign, ToggletipPlacement };
 
-export type ToggletipPlacement = "top" | "bottom";
 /**
- * - `center`: centrado no gatilho (o padrão).
- * - `start` / `end`: alinhado à esquerda / à direita do gatilho.
- * - `stretch`: na largura do bloco posicionado mais próximo (o balão das
- *   referências de preço ocupa a largura do bloco, não a do chip).
+ * O balão vai para a camada de topo do navegador (`popover`) quando ela existe:
+ * ali nenhum `overflow` de tabela, painel ou folha o corta, e o `backdrop-filter`
+ * do vidro não prende a posição. Sem a camada de topo (navegador antigo, jsdom),
+ * o balão fica no fluxo, posicionado em CSS, como antes.
  */
-export type ToggletipAlign = "center" | "start" | "end" | "stretch";
+function hasTopLayer() {
+  return typeof HTMLElement !== "undefined" && typeof HTMLElement.prototype.showPopover === "function";
+}
 
 type ToggletipProps = {
   /** O nome acessível do gatilho: o que ele é, já com o veredito (não só a cor). */
@@ -41,6 +42,7 @@ export function Toggletip({ label, content, children, className, placement = "to
   const [open, setOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [fit, setFit] = useState<{ shift: number; flipped: boolean }>({ shift: 0, flipped: false });
+  const [topLayer] = useState(hasTopLayer);
   const root = useRef<HTMLSpanElement>(null);
   const bubble = useRef<HTMLSpanElement>(null);
   const bubbleId = useId();
@@ -65,20 +67,54 @@ export function Toggletip({ label, content, children, className, placement = "to
     };
   }, [open]);
 
-  // Aberto, mede o balão uma vez e o empurra para dentro da janela.
+  // Aberto, mede o balão e o empurra para dentro da janela. Na camada de topo
+  // posiciona-se por inteiro (e de novo a cada rolagem); no fluxo, só desloca.
   useLayoutEffect(() => {
-    if (!open) {
+    const element = bubble.current;
+    if (!open || !element) {
       setFit({ shift: 0, flipped: false });
       return;
     }
-    const rect = bubble.current?.getBoundingClientRect();
-    if (!rect || rect.width === 0) return;
+    if (topLayer) {
+      const place = () => {
+        const triggerBox = root.current?.getBoundingClientRect();
+        if (!triggerBox) return;
+        const anchorBox = (root.current?.offsetParent ?? root.current)?.getBoundingClientRect() ?? triggerBox;
+        // Mede o balão já na camada de topo, na largura natural (ou na do bloco, no `stretch`).
+        element.style.width = align === "stretch" ? `${anchorBox.width}px` : "";
+        const at = placeBubble(triggerBox, anchorBox, element.getBoundingClientRect(), align, placement, {
+          width: document.documentElement.clientWidth,
+          height: document.documentElement.clientHeight,
+        });
+        element.style.left = `${Math.round(at.left)}px`;
+        element.style.top = `${Math.round(at.top)}px`;
+        setFit((previous) => (previous.flipped === at.flipped ? previous : { shift: 0, flipped: at.flipped }));
+      };
+      element.showPopover();
+      place();
+      window.addEventListener("resize", place);
+      window.addEventListener("scroll", place, true);
+      return () => {
+        window.removeEventListener("resize", place);
+        window.removeEventListener("scroll", place, true);
+        try {
+          element.hidePopover();
+        } catch {
+          // Já fechado: o navegador esconde o popover sozinho ao tirá-lo do DOM.
+        }
+        element.style.left = "";
+        element.style.top = "";
+        element.style.width = "";
+      };
+    }
+    const rect = element.getBoundingClientRect();
+    if (rect.width === 0) return;
     const width = document.documentElement.clientWidth;
     const shift = rect.left < EDGE ? EDGE - rect.left : rect.right > width - EDGE ? width - EDGE - rect.right : 0;
     const flipped =
       placement === "top" ? rect.top < EDGE : rect.bottom > document.documentElement.clientHeight - EDGE;
     setFit({ shift: Math.round(shift), flipped });
-  }, [open, placement]);
+  }, [open, placement, align, topLayer]);
 
   const side = fit.flipped ? (placement === "top" ? "bottom" : "top") : placement;
 
@@ -119,6 +155,7 @@ export function Toggletip({ label, content, children, className, placement = "to
         id={bubbleId}
         role="status"
         className="toggletip__bubble"
+        popover={topLayer ? "manual" : undefined}
         style={fit.shift === 0 ? undefined : ({ "--tip-shift": `${fit.shift}px` } as CSSProperties)}
       >
         {open ? content : null}

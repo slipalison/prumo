@@ -303,14 +303,6 @@
 
 /* ---------- A tabela de regras ---------- */
 
-/* A tabela das regras e a das referências nunca precisam rolar de lado (elas
-   se rearranjam no iPad em pé e no celular): sem o `overflow` da tabela comum,
-   o ⓘ da primeira linha abre por cima do cabeçalho em vez de ser cortado. */
-.rule-table.data-table,
-.references__table.data-table {
-  overflow: visible;
-}
-
 .rule-table tbody th {
   width: 30%;
   min-width: 220px;
