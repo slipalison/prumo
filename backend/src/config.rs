@@ -56,6 +56,8 @@ pub struct Config {
     pub quotes_refresh: Duration,
     /// Setor e segmento dos papeis, de fontes publicas da B3 e da CVM.
     pub sectors_enabled: bool,
+    /// Indicadores fundamentalistas (DFP/ITR e informes de FII da CVM).
+    pub fundamentals_enabled: bool,
     /// Horário de Brasília da tarefa diária de desempenho (`None` = desligada).
     pub snapshot_at: Option<time::Time>,
     /// Token do bot do Telegram (`TELEGRAM_BOT_TOKEN`). Sem ele, os alertas
@@ -150,6 +152,7 @@ impl Config {
             quotes_stream: flag("QUOTES_STREAM")?,
             quotes_refresh: Duration::from_secs(number("QUOTES_REFRESH_SECS", 900)?.max(60)),
             sectors_enabled: flag("SECTORS_ENABLED")?,
+            fundamentals_enabled: flag("FUNDAMENTALS_ENABLED")?,
             snapshot_at: snapshot_time(get("SNAPSHOT_AT"))?,
             telegram_bot_token: get("TELEGRAM_BOT_TOKEN").map(Secret::new),
             brapi_token: get("BRAPI_TOKEN").map(Secret::new),
@@ -230,6 +233,7 @@ mod tests {
         assert!(config.quotes_stream);
         assert_eq!(config.database_max_connections, 4);
         assert!(config.sectors_enabled);
+        assert!(config.fundamentals_enabled);
         assert_eq!(config.quotes_refresh, Duration::from_secs(900));
         assert_eq!(config.snapshot_at, Some(time::macros::time!(19:00)));
         assert_eq!(config.commit, "a1b2c3d");
@@ -246,6 +250,7 @@ mod tests {
             ("QUOTES_REFRESH_SECS", "5"),
             ("DATABASE_MAX_CONNECTIONS", "8"),
             ("SECTORS_ENABLED", "false"),
+            ("FUNDAMENTALS_ENABLED", "false"),
         ]))
         .unwrap();
         assert_eq!(
@@ -259,6 +264,7 @@ mod tests {
         assert!(!config.quotes_stream);
         assert_eq!(config.database_max_connections, 8);
         assert!(!config.sectors_enabled);
+        assert!(!config.fundamentals_enabled);
         assert_eq!(config.quotes_refresh, Duration::from_secs(60));
     }
 

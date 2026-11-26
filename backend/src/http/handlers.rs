@@ -293,6 +293,7 @@ pub async fn create_asset(
     // renda já o encontrar; a resposta não espera.
     state.income.prefetch(market, asset.symbol.as_deref());
     state.icons.prefetch(market, asset.symbol.as_deref());
+    state.fundamentals.prefetch(market, asset.symbol.as_deref());
     let dto = asset_response(&state, user.id, asset.id).await?;
     Ok((StatusCode::CREATED, Json(dto)))
 }
@@ -389,6 +390,7 @@ pub async fn update_asset(
         }
         state.income.prefetch(market, asset.symbol.as_deref());
         state.icons.prefetch(market, asset.symbol.as_deref());
+        state.fundamentals.prefetch(market, asset.symbol.as_deref());
     }
     Ok(Json(asset_response(&state, user.id, id).await?))
 }

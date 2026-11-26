@@ -9,6 +9,7 @@ mod allocation;
 mod analysis;
 mod b3_import;
 mod cash;
+pub mod fundamentals;
 pub mod health;
 pub mod icons;
 pub mod sectors;

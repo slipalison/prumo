@@ -9,6 +9,7 @@ pub mod b3_plan;
 pub mod cash;
 pub mod defaults;
 pub mod entitlement;
+pub mod fundamentals;
 pub mod health;
 pub mod icon;
 pub mod income;

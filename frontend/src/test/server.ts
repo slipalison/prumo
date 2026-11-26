@@ -16,6 +16,7 @@ import { ASSET_CLASSES } from "../api/types";
 import type { AllocationSettings } from "../api/allocationTypes";
 import type { CreateTransactionRequest, Transaction, UpdateTransactionRequest } from "../api/ledgerTypes";
 import { analysisHandlers } from "./analysisHandlers";
+import { fundamentalsHandlers } from "./fundamentalsHandlers";
 import { iconsHandlers } from "./iconsHandlers";
 import { defaultIncomeAutoHandlers } from "./incomeAutoHandlers";
 import { incomeHandlers } from "./incomeHandlers";
@@ -424,6 +425,7 @@ export const server = setupServer(
   ...handlers,
   ...analysisHandlers,
   ...iconsHandlers,
+  ...fundamentalsHandlers,
   ...incomeHandlers,
   ...defaultIncomeAutoHandlers,
   ...objectivesHandlers,

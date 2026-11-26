@@ -6,6 +6,7 @@ mod analysis;
 mod b3_import;
 mod cash;
 pub mod dto;
+mod fundamentals;
 mod handlers;
 pub(crate) mod health;
 mod icons;
@@ -48,6 +49,7 @@ use crate::alerts::AlertService;
 use crate::auth::Authenticator;
 use crate::dividends::DividendProvider;
 use crate::error::ApiError;
+use crate::fundamentals::FundamentalsService;
 use crate::icons::IconService;
 use crate::income::IncomeService;
 use crate::service::QuoteService;
@@ -68,6 +70,7 @@ pub struct AppState {
     pub income: Arc<IncomeService>,
     pub alerts: Arc<AlertService>,
     pub icons: Arc<IconService>,
+    pub fundamentals: Arc<FundamentalsService>,
     pub info: Arc<BuildInfo>,
     pub metrics: Option<PrometheusHandle>,
     users: Arc<RwLock<HashMap<String, Uuid>>>,
@@ -90,6 +93,7 @@ impl AppState {
             income: Arc::new(IncomeService::disabled(store.clone())),
             alerts: Arc::new(AlertService::disabled(store.clone())),
             icons: Arc::new(IconService::disabled(store.clone())),
+            fundamentals: Arc::new(FundamentalsService::disabled(store.clone())),
             store,
             auth,
             quotes,
@@ -126,6 +130,13 @@ impl AppState {
     /// periódica e para a busca de ativo novo).
     pub fn with_icon_service(mut self, icons: Arc<IconService>) -> Self {
         self.icons = icons;
+        self
+    }
+
+    /// Usa o serviço de fundamentos já montado (o `run` o guarda para a
+    /// tarefa diária e para a busca de ativo novo).
+    pub fn with_fundamentals_service(mut self, fundamentals: Arc<FundamentalsService>) -> Self {
+        self.fundamentals = fundamentals;
         self
     }
 
@@ -299,6 +310,7 @@ pub fn public_router(state: AppState, static_dir: &str) -> Router {
         .route("/income/yield-on-cost", get(yoc::show))
         .route("/income/auto", get(income_auto::get).put(income_auto::save))
         .route("/cash", get(cash::show))
+        .route("/fundamentals", get(fundamentals::list))
         .route(
             "/income/goal",
             get(income::get_goal)

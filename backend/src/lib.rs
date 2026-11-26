@@ -13,6 +13,7 @@ pub mod config;
 pub mod dividends;
 pub mod domain;
 pub mod error;
+pub mod fundamentals;
 pub mod history;
 pub mod http;
 pub mod icons;
@@ -39,6 +40,7 @@ use crate::auth::{AccessAuthenticator, Authenticator, DevAuthenticator};
 use crate::brapi::{BrapiLogos, LogoSource};
 use crate::config::{AuthConfig, Config};
 use crate::dividends::{DisabledDividends, DividendProvider, YahooDividends};
+use crate::fundamentals::FundamentalsService;
 use crate::history::{DisabledHistory, HistoryProvider, PublicHistory};
 use crate::http::{AppState, BuildInfo};
 use crate::icons::IconService;
@@ -217,6 +219,19 @@ pub async fn run(config: Config) -> Result<(), StartError> {
     if logos.is_none() {
         tracing::info!("BRAPI_TOKEN ausente: logos dos ativos desligados");
     }
+    // Fundamentos: DFP/ITR e informes de FII da CVM, uma conferência por dia.
+    let fundamentals = Arc::new(if config.fundamentals_enabled {
+        FundamentalsService::new(
+            store.clone(),
+            http.clone(),
+            Arc::new(B3Listed::new(http.clone())),
+        )
+    } else {
+        FundamentalsService::disabled(store.clone())
+    });
+    if fundamentals.enabled() {
+        Arc::clone(&fundamentals).spawn(fundamentals::CHECK_EVERY);
+    }
     let icons = Arc::new(IconService::new(store.clone(), logos));
     if icons.enabled() {
         Arc::clone(&icons).spawn_refresher(icons::CHECK_EVERY);
@@ -234,7 +249,8 @@ pub async fn run(config: Config) -> Result<(), StartError> {
     )
     .with_income_service(income)
     .with_alerts_service(alerts)
-    .with_icon_service(icons);
+    .with_icon_service(icons)
+    .with_fundamentals_service(fundamentals);
     let public = http::public_router(state.clone(), &config.static_dir);
     let operational = http::operational_router(state.clone());
 

@@ -112,7 +112,7 @@ fn format_error(what: impl std::fmt::Display) -> SectorError {
 }
 
 /// Os bytes ISO-8859-1 como texto: cada byte é o ponto de código de mesmo valor.
-fn latin1(bytes: &[u8]) -> String {
+pub(crate) fn latin1(bytes: &[u8]) -> String {
     bytes.iter().map(|b| char::from(*b)).collect()
 }
 
@@ -220,7 +220,7 @@ pub fn fund_kind(balance: &HashMap<String, String>) -> Option<&'static str> {
 }
 
 /// As quatro letras do emissor a partir do ISIN da cota (`BRKNRICTF007` → `KNRI`).
-fn isin_root(isin: &str) -> Option<String> {
+pub(crate) fn isin_root(isin: &str) -> Option<String> {
     let isin = isin.trim().to_uppercase();
     if isin.len() != 12 || !isin.starts_with("BR") || !isin.is_ascii() {
         return None;

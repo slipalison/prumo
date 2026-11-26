@@ -12,6 +12,7 @@ import { ScoreBadge } from "../../components/ScoreBadge";
 import { ScoreSlider } from "../../components/ScoreSlider";
 import { Sheet } from "../../components/Sheet";
 import { useToast } from "../../components/toastContext";
+import { FundamentalsSection } from "../fundamentals/FundamentalsSection";
 import { TransactionsSection } from "../ledger/TransactionsSection";
 import { INSTRUMENT_HINT, INSTRUMENT_LABEL } from "../tax/taxText";
 import { acceptsB3Listing, CLASS_META, unitOf } from "../../lib/assetClasses";
@@ -383,6 +384,7 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
           {ceilingBlock}
           {taxBlock}
           <TransactionsSection asset={asset} />
+          <FundamentalsSection asset={asset} />
         </>
       ) : (
         <>
@@ -391,6 +393,7 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
           {ceilingBlock}
           {taxBlock}
           <TransactionsSection asset={asset} />
+          <FundamentalsSection asset={asset} />
           {scoreBlock}
         </>
       )}

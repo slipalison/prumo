@@ -347,6 +347,7 @@ fn after_commit(state: &AppState, applied: &Applied) {
     for (market, symbol) in &targets {
         state.income.prefetch(*market, Some(symbol));
         state.icons.prefetch(*market, Some(symbol));
+        state.fundamentals.prefetch(*market, Some(symbol));
     }
     if !targets.is_empty() {
         let quotes = state.quotes.clone();

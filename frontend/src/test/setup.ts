@@ -4,6 +4,7 @@ import { MotionGlobalConfig } from "motion/react";
 import { afterAll, afterEach, beforeAll, vi } from "vitest";
 import { resetAnalysis } from "./analysisHandlers";
 import { FakeEventSource } from "./eventSource";
+import { resetFundamentals } from "./fundamentalsHandlers";
 import { resetIcons } from "./iconsHandlers";
 import { resetDb, server } from "./server";
 import { resetTaxDb } from "./taxHandlers";
@@ -27,6 +28,7 @@ afterEach(() => {
   resetDb();
   resetIcons();
   resetAnalysis();
+  resetFundamentals();
   resetTaxDb();
   window.localStorage.clear();
   window.location.hash = "";
