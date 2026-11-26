@@ -89,6 +89,32 @@ describe("Navegação e Ajustes", () => {
     expect(window.history.length).toBe(before);
   });
 
+  it("nas pílulas que rolam de lado (celular), a seção aberta fica à vista", async () => {
+    // O jsdom não faz layout: a linha estreita e a posição da pílula são simuladas.
+    const scrolled: number[] = [];
+    const list = HTMLUListElement.prototype;
+    const link = HTMLAnchorElement.prototype;
+    Object.defineProperties(list, {
+      scrollWidth: { configurable: true, get: () => 900 },
+      clientWidth: { configurable: true, get: () => 360 },
+      scrollLeft: { configurable: true, get: () => 0, set: (value: number) => void scrolled.push(value) },
+    });
+    Object.defineProperty(link, "offsetLeft", {
+      configurable: true,
+      get(this: HTMLAnchorElement) {
+        return this.getAttribute("aria-current") === "page" ? 620 : 0;
+      },
+    });
+    try {
+      renderApp("ajustes/proventos-automaticos");
+      await screen.findByRole("navigation", { name: "Seções de Ajustes" });
+      await waitFor(() => expect(scrolled.at(-1)).toBe(604));
+    } finally {
+      for (const name of ["scrollWidth", "clientWidth", "scrollLeft"]) delete (list as unknown as Record<string, unknown>)[name];
+      delete (link as unknown as Record<string, unknown>).offsetLeft;
+    }
+  });
+
   it("seção que não existe cai na primeira", async () => {
     renderApp("ajustes/nada");
     expect(await screen.findByRole("heading", { name: GOALS_HEADING })).toBeInTheDocument();

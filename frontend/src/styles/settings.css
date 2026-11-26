@@ -1,44 +1,63 @@
 /*
- * Ajustes: a navegação entre as seções.
+ * Ajustes: a casca das seções (docs/layout.md § 7.5). Com ≥ 1000 px de
+ * conteúdo, a lista de seções é uma coluna à esquerda, fixa ao rolar; mais
+ * estreito, uma linha de pílulas que rola de lado.
  */
 
-/* ---------- Ajustes ---------- */
-
-.settings {
+.settings__layout {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: var(--gap-stack);
+  min-width: 0;
 }
 
 .settings__nav {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 14px;
-  padding: 0 4px;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
 }
 
+.settings__title {
+  padding: 0 var(--space-1);
+}
+
+/* Uma linha só, que rola de lado; vai de borda a borda da janela. */
 .settings__list {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
+  gap: var(--space-2);
+  margin: 0 calc(-1 * var(--shell-pad-x));
+  padding: 0 var(--shell-pad-x) var(--space-1);
+  overflow-x: auto;
   list-style: none;
+  scroll-padding-inline: var(--shell-pad-x);
+  scrollbar-width: none;
+}
+
+.settings__list::-webkit-scrollbar {
+  display: none;
+}
+
+.settings__list > li {
+  flex: none;
 }
 
 .settings__link {
   display: inline-flex;
   align-items: center;
-  min-height: 44px;
-  padding: 0 16px;
+  min-height: var(--touch);
+  padding: 0 var(--space-4);
   border: 1px solid var(--border);
   border-radius: var(--r-pill);
   background: var(--surface);
   color: var(--text-muted);
-  font-size: 0.92rem;
+  font-size: var(--text-md);
   font-weight: 600;
   text-decoration: none;
+  white-space: nowrap;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
 }
 
 .settings__link:hover {
@@ -49,4 +68,55 @@
   border-color: transparent;
   background: linear-gradient(135deg, var(--gold-1), var(--gold) 45%, var(--gold-2));
   color: var(--gold-ink);
+}
+
+.settings__section {
+  min-width: 0;
+}
+
+/* Seção que ainda não usa a grade nova fica na coluna de antes. */
+.settings__section:not(:has(.page)) {
+  max-width: var(--content-legacy);
+}
+
+@container page (min-width: 1000px) {
+  .settings__layout {
+    display: grid;
+    grid-template-columns: 188px minmax(0, 1fr);
+    align-items: start;
+    gap: var(--space-5);
+  }
+
+  .settings__nav {
+    position: sticky;
+    top: var(--space-4);
+  }
+
+  .settings__list {
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .settings__link {
+    width: 100%;
+    min-height: 40px;
+    padding: 0 var(--space-3);
+    border-color: transparent;
+    border-radius: var(--r-sm);
+    background: transparent;
+    white-space: normal;
+  }
+
+  .settings__link:hover {
+    background: var(--surface-hover);
+  }
+
+  .settings__link.is-active {
+    border-color: transparent;
+    background: linear-gradient(135deg, var(--gold-1), var(--gold) 45%, var(--gold-2));
+    color: var(--gold-ink);
+  }
 }
