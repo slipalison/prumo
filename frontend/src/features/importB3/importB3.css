@@ -3,19 +3,23 @@
   padding-left: 1.2rem;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   color: var(--text-muted);
+  font-size: var(--text-md);
+}
+
+.import-notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--text-muted);
+  font-size: var(--text-md);
 }
 
 .import-steps strong {
   color: var(--text);
-}
-
-.import-card {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 20px;
 }
 
 .import-pick {
@@ -43,8 +47,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
-  padding: 10px 14px;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--surface-sunken);
@@ -60,77 +64,71 @@
   font-size: 0.85rem;
 }
 
+.import-file__remove {
+  margin-left: auto;
+}
+
 .import-file__problem {
   flex-basis: 100%;
   color: var(--danger);
   font-size: 0.9rem;
 }
 
-.import-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 12px;
-  margin: 0;
-}
-
-.import-stat {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--surface-sunken);
-}
-
-.import-stat dt {
-  color: var(--text-muted);
-  font-size: 0.8rem;
-}
-
-.import-stat dd {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: 1.35rem;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-}
-
-.import-table-wrap {
-  overflow-x: auto;
-}
-
+/* A prévia por ativo: a tabela compacta de `layout.css` (`.data-table`), com a
+   linha que abre as linhas do ativo logo abaixo dela. Sem empilhar: são nove
+   colunas, e no celular a tabela rola de lado. */
 .import-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-variant-numeric: tabular-nums;
+  min-width: 880px;
 }
 
-.import-table caption {
-  text-align: left;
-  padding-bottom: 8px;
+.import-table thead th {
+  white-space: normal;
+  vertical-align: bottom;
 }
 
-.import-table th,
-.import-table td {
-  padding: 10px 12px;
-  text-align: right;
-  border-bottom: 1px solid var(--border);
+.import-table__head {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.import-table thead th:first-child {
+  width: 20%;
+  min-width: 160px;
+}
+
+.import-table td.is-end {
   white-space: nowrap;
 }
 
-.import-table th:first-child,
-.import-table td:first-child,
-.import-table th:nth-child(2),
-.import-table td:nth-child(2) {
-  text-align: left;
-  white-space: normal;
+.import-table tbody th,
+.import-table tbody td {
+  height: auto;
+  padding: var(--space-2);
 }
 
-.import-table th {
+.import-table__lines {
+  min-height: 36px;
+  white-space: nowrap;
+}
+
+.import-status {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.import-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-md);
   color: var(--text-muted);
-  font-size: 0.8rem;
-  font-weight: 600;
+  text-align: left;
+  white-space: normal;
 }
 
 .import-asset__code {
@@ -152,19 +150,6 @@
 
 .import-class__hint.is-warn {
   color: var(--gold-text);
-}
-
-.import-lines {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: 0.88rem;
-  color: var(--text-muted);
-  text-align: left;
-  white-space: normal;
 }
 
 .import-list {
@@ -191,25 +176,7 @@
 }
 
 .import-class__select {
-  min-width: 14ch;
-}
-
-.import-badge {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 1px 8px;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  border: 1px solid currentColor;
-}
-
-.import-badge.is-conflict {
-  color: var(--danger);
-}
-
-.import-badge.is-warn {
-  color: var(--gold-text);
+  min-width: 20ch;
 }
 
 .import-line__state {

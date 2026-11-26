@@ -12,7 +12,10 @@ import type {
 } from "../../api/b3ImportTypes";
 import { ApiError, errorMessage } from "../../api/client";
 import type { AssetClass } from "../../api/types";
-import { GlassCard } from "../../components/GlassCard";
+import { StatusPill, type Status } from "../../components/DataTable";
+import { Disclosure } from "../../components/Disclosure";
+import { InfoTip } from "../../components/InfoTip";
+import { Grid, Page, PageHeader, Panel, StatStrip, type Stat } from "../../components/Layout";
 import { MagneticButton } from "../../components/MagneticButton";
 import { MoneyInput } from "../../components/MoneyInput";
 import { QuantityInput } from "../../components/QuantityInput";
@@ -124,101 +127,95 @@ export function ImportB3Screen() {
   };
 
   return (
-    <div className="screen import-b3">
-      <header className="screen__header">
-        <p className="eyebrow">Importar</p>
-        <h1 className="screen__title">Importar da B3</h1>
-        <p className="screen__lead">
-          Suba as planilhas que a Área do Investidor da B3 exporta, confira o que entra na carteira e importe. Nada é
-          gravado antes de você apertar Importar, e importar de novo não duplica.
-        </p>
-      </header>
+    <Page className="import-b3">
+      <PageHeader
+        eyebrow="Importar"
+        title="Importar da B3"
+        summary="Nada é gravado antes de você apertar Importar, e importar de novo não duplica."
+        infoLabel="Sobre a importação"
+        info="Suba as planilhas que a Área do Investidor da B3 exporta, confira o que entra na carteira e importe. O Prumo junta as planilhas e não conta nada em dobro."
+      />
 
-      <GlassCard as="section" className="import-card" aria-labelledby="import-how">
-        <h2 id="import-how" className="section-title">
-          Como baixar as planilhas
-        </h2>
-        <ol className="import-steps">
-          <li>
-            Entre na <strong>Área do Investidor</strong> da B3 (<strong>investidor.b3.com.br</strong>) com o seu login.
-          </li>
-          <li>
-            No menu, abra <strong>Extratos</strong> e escolha <strong>Negociação</strong>. Defina o período e baixe em
-            Excel (<strong>.xlsx</strong>).
-          </li>
-          <li>
-            Repita em <strong>Movimentação</strong> e em <strong>Proventos</strong> (os recebidos e os a receber).
-          </li>
-          <li>
-            Se a B3 limitar o período de cada consulta, baixe em partes. O Prumo junta as planilhas e não conta nada em
-            dobro.
-          </li>
-          <li>Envie os arquivos aqui, do jeito que a B3 entregou, sem abrir e salvar de novo.</li>
-        </ol>
-        <p className="field__hint">
-          O histórico da B3 começa por volta de novembro de 2019. A planilha não traz corretagem nem taxas: o preço
-          médio sai um pouco abaixo do fiscal. Os arquivos são lidos na hora e não ficam guardados: o Importar os envia
-          de novo.
-        </p>
-      </GlassCard>
+      <Grid cols="main-aside" alignStart>
+        <Panel title="Suas planilhas" className="import-send">
+          <div className="import-pick">
+            <label htmlFor={inputId} className="sr-only">
+              Escolher planilhas da B3
+            </label>
+            <input
+              id={inputId}
+              className="import-pick__input"
+              type="file"
+              multiple
+              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              onChange={pick}
+            />
+          </div>
+          {notice && <p role="status">{notice}</p>}
+          {files.length > 0 && (
+            <ul className="import-files" aria-label="Arquivos escolhidos">
+              {files.map((file) => {
+                const report = preview.data?.files.find((r) => r.name === file.name);
+                return (
+                  <li key={`${file.name}-${file.size}-${file.lastModified}`} className="import-file">
+                    <span className="import-file__name">{file.name}</span>
+                    <span className="import-file__meta">{formatBytes(file.size)}</span>
+                    {report && <FileResult report={report} />}
+                    <button type="button" className="btn btn--ghost import-file__remove" onClick={() => remove(file)}>
+                      Tirar
+                      <span className="sr-only"> {file.name}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {tooBig && (
+            <p role="alert" className="field__hint">
+              Os arquivos passam de {formatBytes(MAX_TOTAL_BYTES)} juntos. Tire alguns ou baixe um período menor.
+            </p>
+          )}
+          <div className="import-actions">
+            <MagneticButton
+              onClick={() => read()}
+              disabled={files.length === 0 || tooBig}
+              loading={preview.isPending && previewedWith === null}
+              aria-describedby={hintId}
+            >
+              Ler planilhas
+            </MagneticButton>
+            <span id={hintId} className="field__hint">
+              {files.length === 0
+                ? "Escolha ao menos uma planilha .xlsx."
+                : `${files.length} ${plural(files.length, ["arquivo", "arquivos"])} · ${formatBytes(total)}`}
+            </span>
+          </div>
+        </Panel>
 
-      <GlassCard as="section" className="import-card" aria-labelledby="import-send">
-        <h2 id="import-send" className="section-title">
-          Suas planilhas
-        </h2>
-        <div className="import-pick">
-          <label htmlFor={inputId} className="sr-only">
-            Escolher planilhas da B3
-          </label>
-          <input
-            id={inputId}
-            className="import-pick__input"
-            type="file"
-            multiple
-            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            onChange={pick}
-          />
-        </div>
-        {notice && <p role="status">{notice}</p>}
-        {files.length > 0 && (
-          <ul className="import-files" aria-label="Arquivos escolhidos">
-            {files.map((file) => {
-              const report = preview.data?.files.find((r) => r.name === file.name);
-              return (
-                <li key={`${file.name}-${file.size}-${file.lastModified}`} className="import-file">
-                  <span className="import-file__name">{file.name}</span>
-                  <span className="import-file__meta">{formatBytes(file.size)}</span>
-                  {report && <FileResult report={report} />}
-                  <button type="button" className="btn btn--ghost" onClick={() => remove(file)}>
-                    Tirar
-                    <span className="sr-only"> {file.name}</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        {tooBig && (
-          <p role="alert" className="field__hint">
-            Os arquivos passam de {formatBytes(MAX_TOTAL_BYTES)} juntos. Tire alguns ou baixe um período menor.
-          </p>
-        )}
-        <div className="import-actions">
-          <MagneticButton
-            onClick={() => read()}
-            disabled={files.length === 0 || tooBig}
-            loading={preview.isPending && previewedWith === null}
-            aria-describedby={hintId}
-          >
-            Ler planilhas
-          </MagneticButton>
-          <span id={hintId} className="field__hint">
-            {files.length === 0
-              ? "Escolha ao menos uma planilha .xlsx."
-              : `${files.length} ${plural(files.length, ["arquivo", "arquivos"])} · ${formatBytes(total)}`}
-          </span>
-        </div>
-      </GlassCard>
+        <Panel title="Como baixar as planilhas">
+          <ol className="import-steps">
+            <li>
+              Entre na <strong>Área do Investidor</strong> da B3 (<strong>investidor.b3.com.br</strong>) com o seu login.
+            </li>
+            <li>
+              Em <strong>Extratos</strong>, abra <strong>Negociação</strong>, defina o período e baixe em Excel (
+              <strong>.xlsx</strong>).
+            </li>
+            <li>
+              Repita em <strong>Movimentação</strong> e em <strong>Proventos</strong> (os recebidos e os a receber).
+            </li>
+            <li>Envie os arquivos aqui, do jeito que a B3 entregou, sem abrir e salvar de novo.</li>
+          </ol>
+          <Disclosure summary="Limites da B3 e o que a planilha não traz">
+            <ul className="import-notes">
+              <li>Se a B3 limitar o período de cada consulta, baixe em partes: o Prumo junta as planilhas.</li>
+              <li>O histórico da B3 começa por volta de novembro de 2019.</li>
+              <li>A planilha não traz corretagem nem taxas: o preço médio sai um pouco abaixo do fiscal.</li>
+              <li>Os arquivos são lidos na hora e não ficam guardados: o Importar os envia de novo.</li>
+            </ul>
+          </Disclosure>
+        </Panel>
+      </Grid>
 
       {preview.data && (
         <PreviewResult
@@ -233,7 +230,7 @@ export function ImportB3Screen() {
         />
       )}
       {result && <CommitResult result={result} />}
-    </div>
+    </Page>
   );
 }
 
@@ -297,25 +294,26 @@ function PreviewResult({ preview, decisions, decide, dirty, refreshing, importin
   );
   const entering = plan.summary.transactions_new + plan.summary.income_new + plan.summary.income_replaced;
   const existing = plan.summary.transactions_existing + plan.summary.income_existing;
+  const found: Stat[] = [
+    { label: "Ativos", value: summary.assets },
+    { label: "Negócios", value: summary.trades },
+    { label: "Proventos", value: summary.income },
+    { label: "Eventos", value: summary.events },
+    { label: "Não entendidas", value: summary.unrecognized },
+  ];
+  const against: Stat[] = [
+    { label: "Entram", value: entering },
+    { label: "Já existem", value: existing },
+    { label: "Conflitos", value: plan.summary.conflicts },
+    { label: "Ficam de fora", value: plan.summary.not_imported },
+  ];
   return (
     <>
-      <GlassCard as="section" className="import-card" aria-labelledby="import-summary">
-        <h2 id="import-summary" className="section-title">
-          O que entraria
-        </h2>
-        <dl className="import-stats">
-          <Stat label="Ativos" value={summary.assets} />
-          <Stat label="Negócios" value={summary.trades} />
-          <Stat label="Proventos" value={summary.income} />
-          <Stat label="Eventos" value={summary.events} />
-          <Stat label="Não entendidas" value={summary.unrecognized} />
-        </dl>
-        <dl className="import-stats" aria-label="Contra a carteira">
-          <Stat label="Entram" value={entering} />
-          <Stat label="Já existem" value={existing} />
-          <Stat label="Conflitos" value={plan.summary.conflicts} />
-          <Stat label="Ficam de fora" value={plan.summary.not_imported} />
-        </dl>
+      <Panel title="O que entraria" className="import-summary">
+        <StatStrip items={found} inset />
+        <div role="group" aria-label="Contra a carteira">
+          <StatStrip items={against} inset />
+        </div>
         {summary.first_date && summary.last_date && (
           <p className="field__hint">
             De {formatIsoDate(summary.first_date)} a {formatIsoDate(summary.last_date)}.
@@ -328,25 +326,19 @@ function PreviewResult({ preview, decisions, decide, dirty, refreshing, importin
         ) : (
           <AssetsTable assets={preview.assets} planOf={planOf} lines={plan.lines} decisions={decisions} decide={decide} />
         )}
-      </GlassCard>
+      </Panel>
 
       {review.length > 0 && (
-        <GlassCard as="section" className="import-card" aria-labelledby="import-review">
-          <h2 id="import-review" className="section-title">
-            Conferir antes de importar
-          </h2>
+        <Panel title="Conferir antes de importar" info="Só aparece o ativo que pede uma decisão sua: classe, saldo inicial, conflito ou o que ficou de fora.">
           <ul className="import-review">
             {review.map((asset) => (
               <AssetReview key={asset.key} asset={asset} decision={decisions[asset.key]} decide={decide} />
             ))}
           </ul>
-        </GlassCard>
+        </Panel>
       )}
 
-      <GlassCard as="section" className="import-card" aria-labelledby="import-go">
-        <h2 id="import-go" className="section-title">
-          Importar
-        </h2>
+      <Panel title="Importar" className="import-go">
         <div className="import-actions">
           {dirty && (
             <MagneticButton variant="ghost" onClick={onRefresh} loading={refreshing}>
@@ -365,50 +357,41 @@ function PreviewResult({ preview, decisions, decide, dirty, refreshing, importin
             {importHint(plan, dirty)}
           </span>
         </div>
-      </GlassCard>
+      </Panel>
 
-      {preview.unrecognized.length > 0 && (
-        <GlassCard as="section" className="import-card" aria-labelledby="import-unrecognized">
-          <h2 id="import-unrecognized" className="section-title">
-            Linhas que não entendi ({preview.unrecognized.length})
-          </h2>
-          <p className="field__hint">Estas linhas não entram. Se importarem para você, lance à mão na Carteira.</p>
-          <ul className="import-list">
-            {preview.unrecognized.map((row) => (
-              <li key={`${row.file}-${row.sheet}-${row.line}`}>
-                {preview.files[row.file]?.name ?? "arquivo"} · linha {row.line}:{" "}
-                {reasonText(row.reason_code, row.reason)}
-                <span className="import-list__text">{money.hidden ? "Conteúdo da linha oculto." : row.text}</span>
-              </li>
-            ))}
-          </ul>
-        </GlassCard>
-      )}
+      {(preview.unrecognized.length > 0 || preview.ignored.length > 0) && (
+        <Grid cols={2} alignStart>
+          {preview.unrecognized.length > 0 && (
+            <Panel
+              title={`Linhas que não entendi (${preview.unrecognized.length})`}
+              info="Estas linhas não entram. Se importarem para você, lance à mão na Carteira."
+              infoLabel="Sobre as linhas que não entendi"
+            >
+              <ul className="import-list">
+                {preview.unrecognized.map((row) => (
+                  <li key={`${row.file}-${row.sheet}-${row.line}`}>
+                    {preview.files[row.file]?.name ?? "arquivo"} · linha {row.line}: {reasonText(row.reason_code, row.reason)}
+                    <span className="import-list__text">{money.hidden ? "Conteúdo da linha oculto." : row.text}</span>
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+          )}
 
-      {preview.ignored.length > 0 && (
-        <GlassCard as="section" className="import-card" aria-labelledby="import-ignored">
-          <h2 id="import-ignored" className="section-title">
-            Linhas deixadas de fora de propósito
-          </h2>
-          <ul className="import-list">
-            {preview.ignored.map((item) => (
-              <li key={item.reason_code}>
-                {item.count} {plural(item.count, ["linha", "linhas"])}: {reasonText(item.reason_code, item.reason)}
-              </li>
-            ))}
-          </ul>
-        </GlassCard>
+          {preview.ignored.length > 0 && (
+            <Panel title="Linhas deixadas de fora de propósito">
+              <ul className="import-list">
+                {preview.ignored.map((item) => (
+                  <li key={item.reason_code}>
+                    {item.count} {plural(item.count, ["linha", "linhas"])}: {reasonText(item.reason_code, item.reason)}
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+          )}
+        </Grid>
       )}
     </>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="import-stat">
-      <dt>{label}</dt>
-      <dd>{value}</dd>
-    </div>
   );
 }
 
@@ -423,22 +406,39 @@ type TableProps = {
 function AssetsTable({ assets, planOf, lines, decisions, decide }: TableProps) {
   const [open, setOpen] = useState<string | null>(null);
   return (
-    <div className="import-table-wrap">
-      <table className="import-table">
-        <caption className="field__hint">
-          Agrupado por ativo. Em ativo novo, a classe é uma sugestão: quem confirma é você.
-        </caption>
+    <div className="data-table import-table-wrap">
+      <table className="data-table__table import-table">
+        <caption className="sr-only">Agrupado por ativo. Em ativo novo, a classe é uma sugestão: quem confirma é você.</caption>
         <thead>
           <tr>
             <th scope="col">Ativo</th>
-            <th scope="col">Classe</th>
+            <th scope="col">
+              <span className="import-table__head">
+                Classe
+                <InfoTip label="Sobre a classe dos ativos novos" align="start">
+                  Em ativo novo, a classe é uma sugestão: quem confirma é você.
+                </InfoTip>
+              </span>
+            </th>
             <th scope="col">Situação</th>
-            <th scope="col">Compras</th>
-            <th scope="col">Vendas</th>
-            <th scope="col">Saldo dos negócios</th>
-            <th scope="col">Proventos recebidos</th>
-            <th scope="col">A receber</th>
-            <th scope="col">Linhas</th>
+            <th scope="col" className="is-end">
+              Compras
+            </th>
+            <th scope="col" className="is-end">
+              Vendas
+            </th>
+            <th scope="col" className="is-end">
+              Saldo dos negócios
+            </th>
+            <th scope="col" className="is-end">
+              Proventos recebidos
+            </th>
+            <th scope="col" className="is-end">
+              A receber
+            </th>
+            <th scope="col" className="is-end">
+              Linhas
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -496,13 +496,19 @@ function AssetRows({ asset, plan, lines, decision, decide, expanded, onToggle }:
   const title = titleOf(asset);
   const subtitle = asset.treasury ? asset.key : asset.name;
   const assetClass = decision?.asset_class ?? plan?.asset_class ?? asset.suggested_class;
+  const actionStatus: Record<B3AssetPlan["action"], Status> = {
+    create: "ok",
+    update: "info",
+    skip: "off",
+    nothing: "off",
+  };
   return (
     <>
       <tr>
-        <td>
+        <th scope="row">
           <span className="import-asset__code">{title}</span>
           {subtitle && <span className="import-asset__name">{subtitle}</span>}
-        </td>
+        </th>
         <td>
           {plan?.class_editable ? (
             <>
@@ -532,26 +538,28 @@ function AssetRows({ asset, plan, lines, decision, decide, expanded, onToggle }:
           </span>
         </td>
         <td>
-          {plan ? ACTION_LABEL[plan.action] : "—"}
-          {plan?.conflict && <span className="import-badge is-conflict">conflito</span>}
-          {plan?.class_needs_confirmation && <span className="import-badge is-warn">confira a classe</span>}
+          <span className="import-status">
+            {plan ? <StatusPill status={actionStatus[plan.action]}>{ACTION_LABEL[plan.action]}</StatusPill> : "—"}
+            {plan?.conflict && <StatusPill status="bad">conflito</StatusPill>}
+            {plan?.class_needs_confirmation && <StatusPill status="attention">confira a classe</StatusPill>}
+          </span>
         </td>
-        <td>
+        <td className="is-end">
           {orDash(
             totals.bought_quantity,
             `${money.quantity(totals.bought_quantity, true)} · ${money.brl(totals.bought_value)}`,
           )}
         </td>
-        <td>
+        <td className="is-end">
           {orDash(totals.sold_quantity, `${money.quantity(totals.sold_quantity, true)} · ${money.brl(totals.sold_value)}`)}
         </td>
-        <td>{asset.trades.length > 0 ? money.quantity(totals.net_quantity, true) : "—"}</td>
-        <td>{orDash(totals.income_received, money.brl(totals.income_received))}</td>
-        <td>{orDash(totals.income_provisioned, money.brl(totals.income_provisioned))}</td>
-        <td>
+        <td className="is-end">{asset.trades.length > 0 ? money.quantity(totals.net_quantity, true) : "—"}</td>
+        <td className="is-end">{orDash(totals.income_received, money.brl(totals.income_received))}</td>
+        <td className="is-end">{orDash(totals.income_provisioned, money.brl(totals.income_provisioned))}</td>
+        <td className="is-end">
           <button
             type="button"
-            className="btn btn--ghost"
+            className="btn btn--ghost import-table__lines"
             aria-expanded={expanded}
             aria-controls={detailId}
             onClick={onToggle}
@@ -712,10 +720,7 @@ function CommitResult({ result }: { result: B3CommitResult }) {
   for (const line of result.not_imported) reasons.set(line.reason_code, (reasons.get(line.reason_code) ?? 0) + 1);
   const income = summary.income_new + summary.income_replaced;
   return (
-    <GlassCard as="section" className="import-card" aria-labelledby="import-done">
-      <h2 id="import-done" className="section-title">
-        Importação concluída
-      </h2>
+    <Panel title="Importação concluída">
       <p role="status">
         Entraram {summary.transactions_new} {plural(summary.transactions_new, ["lançamento", "lançamentos"])} e {income}{" "}
         {plural(income, ["provento", "proventos"])}
@@ -724,12 +729,15 @@ function CommitResult({ result }: { result: B3CommitResult }) {
           : ""}
         .
       </p>
-      <dl className="import-stats">
-        <Stat label="Ativos novos" value={summary.assets_created} />
-        <Stat label="Ativos atualizados" value={summary.assets_updated} />
-        <Stat label="Saldos iniciais" value={summary.openings} />
-        <Stat label="Já existiam" value={summary.transactions_existing + summary.income_existing} />
-      </dl>
+      <StatStrip
+        inset
+        items={[
+          { label: "Ativos novos", value: summary.assets_created },
+          { label: "Ativos atualizados", value: summary.assets_updated },
+          { label: "Saldos iniciais", value: summary.openings },
+          { label: "Já existiam", value: summary.transactions_existing + summary.income_existing },
+        ]}
+      />
       <h3 className="import-review__title">O que ficou de fora</h3>
       <ul className="import-list">
         {[...reasons].map(([code, count]) => (
@@ -752,6 +760,6 @@ function CommitResult({ result }: { result: B3CommitResult }) {
         A Carteira, a Renda e o caixa já mostram o que entrou. O Desempenho refaz a série desde o lançamento mais
         antigo, em segundo plano.
       </p>
-    </GlassCard>
+    </Panel>
   );
 }
