@@ -25,7 +25,9 @@ use crate::domain::alerts::{
     self as rules, AlertConfig, AlertKind, CeilingAsset, ClassShare, Item, LINK_CODE_TTL_MINUTES,
 };
 use crate::domain::health::{self, Warning};
+use crate::domain::tax::rules::{covered_years, ExemptionId};
 use crate::http::health::health_assets;
+use crate::http::tax;
 use crate::performance::{local_date, BRASILIA};
 use crate::service;
 use crate::store::{IncomeFilter, Store, StoreError};
@@ -38,6 +40,12 @@ pub const POLL_LOCK_KEY: i64 = 0x50_52_55_4d_4f_27;
 
 /// Quanto o `getUpdates` espera por mensagem nova.
 pub const POLL_TIMEOUT: Duration = Duration::from_secs(25);
+/// Se o IR tem regra cadastrada para `year`. Sem ela o isentômetro fica
+/// indisponível (a regra de outro ano nunca vale).
+pub fn tax_year_covered(year: i32) -> bool {
+    covered_years().contains(&year)
+}
+
 /// De quanto em quanto tempo se confere quem já passou do horário.
 pub const DIGEST_EVERY: Duration = Duration::from_secs(60);
 /// Intervalo mínimo entre dois "enviar teste" da mesma pessoa.
@@ -368,7 +376,7 @@ impl AlertService {
         let mut items: Vec<Item> = Vec::new();
         // Tipos de transição: o que vale agora, para comparar com o que já foi avisado.
         let mut replace: Vec<(AlertKind, Vec<String>)> = Vec::new();
-        for kind in config.active() {
+        for kind in config.active(tax_year_covered(today.year())) {
             let found = self.collect(user, kind, &config, &view, today).await?;
             if !kind.is_transition() {
                 items.extend(found);
@@ -466,9 +474,43 @@ impl AlertService {
                     .map(|w: Warning| Item::Health(w))
                     .collect()
             }
-            // O isentômetro ainda não é apurado (ver `AlertKind::is_available`).
-            AlertKind::TaxExemption => Vec::new(),
+            AlertKind::TaxExemption => self.tax_exemption(user, config, today).await,
         })
+    }
+
+    /// O isentômetro de ações do mês de hoje, da mesma apuração de
+    /// `GET /tax/months` (vendas de ações em operação comum contra o limite do
+    /// ano, `rules_for`). Sem apuração (ano sem regra, livro que não fecha para
+    /// o IR) o alerta simplesmente não diz nada: isso não derruba o resumo.
+    async fn tax_exemption(&self, user: Uuid, config: &AlertConfig, today: Date) -> Vec<Item> {
+        let assessment = match tax::assessment_for(&self.store, user, today, today.year()).await {
+            Ok(assessment) => assessment,
+            Err(error) => {
+                if error.code != "tax_year_not_covered" {
+                    tracing::warn!(code = error.code, "isentometro sem apuracao");
+                }
+                return Vec::new();
+            }
+        };
+        let month = u8::from(today.month());
+        let status = assessment
+            .months
+            .iter()
+            .find(|m| m.period.year == today.year() && m.period.month == month)
+            .and_then(|m| {
+                m.exemptions
+                    .iter()
+                    .find(|e| e.id == ExemptionId::StockSales)
+            });
+        let threshold = config
+            .get(AlertKind::TaxExemption)
+            .threshold
+            .or_else(|| AlertKind::TaxExemption.default_threshold())
+            .unwrap_or(Decimal::ONE_HUNDRED);
+        status
+            .and_then(|s| rules::exemption_alert(today.year(), month, s.sales, s.limit, threshold))
+            .into_iter()
+            .collect()
     }
 
     /// Os proventos que caem amanhã, somados por pagador.

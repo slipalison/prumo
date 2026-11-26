@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
-import { alertsHandlers, linkedAlerts, problem, sampleAlerts } from "../../test/alertsHandlers";
+import { alertsHandlers, linkedAlerts, problem, sampleAlerts, withoutTaxRules } from "../../test/alertsHandlers";
 import { renderApp } from "../../test/render";
 import { server } from "../../test/server";
 
@@ -90,14 +90,24 @@ describe("Alertas: estado do Telegram", () => {
 });
 
 describe("Alertas: tipos, horário e valores", () => {
-  it("lista os seis tipos, com o isentômetro desligado e sem poder ligar", async () => {
+  it("lista os seis tipos, todos ligados, com o limite do isentômetro", async () => {
     open(linkedAlerts());
     expect(await screen.findAllByRole("switch")).toHaveLength(7);
     const exemption = screen.getByRole("switch", { name: "Isentômetro de ações" });
+    expect(exemption).toBeEnabled();
+    expect(exemption).toBeChecked();
+    expect(screen.getByRole("textbox", { name: "Limite: Isentômetro de ações" })).toHaveValue("80");
+    expect(screen.getByRole("switch", { name: "Provento que cai amanhã" })).toBeChecked();
+  });
+
+  it("ano sem regra de IR: o isentômetro fica desligado, travado e diz por quê", async () => {
+    open(withoutTaxRules(linkedAlerts()));
+    const exemption = await screen.findByRole("switch", { name: "Isentômetro de ações" });
     expect(exemption).toBeDisabled();
     expect(exemption).not.toBeChecked();
-    expect(screen.getByText(/Ainda não disponível/)).toBeInTheDocument();
-    expect(screen.getByRole("switch", { name: "Provento que cai amanhã" })).toBeChecked();
+    expect(screen.getByRole("textbox", { name: "Limite: Isentômetro de ações" })).toBeDisabled();
+    expect(screen.getByText(/Indisponível: o Prumo ainda não tem a regra de IR deste ano/)).toBeInTheDocument();
+    expect(screen.queryByText("Isentômetro de ações", { selector: ".alerts__digest-section" })).not.toBeInTheDocument();
   });
 
   it("desligar um tipo e mudar o limite salva só o que mudou", async () => {

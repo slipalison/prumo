@@ -1980,7 +1980,7 @@ disto dá erro: `GET /alerts` responde com `telegram.configured: false`.
       "threshold": null, "default_threshold": null, "unit": null },
     { "kind": "objective_achieved", "enabled": true, "available": true,
       "threshold": null, "default_threshold": null, "unit": null },
-    { "kind": "tax_exemption", "enabled": false, "available": false,
+    { "kind": "tax_exemption", "enabled": true, "available": true,
       "threshold": 80.0, "default_threshold": 80.0, "unit": "percent_of_limit" },
     { "kind": "health_warning", "enabled": true, "available": true,
       "threshold": null, "default_threshold": null, "unit": null }
@@ -1993,7 +1993,8 @@ disto dá erro: `GET /alerts` responde com `telegram.configured: false`.
 - `send_at`: `HH:MM`, horário de Brasília. Padrão `08:00`.
 - `hide_values`: o resumo vai sem valores em reais, só nomes e percentuais.
 - `types`: sempre os seis, nesta ordem. `available: false` é um tipo que o
-  servidor ainda não apura (hoje, `tax_exemption`); ele não liga.
+  servidor não pode apurar agora: hoje, só `tax_exemption`, quando o ano de hoje
+  não tem regra de IR cadastrada (vem `enabled: false` e não liga).
   `unit` diz em que o limite é medido: `percentage_points` (p.p. da carteira) ou
   `percent_of_limit` (% do limite mensal); `null` nos que não têm limite.
 

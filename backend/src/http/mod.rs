@@ -14,7 +14,7 @@ mod objectives;
 mod ops;
 mod performance;
 mod profit;
-mod tax;
+pub(crate) mod tax;
 mod treasury;
 mod yoc;
 

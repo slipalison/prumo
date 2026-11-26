@@ -79,7 +79,7 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   Detalhes em [`docs/saude.md`](docs/saude.md).
 - **Alertas** — um resumo por dia no Telegram, só quando há algo a dizer:
   provento que cai amanhã, classe fora da meta, ativo de volta ao teto de
-  preço, objetivo atingido e aviso novo de saúde. Cada tipo liga e desliga, a
+  preço, objetivo atingido, aviso novo de saúde e isentômetro de ações do mês. Cada tipo liga e desliga, a
   hora é sua, e dá para mandar sem valores em reais. Você cria o bot no
   @BotFather e o vincula por um código, sem procurar chat id. Passo a passo em
   [`docs/alertas.md`](docs/alertas.md).

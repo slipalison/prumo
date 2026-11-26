@@ -10,6 +10,8 @@ type KindText = {
   lead?: string;
   /** Depois do campo de limite. */
   tail?: string;
+  /** Por que o tipo não pode ser ligado, quando o servidor diz que está indisponível. */
+  unavailable?: string;
 };
 
 export const KIND_TEXT: Record<AlertKind, KindText> = {
@@ -34,8 +36,9 @@ export const KIND_TEXT: Record<AlertKind, KindText> = {
   tax_exemption: {
     name: "Isentômetro de ações",
     lead: "Avisar a partir de",
-    tail: "% do limite de 20 mil reais de vendas no mês",
-    why: "Ainda não disponível: depende de ligar o livro de lançamentos ao cálculo do imposto.",
+    tail: "% do limite de isenção de vendas no mês",
+    why: "Quando as vendas de ações do mês chegam a esse percentual do limite de isenção e, de novo, quando passam dele. É a mesma conta da tela Impostos.",
+    unavailable: "Indisponível: o Prumo ainda não tem a regra de IR deste ano, e não usa a de outro ano.",
   },
   health_warning: {
     name: "Aviso novo de saúde da carteira",
@@ -77,6 +80,13 @@ export function sampleDigest(types: AlertType[], hideValues: boolean, money: Mon
     "objective_achieved",
     "Objetivos atingidos",
     hideValues ? "- Objetivo de renda mensal atingido." : `- Objetivo de renda mensal atingido: ${money.brl(3000)}.`,
+  );
+  add(
+    "tax_exemption",
+    "Isentômetro de ações",
+    hideValues
+      ? "- Você já vendeu 82,5% do limite de isenção de ações do mês."
+      : `- Você já vendeu 82,5% do limite de isenção de ações do mês. Faltam ${money.brl(3500)} para perder a isenção (${money.brl(16500)} de ${money.brl(20000)}).`,
   );
   add(
     "health_warning",

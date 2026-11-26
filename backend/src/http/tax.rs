@@ -15,6 +15,7 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use time::{Date, OffsetDateTime};
+use uuid::Uuid;
 
 use super::dto::{decimal, decimal_out};
 use super::{ApiJson, ApiPath, ApiQuery, AppState, CurrentUser};
@@ -31,6 +32,7 @@ use crate::domain::tax_book::{
 };
 use crate::error::{ApiError, ApiResult};
 use crate::store::tax::{DarfPayment, StoredCarryforward};
+use crate::store::Store;
 
 time::serde::format_description!(iso_date, Date, "[year]-[month]-[day]");
 
@@ -636,22 +638,20 @@ impl Loaded {
     }
 }
 
-async fn load(state: &AppState, user: &CurrentUser, today: Date) -> ApiResult<Loaded> {
-    let lines = state.store.tax_ledger(user.id).await?;
+async fn load(store: &Store, user: Uuid, today: Date) -> ApiResult<Loaded> {
+    let lines = store.tax_ledger(user).await?;
     let book = tax_book::book(&lines);
 
-    let instruments: HashMap<_, _> = state
-        .store
-        .assets(user.id)
+    let instruments: HashMap<_, _> = store
+        .assets(user)
         .await?
         .into_iter()
         .map(|asset| (asset.id, asset.tax_instrument))
         .collect();
     // O que a pessoa recebeu: a estimativa não é fato, e o provisionado
     // (pagamento no futuro) ainda não aconteceu.
-    let payments: Vec<Payment> = state
-        .store
-        .income_ledger(user.id)
+    let payments: Vec<Payment> = store
+        .income_ledger(user)
         .await?
         .into_iter()
         .filter(|event| event.source != IncomeSource::Estimate && event.pay_date <= today)
@@ -666,7 +666,7 @@ async fn load(state: &AppState, user: &CurrentUser, today: Date) -> ApiResult<Lo
         .collect();
     let (incomes, income_skipped) = tax_book::incomes(&payments);
 
-    let stored = state.store.tax_carryforward(user.id).await?;
+    let stored = store.tax_carryforward(user).await?;
     let start = stored.unwrap_or_else(|| empty_carryforward(first_covered_year()));
     Ok(Loaded {
         book,
@@ -683,9 +683,23 @@ async fn months_of(
     year: i32,
 ) -> ApiResult<(Loaded, Assessment)> {
     let year = check_year(year)?;
-    let loaded = load(state, user, today()).await?;
+    let loaded = load(&state.store, user.id, today()).await?;
     let assessment = assess(&loaded.input(), year).map_err(tax_error)?;
     Ok((loaded, assessment))
+}
+
+/// A apuração de IR de `year` para quem não é uma requisição (o resumo de
+/// alertas): a mesma de `GET /tax/months`, com a mesma regra por ano. Ano sem
+/// regra volta como `tax_year_not_covered`.
+pub(crate) async fn assessment_for(
+    store: &Store,
+    user: Uuid,
+    today: Date,
+    year: i32,
+) -> ApiResult<Assessment> {
+    let year = check_year(year)?;
+    let loaded = load(store, user, today).await?;
+    assess(&loaded.input(), year).map_err(tax_error)
 }
 
 fn darf_code(code: &str) -> ApiResult<&str> {
@@ -755,7 +769,7 @@ pub async fn irpf(
     ApiPath(year): ApiPath<i32>,
 ) -> ApiResult<Json<IrpfDto>> {
     let year = check_year(year)?;
-    let loaded = load(&state, &user, today()).await?;
+    let loaded = load(&state.store, user.id, today()).await?;
     let report = annual_report(&loaded.input(), &loaded.incomes, year).map_err(tax_error)?;
     let skipped = loaded
         .book

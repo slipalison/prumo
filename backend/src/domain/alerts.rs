@@ -80,11 +80,17 @@ impl AlertKind {
         self != AlertKind::IncomeTomorrow
     }
 
-    /// Se o servidor já sabe apurar este tipo. O isentômetro depende de ligar o
-    /// livro de lançamentos ao imposto (`domain/tax`), que é outra frente: até
-    /// lá o tipo existe na tela, desligado e sem poder ser ligado.
-    pub fn is_available(self) -> bool {
-        self != AlertKind::TaxExemption
+    /// `true` no tipo que só existe num ano com regra de IR cadastrada
+    /// (`domain/tax/rules`): sem regra do ano, ele fica indisponível, e o
+    /// Prumo não usa a regra de outro ano.
+    pub fn needs_tax_rules(self) -> bool {
+        self == AlertKind::TaxExemption
+    }
+
+    /// Se o tipo pode ser apurado agora: `tax_rules` diz se o ano de hoje tem
+    /// regra de IR.
+    pub fn is_available(self, tax_rules: bool) -> bool {
+        tax_rules || !self.needs_tax_rules()
     }
 
     /// O limite de fábrica (em pontos percentuais ou % do limite), se o tipo tem.
@@ -134,7 +140,7 @@ impl Default for AlertConfig {
         }; 6];
         for kind in AlertKind::ALL {
             settings[kind as usize] = TypeSetting {
-                enabled: kind.is_available(),
+                enabled: true,
                 threshold: kind.default_threshold(),
             };
         }
@@ -151,11 +157,12 @@ impl AlertConfig {
         self.settings[kind as usize] = setting;
     }
 
-    /// Os tipos ligados que o servidor sabe apurar.
-    pub fn active(&self) -> impl Iterator<Item = AlertKind> + '_ {
+    /// Os tipos ligados que podem ser apurados agora (`tax_rules`: o ano de
+    /// hoje tem regra de IR).
+    pub fn active(&self, tax_rules: bool) -> impl Iterator<Item = AlertKind> + '_ {
         AlertKind::ALL
             .into_iter()
-            .filter(|k| k.is_available() && self.get(*k).enabled)
+            .filter(move |k| k.is_available(tax_rules) && self.get(*k).enabled)
     }
 }
 
@@ -199,6 +206,15 @@ pub enum Item {
         target: Decimal,
     },
     Health(Warning),
+    /// Vendas de ações do mês perto do limite de isenção (`over: false`) ou
+    /// acima dele (`over: true`).
+    TaxExemption {
+        year: i32,
+        month: u8,
+        sales: Decimal,
+        limit: Decimal,
+        over: bool,
+    },
 }
 
 impl Item {
@@ -209,6 +225,7 @@ impl Item {
             Item::PriceBelowCeiling { .. } => AlertKind::PriceBelowCeiling,
             Item::ObjectiveAchieved { .. } => AlertKind::ObjectiveAchieved,
             Item::Health(_) => AlertKind::HealthWarning,
+            Item::TaxExemption { .. } => AlertKind::TaxExemption,
         }
     }
 
@@ -219,6 +236,13 @@ impl Item {
             Item::ClassDrift { class, .. } => format!("class:{}", class.as_str()),
             Item::PriceBelowCeiling { asset_id, .. } => format!("asset:{asset_id}"),
             Item::ObjectiveAchieved { id, .. } => format!("objective:{id}"),
+            // Um aviso ao chegar perto e outro ao passar, por mês.
+            Item::TaxExemption {
+                year, month, over, ..
+            } => format!(
+                "stocks:{year}-{month:02}:{}",
+                if *over { "over" } else { "near" }
+            ),
             Item::Health(warning) => format!(
                 "{}:{}",
                 warning.rule.as_str(),
@@ -293,6 +317,30 @@ pub fn below_ceiling(assets: &[CeilingAsset]) -> Vec<Item> {
             })
         })
         .collect()
+}
+
+/// O isentômetro de ações do mês: avisa quando as vendas chegam a `threshold`%
+/// do limite de isenção, e de novo quando passam dele. `limit` e `sales` vêm
+/// da mesma apuração da tela Impostos (`domain/tax`); sem limite, nada a dizer.
+pub fn exemption_alert(
+    year: i32,
+    month: u8,
+    sales: Decimal,
+    limit: Decimal,
+    threshold: Decimal,
+) -> Option<Item> {
+    if limit <= Decimal::ZERO {
+        return None;
+    }
+    let over = sales > limit;
+    let near = sales * Decimal::ONE_HUNDRED >= limit * threshold;
+    (over || near).then_some(Item::TaxExemption {
+        year,
+        month,
+        sales,
+        limit,
+        over,
+    })
 }
 
 /// Do que está valendo agora, o que ainda não foi avisado.
@@ -396,6 +444,35 @@ fn describe(item: &Item, hide_values: bool) -> String {
             }
         }
         Item::Health(warning) => describe_health(warning, hide_values),
+        Item::TaxExemption {
+            sales, limit, over, ..
+        } => {
+            let used = pct(*sales * Decimal::ONE_HUNDRED / *limit);
+            let mut text = if *over {
+                format!(
+                    "Você já vendeu {used} do limite de isenção de ações do mês: passou dele, e o lucro das ações vendidas no mês passa a ser tributado."
+                )
+            } else {
+                format!("Você já vendeu {used} do limite de isenção de ações do mês.")
+            };
+            if !hide_values {
+                if *over {
+                    text.push_str(&format!(
+                        " Vendas de {} contra o limite de {}.",
+                        brl(*sales),
+                        brl(*limit)
+                    ));
+                } else {
+                    text.push_str(&format!(
+                        " Faltam {} para perder a isenção ({} de {}).",
+                        brl(*limit - *sales),
+                        brl(*sales),
+                        brl(*limit)
+                    ));
+                }
+            }
+            text
+        }
     }
 }
 
@@ -530,7 +607,7 @@ fn section_title(kind: AlertKind) -> &'static str {
         AlertKind::ClassDrift => "Classes fora da meta",
         AlertKind::PriceBelowCeiling => "No seu teto de preço",
         AlertKind::ObjectiveAchieved => "Objetivos atingidos",
-        AlertKind::TaxExemption => "Isentômetro",
+        AlertKind::TaxExemption => "Isentômetro de ações",
         AlertKind::HealthWarning => "Saúde da carteira",
     }
 }
@@ -600,26 +677,30 @@ mod tests {
     }
 
     #[test]
-    fn kinds_round_trip_and_the_exemption_is_not_available_yet() {
+    fn kinds_round_trip_and_the_exemption_needs_a_year_with_rules() {
         for kind in AlertKind::ALL {
             assert_eq!(AlertKind::parse(kind.as_str()), Some(kind));
         }
         assert_eq!(AlertKind::parse("outro"), None);
-        assert!(!AlertKind::TaxExemption.is_available());
+        assert!(AlertKind::TaxExemption.is_available(true));
+        assert!(!AlertKind::TaxExemption.is_available(false));
         assert!(AlertKind::ALL
             .into_iter()
             .filter(|k| *k != AlertKind::TaxExemption)
-            .all(AlertKind::is_available));
+            .all(|k| k.is_available(false)));
         assert!(!AlertKind::IncomeTomorrow.is_transition());
         assert!(AlertKind::HealthWarning.is_transition());
     }
 
     #[test]
-    fn the_default_config_turns_on_what_the_server_can_measure() {
+    fn the_default_config_turns_everything_on_and_the_exemption_needs_tax_rules() {
         let config = AlertConfig::default();
-        let active: Vec<_> = config.active().collect();
+        let active: Vec<_> = config.active(true).collect();
+        assert_eq!(active, AlertKind::ALL);
+        // Ano sem regra de IR: o isentômetro sai da apuração, o resto segue.
+        let without: Vec<_> = config.active(false).collect();
         assert_eq!(
-            active,
+            without,
             [
                 AlertKind::IncomeTomorrow,
                 AlertKind::ClassDrift,
@@ -629,21 +710,21 @@ mod tests {
             ]
         );
         assert_eq!(config.get(AlertKind::ClassDrift).threshold, Some(dec!(5)));
-        assert!(!config.get(AlertKind::TaxExemption).enabled);
+        assert!(config.get(AlertKind::TaxExemption).enabled);
         assert_eq!(
             config.get(AlertKind::TaxExemption).threshold,
             Some(dec!(80))
         );
-        // Ligado na mão, mas sem apuração no servidor: nunca entra.
-        let mut forced = config;
-        forced.set(
+        // Desligado pela pessoa: não entra nem com regra do ano.
+        let mut off = config;
+        off.set(
             AlertKind::TaxExemption,
             TypeSetting {
-                enabled: true,
+                enabled: false,
                 threshold: Some(dec!(80)),
             },
         );
-        assert!(!forced.active().any(|k| k == AlertKind::TaxExemption));
+        assert!(!off.active(true).any(|k| k == AlertKind::TaxExemption));
     }
 
     #[test]
@@ -725,6 +806,52 @@ mod tests {
         ]);
         assert_eq!(found.len(), 1);
         assert!(matches!(&found[0], Item::PriceBelowCeiling { price, .. } if *price == dec!(10)));
+    }
+
+    #[test]
+    fn the_exemption_warns_at_the_threshold_and_again_above_the_limit() {
+        let alert = |sales| exemption_alert(2026, 11, sales, dec!(20000), dec!(80));
+        assert_eq!(alert(dec!(15999.99)), None);
+        let near = alert(dec!(16000)).unwrap();
+        assert!(matches!(near, Item::TaxExemption { over: false, .. }));
+        // No limite exato ainda é isento: só avisa que está perto.
+        assert!(matches!(
+            alert(dec!(20000)),
+            Some(Item::TaxExemption { over: false, .. })
+        ));
+        let over = alert(dec!(20000.01)).unwrap();
+        assert!(matches!(over, Item::TaxExemption { over: true, .. }));
+        assert_eq!(near.key(), "stocks:2026-11:near");
+        assert_eq!(over.key(), "stocks:2026-11:over");
+        assert_eq!(near.kind(), AlertKind::TaxExemption);
+        assert_eq!(exemption_alert(2026, 11, dec!(5), dec!(0), dec!(80)), None);
+        // Mês novo, aviso novo.
+        let december = exemption_alert(2026, 12, dec!(16000), dec!(20000), dec!(80)).unwrap();
+        assert_ne!(december.key(), near.key());
+    }
+
+    #[test]
+    fn the_exemption_text_has_values_only_when_allowed() {
+        let near = exemption_alert(2026, 11, dec!(16500), dec!(20000), dec!(80)).unwrap();
+        assert_eq!(
+            describe(&near, false),
+            "Você já vendeu 82,5% do limite de isenção de ações do mês. Faltam R$ 3.500,00 para perder a isenção (R$ 16.500,00 de R$ 20.000,00)."
+        );
+        assert_eq!(
+            describe(&near, true),
+            "Você já vendeu 82,5% do limite de isenção de ações do mês."
+        );
+        let over = exemption_alert(2026, 11, dec!(25000), dec!(20000), dec!(80)).unwrap();
+        assert_eq!(
+            describe(&over, false),
+            "Você já vendeu 125% do limite de isenção de ações do mês: passou dele, e o lucro das ações vendidas no mês passa a ser tributado. Vendas de R$ 25.000,00 contra o limite de R$ 20.000,00."
+        );
+        assert!(!describe(&over, true).contains("R$"));
+        let text = render_digest(date!(2026 - 11 - 25), &[near], false).unwrap();
+        assert!(
+            text.contains("Isentômetro de ações\n- Você já vendeu 82,5%"),
+            "{text}"
+        );
     }
 
     #[test]
@@ -1000,6 +1127,15 @@ mod tests {
                     price: Decimal::new(i64::from(price), 2),
                     ceiling: Decimal::new(i64::from(ceiling), 2),
                 }),
+            (1u32..100_000_000, 1u32..100_000_000, 1u8..=12).prop_map(|(sales, limit, month)| {
+                Item::TaxExemption {
+                    year: 2026,
+                    month,
+                    sales: Decimal::new(i64::from(sales), 2),
+                    limit: Decimal::new(i64::from(limit), 2),
+                    over: sales > limit,
+                }
+            }),
             (1u32..100_000_000, any::<u128>()).prop_map(|(target, n)| Item::ObjectiveAchieved {
                 id: Uuid::from_u128(n),
                 kind: ObjectiveKind::NetWorth,

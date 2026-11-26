@@ -325,7 +325,7 @@ function PreferencesCard({ alerts }: { alerts: Alerts }) {
                       </>
                     )}
                   </div>
-                  <p className="field__hint">{text.why}</p>
+                  <p className="field__hint">{!type.available && text.unavailable ? text.unavailable : text.why}</p>
                   {error && state.enabled && (
                     <p id={`${id}-error`} className="rule-row__error" role="alert">
                       {error}

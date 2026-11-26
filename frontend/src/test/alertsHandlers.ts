@@ -12,11 +12,22 @@ export function sampleAlerts(overrides: Partial<Alerts> = {}): Alerts {
       { kind: "class_drift", enabled: true, available: true, threshold: 5, default_threshold: 5, unit: "percentage_points" },
       { kind: "price_below_ceiling", enabled: true, available: true, threshold: null, default_threshold: null, unit: null },
       { kind: "objective_achieved", enabled: true, available: true, threshold: null, default_threshold: null, unit: null },
-      { kind: "tax_exemption", enabled: false, available: false, threshold: 80, default_threshold: 80, unit: "percent_of_limit" },
+      { kind: "tax_exemption", enabled: true, available: true, threshold: 80, default_threshold: 80, unit: "percent_of_limit" },
       { kind: "health_warning", enabled: true, available: true, threshold: null, default_threshold: null, unit: null },
     ],
     ...overrides,
   };
+}
+
+/** Ano sem regra de IR: o isentômetro vem desligado e indisponível. */
+export function withoutTaxRules(alerts: Alerts): Alerts {
+  for (const type of alerts.types) {
+    if (type.kind === "tax_exemption") {
+      type.enabled = false;
+      type.available = false;
+    }
+  }
+  return alerts;
 }
 
 export const linkedAlerts = (): Alerts =>

@@ -116,6 +116,10 @@ fn service(store: &Store, fake: &Arc<FakeTelegram>) -> Arc<AlertService> {
     )
 }
 
+fn tax_rules_cover_today() -> bool {
+    prumo::alerts::tax_year_covered(local_date(OffsetDateTime::now_utc()).year())
+}
+
 fn now() -> OffsetDateTime {
     OffsetDateTime::now_utc()
 }
@@ -857,11 +861,15 @@ async fn the_api_shows_state_validates_changes_and_drives_linking() {
         (drift["threshold"].clone(), drift["unit"].clone()),
         (json!(5.0), json!("percentage_points"))
     );
+    // O isentômetro vale enquanto o ano de hoje tem regra de IR; sem ela, fica
+    // indisponível (e desligado), sem erro.
+    let covered = tax_rules_cover_today();
     let tax = find(types, "kind", "tax_exemption");
     assert_eq!(
         (tax["enabled"].clone(), tax["available"].clone()),
-        (json!(false), json!(false))
+        (json!(covered), json!(covered))
     );
+    assert_eq!(tax["threshold"], 80.0);
     assert_eq!(tax["default_threshold"], 80.0);
 
     // Mudanças: horário, sem valores, tipos e limite.
@@ -925,10 +933,6 @@ async fn the_api_shows_state_validates_changes_and_drives_linking() {
             json!({ "types": { "income_tomorrow": { "threshold": 5 } } }),
             "tipo sem limite",
         ),
-        (
-            json!({ "types": { "tax_exemption": { "enabled": true } } }),
-            "ainda indisponível",
-        ),
         (json!({ "x": 1 }), "campo desconhecido"),
     ] {
         let refused = put(&fabio.app.router, "/api/v1/alerts", bad).await;
@@ -944,7 +948,20 @@ async fn the_api_shows_state_validates_changes_and_drives_linking() {
         saved.body
     );
 
-    // Desligar o indisponível é inofensivo; o limite do isentômetro se guarda.
+    // Ligar o isentômetro só vale com regra de IR do ano de hoje.
+    let on = put(
+        &fabio.app.router,
+        "/api/v1/alerts",
+        json!({ "types": { "tax_exemption": { "enabled": true } } }),
+    )
+    .await;
+    if tax_rules_cover_today() {
+        assert_eq!(on.status, StatusCode::OK, "{}", on.text);
+    } else {
+        assert_eq!(on.status, StatusCode::UNPROCESSABLE_ENTITY, "{}", on.text);
+    }
+
+    // Desligar é sempre inofensivo; o limite do isentômetro se guarda.
     let tax = put(
         &fabio.app.router,
         "/api/v1/alerts",
@@ -1016,4 +1033,96 @@ async fn the_api_shows_state_validates_changes_and_drives_linking() {
     assert_eq!(broken.status, StatusCode::BAD_GATEWAY, "{}", broken.text);
     assert_eq!(broken.body["code"], "telegram_unavailable");
     assert!(!broken.text.contains("detalhe interno"), "{}", broken.text);
+}
+
+// -------------------------------------------------------------- isentômetro --
+
+/// Vende ações no mês de hoje e confere o aviso ao chegar perto e de novo ao
+/// passar do limite, sem repetir. O limite e as vendas vêm da apuração de IR.
+#[tokio::test]
+async fn the_stock_exemption_warns_near_the_limit_and_again_above_it() {
+    if !tax_rules_cover_today() {
+        return;
+    }
+    let db = database().await;
+    let fake = FakeTelegram::new();
+    let alerts = service(&db.store, &fake);
+    let gil = person(&db, &alerts, "gil@prumo.test", 9001).await;
+    let router = &gil.app.router;
+    let stock = post(
+        router,
+        "/api/v1/assets",
+        json!({ "asset_class": "br_stocks", "symbol": "WEGE3", "quantity": 0 }),
+    )
+    .await;
+    assert_eq!(stock.status, StatusCode::CREATED, "{}", stock.text);
+    let wege = stock.body["id"].as_str().unwrap().to_owned();
+    let bought = post(
+        router,
+        "/api/v1/transactions",
+        json!({ "asset_id": wege, "kind": "buy", "trade_date": "2025-03-10", "quantity": 1000, "unit_price": 40 }),
+    )
+    .await;
+    assert_eq!(bought.status, StatusCode::CREATED, "{}", bought.text);
+    let day = local_date(noon(0)).to_string();
+    let sell = |quantity: u32| json!({ "asset_id": wege, "kind": "sell", "trade_date": day, "quantity": quantity, "unit_price": 50 });
+
+    // Dia 0: nada vendido no mês, primeira apuração: guarda sem avisar.
+    let report = alerts.run_digest(noon(0)).await.unwrap();
+    assert_eq!((report.sent, report.silent), (0, 1));
+
+    // Dia 1: R$ 16.500 de R$ 20.000 (82,5%): perto do limite de 80%.
+    let first = post(router, "/api/v1/transactions", sell(330)).await;
+    assert_eq!(first.status, StatusCode::CREATED, "{}", first.text);
+    // O mês de "amanhã" pode já ser outro: só vale se hoje e o dia 1 são do mesmo mês.
+    if local_date(noon(1)).month() != local_date(noon(0)).month() {
+        return;
+    }
+    let report = alerts.run_digest(noon(1)).await.unwrap();
+    assert_eq!(report.sent, 1);
+    let texts = fake.texts_to(gil.chat);
+    assert!(texts[0].contains("Isentômetro de ações"), "{}", texts[0]);
+    assert!(
+        texts[0].contains(
+            "Você já vendeu 82,5% do limite de isenção de ações do mês. Faltam R$ 3.500,00 para perder a isenção (R$ 16.500,00 de R$ 20.000,00)."
+        ),
+        "{}",
+        texts[0]
+    );
+
+    // Dia 2: o mesmo patamar não se repete.
+    let report = alerts.run_digest(noon(2)).await.unwrap();
+    assert_eq!((report.sent, report.silent), (0, 1));
+
+    // Dia 3: passa do limite (R$ 21.500): avisa de novo, agora como "passou".
+    if local_date(noon(3)).month() != local_date(noon(0)).month() {
+        return;
+    }
+    let second = post(router, "/api/v1/transactions", sell(100)).await;
+    assert_eq!(second.status, StatusCode::CREATED, "{}", second.text);
+    let hidden = put(router, "/api/v1/alerts", json!({ "hide_values": true })).await;
+    assert_eq!(hidden.status, StatusCode::OK);
+    let report = alerts.run_digest(noon(3)).await.unwrap();
+    assert_eq!(report.sent, 1);
+    let texts = fake.texts_to(gil.chat);
+    assert!(
+        texts[1]
+            .contains("Você já vendeu 107,5% do limite de isenção de ações do mês: passou dele"),
+        "{}",
+        texts[1]
+    );
+    assert!(!texts[1].contains("R$"), "{}", texts[1]);
+
+    // O limite do tipo é editável (até 100%).
+    let quiet = put(
+        router,
+        "/api/v1/alerts",
+        json!({ "types": { "tax_exemption": { "threshold": 100 } } }),
+    )
+    .await;
+    assert_eq!(quiet.status, StatusCode::OK, "{}", quiet.text);
+    assert_eq!(
+        find(&quiet.body["types"], "kind", "tax_exemption")["threshold"],
+        100.0
+    );
 }

@@ -555,8 +555,9 @@ funcionamento e a configuração do bot estão em [alertas.md](alertas.md).
      **Desvincular**.
 2. **O que avisar.** A mesma lista de regras da Saúde (`rule-row`): uma frase,
    o limite quando o tipo tem (campo numérico, desligado junto do interruptor),
-   a explicação em uma linha e o interruptor à direita. O isentômetro aparece
-   **desligado e sem poder ser ligado**, com a razão escrita.
+   a explicação em uma linha e o interruptor à direita. Sem regra de IR para o
+   ano de hoje, o isentômetro aparece **desligado e travado**, com a razão
+   escrita ("o Prumo ainda não tem a regra de IR deste ano").
 3. **Quando e com quê.** Hora do resumo (`<input type="time">`, horário de
    Brasília), o interruptor **Sem valores no resumo** (com a explicação de que
    o resumo passa pelos servidores do Telegram) e **Salvar alertas**. Erros

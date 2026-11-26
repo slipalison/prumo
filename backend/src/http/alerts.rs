@@ -14,8 +14,9 @@ use time::OffsetDateTime;
 
 use super::dto::optional_decimal;
 use super::{ApiJson, AppState, CurrentUser};
-use crate::alerts::AlertError;
+use crate::alerts::{tax_year_covered, AlertError};
 use crate::domain::alerts::{self as rules, AlertConfig, AlertKind, TypeSetting};
+use crate::domain::income::today_in_brazil;
 use crate::error::{ApiError, ApiResult};
 use crate::telegram::TelegramError;
 
@@ -100,15 +101,15 @@ fn unit(kind: AlertKind) -> Option<&'static str> {
     }
 }
 
-fn types_dto(config: &AlertConfig) -> Vec<TypeDto> {
+fn types_dto(config: &AlertConfig, tax_rules: bool) -> Vec<TypeDto> {
     AlertKind::ALL
         .into_iter()
         .map(|kind| {
             let setting = config.get(kind);
             TypeDto {
                 kind: kind.as_str(),
-                enabled: setting.enabled && kind.is_available(),
-                available: kind.is_available(),
+                enabled: setting.enabled && kind.is_available(tax_rules),
+                available: kind.is_available(tax_rules),
                 threshold: setting.threshold.map(number),
                 default_threshold: kind.default_threshold().map(number),
                 unit: unit(kind),
@@ -129,7 +130,10 @@ async fn current(state: &AppState, user: &CurrentUser) -> ApiResult<AlertsDto> {
         },
         send_at: rules::format_send_at(settings.send_at),
         hide_values: settings.hide_values,
-        types: types_dto(&config),
+        types: types_dto(
+            &config,
+            tax_year_covered(today_in_brazil(OffsetDateTime::now_utc()).year()),
+        ),
     })
 }
 
@@ -188,6 +192,7 @@ pub async fn save(
         })?),
     };
     let (config, _) = state.store.alert_config(user.id).await?;
+    let tax_rules = tax_year_covered(today_in_brazil(OffsetDateTime::now_utc()).year());
     let mut changes = Vec::new();
     for (name, change) in body.types.unwrap_or_default() {
         let kind = AlertKind::parse(&name)
@@ -197,9 +202,9 @@ pub async fn save(
                 "O tipo {name} precisa de enabled ou threshold."
             )));
         }
-        if change.enabled == Some(true) && !kind.is_available() {
+        if change.enabled == Some(true) && !kind.is_available(tax_rules) {
             return Err(ApiError::validation(format!(
-                "O tipo {name} ainda nao esta disponivel."
+                "O tipo {name} nao esta disponivel: o Prumo ainda nao tem a regra de IR deste ano."
             )));
         }
         let before = config.get(kind);
@@ -268,7 +273,7 @@ mod tests {
 
     #[test]
     fn the_type_list_marks_the_unavailable_one_and_its_units() {
-        let json = serde_json::to_value(types_dto(&AlertConfig::default())).unwrap();
+        let json = serde_json::to_value(types_dto(&AlertConfig::default(), false)).unwrap();
         let types = json.as_array().unwrap();
         assert_eq!(types.len(), 6);
         assert_eq!(types[0]["kind"], "income_tomorrow");

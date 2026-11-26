@@ -65,10 +65,10 @@ despejaria tudo de uma vez.
 | `class_drift` | uma classe passou a ficar a X p.p. ou mais da meta, para cima ou para baixo | X, padrão 5 p.p. |
 | `price_below_ceiling` | um ativo com teto de preço voltou a custar o teto ou menos (voltou a ser comprável no aporte) | — |
 | `objective_achieved` | um objetivo seu passou a constar como atingido (`objectives.achieved_at`) | — |
-| `tax_exemption` | isentômetro de ações acima de X% do limite mensal | **ainda não disponível**, ver abaixo |
+| `tax_exemption` | as vendas de ações do mês chegaram a X% do limite de isenção, e de novo quando o passaram | X% do limite, padrão 80% |
 | `health_warning` | uma regra de [Saúde da carteira](saude.md) passou a avisar (regra + ativo, setor ou classe) | os da própria Saúde; entram também as de renda (provento em todo mês e pagador acima do limite). Sem valores, o pagador sai só com o percentual |
 
-Todos vêm ligados, menos o isentômetro. O resumo sai **uma vez por dia**, no
+Todos vêm ligados. O resumo sai **uma vez por dia**, no
 horário que você escolher (padrão **08:00, horário de Brasília**), e só se
 houver algo. Se o servidor estava fora do ar no horário, o resumo sai quando
 voltar, naquele mesmo dia. Se o Telegram falhar, o Prumo tenta de novo a cada
@@ -78,15 +78,21 @@ minuto até conseguir (um pedido de espera `429` é respeitado, até 30 s).
 confirma o canal e diz a hora do resumo. Um teste a cada 10 segundos, no
 máximo.
 
-### Isentômetro (por enquanto desligado)
+### Isentômetro
 
-`domain/tax` já calcula o isentômetro, mas ele parte de operações com o
-**instrumento fiscal** de cada ativo (ação, ETF, BDR, FII, cripto...), e quem
-liga o livro de lançamentos a esses instrumentos é a frente de IR. Sem essa
-ligação, o Prumo não sabe quanto você vendeu **em ações** no mês. Em vez de
-aproximar, o tipo existe na tela, **desligado e sem poder ser ligado**, e o
-servidor não o apura. Quando a ligação existir, falta só a apuração desse tipo
-em `alerts::AlertService::collect`; o limite (padrão 80%) já é guardado.
+É a mesma apuração da tela Impostos (`GET /tax/months`): vendas de ações em
+operação comum no **mês de hoje** contra o limite de isenção do ano
+(`domain/tax/rules`). O resumo avisa duas vezes por mês, no máximo: ao chegar a
+X% do limite (padrão 80%) e, de novo, ao passar dele (a partir daí o lucro das
+ações vendidas no mês é tributado). Vender mais depois disso não repete o aviso.
+O instrumento fiscal de cada ativo é o da tela Impostos (`assets.tax_instrument`).
+
+Sem regra de IR cadastrada para o ano de hoje, o tipo fica **indisponível**
+(`available: false`), desligado e sem poder ser ligado, e o resumo não o
+apura; não há erro, e o Prumo nunca usa a regra de outro ano. Se o livro não
+fecha para o IR (a tela Impostos mostra o motivo), o isentômetro também não diz
+nada naquele dia, e o resto do resumo sai normal. Com "sem valores", só o
+percentual do limite vai ao Telegram.
 
 ### Objetivo atingido
 
