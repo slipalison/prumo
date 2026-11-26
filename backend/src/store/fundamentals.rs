@@ -116,6 +116,24 @@ type SourceRow = (
     Option<String>,
 );
 
+fn source_state(
+    (source, etag, last_modified, scanned, attempted_at, checked_at, last_error): SourceRow,
+) -> (String, SourceState) {
+    (
+        source,
+        SourceState {
+            validators: Validators {
+                etag,
+                last_modified,
+            },
+            scanned: scanned.into_iter().collect(),
+            attempted_at,
+            checked_at,
+            last_error,
+        },
+    )
+}
+
 #[derive(FromRow)]
 struct FilingRow {
     cvm_code: i32,
@@ -294,48 +312,45 @@ impl Store {
         )
         .fetch_all(&self.pool)
         .await?;
-        Ok(rows
-            .into_iter()
-            .map(
-                |(source, etag, last_modified, scanned, attempted_at, checked_at, last_error)| {
-                    (
-                        source,
-                        SourceState {
-                            validators: Validators {
-                                etag,
-                                last_modified,
-                            },
-                            scanned: scanned.into_iter().collect(),
-                            attempted_at,
-                            checked_at,
-                            last_error,
-                        },
-                    )
-                },
-            )
-            .collect())
+        Ok(rows.into_iter().map(source_state).collect())
     }
 
-    /// Reserva a leitura de um arquivo. `false`: outra réplica está lendo.
+    /// Reserva a leitura de um arquivo e devolve o estado dele lido na mesma
+    /// consulta que reservou. `None`: outra réplica está lendo.
+    ///
+    /// O estado volta junto porque a lista que a rodada leu no começo pode
+    /// estar velha: outra réplica pode ter acabado de ler este arquivo e soltado
+    /// a reserva. Quem reserva decide de novo com este estado, não com aquele.
     pub async fn claim_cvm_source(
         &self,
         key: &str,
         now: OffsetDateTime,
         lease: time::Duration,
-    ) -> Result<bool, StoreError> {
-        let claimed: Option<(String,)> = sqlx::query_as(
+    ) -> Result<Option<SourceState>, StoreError> {
+        let claimed: Option<SourceRow> = sqlx::query_as(
             "insert into cvm_sources as s (source, claimed_until)
              values ($1, $2::timestamptz + $3::interval)
              on conflict (source) do update set claimed_until = excluded.claimed_until
               where s.claimed_until is null or s.claimed_until <= $2::timestamptz
-             returning source",
+             returning source, etag, last_modified, scanned_codes, attempted_at, checked_at,
+                       last_error",
         )
         .bind(key)
         .bind(now)
         .bind(pg_interval(lease))
         .fetch_optional(&self.pool)
         .await?;
-        Ok(claimed.is_some())
+        Ok(claimed.map(|row| source_state(row).1))
+    }
+
+    /// Solta a reserva de um arquivo que, relido o estado, não precisava mais
+    /// ser lido.
+    pub async fn release_cvm_source(&self, key: &str) -> Result<(), StoreError> {
+        sqlx::query("update cvm_sources set claimed_until = null where source = $1")
+            .bind(key)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 
     /// Uma leitura que falhou: os dados e a versão ficam como estavam.

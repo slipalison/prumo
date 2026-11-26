@@ -15,7 +15,8 @@
 //! **Duas réplicas, quatro conexões.** Cada arquivo e cada emissor é
 //! *reservado* no banco (quem marca primeiro lê; a outra réplica pula) e cada
 //! gravação é uma transação curta com `pg_advisory_xact_lock`. Nenhuma conexão
-//! fica presa durante o download.
+//! fica presa durante o download. Quem reserva decide de novo com o estado
+//! devolvido pela reserva, não com a lista lida no começo da rodada.
 //!
 //! **Fonte fora do ar não quebra nada.** A falha fica registrada, o que já
 //! estava gravado continua valendo e a próxima tentativa vem em 6 h.
@@ -342,18 +343,27 @@ impl FundamentalsService {
         let year = today_in_brazil(now).year();
         for source in sources(year, !codes.is_empty(), !wanted.funds.is_empty()) {
             let key = source.key();
-            let state = states.get(&key);
-            let Some(mode) = due(source, state, &codes, now) else {
+            if due(source, states.get(&key), &codes, now).is_none() {
                 continue;
-            };
-            match self.store.claim_cvm_source(&key, now, CLAIM_FOR).await {
-                Ok(true) => {}
-                Ok(false) => continue,
+            }
+            let fresh = match self.store.claim_cvm_source(&key, now, CLAIM_FOR).await {
+                Ok(Some(fresh)) => fresh,
+                Ok(None) => continue,
                 Err(error) => {
                     tracing::error!(source = %key, error = %error, "reserva do arquivo falhou");
                     continue;
                 }
-            }
+            };
+            // A lista lida no começo da rodada pode estar velha: outra réplica
+            // pode ter lido este arquivo e soltado a reserva nesse meio-tempo.
+            // A decisão que vale é a tomada com o estado lido ao reservar.
+            let state = Some(&fresh);
+            let Some(mode) = due(source, state, &codes, now) else {
+                if let Err(error) = self.store.release_cvm_source(&key).await {
+                    tracing::error!(source = %key, error = %error, "reserva nao solta");
+                }
+                continue;
+            };
             match self.read(http, source, &mode, state, &codes, now).await {
                 Ok(true) => {
                     report.updated += 1;

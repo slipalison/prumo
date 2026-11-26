@@ -90,7 +90,10 @@ as tem na mesma escala incerta); a diferença costuma ficar abaixo de 1%.
 - **Duas réplicas, quatro conexões:** cada arquivo e cada emissor é reservado
   no banco (`claimed_until`; quem marca primeiro lê, a outra réplica pula) e
   cada gravação é uma transação curta com `pg_advisory_xact_lock`. Nenhuma
-  conexão fica presa durante o download.
+  conexão fica presa durante o download. A reserva devolve o estado do
+  arquivo naquele instante, e é com ele que a réplica decide se lê: a lista
+  lida no começo da rodada pode estar velha, porque a outra réplica pode ter
+  acabado de ler o arquivo e soltado a reserva.
 - `FUNDAMENTALS_ENABLED=false` desliga as buscas; o gravado continua servido.
 
 ## O que é guardado

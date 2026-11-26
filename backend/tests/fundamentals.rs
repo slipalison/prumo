@@ -702,6 +702,21 @@ async fn a_source_out_of_service_keeps_the_last_good_data() {
 async fn two_replicas_split_the_work() {
     let db = database().await;
     let cvm = FakeCvm::start().await;
+    // O primeiro arquivo da rodada demora: a réplica que o reservar fica
+    // parada enquanto a outra lê o resto e solta as reservas. A lista de
+    // estados que a parada leu no começo fica velha; ela não pode reler o que
+    // a outra acabou de ler.
+    Mock::given(method("GET"))
+        .and(path("/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("etag", "\"cad-1\"")
+                .set_body_bytes(latin1(&registry()))
+                .set_delay(Duration::from_secs(3)),
+        )
+        .with_priority(1)
+        .mount(&cvm.server)
+        .await;
     cvm.standard(false).await;
     portfolio(&db.store, "replicas@teste.local").await;
     let codes = FakeCodes::with(&[("UMUM", Some(99901)), ("ETFX", None)]);
