@@ -1014,9 +1014,10 @@ async fn routing_static_files_and_ops(db: &Database, dir: &tempfile_dir::Dir) {
     let shell = get(&app.router, "/").await;
     assert_eq!(shell.status, StatusCode::OK);
     assert!(shell.text.contains("<title>Prumo</title>"));
+    // `no-transform`: a Cloudflare não injeta script que a CSP recusaria.
     assert_eq!(
         shell.headers.get(header::CACHE_CONTROL).unwrap(),
-        "no-cache"
+        "no-cache, no-transform"
     );
     let deep_link = get(&app.router, "/carteira/qualquer").await;
     assert!(deep_link.text.contains("<title>Prumo</title>"));

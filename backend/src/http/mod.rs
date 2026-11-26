@@ -372,9 +372,16 @@ pub fn public_router(state: AppState, static_dir: &str) -> Router {
         .nest("/assets", assets)
         .fallback_service(
             tower::ServiceBuilder::new()
+                // `no-transform`: a Cloudflare não mexe no HTML. Sem ele, ela
+                // injeta o beacon do Web Analytics (static.cloudflareinsights.com)
+                // e o script inline da detecção de robôs, que a nossa CSP
+                // (`script-src 'self'`) recusa com erro no console. O app fica
+                // atrás do Access: a detecção de robôs não tem o que medir aqui,
+                // e no plano gratuito ela não desliga por host. A documentação
+                // da Cloudflare: com `no-transform`, nada é injetado.
                 .layer(SetResponseHeaderLayer::if_not_present(
                     header::CACHE_CONTROL,
-                    HeaderValue::from_static("no-cache"),
+                    HeaderValue::from_static("no-cache, no-transform"),
                 ))
                 .service(shell),
         )
