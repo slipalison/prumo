@@ -447,15 +447,21 @@ Na barra principal, depois de Carteira.
 Responde "estou ganhando do CDI?". Método e limites em
 [`desempenho.md`](desempenho.md).
 
-- Chips de período no topo: Mês · No ano · 12 meses · Desde o início.
-- Dois cartões lado a lado (empilhados no celular): **Últimos 12 meses** e
-  **Desde o início**, com a rentabilidade grande e assinada (`+1,23%`), a frase
-  "**1,13% acima do CDI** (118% do CDI). O CDI rendeu +0,10%." e as datas. Se a
-  série ainda não tem 12 meses, o cartão diz.
-- **Patrimônio no tempo:** patrimônio, aplicado, ganho e proventos; área
-  dourada do patrimônio e a linha tracejada neutra do aplicado. Uma nota diz
-  que o ganho é o do preço e que os proventos entram na rentabilidade. O ponto
-  de hoje antes do fechamento tem o selo "Hoje é parcial".
+- **Layout denso** (`<Page>`, `docs/layout.md` § 7.4): o título é uma linha com
+  o ⓘ da explicação do método, e os chips de período (Mês · No ano · 12 meses ·
+  Desde o início) ficam à direita dele, nas ações do cabeçalho.
+- **Faixa de seis números** (`StatStrip`, uma linha no desktop, duas colunas no
+  celular): **Últimos 12 meses** e **Desde o início**, com a rentabilidade
+  assinada (`+1,23%`) e, por baixo, "**1,13% acima do CDI** (118% do CDI)"; as
+  datas e "o CDI rendeu +0,10%" ficam no ⓘ do número, e "a série ainda não tem
+  12 meses" fica escrito no detalhe. Depois **Patrimônio**, **Aplicado**,
+  **Ganho** (o ganho é o do preço: no ⓘ) e **Proventos**.
+- **Os dois gráficos lado a lado** (`Grid cols={2}`, uma coluna abaixo de 640
+  px de conteúdo; 196 px de altura, 270 px em monitor largo): **Patrimônio no
+  tempo**, com a área dourada do patrimônio e a linha tracejada neutra do
+  aplicado, e **Rentabilidade contra os índices**. O selo "Hoje é parcial"
+  continua escrito no título do primeiro, e o texto "o ponto de hoje usa o
+  preço do momento" vai no ⓘ do painel.
 - **Série longa:** a série começa no primeiro lançamento do livro (anos, depois
   de importar a B3). As datas das pontas do eixo e o resumo do leitor de tela
   levam o ano quando a série passa de um ano.
@@ -467,10 +473,11 @@ Responde "estou ganhando do CDI?". Método e limites em
   A legenda mostra o número de cada um no período e liga/desliga os índices
   (`aria-pressed`). Ao passar o ponteiro (ou tocar), uma régua vertical marca o
   dia e uma caixa lista o valor de cada linha. Índice sem dado no período
-  aparece como "sem dado", nunca como zero; uma nota diz até quando cada
-  índice foi publicado.
-- **Mês a mês:** tabela com os anos (o mais novo em cima), os doze meses, o ano
-  e o CDI do ano. É também a alternativa ao gráfico para leitor de tela (o
+  aparece como "sem dado", nunca como zero; o ⓘ do painel diz até quando cada
+  índice foi publicado e quem ainda está sem dado.
+- **Mês a mês:** painel de largura inteira, abaixo dos gráficos, com os anos
+  (o mais novo em cima), os doze meses, o ano e o CDI do ano; no celular rola de
+  lado dentro do painel. É também a alternativa ao gráfico para leitor de tela (o
   gráfico é `role="img"` com um resumo em texto).
 - **Gráficos:** SVG próprio, linha de 2px que se desenha ao entrar
   (`pathLength` com mola), grade discreta, zero marcado na rentabilidade. Cores
@@ -479,7 +486,7 @@ Responde "estou ganhando do CDI?". Método e limites em
   violeta — e cada índice com o próprio tracejado, para a cor não ser a única
   pista. Texto nunca usa a cor da série. Alta e baixa levam sinal (+/−) além
   do verde/vermelho.
-- **Olho fechado:** todo valor em R$ (patrimônio, aplicado, ganho, proventos, o eixo e a
+- **Olho fechado:** todo valor em R$ (os números da faixa, o eixo e a
   régua do gráfico de patrimônio e o resumo para o leitor de tela) sai por
   `useMoney()` como `R$ ••••`, e o ganho perde o sinal e a cor. As
   rentabilidades são percentuais e ficam à vista, como na Carteira.
@@ -530,40 +537,50 @@ Responde "estou ganhando do CDI?". Método e limites em
 Aba entre Carteira e Desempenho (uma linha em `APP_ROUTES`). Responde "quanto minha carteira paga?" sem virar
 planilha: uma meta no topo, o resto por baixo.
 
-1. **Meta de renda mensal.** Número grande (média mensal dos 12 meses
-   recebidos), barra de progresso até a meta (`role="progressbar"` com texto
-   para o leitor de tela: "R$ 135 de R$ 800 por mês, 17%") e a data em que foi
-   atingida, quando foi. Sem nada recebido ainda, a barra usa a **estimativa** e
-   fica listrada, com a etiqueta "estimativa": o desenho muda, não só a cor.
-2. **Três números:** recebido em 12 meses, média por mês e a receber.
-3. **Mês a mês:** barras em SVG próprio com Motion (mola, como as barras de
-   classe). O recebido é cheio e embaixo; o a receber é **listrado** e em cima;
-   a meta é uma linha tracejada com o valor. A legenda dá nome a cada um e uma
+**Layout denso** (`<Page>`; meta ≤ 1,2 tela em 1440x900, ver `docs/layout.md`
+§ 7.4): o título "Quanto sua carteira paga?" é uma linha com o ⓘ da explicação
+e o botão **Lançar provento** à direita.
+
+1. **Meta de renda mensal** (painel à esquerda do topo). Número grande (média
+   mensal dos 12 meses recebidos), barra de progresso até a meta
+   (`role="progressbar"` com texto para o leitor de tela: "R$ 135 de R$ 800 por
+   mês, 17%"), "Editar meta" no cabeçalho do painel e a data em que foi
+   atingida, quando foi. A explicação da base ("Média do que você recebeu…") vai
+   no ⓘ. Sem nada recebido ainda, a barra usa a **estimativa** e fica listrada,
+   com a etiqueta "estimativa" ao lado do número: o desenho muda, não só a cor.
+2. **Quatro números** (`StatStrip` à direita da meta, em 2x2 na altura do painel
+   da meta): recebido em 12 meses, média por mês, a receber e o **yield on
+   cost** da carteira. O yield é a renda dos 12 meses sobre o que foi pago; a
+   conta ("Renda dos últimos 12 meses (recebida) ÷ o que você pagou. Hoje: R$ X
+   sobre R$ Y") está no ⓘ. Sem recebido, a renda é a estimada, e o número diz
+   "(estimado)", e o ⓘ, "estimada, não é extrato". Ativo sem preço médio sai da
+   conta: o rótulo vira "Yield on cost (parcial)" e o ⓘ diz quem ficou de fora.
+   Sem nenhum custo conhecido, no lugar do número vem "informe o preço médio".
+3. **Mês a mês** (esquerda, 2/3): barras em SVG próprio com Motion, desenhadas
+   na largura real do painel (a barra não passa de 48 px). O recebido é cheio e
+   embaixo; o a receber é **listrado** e em cima; a meta é uma linha tracejada
+   com o valor; o ponteiro acende o mês. A legenda dá nome a cada um e uma
    tabela escondida (`sr-only`) traz os 12 meses para o leitor de tela.
-4. **Próximos pagamentos:** data, ativo, tipo e líquido. O provento que o
-   Prumo calculou do anúncio da B3 leva o selo **"automático (B3)"** (borda
-   pontilhada, texto: o selo não depende de cor).
-   Logo abaixo, só com os automáticos ligados e alguma pendência, o cartão
-   **Eventos anunciados pela B3**: uma frase por bonificação, desdobramento ou
-   grupamento ("A B3 anunciou bonificação de 2% em ITSA4 com data com
-   18/12/2025; lance no livro.") e as cotas da data com.
-5. **Estimativa da carteira de hoje:** "~R$ 410/mês" com a etiqueta
-   "estimativa" e o aviso de que é o que a cota pagou nos últimos 12 meses, sem
-   separar JCP e sem ser extrato. Papéis sem histórico são listados.
-6. **Ano por mês:** tabela real (`<table>`), uma linha por ano.
-7. **Yield on cost** da carteira, um cartão antes do mês a mês: o percentual
-   grande e a conta por baixo ("Renda dos últimos 12 meses (recebida) ÷ o que
-   você pagou. Hoje: R$ X sobre R$ Y"). Sem recebido, a renda é a estimada e o
-   texto diz "(estimado)" e "estimada, não é extrato". Ativo sem preço médio sai
-   da conta, e o cartão avisa "Parcial: fica de fora o que está sem preço médio
-   (…)". Sem nenhum custo conhecido, no lugar do número vem "informe o preço médio".
-8. **Quem pagou:** rosca (a mesma `Donut`) e a lista com nome, valor, parte e
-   **yield on cost** de cada um ("yield on cost 6,2%" ou "informe o preço
-   médio"); do sétimo em diante vira "Outros (N)", sem yield (junta vários).
-9. **Proventos lançados:** lista com apagar (confirmação na própria linha).
-   O automático tem o mesmo selo, e a confirmação diz que ele não volta na
+4. **Quem pagou** (esquerda, abaixo das barras): rosca e a lista com nome, valor,
+   parte e **yield on cost** de cada um ("yield on cost 6,2%" ou "informe o
+   preço médio"), em uma ou duas colunas; do sétimo em diante vira "Outros (N)",
+   sem yield. No celular a rosca sai (a lista já diz tudo).
+5. **Coluna da direita:** **Próximos pagamentos** (data, ativo, tipo e líquido;
+   o provento que o Prumo calculou do anúncio da B3 leva o selo **"automático
+   (B3)"**, borda pontilhada e texto), o painel **Eventos anunciados pela B3**
+   (só com os automáticos ligados e alguma pendência: uma frase por
+   bonificação, desdobramento ou grupamento e as cotas da data com) e a
+   **Estimativa da carteira de hoje**: "~R$ 410/mês" com a etiqueta
+   "estimativa", uma linha por papel ("R$ 12,60 por cota em 12 meses") e os
+   papéis sem histórico; o aviso de que é o que a cota pagou, sem separar JCP e
+   sem ser extrato, abre no ⓘ.
+6. **Ano por mês:** tabela real (`<table>`), uma linha por ano, na largura
+   inteira.
+7. **Proventos lançados:** painel recolhido (`FoldPanel`, `<details>`) com a
+   contagem; aberto, a lista com apagar (confirmação na própria linha). O
+   automático tem o mesmo selo, e a confirmação diz que ele não volta na
    próxima busca.
-10. **Lançar provento:** folha com ativo, tipo (chips), data de pagamento, valor
+8. **Lançar provento:** folha com ativo, tipo (chips), data de pagamento, valor
    por cota, quantidade e data ex opcional. **Em branco, a quantidade vale a do
    livro na data com** (não a de hoje): o campo mostra o número que o servidor
    vai usar ("Em branco vale o que o livro tinha na data com (09/11/2026)") e ele
@@ -571,7 +588,8 @@ planilha: uma meta no topo, o resto por baixo.
    lançar com a quantidade informada. A
    prévia mostra bruto, IR retido e líquido (JCP perde 15% até 2025 e 17,5%
    desde 2026, pela data de pagamento) e fala com
-   `aria-live`. Renda fixa por valor pede só o valor recebido.
+   `aria-live`. Renda fixa por valor pede só o valor recebido. A folha não
+   mudou no redesenho (cabe em uma tela).
 
 Na tela **Aportar**:
 
@@ -642,41 +660,59 @@ Seção de Ajustes (`#/ajustes/impostos`, uma linha em `SETTINGS_SECTIONS`).
 Responde "devo DARF este mês?" e "o que vai na declaração?" sem esconder que é
 estimativa. A regra e a ligação com o livro estão em `docs/ir.md`.
 
+**Layout denso** (`<Page>`; 1,8 tela em 1440x900, antes 4,3): o título "Imposto de
+renda" é uma linha com o ⓘ da explicação, e os chips do ano-calendário ficam à
+direita dele.
+
 1. **Aviso de responsabilidade**, sempre visível no topo (`role="note"`), em
-   faixa dourada: estimativa, não substitui o contador, confira antes de pagar
-   ou entregar.
+   faixa dourada e **em uma linha**: estimativa, não substitui o contador, a
+   responsabilidade é de quem declara. "Confira cada DARF… multa e juros" vai
+   no ⓘ da faixa.
 2. **Ano-calendário**: chips com os anos que têm regra (hoje 2025 e 2026). Abre
    no ano de hoje; sem regra para ele, no último com regra. Ano sem regra no
    servidor vira um cartão de erro com o motivo ("ainda não a de 2027"), nunca
    a conta de outro ano.
-3. **Isentômetro** do mês de hoje (dezembro, num ano passado): o número grande
-   das vendas de ações, "de R$ 20.000,00 isentos", a barra (a mesma `LimitBar`
-   dos avisos, com o fio de prumo no limite e o percentual em texto) e a frase:
-   dentro do limite, quanto ainda cabe; passou, "o lucro das ações neste mês
-   paga 15%", em vermelho e escrito (a cor só reforça). Lembra que ETF, BDR e
-   FII não têm essa isenção e, se houve, mostra a cripto contra o limite dela.
-4. **Meses do ano**: tabela real (`<table>` em região com rolagem lateral),
-   uma linha por mês: vendas de ações, imposto do mês, DARF (código e valor),
-   vencimento e situação. "A pagar" (dourado) ou "Pago" (verde), com o botão
-   "Marcar como pago"/"Desmarcar" (o nome acessível diz o código e o mês). DARF
-   abaixo de dez reais aparece como "abaixo do mínimo, soma no mês seguinte".
-   Se o valor mudou depois de marcado, a linha avisa. Embaixo, o prejuízo a
-   compensar em 31/12 e, por mês com movimento, um `<details>` com a apuração
-   por grupo (resultado, prejuízo antes, compensado, base, alíquota, imposto,
-   prejuízo que fica) e a cripto.
-5. **Declaração do ano**: Bens e Direitos (ticker, grupo, código, rótulo com
-   acento, quantidade, situação em 31/12 pelo custo, preço médio) com
-   **Copiar** por linha; rendimentos isentos (09, 99, 20, 05) com o valor por
-   pagador; tributação exclusiva (JCP, líquido, bruto e retido); e a renda
-   variável do ano (DARF do ano e o prejuízo que passa para o ano seguinte).
-6. **O que o Prumo não calculou**: cada item do livro ou dos proventos que
-   ficou fora, com ticker, data, valor e o motivo em uma frase; depois a lista
-   fixa do que nunca entra (IR retido da nota, corretora, opções, exterior…).
-7. **Pontos a confirmar com contador**: as dúvidas de `docs/ir.md` § 5 entram
-   em caixa azul ao lado do número que elas mexem, nunca numa lista solta.
-8. **Saldo de antes do Prumo**: o que foi informado (ou "a conta começa do
-   zero em 1º de janeiro de 2025") e "Informar saldo"/"Editar saldo", que abre
-   o ano (chips) e os seis campos de dinheiro.
+3. **Meses do ano** (`DataTable`, esquerda, 2/3): uma linha por mês: vendas de
+   ações, imposto do mês, DARF (código e valor), vencimento e situação. A
+   situação é um `StatusPill` escrito, "A pagar" (dourado, com ícone) ou "Pago"
+   (verde, com ícone), com o botão "Marcar como pago"/"Desmarcar" na linha (o
+   nome acessível diz o código e o mês). DARF abaixo de dez reais aparece como
+   "abaixo do mínimo, soma no mês seguinte". Se o valor mudou depois de
+   marcado, a linha avisa. As regras do DARF (6015, 4600, vencimento, mínimo de
+   dez reais) estão no ⓘ do painel. Embaixo, o prejuízo a compensar em 31/12.
+   No celular a tabela empilha, e o mês sem nada fica só com o nome.
+4. **Isentômetro** do mês de hoje (dezembro, num ano passado), na coluna da
+   direita: o número grande das vendas de ações, "de R$ 20.000,00 isentos", a
+   barra (a mesma `LimitBar` dos avisos, com o fio de prumo no limite e o
+   percentual em texto) e a frase: dentro do limite, quanto ainda cabe; passou,
+   "o lucro das ações neste mês paga 15%", em vermelho e escrito (a cor só
+   reforça). O lembrete de que ETF, BDR e FII não têm essa isenção vai no ⓘ;
+   a cripto contra o limite dela continua escrita quando houve venda.
+   Abaixo, o **Saldo de antes do Prumo**: o que foi informado (ou "a conta começa
+   do zero em 1º de janeiro de 2025") e "Informar saldo"/"Editar saldo", que
+   abre o ano (chips) e os seis campos de dinheiro em duas colunas, e os
+   recolheres **O que o Prumo não calculou** e **Nunca entra na conta**.
+5. **Declaração do ano** (painel de largura inteira): **Bens e Direitos** numa
+   `DataTable` (ticker com o ícone, ficha com grupo, código e rótulo com acento,
+   quantidade, situação em 31/12 pelo custo, preço médio) com **Copiar** por
+   linha; abaixo, em duas colunas, os rendimentos isentos (09, 99, 20, 05, com o
+   valor por pagador) e a tributação exclusiva (JCP, líquido, bruto e retido),
+   também em `DataTable`; e a renda variável do ano (DARF do ano e o prejuízo
+   que passa para o ano seguinte).
+6. **Como cada mês foi apurado** (recolhido, com a contagem dos meses que têm
+   movimento): por mês, um `<details>` com as vendas, a apuração por grupo
+   (resultado, prejuízo antes, compensado, base, alíquota, imposto, prejuízo
+   que fica), a cripto e as dúvidas daquele mês. **O que o Prumo não calculou**
+   (recolhido, com a contagem): cada item do livro ou dos proventos que ficou
+   fora, com ticker, data, valor e o motivo em uma frase. **Nunca entra na
+   conta** (recolhido): a lista fixa do que nunca entra (IR retido da nota,
+   corretora, opções, exterior…).
+7. **Pontos a confirmar com contador**: as dúvidas de `docs/ir.md` § 5 são um
+   **ⓘ azul** (`DoubtTip`) ao lado do número ou do bloco que elas mexem (o
+   isentômetro, os títulos da declaração); o nome do botão diz do que se trata
+   ("Ponto a confirmar com contador: JCP levado pelo valor líquido") e o texto
+   abre no toque, no foco ou com o mouse. Na apuração de um mês, o ⓘ leva o
+   nome da dúvida escrito ao lado.
 
 Na **folha do ativo** (Carteira), abaixo do teto: "No imposto de renda", um
 `<select>` com os sete instrumentos, o padrão marcado "(padrão)" e a frase do
@@ -730,19 +766,23 @@ resumo".
 ### 12. Ajustes › Proventos automáticos
 
 Seção `#/ajustes/proventos-automaticos` (uma linha em `SETTINGS_SECTIONS`).
-Responde "o Prumo calcula meus proventos?" em três cartões de vidro; a regra
-está em [proventos-automaticos.md](proventos-automaticos.md).
+Responde "o Prumo calcula meus proventos?" em painéis lado a lado (`Grid
+cols={2}`, uma coluna no celular); a regra está em
+[proventos-automaticos.md](proventos-automaticos.md). A explicação da tela e a
+frase do que ligar e desligar faz estão nos ⓘ.
 
-1. **Calcular pela B3.** O interruptor **Proventos automáticos** (`role="switch"`),
-   com a frase do que ligar e desligar faz. Ligado, a situação da busca
-   ("Anúncios da B3 conferidos em 26/11/2026 09:00. A busca é diária." ou "A
-   primeira busca na B3 acontece em até uma hora."), os códigos acompanhados e
-   os que ficaram sem anúncio. Trocar a chave grava na hora, com aviso.
-2. **Eventos em ações.** As pendências, na mesma frase do cartão da Renda, ou
-   "Nenhuma bonificação, desdobramento ou grupamento pendente".
-3. **Como funciona.** Os limites em seis linhas: data com, IR do JCP, data a
-   definir, 12 a 18 meses de histórico, o que não duplica (e que apagar é
-   definitivo) e ETF/ação como "Outro".
+1. **Calcular pela B3.** O interruptor **Proventos automáticos** (`role="switch"`)
+   com "Ligados"/"Desligados". Ligado, a situação da busca ("Anúncios da B3
+   conferidos em 26/11/2026 09:00. A busca é diária." ou "A primeira busca na
+   B3 acontece em até uma hora."), os códigos acompanhados e os que ficaram sem
+   anúncio. Trocar a chave grava na hora, com aviso. Desligado, o painel ocupa a
+   linha inteira.
+2. **Eventos em ações** (ao lado, só ligado). As pendências, na mesma frase do
+   painel da Renda, ou "Nenhuma bonificação, desdobramento ou grupamento
+   pendente".
+3. **Como funciona** (recolhido, com a contagem: 6). Os limites em seis linhas:
+   data com, IR do JCP, data a definir, 12 a 18 meses de histórico, o que não
+   duplica (e que apagar é definitivo) e ETF/ação como "Outro".
 
 Com o olho fechado, a quantidade da data com vira `••` ("Você tinha •• cotas
 na data com"), sem singular que entregue o número; o fator do evento é

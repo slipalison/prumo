@@ -399,6 +399,44 @@ linhas de pílulas, do grupo 4).
   mas como ⓘ azul (o padrão da tela), não caixa de três linhas.
 - Meta ≤ 2,0 (antes 4,3).
 
+**Depois (grupo 3, feito).** Medido no modo de demonstração, em telas (altura
+da página ÷ altura da janela; 1,02 é o piso da casca, que nunca é menor que a
+janela):
+
+| Tela | 1440×900 | 1920×1080 | iPad 1366×1024 | iPad 1024×1366 | Celular 390×844 |
+|---|---|---|---|---|---|
+| Renda (antes 2,61 / 2,17 / 2,28 / 1,61 / 3,42) | 1,23 | 1,02 | 1,08 | 1,16 | 2,27 |
+| Desempenho (antes 1,84 / 1,53 / 1,62 / 1,27 / 2,74) | 1,02 | 1,01 | 1,02 | 1,01 | 1,86 |
+| Ajustes › Impostos (antes 4,30 / 3,58 / 3,82 / 3,10 / 6,38) | 1,81 | 1,40 | 1,63 | 1,79 | 4,66 |
+| Ajustes › Proventos automáticos (antes 1,03 / 1,02 / 1,02 / 1,02 / 1,91) | 1,02 | 1,01 | 1,02 | 1,01 | 1,11 |
+
+As folhas de lançar provento e de meta de renda não mudaram (1,0; 1,18 no
+celular na de provento).
+
+O que mudou, e onde o desenho do plano foi outro:
+
+- **Renda:** a meta e os quatro números (o yield on cost é um deles, com a
+  conta no ⓘ) lado a lado no topo; o mês a mês e o "Quem pagou" na coluna de 2/3
+  e, na de 1/3, próximos pagamentos, eventos da B3 e estimativa; Ano por mês em
+  largura inteira e Proventos lançados recolhido. **Desvio:** a estimativa
+  fica à vista (e não recolhida) porque o número dela é o que a tela diz; e as
+  barras se desenham na largura real do painel, com a barra limitada a 48 px.
+  No celular a rosca de "Quem pagou" sai (a lista já diz o nome, o valor e a
+  parte): 2,27 telas, acima da meta de 2,0.
+- **Desempenho:** período nos botões do cabeçalho, seis números numa faixa,
+  patrimônio e rentabilidade lado a lado (196 px de gráfico, 270 px a partir de
+  1500 px de conteúdo), Mês a mês embaixo.
+- **Impostos:** 1,81 em 1440×900 (meta 2,0). **Desvio:** o isentômetro, o saldo
+  de antes e os recolheres "O que o Prumo não calculou" e "Nunca entra na
+  conta" ficam na coluna da direita, ao lado dos meses, em vez de no fim da
+  tela; "Como cada mês foi apurado" fica recolhido embaixo da declaração.
+  No celular o mês sem movimento mostra só o nome: 4,66 telas.
+- **Proventos automáticos:** dois painéis lado a lado (a chave e os eventos em
+  ações; desligado, só a chave, em largura inteira) e "Como funciona" recolhido,
+  em vez de três painéis em `Grid cols={3}`.
+- Em `components/`: nada foi alterado. Os arquivos novos são de `features/`
+  (`income/FoldPanel` e os painéis de `tax/`).
+
 ### 7.5 Análise e Ajustes › Análise, Alertas, casca de Ajustes (grupo 4)
 
 **Análise**
