@@ -58,7 +58,7 @@ acompanhados de nome (cor nunca é a única pista):
 ### Ícone do ativo
 
 Cada ativo, em qualquer lista (Carteira, plano e registro do aporte, Renda,
-busca de símbolo, Saúde, Impostos), leva um círculo à esquerda do nome
+busca de símbolo, Análise, Impostos), leva um círculo à esquerda do nome
 (`AssetIcon`, três tamanhos: 24, 36 e 44 px). O nome do ativo sempre está ao
 lado, então o ícone é **enfeite**: `aria-hidden`, e a imagem leva `alt=""`.
 
@@ -121,17 +121,19 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
 - A barra lista as telas de `APP_ROUTES` (`frontend/src/app/routes.tsx`): tela
   nova é **uma linha** nessa lista, e a barra (que reparte a largura entre
   quantas houver), o título da aba, o `aria-current` e o roteamento saem dela.
-  Hoje: Aportar, Carteira, Renda, Desempenho, Ajustes.
+  Hoje: Aportar, Carteira, Renda, Desempenho, Análise, Ajustes.
 - Ajustes agrupa **seções** (`SETTINGS_SECTIONS`,
   `frontend/src/features/settings/sections.ts`): Metas por classe, Critérios,
-  Objetivos, Saúde da carteira, Importar da B3, Impostos e Alertas.
+  Objetivos, Análise, Importar da B3, Impostos e Alertas.
   Seção nova também é uma linha. A lista de seções fica no topo de Ajustes
   (links com `aria-current="page"` na atual), cada seção tem endereço próprio
-  (`#/ajustes/metas`, `#/ajustes/criterios`, `#/ajustes/objetivos`, `#/ajustes/saude`,
+  (`#/ajustes/metas`, `#/ajustes/criterios`, `#/ajustes/objetivos`, `#/ajustes/analise`,
   `#/ajustes/importar-b3`, `#/ajustes/impostos`) e uma seção por vez na tela.
 - Os links antigos `#/metas` e `#/criterios` seguem valendo: abrem a seção
   certa de Ajustes e trocam o endereço pelo novo, sem entrada nova no
-  histórico (`LEGACY_ROUTES` em `lib/route.ts`).
+  histórico (`LEGACY_ROUTES` em `lib/route.ts`). O mesmo vale para a seção que
+  mudou de nome: `#/ajustes/saude` (a Saúde da carteira) abre `#/ajustes/analise`
+  (`LEGACY_SECTIONS`).
 - No canto (junto do tema; na barra do desktop) ficam o **olho** e o tema.
 
 ### 1. Aportar (abertura)
@@ -272,59 +274,98 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
   remover, restaurar padrão.
 - Texto curto explicando a nota: "cada sim soma 1, cada não tira 1".
 
-### 5. Saúde (seção de Ajustes)
+### 5. Análise (tela de topo) e suas regras (seção de Ajustes)
 
-Em `#/ajustes/saude`, fora da barra principal: a pessoa chega por Ajustes ou
-pelo resumo da Carteira. Avisos, não nota. Cabeçalho "Saúde da carteira" e uma frase dizendo que as
-regras são da pessoa.
+A Análise (`#/analise`) fica na barra principal, entre Desempenho e Ajustes. Ela
+evoluiu a antiga "Saúde da carteira": as sete regras de antes entram nas
+dimensões certas e as regras são da pessoa, que as configura em **Ajustes,
+Análise** (`#/ajustes/analise`). O endereço antigo `#/ajustes/saude` continua
+abrindo a seção nova (`LEGACY_SECTIONS` em `lib/route.ts`). Pontuação simples e
+à mostra, nunca uma nota de marca: o percentual das regras ligadas, com dado,
+que estão ok, e o número exato ao lado.
 
-- **Veredito** (cartão no topo, `role="status"`): o prumo parado e
-  "Nenhum aviso" quando está tudo dentro dos limites; "N avisos" com quantas
-  regras passaram; ou "Ainda sem o que medir" (carteira vazia, sem metas).
-  Nunca "tudo certo" quando não há o que medir.
-- **Um cartão por aviso**, com a pergunta que o servidor respondeu em quatro
-  linhas: o que é ("ITUB4 é 31,04% da carteira"), **Agora** e **Limite** em
-  números grandes, a barra com o limite no fio de prumo (mesmo desenho da barra
-  de classe, com o fio no limite em vez da meta) e **"O que fazer."** —
-  aportar fora do que passou (valor em reais), nunca vender — com um link para
-  Aportar ou Carteira. A barra é só reforço: o texto diz "passou".
-- **Suas regras**: uma linha por regra, em frase ("Nenhum ativo acima de [15] %
-  da carteira"), o campo do limite, o porquê em uma linha, o **estado em texto
-  com ícone** (Passou do limite / Dentro do limite / Sem o que medir /
-  Desligada) e o interruptor. "Voltar para 60%" aparece quando o limite não é o
-  de fábrica. **Salvar regras** só habilita com mudança válida; o erro de um
-  limite aparece na própria linha (`role="alert"`, `aria-invalid`).
-- **Avisos de renda** (`income_every_month`, `max_payer`) usam o mesmo cartão.
-  O de meses traz "Meses sem provento: fev/2026, abr/2026" e, em "O que fazer.",
-  quem da carteira já pagou naquele mês (sem barra: o limite é uma contagem de
-  meses, "Mínimo"); o de pagador traz a barra e, no texto, os reais que ele pagou
-  e o total, que o olho fechado mascara. Os percentuais e os meses ficam à vista.
-- **De onde vem o setor**: a fonte de cada classe, de quando é, se a última
-  busca falhou, quantos ativos ficaram sem setor e por que os EUA não têm.
+Na tela (`AnalysisScreen`), de cima para baixo:
+
+- **Veredito** (cartão no topo, `role="status"`): o prumo parado e "Nenhum
+  ponto a ver" quando está tudo dentro dos limites; "N pontos a ver" com
+  quantas regras passaram; ou "Ainda sem o que medir". Nunca "tudo certo"
+  quando não há o que medir. Link "Ajustar as regras".
+- **Perfil de risco**: duas barras horizontais, **Agora** e **Suas metas**,
+  renda fixa de um lado (**listrada**) e renda variável do outro (lisa), com o
+  rótulo (Conservador, Moderado, Arrojado) e os dois percentuais **escritos**
+  sob a barra; a cor e a listra só ajudam. A barra é `role="img"` com a
+  descrição completa. Abaixo, a diferença em pontos percentuais e os limiares do
+  Prumo (30% e 70% de renda variável). Sem ativos ou sem metas, diz o que falta.
+- **Quatro cartões de dimensão** (Diversificação, Dividendos, Rentabilidade,
+  Qualidade dos ativos): título, a **pontuação em número grande** ("62,5%"), o
+  número exato ("5 de 8 regras ok · 2 regras sem dado, fora da conta") e uma
+  barra `role="meter"`. As regras vêm em ordem de atenção: primeiro o que passou
+  do limite, depois ok, sem dado e desligadas.
+- **Uma linha por regra** (`RuleRow`): o **estado em texto com ícone** (Ponto a
+  ver / Ok / Sem dado / Desligada) e a frase da regra com o limite da pessoa
+  ("Pelo menos 10% da carteira no exterior"); **Agora** e **Mínimo**/**Limite**
+  (ou o nome do índice, nas regras contra CDI, Ibovespa e IPCA) em números
+  grandes; a barra com o limite no fio de prumo só nas regras de teto em
+  percentual; a conta por trás em uma frase ("0% da carteira está no
+  exterior."); e, num ponto a ver, **"O que fazer."** — aportar (valor em reais)
+  ou olhar uma tela do Prumo, nunca vender nem citar ativo de fora — com link.
+  "Sem dado" diz o motivo e **não** é aviso. As sete regras originais mostram os
+  achados em cartões internos (`Finding`), como os avisos de antes: título,
+  Agora/Limite, barra, "O que fazer".
+- **Qualidade dos ativos** e **Pontos de atenção dos ativos**: cartão com borda
+  tracejada "Aguardando dados de fundamentos" e a explicação (retorno sobre o
+  patrimônio, margens, dívida, lucro em 5 anos, P/VP de FII, dos dados abertos
+  da CVM). Sem pontuação e sem "ok": estado vazio honesto.
+- **Destaques de 12 meses**: duas medidas (preço em 12 meses e rentabilidade
+  desde a compra), cada uma com "Mais subiram" e "Mais caíram" (até 3), o
+  ícone do ativo, o nome e a variação **com sinal** (+18,40%, −12,80%): o sinal
+  diz o sentido, a cor só reforça. Vazio explica por quê.
+- **Referências de preço**: um aviso fixo (`role="note"`) "Referência pública,
+  não é recomendação"; por ativo, **Bazin** (e **Graham**, quando houver
+  fundamentos), **Seu teto** e **Preço de hoje**, e a média de dividendos
+  usada. O botão "Usar Bazin como meu teto" abre uma folha de **confirmação**
+  ("Definir R$ 12,50 como teto de preço de ITSA4?") antes do `PATCH`. O Graham
+  sem fundamentos diz "aguardando dados de fundamentos". Nada de "oportunidade",
+  "compre", "preço justo" ou "upside".
+- **De onde vêm os dados**: a fonte de setor de cada classe, de quando é, se a
+  última busca falhou, quantos ativos ficaram sem setor e por que os EUA não têm
+  setor.
+
+Em **Ajustes, Análise** (`AnalysisSettings`), um cartão por dimensão com uma
+linha por regra, em frase ("Nenhum ativo acima de [15] % da carteira"), o campo
+do limite (só nas regras com limite editável), o porquê em uma linha e o
+interruptor. "Voltar para 60%" aparece quando o limite não é o de fábrica.
+**Salvar regras** só habilita com mudança válida; o erro de um limite aparece na
+própria linha (`role="alert"`, `aria-invalid`). A Qualidade diz que as regras
+chegam com os fundamentos. Um cartão à parte guarda o **rendimento-alvo do
+Bazin** (% ao ano).
 
 Na **Carteira**:
 
-- Abaixo do patrimônio, um **resumo curto** ("Saúde da carteira: 3 avisos", os
-  dois primeiros e "e mais N") com o link "Ver painel" para `#/ajustes/saude`.
-  Junto com o "N ativos abaixo do ideal" do cabeçalho, são os dois resumos do
-  topo: o do ideal diz onde aportar, o de saúde diz o que passou do limite. Some
-  se os avisos não carregam, para nunca atrapalhar a carteira.
+- Abaixo do patrimônio, um **resumo curto** ("Análise: 3 pontos a ver", os dois
+  primeiros com o número de agora e "e mais N") com o link "Ver análise" para
+  `#/analise`. Junto com o "N ativos abaixo do ideal" do cabeçalho, são os dois
+  resumos do topo: o do ideal diz onde aportar, o da análise diz o que passou do
+  limite. Some se a análise não carrega, para nunca atrapalhar a carteira.
 - Dentro de **Ações Nacionais** e **Fundos Imobiliários**, uma **rosca por
   setor** (por tipo de fundo nos FIIs) com a lista ao lado: nome e fatia sempre
   escritos; a cor só ajuda a achar. Sete setores têm cor; o resto vira "Outros
   setores", e o que a fonte não conhece vira "Sem setor" (cinza). Se a fonte
   nunca respondeu, uma linha diz isso no lugar da rosca.
 
-Com o **olho fechado**, o aporte em reais de cada aviso vira `R$ ••••` (por
-`useMoney()`, também para o leitor de tela); percentuais, limites e as fatias
-das roscas são percentuais e ficam à vista. O título do Tesouro Direto (renda
-fixa) não tem setor e aparece nos avisos pelo nome ("Tesouro IPCA+ 2035"), não
-pela chave `TD-…`.
+Com o **olho fechado**, todo valor em reais da Análise vira `R$ ••••` (por
+`useMoney()`, também para o leitor de tela e para a folha de confirmação): o
+aporte sugerido, o que o pagador pagou, a renda de 12 meses e a base do
+yield (o valor das ações e FIIs), o Bazin, o teto e o preço de hoje. Percentuais, contagens,
+limites, o perfil e os destaques são percentuais e ficam à vista. O título do
+Tesouro Direto (renda fixa) não tem setor e aparece nos achados pelo nome
+("Tesouro IPCA+ 2035"), não pela chave `TD-…`.
 
 A paleta dos setores (`--sector-1` a `--sector-7`, `--sector-other`,
 `--sector-none`) tem tom próprio nos dois temas e fica em `styles/health.css`;
 todos passam de 3:1 sobre o fundo (elementos gráficos), e o texto de cada fatia
-está na lista.
+está na lista. O resto da Análise mora em `styles/analysis.css`.
+
 ### 6. Desempenho
 
 Na barra principal, depois de Carteira.
@@ -589,7 +630,7 @@ funcionamento e a configuração do bot estão em [alertas.md](alertas.md).
      "Telegram vinculado.".
    - **Vinculado:** "Vinculado em 20/11/2026", **Enviar teste agora** e
      **Desvincular**.
-2. **O que avisar.** A mesma lista de regras da Saúde (`rule-row`): uma frase,
+2. **O que avisar.** A mesma lista de regras da Análise (`rule-row`): uma frase,
    o limite quando o tipo tem (campo numérico, desligado junto do interruptor),
    a explicação em uma linha e o interruptor à direita. Sem regra de IR para o
    ano de hoje, o isentômetro aparece **desligado e travado**, com a razão

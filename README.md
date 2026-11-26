@@ -76,11 +76,18 @@ comprar para a carteira ficar o mais perto possível das suas metas.
 - **Preço ao vivo** — patrimônio e ativos mudam na tela sem recarregar, pelo
   streamer do Yahoo: EUA, câmbio e cripto em segundos; B3 com os 15 minutos
   de atraso do dado gratuito. Tudo convertido para reais.
-- **Saúde da carteira** — avisos (sem nota) sobre concentração num ativo, nos
-  cinco maiores ou num setor, classe rasa ou vazia, renda que não cai todo mês e
-  pagador que carrega renda demais. As sete regras são suas: liga, desliga e
-  escolhe o limite. O setor vem da B3 (ações) e da CVM (FIIs).
-  Detalhes em [`docs/saude.md`](docs/saude.md).
+- **Análise da carteira** — o que olhar além da meta por classe, em quatro
+  dimensões: diversificação (concentração, setores, classes, exterior, renda
+  fixa), dividendos (yield, quem paga, renda que cresce e cai todo mês),
+  rentabilidade (contra CDI, Ibovespa e IPCA em 12 meses e 5 anos, anos no azul,
+  volatilidade, perda desde a compra) e qualidade dos ativos (aguarda os dados de
+  fundamentos da CVM). Cada regra é sua: liga, desliga e escolhe o limite, e a
+  pontuação de uma dimensão é só o percentual das regras com dado que estão ok,
+  com o número exato. Regra sem dado não é falha. Traz ainda o perfil de risco
+  (carteira e metas), os destaques de 12 meses e referências de preço públicas
+  (Bazin, e Graham quando houver fundamentos) para comparar com o seu teto, sem
+  recomendar nada. O setor vem da B3 (ações) e da CVM (FIIs). Detalhes em
+  [`docs/analise.md`](docs/analise.md) e [`docs/saude.md`](docs/saude.md).
 - **Alertas** — um resumo por dia no Telegram, só quando há algo a dizer:
   provento que cai amanhã, classe fora da meta, ativo de volta ao teto de
   preço, objetivo atingido, aviso novo de saúde e isentômetro de ações do mês. Cada tipo liga e desliga, a
@@ -129,7 +136,8 @@ Documentos:
 - [`docs/api.md`](docs/api.md) — contrato da API
 - [`docs/alocacao.md`](docs/alocacao.md) — o algoritmo do aporte
 - [`docs/tesouro.md`](docs/tesouro.md) — o Tesouro Direto: fonte, modelo e limites
-- [`docs/saude.md`](docs/saude.md) — regras de saúde, fontes de setor e limitações
+- [`docs/analise.md`](docs/analise.md) — a Análise: regras, fórmulas, limiares e o que ela não faz
+- [`docs/saude.md`](docs/saude.md) — as sete regras originais (hoje dentro da Análise), fontes de setor e limitações
 - [`docs/importacao-b3.md`](docs/importacao-b3.md) — planilhas da B3: formato, mapeamento e limites
 - [`docs/design.md`](docs/design.md) — interface, identidade e movimento
 - [`docs/ir.md`](docs/ir.md) — regras de IR por ano, com fonte, e o que não é calculado

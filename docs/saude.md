@@ -1,5 +1,12 @@
 # Saúde da carteira e setor
 
+> A Saúde virou a **Análise da carteira** ([analise.md](analise.md)), com mais
+> regras e dimensões. As sete regras deste documento continuam valendo, com os
+> mesmos nomes, limites e fórmulas, dentro de Diversificação (as cinco primeiras)
+> e Dividendos (as duas de renda); `GET /health` segue respondendo. A tela é a
+> Análise; esta página continua sendo a referência das fontes de setor e dos
+> detalhes dessas sete regras.
+
 Um painel de **avisos** sobre o que a meta por classe não enxerga: concentração
 dentro da classe, num setor, classe rasa ou vazia, e a renda (todo mês, e sem
 depender de um pagador só). O código das regras é

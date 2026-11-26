@@ -637,6 +637,12 @@ o resultado por lá.
 
 ## Saúde da carteira
 
+> A Saúde virou a [Análise da carteira](#análise-da-carteira), com mais regras e
+> dimensões. `GET /health` e `GET`/`PUT /health/rules` **continuam respondendo**
+> como antes (o motor de avisos e os alertas do Telegram dependem deles) e
+> compartilham a configuração com `/analysis/rules`: `/health/rules` mostra e
+> grava só as sete regras originais, e a tela não os chama mais.
+
 Avisos sobre o que a meta por classe não enxerga, com regras da própria pessoa.
 **Não há nota.** O desenho, as fontes de setor e os limites estão em
 [saude.md](saude.md). Tudo pelo dono, como o resto.
@@ -780,6 +786,188 @@ Tudo ou nada: uma regra inválida não grava nenhuma.
   0 e até 100, com até duas casas (`max_payer` também). Em `min_assets`:
   inteiro de 1 a 50. Em `income_every_month`: inteiro de 1 a 12 (meses).
 - `empty_class` não tem limite: mandar `threshold` é `422`.
+- Regra desconhecida, campo desconhecido ou corpo que não é objeto: `422`.
+
+## Análise da carteira
+
+As regras do Prumo em quatro dimensões (diversificação, dividendos,
+rentabilidade e qualidade), o perfil de risco, os destaques de 12 meses e as
+referências de preço. A pontuação de uma dimensão é o percentual das regras
+ligadas, **com dado**, que estão ok, com o número exato. Fórmulas, limiares e o
+que a Análise não faz estão em [analise.md](analise.md). Tudo pelo dono.
+
+### `GET /api/v1/analysis`
+
+```json
+{
+  "as_of": "2026-11-25",
+  "total_value": 84300.0,
+  "attention_count": 11,
+  "dimensions": [
+    {
+      "id": "diversification",
+      "state": "ready",
+      "score": { "ok": 3, "measured": 9, "no_data": 1, "percent": 33.3 },
+      "rules": [
+        {
+          "rule": "min_abroad",
+          "dimension": "diversification",
+          "enabled": true,
+          "unit": "percent",
+          "direction": "at_least",
+          "threshold": 10.0,
+          "default_threshold": 10.0,
+          "status": "warning",
+          "current": 0.0,
+          "limit": 10.0,
+          "needed_contribution": 14500.0,
+          "detail": null
+        },
+        {
+          "rule": "max_asset",
+          "dimension": "diversification",
+          "enabled": true,
+          "unit": "percent",
+          "direction": "at_most",
+          "threshold": 15.0,
+          "default_threshold": 15.0,
+          "status": "warning",
+          "current": 70.76,
+          "limit": 15.0,
+          "needed_contribution": null,
+          "detail": {
+            "kind": "findings",
+            "warnings": [
+              {
+                "rule": "max_asset",
+                "subject": { "kind": "asset", "asset_id": "8f0c…", "label": "ITUB4" },
+                "unit": "percent",
+                "current": 70.76,
+                "limit": 15.0,
+                "needed_contribution": 446000.0
+              }
+            ]
+          }
+        }
+      ]
+    },
+    { "id": "quality", "state": "awaiting_fundamentals", "score": null, "rules": [] }
+  ],
+  "profile": {
+    "current": { "fixed_income": 70.76, "variable": 29.24, "profile": "conservative" },
+    "target": { "fixed_income": 35.0, "variable": 65.0, "profile": "moderate" },
+    "conservative_max": 30.0,
+    "moderate_max": 70.0
+  },
+  "highlights": {
+    "price_12m": {
+      "best": [{ "asset_id": "8f0c…", "label": "KNRI11", "asset_class": "br_reits", "change_percent": 18.4 }],
+      "worst": []
+    },
+    "since_purchase": { "best": [], "worst": [] }
+  },
+  "references": {
+    "bazin_yield": 6.0,
+    "graham_ready": false,
+    "items": [
+      {
+        "asset_id": "8f0c…",
+        "label": "ITSA4",
+        "asset_class": "br_stocks",
+        "unit_price": 11.2,
+        "max_price": 10.0,
+        "bazin": { "price": 12.5, "annual_average": 0.75, "years": 4 },
+        "graham": null
+      }
+    ]
+  },
+  "unclassified_count": 1,
+  "sources": [
+    { "source": "b3_stocks", "asset_class": "br_stocks", "updated_at": "2026-11-20T09:00:00Z", "failing": false }
+  ]
+}
+```
+
+- `attention_count`: quantas regras estão em `warning` ("N pontos a ver").
+- `dimensions`: sempre as quatro, na ordem `diversification`, `dividends`,
+  `returns`, `quality`. `state: "awaiting_fundamentals"` (hoje, só a
+  `quality`) não tem regra nem `score`.
+- `score`: `ok` regras ok; `measured` as ligadas com dado (ok + `warning`);
+  `no_data` as ligadas sem dado, **fora** da conta; `percent = ok ÷ measured`
+  (uma casa), `null` sem nenhuma medida.
+- Regra (`rules[]`): `rule`, `dimension`, `enabled`, `unit` (`percent` ou
+  `count`: em que o número e o limite são medidos), `direction` (`at_most`: bom
+  é ficar em ou abaixo; `at_least`: em ou acima; `null`: sem limite),
+  `threshold` (o da pessoa; `null` sem limite editável) e `default_threshold`.
+- `status`: `ok`, `warning`, `no_data` (ligada, sem o que medir: **não é falha**)
+  ou `off` (desligada). `current` é o número de agora (`null` sem dado,
+  desligada ou, em `income_growth`, quando a renda anterior foi zero); `limit` é
+  o que ele precisa alcançar — o limite da pessoa ou, nas regras `beat_*`, o que
+  o índice rendeu; `needed_contribution` é o aporte, em reais, que leva a fatia
+  de volta ao limite sem vender nada (`min_abroad`, `min_low_risk`).
+- `detail` (`null` quando não há o que dizer), pelo `kind`:
+  - `findings`: os avisos das sete regras originais (`warnings`, o mesmo formato
+    de `GET /health`: `subject`, `current`, `limit`, `needed_contribution`);
+  - `classes` (`asset_classes`), `sectors` (`sectors`);
+  - `yield` (`income_12m`, `base_value`), `paying` (`paying`, `total`, `silent`),
+    `income_growth` (`current_12m`, `previous_12m`), `brick` (`reits`, `brick`);
+  - `benchmark` (`benchmark` `cdi`, `ibov` ou `ipca`; `horizon` `12m` ou `5y`;
+    `from`, `to`, `portfolio_percent`, `benchmark_percent`);
+  - `years` (`positive`, `total`), `losses` (`assets[]` com `asset_id`, `label`,
+    `asset_class`, `loss_percent`).
+- `profile`: o perfil de agora e o das metas por classe (`null` sem ativos, ou
+  sem metas); `fixed_income` + `variable` somam 100; `conservative_max` e
+  `moderate_max` são os limiares de renda variável (30 e 70) que dão o rótulo
+  (`conservative`, `moderate`, `aggressive`).
+- `highlights`: até 3 de cada lado, só quem subiu em `best` e quem caiu em
+  `worst`; ativo sem histórico não entra (`price_12m` ajusta desdobramentos).
+- `references`: `bazin_yield` é o rendimento-alvo da pessoa; `items` só tem
+  ativos da B3 com histórico de dividendos; `graham` é `null` enquanto
+  `graham_ready` for `false` (aguardando os fundamentos). Referência pública,
+  não é recomendação; o teto é o `max_price` do ativo, que a tela só muda com o
+  `PATCH /assets/{id}` e uma confirmação.
+- `unclassified_count` e `sources`: como em `GET /health`.
+
+Valores em reais (`needed_contribution`, `income_12m`, `base_value`,
+`current_12m`, `previous_12m`, preços das referências, `received` e `total` dos
+avisos) são mascarados pela tela com o olho fechado; percentuais e contagens
+não.
+
+### `GET /api/v1/analysis/rules`
+
+```json
+{
+  "rules": [
+    { "rule": "max_asset", "dimension": "diversification", "enabled": true, "unit": "percent",
+      "direction": "at_most", "threshold": 15.0, "default_threshold": 15.0 },
+    { "rule": "beat_cdi_12m", "dimension": "returns", "enabled": true, "unit": "percent",
+      "direction": "at_least", "threshold": null, "default_threshold": null }
+  ],
+  "bazin_yield": 6.0
+}
+```
+
+As 25 regras na ordem da tela, como a pessoa as deixou (o que ela nunca mexeu
+vale `default_threshold`), e o rendimento-alvo do Bazin (padrão 6).
+
+### `PUT /api/v1/analysis/rules`
+
+```json
+{ "rules": { "min_abroad": { "threshold": 15 }, "max_loss": { "enabled": false } }, "bazin_yield": 7.5 }
+```
+
+Muda só as regras e os campos enviados; o resto fica como está. Cada regra leva
+`enabled`, `threshold` ou os dois; `bazin_yield` é opcional, mas o corpo precisa
+de ao menos uma regra ou o `bazin_yield` (vazio é `422`). Responde como o `GET`.
+Tudo ou nada: um valor inválido não grava nada.
+
+- `threshold` de percentual: maior que 0 e até 100, com até duas casas. De
+  contagem: inteiro de 1 até o máximo da regra — `min_assets` 50,
+  `min_portfolio_assets` 100, `min_classes` 7, `min_sectors` 30,
+  `income_every_month` 12.
+- Regra sem limite editável (`empty_class`, `income_growth`, `brick_reit` e as
+  seis `beat_*`): mandar `threshold` é `422`; elas só ligam e desligam.
+- `bazin_yield`: percentual maior que 0 e até 100, com até duas casas.
 - Regra desconhecida, campo desconhecido ou corpo que não é objeto: `422`.
 
 ## Desempenho

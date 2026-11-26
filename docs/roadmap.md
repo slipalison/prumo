@@ -248,6 +248,10 @@ testes, docs, deploy e conferência em produção.
 
 ### 3.9 [P3 · esforço M] Saúde da carteira (regras próprias) + setor/segmento
 
+> Entregue, e depois evoluída para a **Análise da carteira** (dimensões de
+> diversificação, dividendos, rentabilidade e qualidade): ver
+> [analise.md](analise.md). As regras abaixo seguem dentro dela.
+
 - **O que é:** um painel de **avisos** (sem nota 0–100) com regras próprias e
   **configuráveis**. Exemplos:
   - nenhum ativo acima de X% da carteira;
