@@ -1,6 +1,8 @@
 import type { ComponentType, SVGProps } from "react";
 import type { Portfolio } from "../api/types";
 import { IconChart, IconCoins, IconSliders, IconWallet } from "../components/icons";
+import { AnalysisScreen } from "../features/analysis/AnalysisScreen";
+import { IconAnalysis } from "../features/analysis/icons";
 import { ContributeScreen } from "../features/contribute/ContributeScreen";
 import { PerformanceScreen } from "../features/performance/PerformanceScreen";
 import { IconIncome } from "../features/income/IncomeIcon";
@@ -27,6 +29,7 @@ export const APP_ROUTES = [
   { id: "carteira", label: "Carteira", Icon: IconWallet, Screen: PortfolioScreen },
   { id: "renda", label: "Renda", Icon: IconIncome, Screen: IncomeScreen },
   { id: "desempenho", label: "Desempenho", Icon: IconChart, Screen: PerformanceScreen },
+  { id: "analise", label: "Análise", Icon: IconAnalysis, Screen: AnalysisScreen },
   { id: "ajustes", label: "Ajustes", Icon: IconSliders, Screen: SettingsScreen },
 ] as const satisfies readonly AppRoute[];
 

@@ -1,8 +1,8 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { analysisKeys } from "./analysis";
 import type { B3CommitResult, B3Decisions, B3PreviewResponse } from "./b3ImportTypes";
 import { cashKeys } from "./cashQueries";
 import { request } from "./client";
-import { healthKeys } from "./health";
 import { incomeKeys } from "./incomeQueries";
 import { ledgerKeys } from "./ledger";
 import { keys } from "./queries";
@@ -46,7 +46,7 @@ export function useB3Commit() {
     mutationFn: commitB3Import,
     onSuccess: () =>
       Promise.all(
-        [keys.portfolio, ledgerKeys.all, incomeKeys.all, cashKeys.all, healthKeys.all, ["net-worth"], ["performance"]].map(
+        [keys.portfolio, ledgerKeys.all, incomeKeys.all, cashKeys.all, analysisKeys.all, ["net-worth"], ["performance"]].map(
           (queryKey) => client.invalidateQueries({ queryKey }),
         ),
       ),

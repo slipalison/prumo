@@ -14,8 +14,8 @@ import type {
 } from "../api/types";
 import { ASSET_CLASSES } from "../api/types";
 import type { AllocationSettings } from "../api/allocationTypes";
-import type { HealthRule, HealthWarning, RuleId, RulesRequest, SectorSourceInfo } from "../api/healthTypes";
 import type { CreateTransactionRequest, Transaction, UpdateTransactionRequest } from "../api/ledgerTypes";
+import { analysisHandlers } from "./analysisHandlers";
 import { iconsHandlers } from "./iconsHandlers";
 import { defaultIncomeAutoHandlers } from "./incomeAutoHandlers";
 import { incomeHandlers } from "./incomeHandlers";
@@ -25,9 +25,6 @@ import {
   defaultAssets,
   defaultChecklists,
   defaultGoals,
-  defaultHealthRules,
-  defaultSectorSources,
-  defaultWarnings,
   defaultTransactions,
   samplePlan,
   toPortfolio,
@@ -46,11 +43,6 @@ export type FakeDb = {
   transactions: Transaction[];
   requests: Array<{ method: string; path: string; body: unknown }>;
   nextId: number;
-  /** Regras de saúde como a pessoa as deixou e os avisos que o servidor acha deles. */
-  healthRules: HealthRule[];
-  warnings: HealthWarning[];
-  sectorSources: SectorSourceInfo[];
-  unclassified: number;
 };
 
 function createDb(): FakeDb {
@@ -63,10 +55,6 @@ function createDb(): FakeDb {
     transactions: defaultTransactions(),
     requests: [],
     nextId: 1,
-    healthRules: defaultHealthRules(),
-    warnings: defaultWarnings(),
-    sectorSources: defaultSectorSources(),
-    unclassified: 1,
   };
 }
 
@@ -415,39 +403,6 @@ export const handlers = [
     );
   }),
 
-  http.get("/api/v1/health", () => {
-    const on = new Set<RuleId>(db.healthRules.filter((r) => r.enabled).map((r) => r.rule));
-    const warnings = db.warnings.filter((w) => on.has(w.rule));
-    return HttpResponse.json({
-      total_value: toPortfolio(db.assets, db.goals, db.checklists).total_value,
-      warnings,
-      rules: db.healthRules.map((r) => ({
-        ...r,
-        status: !r.enabled ? "off" : warnings.some((w) => w.rule === r.rule) ? "warning" : "ok",
-      })),
-      unclassified_count: db.unclassified,
-      sources: db.sectorSources,
-    });
-  }),
-
-  http.get("/api/v1/health/rules", () => HttpResponse.json({ rules: db.healthRules })),
-
-  http.put("/api/v1/health/rules", async ({ request }) => {
-    const { rules } = (await request.json()) as RulesRequest;
-    for (const [rule, change] of Object.entries(rules) as Array<[RuleId, { enabled?: boolean; threshold?: number }]>) {
-      if (change.threshold !== undefined && change.threshold <= 0) {
-        return problem(422, "validation_failed", "Dados inválidos", `${rule}: o limite precisa ser maior que 0.`);
-      }
-    }
-    for (const [rule, change] of Object.entries(rules) as Array<[RuleId, { enabled?: boolean; threshold?: number }]>) {
-      const stored = db.healthRules.find((r) => r.rule === rule);
-      if (!stored) continue;
-      if (change.enabled !== undefined) stored.enabled = change.enabled;
-      if (change.threshold !== undefined) stored.threshold = change.threshold;
-    }
-    return HttpResponse.json({ rules: db.healthRules });
-  }),
-
   http.get("/api/v1/settings/allocation", () => HttpResponse.json({ max_asset_percent: db.maxAssetPercent })),
 
   http.put("/api/v1/settings/allocation", async ({ request }) => {
@@ -467,6 +422,7 @@ export const handlers = [
 
 export const server = setupServer(
   ...handlers,
+  ...analysisHandlers,
   ...iconsHandlers,
   ...incomeHandlers,
   ...defaultIncomeAutoHandlers,

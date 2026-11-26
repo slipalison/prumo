@@ -3,10 +3,8 @@ import type { HealthWarning } from "../api/healthTypes";
 import type { Asset } from "../api/types";
 import { defaultAssets, defaultChecklists, toAsset } from "../test/fixtures";
 import {
-  COUNT_MAX,
   formatRuleValue,
   limitText,
-  ruleName,
   thresholdError,
   warningAction,
   warningMembers,
@@ -85,11 +83,6 @@ describe("texto dos avisos", () => {
     expect(asset.text).not.toMatch(/10,3/);
   });
 
-  it("nomeia a regra para leitor de tela", () => {
-    expect(ruleName("max_asset")).toBe("Nenhum ativo acima de … da carteira");
-    expect(ruleName("empty_class")).toBe("Toda classe com meta tem ativo");
-  });
-
   it("valida o limite como o servidor", () => {
     expect(thresholdError("percent", 15)).toBeNull();
     expect(thresholdError("percent", 12.5)).toBeNull();
@@ -102,8 +95,8 @@ describe("texto dos avisos", () => {
     expect(thresholdError("count", 2.5)).not.toBeNull();
     expect(thresholdError("count", 0)).not.toBeNull();
     expect(thresholdError("count", 51)).not.toBeNull();
-    expect(thresholdError("count", 12, COUNT_MAX.income_every_month)).toBeNull();
-    expect(thresholdError("count", 13, COUNT_MAX.income_every_month)).toBe("Use um número inteiro de 1 a 12.");
+    expect(thresholdError("count", 12, 12)).toBeNull();
+    expect(thresholdError("count", 13, 12)).toBe("Use um número inteiro de 1 a 12.");
   });
 
   it("diz as regras de renda: título, limite, meses vazios e o que fazer", () => {

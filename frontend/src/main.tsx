@@ -5,6 +5,7 @@ import "./styles/base.css";
 import "./styles/components.css";
 import "./styles/screens.css";
 import "./styles/health.css";
+import "./styles/analysis.css";
 import "./styles/icons.css";
 import "./styles/alerts.css";
 import "./styles/income.css";

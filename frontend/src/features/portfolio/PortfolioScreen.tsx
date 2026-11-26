@@ -20,7 +20,7 @@ import { countBelowIdeal, hasIdeal, readIdeal, type IdealReading } from "../../l
 import { useLiveStatus } from "../../lib/liveStatus";
 import { useMoney } from "../../lib/privacy";
 import { assetName, isAboveCeiling, needsRating, ratingIntro } from "../../lib/rating";
-import { HealthSummary } from "../health/HealthSummary";
+import { AnalysisSummary } from "../analysis/AnalysisSummary";
 import { formatSignedPercent } from "../ledger/format";
 import "../ledger/ledger.css";
 import { AddAssetSheet } from "./AddAssetSheet";
@@ -116,7 +116,7 @@ export function PortfolioScreen({ portfolio }: PortfolioScreenProps) {
 
       <ProfitSummary profit={portfolio.profit} />
 
-      <HealthSummary />
+      <AnalysisSummary />
 
       <div className="class-list">
         {shown.map((summary, index) => (

@@ -1,12 +1,14 @@
 import type { AssetClass } from "../api/types";
-import type { GapPayer, HealthWarning, RuleId, RuleStatus, RuleUnit } from "../api/healthTypes";
+import type { GapPayer, HealthWarning, RuleUnit } from "../api/healthTypes";
 import { CLASS_META } from "./assetClasses";
 import { formatPercent, plural } from "./format";
 import type { Money } from "./money";
 
 /**
- * As regras como a pessoa as lê: o nome, onde o limite entra na frase e o
- * porquê. O servidor só manda fatos; o texto, com acento, nasce aqui.
+ * As regras como a pessoa as lê: onde o limite entra na frase e o porquê. O
+ * servidor só manda fatos; o texto, com acento, nasce aqui. O texto de cada
+ * regra mora em `analysisText.ts`; este arquivo tem o dos avisos das sete
+ * regras originais da Saúde.
  */
 export type RuleText = {
   /** "Nenhum ativo acima de" — vem antes do campo do limite. */
@@ -15,54 +17,6 @@ export type RuleText = {
   tail: string;
   /** Uma linha de por quê. */
   why: string;
-};
-
-export const RULE_TEXT: Record<RuleId, RuleText> = {
-  max_asset: {
-    lead: "Nenhum ativo acima de",
-    tail: "da carteira",
-    why: "Pega o ativo que virou aposta demais, mesmo dentro da meta da classe.",
-  },
-  top_five: {
-    lead: "Os 5 maiores ativos somam até",
-    tail: "da carteira",
-    why: "Só vale com mais de 5 ativos. Mostra se a carteira depende de poucos nomes.",
-  },
-  max_sector: {
-    lead: "Nenhum setor acima de",
-    tail: "da classe",
-    why: "Vale dentro de Ações Nacionais (setor da B3) e de Fundos Imobiliários (tijolo, papel, fundo de fundos ou híbrido).",
-  },
-  min_assets: {
-    lead: "Pelo menos",
-    tail: "ativos em cada classe que tem meta",
-    why: "Só olha a classe que já tem algum ativo; a classe vazia é a regra de baixo.",
-  },
-  empty_class: {
-    lead: "Toda classe com meta tem ativo",
-    tail: "",
-    why: "Avisa quando você definiu uma meta e ainda não comprou nada nela.",
-  },
-  income_every_month: {
-    lead: "Provento recebido em pelo menos",
-    tail: "dos últimos 12 meses fechados",
-    why: "Conta os meses com provento recebido, sem o mês de hoje. Precisa de 3 meses de histórico na tela Renda.",
-  },
-  max_payer: {
-    lead: "Nenhum pagador acima de",
-    tail: "da renda de 12 meses",
-    why: "Pega a renda que depende de um ativo só. Usa os proventos recebidos e precisa de 3 meses de histórico e de 2 pagadores.",
-  },
-};
-
-/** Maior valor de cada limite em contagem; o padrão é 50 ativos. */
-export const COUNT_MAX: Partial<Record<RuleId, number>> = { income_every_month: 12 };
-
-export const STATUS_TEXT: Record<RuleStatus, string> = {
-  off: "Desligada",
-  not_applicable: "Sem o que medir",
-  ok: "Dentro do limite",
-  warning: "Passou do limite",
 };
 
 /** `31,04%` / `15%` para percentual, `3` para contagem. */
@@ -206,12 +160,6 @@ export function warningAction(warning: HealthWarning, money: Money): WarningActi
         link: { href: "#/aportar", label: "Calcular o próximo aporte" },
       };
   }
-}
-
-/** O nome da regra sem o número ("Nenhum ativo acima de … da carteira"), para leitor de tela. */
-export function ruleName(rule: RuleId): string {
-  const { lead, tail } = RULE_TEXT[rule];
-  return tail ? `${lead} … ${tail}` : lead;
 }
 
 /**

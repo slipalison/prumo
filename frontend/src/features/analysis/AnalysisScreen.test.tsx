@@ -1,0 +1,445 @@
+import { screen, waitFor, within } from "@testing-library/react";
+import { http, HttpResponse } from "msw";
+import { describe, expect, it } from "vitest";
+import type { Analysis, RuleResult, RuleStatus } from "../../api/analysisTypes";
+import { analysisState, defaultAnalysis, result, scoreOf } from "../../test/analysisHandlers";
+import { renderApp } from "../../test/render";
+import { getDb, server } from "../../test/server";
+
+async function openAnalysis() {
+  const rendered = renderApp("analise");
+  await screen.findByRole("heading", { name: "Análise da carteira", level: 1 });
+  await screen.findByRole("region", { name: "Resumo" });
+  return rendered;
+}
+
+const card = (name: string) => within(screen.getByRole("region", { name }));
+const ruleItem = (region: ReturnType<typeof card>, sentence: string) =>
+  region.getByRole("heading", { name: sentence, level: 3 }).closest("li") as HTMLElement;
+
+/** A análise da carteira fictícia com todas as regras no estado dado. */
+function allIn(status: RuleStatus): Analysis {
+  const base = defaultAnalysis();
+  const dimensions = base.dimensions.map((d) => {
+    if (d.state !== "ready") return d;
+    const rules: RuleResult[] = d.rules.map((r) => result(r.rule, status, status === "ok" ? { current: 1 } : {}));
+    return { ...d, rules, score: scoreOf(rules) };
+  });
+  return {
+    ...base,
+    dimensions,
+    attention_count: dimensions.flatMap((d) => d.rules).filter((r) => r.status === "warning").length,
+  };
+}
+
+describe("tela Análise", () => {
+  it("é uma tela de topo entre Desempenho e Ajustes", async () => {
+    const { user } = renderApp();
+    await screen.findByRole("heading", { name: "Quanto você vai aportar?" });
+    const nav = screen.getByRole("navigation", { name: "Principal" });
+    const labels = within(nav)
+      .getAllByRole("link")
+      .map((link) => (link.textContent ?? "").trim())
+      .filter((text) => ["Desempenho", "Análise", "Ajustes"].includes(text));
+    expect(labels).toEqual(["Desempenho", "Análise", "Ajustes"]);
+    await user.click(within(nav).getByRole("link", { name: "Análise" }));
+    expect(await screen.findByRole("heading", { name: "Análise da carteira", level: 1 })).toBeInTheDocument();
+    expect(window.location.hash).toBe("#/analise");
+    expect(document.title).toBe("Análise · Prumo");
+    expect(within(nav).getByRole("link", { name: "Análise" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("resume os pontos a ver e diz que regra sem dado não é falha", async () => {
+    await openAnalysis();
+    expect(screen.getByText(/Regra sem dado para medir fica de fora da conta/)).toBeInTheDocument();
+    const verdict = card("Resumo");
+    expect(verdict.getByText("11 pontos a ver")).toBeInTheDocument();
+    expect(verdict.getByText(/Das 20 regras que tinham o que medir, 11 passaram do seu limite/)).toBeInTheDocument();
+    expect(verdict.getByRole("link", { name: "Ajustar as regras" })).toHaveAttribute("href", "#/ajustes/analise");
+  });
+
+  it("cada dimensão mostra o percentual de regras ok com o número exato", async () => {
+    await openAnalysis();
+
+    const diversification = card("Diversificação");
+    expect(diversification.getByText("33,3%")).toBeInTheDocument();
+    expect(diversification.getByText(/3 de 9 regras ok · 1 regra sem dado, fora da conta/)).toBeInTheDocument();
+    const meter = diversification.getByRole("meter", { name: "Diversificação: 3 de 9 regras ok" });
+    expect(meter).toHaveAttribute("aria-valuenow", "33.3");
+
+    const dividends = card("Dividendos");
+    expect(dividends.getByText("40%")).toBeInTheDocument();
+    expect(dividends.getByText(/2 de 5 regras ok · 1 regra sem dado, fora da conta/)).toBeInTheDocument();
+
+    const returns = card("Rentabilidade");
+    expect(returns.getByText("66,7%")).toBeInTheDocument();
+    expect(returns.getByText(/4 de 6 regras ok · 3 regras sem dado, fora da conta/)).toBeInTheDocument();
+  });
+
+  it("põe os pontos a ver primeiro, depois o que está ok, o que não tem dado e o que está desligado", async () => {
+    analysisState().analysis = (() => {
+      const base = defaultAnalysis();
+      const diversification = base.dimensions[0];
+      if (!diversification) throw new Error("sem dimensão");
+      const rules = diversification.rules.map((r) => (r.rule === "min_classes" ? result("min_classes", "off") : r));
+      base.dimensions[0] = { ...diversification, rules, score: scoreOf(rules) };
+      return base;
+    })();
+    await openAnalysis();
+    const list = within(screen.getByRole("list", { name: "Regras de Diversificação" }));
+    const statuses = list.getAllByRole("listitem", { hidden: false }).filter((li) => li.classList.contains("analysis-rule"));
+    expect(statuses.map((li) => [...li.classList].find((c) => c.startsWith("analysis-rule--")))).toEqual([
+      ...Array.from({ length: 6 }, () => "analysis-rule--warning"),
+      "analysis-rule--ok",
+      "analysis-rule--ok",
+      "analysis-rule--no_data",
+      "analysis-rule--off",
+    ]);
+  });
+
+  it("as sete regras originais mostram os achados com o número, o limite e o que fazer", async () => {
+    await openAnalysis();
+    const diversification = card("Diversificação");
+    const ipca = diversification.getByRole("article", { name: "Tesouro IPCA+ 2035 é 70,76% da carteira" });
+    expect(within(ipca).getByText("Agora").nextSibling).toHaveTextContent("70,76%");
+    expect(within(ipca).getByText("Limite").nextSibling).toHaveTextContent("15%");
+    expect(within(ipca).getByRole("meter")).toHaveAttribute("aria-valuenow", "70.76");
+    expect(within(ipca).getByText(/sem vender nada, aporte cerca de R\$\s446 mil em outros ativos/)).toBeInTheDocument();
+    expect(within(ipca).getByRole("link", { name: "Calcular o próximo aporte" })).toHaveAttribute("href", "#/aportar");
+
+    const shallow = diversification.getByRole("article", { name: "Ações Nacionais tem 1 ativo" });
+    expect(within(shallow).getByText("Mínimo").nextSibling).toHaveTextContent("3");
+    expect(within(shallow).queryByRole("meter")).not.toBeInTheDocument();
+
+    // As de renda moram em Dividendos agora.
+    const dividends = card("Dividendos");
+    const gaps = dividends.getByRole("article", { name: "Você recebeu provento em 10 dos últimos 12 meses" });
+    expect(within(gaps).getByText("Meses sem provento: fev/2026, abr/2026")).toBeInTheDocument();
+    expect(within(gaps).getByRole("link", { name: "Abrir a Renda" })).toHaveAttribute("href", "#/renda");
+    expect(dividends.getByRole("article", { name: "KNRI11 pagou 80,01% da renda de 12 meses" })).toBeInTheDocument();
+  });
+
+  it("as regras novas mostram o número, o limite, a conta e o que fazer", async () => {
+    await openAnalysis();
+    const diversification = card("Diversificação");
+    const abroad = ruleItem(diversification, "Pelo menos 10% da carteira no exterior");
+    expect(within(abroad).getByText("Ponto a ver")).toBeInTheDocument();
+    expect(within(abroad).getByText("Agora").nextSibling).toHaveTextContent("0%");
+    expect(within(abroad).getByText("Mínimo").nextSibling).toHaveTextContent("10%");
+    expect(within(abroad).getByText("0% da carteira está no exterior.")).toBeInTheDocument();
+    expect(within(abroad).getByText(/aporte cerca de R\$\s14,5\smil em ativos de fora/)).toBeInTheDocument();
+    expect(within(abroad).queryByRole("meter")).not.toBeInTheDocument();
+
+    const dividends = card("Dividendos");
+    const paying = ruleItem(dividends, "Pelo menos 70% dos ativos de renda variável pagaram provento em 12 meses");
+    expect(within(paying).getByText("2 de 4 ativos pagaram provento em 12 meses. Sem provento: BTLG11, ITSA4.")).toBeInTheDocument();
+    const growth = ruleItem(dividends, "Renda de 12 meses maior que a dos 12 meses anteriores");
+    expect(within(growth).getByText("Ok")).toBeInTheDocument();
+    expect(within(growth).getByText("Agora").nextSibling).toHaveTextContent("18,50%");
+    expect(within(growth).queryByText("Limite")).not.toBeInTheDocument();
+
+    const returns = card("Rentabilidade");
+    const cdi = ruleItem(returns, "A carteira rende ao menos o CDI em 12 meses");
+    expect(within(cdi).getByText("CDI").nextSibling).toHaveTextContent("13,20%");
+    expect(within(cdi).getByText("Agora").nextSibling).toHaveTextContent("9,40%");
+    expect(
+      within(cdi).getByText("De 25/11/2025 a 25/11/2026 a carteira rendeu +9,40%; o CDI, +13,20%."),
+    ).toBeInTheDocument();
+    expect(within(cdi).getByText(/não manda trocar nada/)).toBeInTheDocument();
+    expect(within(cdi).getByRole("link", { name: "Abrir o Desempenho" })).toHaveAttribute("href", "#/desempenho");
+
+    const loss = ruleItem(returns, "Nenhum ativo com perda maior que 30% desde a compra");
+    expect(within(loss).getByText("BTLG11 está 41,50% abaixo do que você pagou.")).toBeInTheDocument();
+    expect(within(loss).getByRole("meter")).toHaveAttribute("aria-valuenow", "41.5");
+    expect(within(loss).getByText(/O Prumo não manda vender/)).toBeInTheDocument();
+  });
+
+  it("regra sem dado diz o motivo e não vira aviso", async () => {
+    await openAnalysis();
+    const sectors = ruleItem(card("Diversificação"), "Ações em pelo menos 4 setores");
+    expect(within(sectors).getByText("Sem dado")).toBeInTheDocument();
+    expect(within(sectors).getByText("Precisa de ações com setor conhecido na fonte pública.")).toBeInTheDocument();
+    expect(within(sectors).queryByText("Ponto a ver")).not.toBeInTheDocument();
+    expect(within(sectors).queryByText("Agora")).not.toBeInTheDocument();
+
+    const fiveYears = ruleItem(card("Rentabilidade"), "A carteira rende ao menos o CDI em 5 anos");
+    expect(within(fiveYears).getByText("A série da carteira ou do índice ainda não cobre 5 anos.")).toBeInTheDocument();
+  });
+
+  it("regra desligada diz que não entra na pontuação", async () => {
+    analysisState().analysis = (() => {
+      const base = defaultAnalysis();
+      const returns = base.dimensions[2];
+      if (!returns) throw new Error("sem dimensão");
+      const rules = returns.rules.map((r) => (r.rule === "max_loss" ? result("max_loss", "off") : r));
+      base.dimensions[2] = { ...returns, rules, score: scoreOf(rules) };
+      return base;
+    })();
+    await openAnalysis();
+    const loss = ruleItem(card("Rentabilidade"), "Nenhum ativo com perda maior que 30% desde a compra");
+    expect(within(loss).getByText("Desligada")).toBeInTheDocument();
+    expect(within(loss).getByText(/não entra na pontuação/)).toBeInTheDocument();
+  });
+
+  it("a Qualidade e os pontos de atenção esperam os fundamentos, sem fingir que está tudo certo", async () => {
+    await openAnalysis();
+    const quality = card("Qualidade dos ativos");
+    expect(quality.getByText("Aguardando dados de fundamentos")).toBeInTheDocument();
+    expect(quality.getByText(/dados abertos da CVM/)).toBeInTheDocument();
+    expect(quality.queryByRole("meter")).not.toBeInTheDocument();
+    expect(quality.queryByText("Ok")).not.toBeInTheDocument();
+    const attention = card("Pontos de atenção dos ativos");
+    expect(attention.getByText("Aguardando dados de fundamentos")).toBeInTheDocument();
+    expect(attention.getByText(/nenhum ponto de atenção aparece aqui, nem “tudo certo”/)).toBeInTheDocument();
+  });
+
+  it("perfil de risco: agora e metas, com rótulo, números e a diferença", async () => {
+    await openAnalysis();
+    const profile = card("Perfil de risco");
+    expect(profile.getByText("Conservador")).toBeInTheDocument();
+    expect(profile.getByText("Moderado")).toBeInTheDocument();
+    expect(
+      profile.getByRole("img", { name: "Agora: perfil conservador, renda fixa 70,8%, renda variável 29,2%" }),
+    ).toBeInTheDocument();
+    expect(
+      profile.getByRole("img", { name: "Suas metas: perfil moderado, renda fixa 35,0%, renda variável 65,0%" }),
+    ).toBeInTheDocument();
+    expect(profile.getByText("Renda fixa 70,8%")).toBeInTheDocument();
+    expect(profile.getByText("Renda variável 65,0%")).toBeInTheDocument();
+    expect(
+      profile.getByText("A renda variável está 35,8 pontos percentuais abaixo do que as suas metas pedem."),
+    ).toBeInTheDocument();
+    expect(profile.getByText(/até 30% em renda variável é conservador, até 70% é moderado e acima disso é arrojado/)).toBeInTheDocument();
+  });
+
+  it("perfil de risco sem meta ou sem ativos diz o que falta", async () => {
+    const base = defaultAnalysis();
+    analysisState().analysis = { ...base, profile: { ...base.profile, target: null } };
+    const first = await openAnalysis();
+    expect(card("Perfil de risco").getByText(/Defina as metas por classe, em Ajustes, Metas/)).toBeInTheDocument();
+    expect(card("Perfil de risco").queryByText(/pontos percentuais/)).not.toBeInTheDocument();
+    first.unmount();
+
+    analysisState().analysis = { ...base, profile: { ...base.profile, current: null } };
+    await openAnalysis();
+    expect(card("Perfil de risco").getByText("Ainda não há ativos com valor.")).toBeInTheDocument();
+  });
+
+  it("perfil de risco no perfil da meta diz isso", async () => {
+    const base = defaultAnalysis();
+    analysisState().analysis = {
+      ...base,
+      profile: {
+        ...base.profile,
+        current: { fixed_income: 35.4, variable: 64.6, profile: "moderate" },
+      },
+    };
+    await openAnalysis();
+    expect(card("Perfil de risco").getByText("A sua carteira está no perfil que as suas metas pedem.")).toBeInTheDocument();
+  });
+
+  it("destaques: quem subiu e quem caiu, em preço e desde a compra", async () => {
+    await openAnalysis();
+    const highlights = card("Destaques de 12 meses");
+    const lists = highlights.getAllByRole("list");
+    const price = within(lists[0] as HTMLElement);
+    expect(price.getByText("KNRI11").nextSibling).toHaveTextContent("+18,40%");
+    expect(price.getByText("ITSA4").nextSibling).toHaveTextContent("+6,25%");
+    const fell = highlights.getAllByRole("list", { name: "Mais caíram" });
+    expect(within(fell[0] as HTMLElement).getByText("BTLG11").nextSibling).toHaveTextContent("−12,80%");
+    expect(within(fell[1] as HTMLElement).getByText("BTLG11").nextSibling).toHaveTextContent("−41,50%");
+    expect(highlights.getByText("Pela variação do preço em 12 meses")).toBeInTheDocument();
+    expect(highlights.getByText("Pela rentabilidade desde a compra")).toBeInTheDocument();
+  });
+
+  it("destaques sem histórico dizem por que estão vazios", async () => {
+    const base = defaultAnalysis();
+    analysisState().analysis = {
+      ...base,
+      highlights: {
+        price_12m: { best: [], worst: [] },
+        since_purchase: { best: [], worst: [] },
+      },
+    };
+    await openAnalysis();
+    const highlights = card("Destaques de 12 meses");
+    expect(highlights.getAllByText("Nenhum, ou ainda sem 12 meses de histórico de preço.")).toHaveLength(2);
+    expect(highlights.getAllByText("Nenhum com custo conhecido no livro.")).toHaveLength(2);
+  });
+
+  it("referências de preço: rotuladas como públicas, comparadas com o teto e sem recomendar", async () => {
+    await openAnalysis();
+    const references = card("Referências de preço");
+    expect(references.getByRole("note")).toHaveTextContent("Referência pública, não é recomendação.");
+    expect(references.getByText(/hoje 6% ao ano/)).toBeInTheDocument();
+    expect(references.getByRole("link", { name: "Mudar o rendimento-alvo" })).toHaveAttribute("href", "#/ajustes/analise");
+    const items = references.getAllByRole("listitem");
+    const itsa = items.find((li) => /ITSA4/.test(li.textContent ?? "")) as HTMLElement;
+    expect(within(itsa).getByText("Bazin").nextSibling).toHaveTextContent(/R\$\s12,50/);
+    expect(within(itsa).getByText("Seu teto").nextSibling).toHaveTextContent(/R\$\s10,00/);
+    expect(within(itsa).getByText("Preço de hoje").nextSibling).toHaveTextContent(/R\$\s11,20/);
+    expect(within(itsa).getByText(/Média de 4 anos de dividendos: R\$\s0,75 por cota ao ano/)).toBeInTheDocument();
+    const knri = items.find((li) => /KNRI11/.test(li.textContent ?? "")) as HTMLElement;
+    expect(within(knri).getByText("Seu teto").nextSibling).toHaveTextContent("Sem teto");
+    expect(within(knri).getByText(/Média de 2 anos de dividendos/)).toBeInTheDocument();
+    // O Graham espera os fundamentos.
+    expect(references.getByText("Graham: aguardando dados de fundamentos.")).toBeInTheDocument();
+    expect(references.queryByText("Graham", { selector: "dt" })).not.toBeInTheDocument();
+    // Nada de "oportunidade" nem de "compre".
+    expect(document.body.textContent).not.toMatch(/oportunidade|compre|preço justo|upside/i);
+  });
+
+  it("aplica a referência como teto só depois de confirmar", async () => {
+    const { user } = await openAnalysis();
+    const references = card("Referências de preço");
+    await user.click(references.getByRole("button", { name: "Usar a referência de Bazin como teto de ITSA4" }));
+    const dialog = await screen.findByRole("dialog", { name: "Usar como teto de preço?" });
+    expect(within(dialog).getByText(/Definir R\$\s12,50 como teto de preço de ITSA4\?/)).toBeInTheDocument();
+    expect(getDb().requests.filter((r) => r.method === "PATCH")).toHaveLength(0);
+
+    await user.click(within(dialog).getByRole("button", { name: "Cancelar" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(getDb().requests.filter((r) => r.method === "PATCH")).toHaveLength(0);
+
+    await user.click(references.getByRole("button", { name: "Usar a referência de Bazin como teto de ITSA4" }));
+    const again = await screen.findByRole("dialog", { name: "Usar como teto de preço?" });
+    await user.click(within(again).getByRole("button", { name: "Definir teto" }));
+    await screen.findByText("Teto de ITSA4 atualizado.");
+    const patch = getDb().requests.filter((r) => r.method === "PATCH" && r.path === "/api/v1/assets/a-itsa").at(-1);
+    expect(patch?.body).toEqual({ max_price: 12.5 });
+    expect(getDb().assets.find((a) => a.id === "a-itsa")?.max_price).toBe(12.5);
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("não oferece o botão quando o teto já é a referência, e mostra o erro ao falhar", async () => {
+    const base = defaultAnalysis();
+    analysisState().analysis = {
+      ...base,
+      references: {
+        ...base.references,
+        items: base.references.items.map((i) => (i.label === "ITSA4" ? { ...i, max_price: 12.5 } : i)),
+      },
+    };
+    server.use(
+      http.patch("/api/v1/assets/a-knri", () =>
+        HttpResponse.json(
+          { type: "urn:prumo:error:validation_failed", title: "Dados inválidos", status: 422, code: "validation_failed", detail: "Teto ruim." },
+          { status: 422, headers: { "Content-Type": "application/problem+json" } },
+        ),
+      ),
+    );
+    const { user } = await openAnalysis();
+    const references = card("Referências de preço");
+    expect(references.queryByRole("button", { name: /teto de ITSA4/ })).not.toBeInTheDocument();
+    await user.click(references.getByRole("button", { name: "Usar a referência de Bazin como teto de KNRI11" }));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Definir teto" }));
+    expect(await screen.findByText(/Teto ruim\./)).toBeInTheDocument();
+    // O diálogo continua aberto para tentar de novo ou cancelar.
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("sem histórico de dividendos, diz o que falta em vez de uma lista vazia", async () => {
+    const base = defaultAnalysis();
+    analysisState().analysis = { ...base, references: { ...base.references, items: [] } };
+    await openAnalysis();
+    expect(card("Referências de preço").getByText(/Sem referência por enquanto/)).toBeInTheDocument();
+  });
+
+  it("com Graham pronto mostra a referência dele e não o aviso de espera", async () => {
+    const base = defaultAnalysis();
+    analysisState().analysis = {
+      ...base,
+      references: {
+        ...base.references,
+        graham_ready: true,
+        items: base.references.items.map((i) => (i.label === "ITSA4" ? { ...i, graham: 9.5 } : i)),
+      },
+    };
+    const { user } = await openAnalysis();
+    const references = card("Referências de preço");
+    expect(references.queryByText("Graham: aguardando dados de fundamentos.")).not.toBeInTheDocument();
+    const itsa = references.getAllByRole("listitem").find((li) => /ITSA4/.test(li.textContent ?? "")) as HTMLElement;
+    expect(within(itsa).getByText("Graham").nextSibling).toHaveTextContent(/R\$\s9,50/);
+    await user.click(references.getByRole("button", { name: "Usar a referência de Graham como teto de ITSA4" }));
+    expect(await screen.findByRole("dialog")).toHaveTextContent(/R\$\s9,50/);
+  });
+
+  it("diz de onde vêm os dados, quando foram buscados e o que ficou de fora", async () => {
+    await openAnalysis();
+    const sources = card("De onde vêm os dados");
+    expect(sources.getByText(/Classificação Setorial da B3/)).toBeInTheDocument();
+    expect(sources.getByText(/informe mensal de FII da CVM/)).toBeInTheDocument();
+    expect(sources.getAllByText(/Atualizado/)).toHaveLength(2);
+    expect(sources.getByText(/SEC\) exige identificar quem consulta/)).toBeInTheDocument();
+    expect(sources.getByText(/1 ativo em Ações Nacionais ou FIIs sem setor na fonte/)).toBeInTheDocument();
+    expect(sources.getByText(/Ele não entra nas regras de setor/)).toBeInTheDocument();
+  });
+
+  it("avisa quando a fonte de setor falhou ou nunca respondeu", async () => {
+    const base = defaultAnalysis();
+    analysisState().analysis = {
+      ...base,
+      unclassified_count: 3,
+      sources: [
+        { source: "b3_stocks", asset_class: "br_stocks", updated_at: null, failing: true },
+        { source: "cvm_reits", asset_class: "br_reits", updated_at: "2026-11-21T09:00:00Z", failing: true },
+      ],
+    };
+    await openAnalysis();
+    const sources = card("De onde vêm os dados");
+    expect(sources.getByText(/Ainda não buscado\./)).toBeInTheDocument();
+    expect(sources.getAllByText(/A última busca falhou/)).toHaveLength(2);
+    expect(sources.getByText(/A última busca falhou; vale a anterior/)).toBeInTheDocument();
+    expect(sources.getByText(/Eles não entram nas regras de setor/)).toBeInTheDocument();
+  });
+
+  it("sem nenhum ponto a ver e com regra medida, a carteira está no eixo", async () => {
+    analysisState().analysis = allIn("ok");
+    await openAnalysis();
+    const verdict = card("Resumo");
+    expect(verdict.getByText("Nenhum ponto a ver")).toBeInTheDocument();
+    expect(verdict.getByText(/dentro dos seus limites em 25 regras/)).toBeInTheDocument();
+  });
+
+  it("sem o que medir, diz isso em vez de fingir que está tudo bem", async () => {
+    analysisState().analysis = allIn("no_data");
+    await openAnalysis();
+    const verdict = card("Resumo");
+    expect(verdict.getByText("Ainda sem o que medir")).toBeInTheDocument();
+    const diversification = card("Diversificação");
+    expect(diversification.getByText("Sem dado", { selector: "p" })).toBeInTheDocument();
+    expect(diversification.getByText(/Nenhuma regra com dado ainda · 10 regras sem dado, fora da conta/)).toBeInTheDocument();
+    expect(diversification.queryByRole("meter")).not.toBeInTheDocument();
+  });
+
+  it("um ponto a ver usa o singular", async () => {
+    const base = allIn("ok");
+    base.dimensions = base.dimensions.map((d) => {
+      if (d.id !== "returns") return d;
+      const rules = d.rules.map((r) => (r.rule === "max_loss" ? result("max_loss", "warning", { current: 41.5 }) : r));
+      return { ...d, rules, score: scoreOf(rules) };
+    });
+    base.attention_count = 1;
+    analysisState().analysis = base;
+    await openAnalysis();
+    expect(card("Resumo").getByText("1 ponto a ver")).toBeInTheDocument();
+    expect(card("Resumo").getByText(/Das 25 regras que tinham o que medir, 1 passou do seu limite/)).toBeInTheDocument();
+  });
+
+  it("mostra o erro com tentar de novo", async () => {
+    let fail = true;
+    server.use(
+      http.get("/api/v1/analysis", () =>
+        fail
+          ? HttpResponse.json({ code: "internal", status: 500 }, { status: 500, headers: { "Content-Type": "application/problem+json" } })
+          : HttpResponse.json(defaultAnalysis()),
+      ),
+    );
+    const { user } = renderApp("analise");
+    const alert = await screen.findByRole("alert");
+    expect(within(alert).getByText(/Algo deu errado do nosso lado/)).toBeInTheDocument();
+    fail = false;
+    await user.click(within(alert).getByRole("button", { name: "Tentar de novo" }));
+    expect(await screen.findByRole("region", { name: "Resumo" })).toBeInTheDocument();
+  });
+});

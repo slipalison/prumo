@@ -155,12 +155,12 @@ describe("Busca de símbolo", () => {
   });
 });
 
-describe("Saúde", () => {
-  it("os avisos mostram o ícone dos ativos que citam, e os de setor e classe não", async () => {
+describe("Análise", () => {
+  it("os achados mostram o ícone dos ativos que citam, e os de setor e classe não", async () => {
     setIcons(LOGOS);
-    renderApp("ajustes/saude");
-    await screen.findByRole("heading", { name: "Saúde da carteira", level: 1 });
-    const warnings = within(await screen.findByRole("list", { name: "Avisos" }));
+    renderApp("analise");
+    await screen.findByRole("heading", { name: "Análise da carteira", level: 1 });
+    const warnings = within(await screen.findByRole("region", { name: "Diversificação" }));
 
     const itsa = warnings.getByRole("article", { name: "ITSA4 é 23,31% da carteira" });
     expect(await logoOf(itsa)).toBe("/api/v1/icons/ITSA4?v=v-itsa");

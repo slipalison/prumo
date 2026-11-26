@@ -9,11 +9,24 @@ export const LEGACY_ROUTES: Readonly<Record<string, string>> = {
   criterios: "ajustes/criterios",
 };
 
+/**
+ * Seções de Ajustes que mudaram de nome: a "Saúde da carteira"
+ * (`#/ajustes/saude`) virou a "Análise" (`#/ajustes/analise`).
+ */
+export const LEGACY_SECTIONS: Readonly<Record<string, string>> = {
+  "ajustes/saude": "ajustes/analise",
+};
+
+/** Para onde um endereço antigo aponta hoje (`metas` → `ajustes/metas`); `null` se o endereço já é o de hoje. */
+function legacyTarget(segments: readonly string[]): string | null {
+  return LEGACY_ROUTES[segments[0] ?? ""] ?? LEGACY_SECTIONS[segments.slice(0, 2).join("/")] ?? null;
+}
+
 /** `#/ajustes/metas?x=1` → `["ajustes", "metas"]`, com os links antigos já traduzidos. */
 export function hashSegments(hash: string): string[] {
   const path = hash.replace(/^#\/?/, "").split("?")[0] ?? "";
   const segments = path.split("/").filter(Boolean);
-  const legacy = LEGACY_ROUTES[segments[0] ?? ""];
+  const legacy = legacyTarget(segments);
   return legacy ? legacy.split("/") : segments;
 }
 
@@ -58,8 +71,8 @@ export function useRoute<Id extends string>(ids: readonly Id[]): { id: Id; secti
   const go = useCallback((path: string) => navigate(path), []);
 
   useEffect(() => {
-    const first = hash.replace(/^#\/?/, "").split(/[/?]/)[0] ?? "";
-    const target = LEGACY_ROUTES[first];
+    const path = hash.replace(/^#\/?/, "").split("?")[0] ?? "";
+    const target = legacyTarget(path.split("/").filter(Boolean));
     if (target) window.history.replaceState(null, "", `#/${target}`);
   }, [hash]);
 

@@ -212,6 +212,16 @@ describe("route", () => {
     expect(hashSegments("#/ajustes/metas")).toEqual(["ajustes", "metas"]);
   });
 
+  it("a seção que mudou de nome segue valendo: Saúde da carteira virou Análise", () => {
+    expect(hashSegments("#/ajustes/saude")).toEqual(["ajustes", "analise"]);
+    expect(parseRoute("#/ajustes/saude", ids)).toBe("ajustes");
+    expect(parseSection("#/ajustes/saude?x=1")).toBe("analise");
+    // O endereço novo não é traduzido de novo.
+    expect(hashSegments("#/ajustes/analise")).toEqual(["ajustes", "analise"]);
+    // "saude" fora de Ajustes não é um endereço que existiu.
+    expect(hashSegments("#/saude")).toEqual(["saude"]);
+  });
+
   it("a seção é o segundo trecho, e só ele", () => {
     expect(parseSection("#/ajustes")).toBeNull();
     expect(parseSection("#/ajustes/criterios")).toBe("criterios");

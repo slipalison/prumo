@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { MotionGlobalConfig } from "motion/react";
 import { afterAll, afterEach, beforeAll, vi } from "vitest";
+import { resetAnalysis } from "./analysisHandlers";
 import { FakeEventSource } from "./eventSource";
 import { resetIcons } from "./iconsHandlers";
 import { resetDb, server } from "./server";
@@ -25,6 +26,7 @@ afterEach(() => {
   server.resetHandlers();
   resetDb();
   resetIcons();
+  resetAnalysis();
   resetTaxDb();
   window.localStorage.clear();
   window.location.hash = "";

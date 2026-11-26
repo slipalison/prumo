@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useDebouncedValue } from "../lib/useDebouncedValue";
+import { analysisKeys } from "./analysis";
 import { cashKeys } from "./cashQueries";
 import { api } from "./client";
-import { healthKeys } from "./health";
 import type {
   Asset,
   ChecklistKind,
@@ -22,8 +22,8 @@ export const keys = {
 };
 
 function invalidatePortfolio(client: QueryClient) {
-  // Os avisos de saúde saem da mesma carteira: mudou uma, mudou a outra.
-  void client.invalidateQueries({ queryKey: healthKeys.all });
+  // A análise sai da mesma carteira: mudou uma, mudou a outra.
+  void client.invalidateQueries({ queryKey: analysisKeys.all });
   return client.invalidateQueries({ queryKey: keys.portfolio });
 }
 
