@@ -7,6 +7,7 @@ mod cash;
 pub mod dto;
 mod handlers;
 pub(crate) mod health;
+mod icons;
 mod income;
 mod ledger;
 mod live;
@@ -45,6 +46,7 @@ use crate::alerts::AlertService;
 use crate::auth::Authenticator;
 use crate::dividends::DividendProvider;
 use crate::error::ApiError;
+use crate::icons::IconService;
 use crate::income::IncomeService;
 use crate::service::QuoteService;
 use crate::store::Store;
@@ -63,6 +65,7 @@ pub struct AppState {
     pub quotes: Arc<QuoteService>,
     pub income: Arc<IncomeService>,
     pub alerts: Arc<AlertService>,
+    pub icons: Arc<IconService>,
     pub info: Arc<BuildInfo>,
     pub metrics: Option<PrometheusHandle>,
     users: Arc<RwLock<HashMap<String, Uuid>>>,
@@ -84,6 +87,7 @@ impl AppState {
         Self {
             income: Arc::new(IncomeService::disabled(store.clone())),
             alerts: Arc::new(AlertService::disabled(store.clone())),
+            icons: Arc::new(IconService::disabled(store.clone())),
             store,
             auth,
             quotes,
@@ -113,6 +117,13 @@ impl AppState {
     /// leitura do Telegram e de resumo diário).
     pub fn with_alerts_service(mut self, alerts: Arc<AlertService>) -> Self {
         self.alerts = alerts;
+        self
+    }
+
+    /// Usa o serviço de logos já montado (o `run` o guarda para a tarefa
+    /// periódica e para a busca de ativo novo).
+    pub fn with_icon_service(mut self, icons: Arc<IconService>) -> Self {
+        self.icons = icons;
         self
     }
 
@@ -343,6 +354,10 @@ pub fn public_router(state: AppState, static_dir: &str) -> Router {
     let not_public = || async { StatusCode::NOT_FOUND };
 
     Router::new()
+        // Os logos ficam fora do `api`: a resposta do logo traz o próprio
+        // `Cache-Control` (um dia, com validador), e a camada acima o trocaria
+        // por `no-store`. Mesmo prefixo, mesma autenticação.
+        .merge(icons::router())
         .nest("/api/v1", api)
         .route("/api", get(|| async { ApiError::not_found() }))
         .route(

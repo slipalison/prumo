@@ -292,6 +292,7 @@ pub async fn create_asset(
     // O histórico de dividendos chega em segundo plano, para a estimativa de
     // renda já o encontrar; a resposta não espera.
     state.income.prefetch(market, asset.symbol.as_deref());
+    state.icons.prefetch(market, asset.symbol.as_deref());
     let dto = asset_response(&state, user.id, asset.id).await?;
     Ok((StatusCode::CREATED, Json(dto)))
 }
@@ -387,6 +388,7 @@ pub async fn update_asset(
             state.quotes.quote_now(market, symbol).await;
         }
         state.income.prefetch(market, asset.symbol.as_deref());
+        state.icons.prefetch(market, asset.symbol.as_deref());
     }
     Ok(Json(asset_response(&state, user.id, id).await?))
 }

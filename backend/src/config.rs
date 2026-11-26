@@ -27,7 +27,7 @@ impl Secret {
         Self(value.into())
     }
 
-    /// O valor, só para quem vai usá-lo (o cliente do Telegram).
+    /// O valor, só para quem vai usá-lo (os clientes do Telegram e da brapi).
     pub fn expose(&self) -> &str {
         &self.0
     }
@@ -61,6 +61,9 @@ pub struct Config {
     /// Token do bot do Telegram (`TELEGRAM_BOT_TOKEN`). Sem ele, os alertas
     /// ficam desligados: a tela diz isso, sem erro.
     pub telegram_bot_token: Option<Secret>,
+    /// Token da brapi (`BRAPI_TOKEN`), só do servidor. Sem ele, os logos dos
+    /// ativos ficam desligados e todo ativo usa o ícone de iniciais.
+    pub brapi_token: Option<Secret>,
     pub version: String,
     pub commit: String,
 }
@@ -149,6 +152,7 @@ impl Config {
             sectors_enabled: flag("SECTORS_ENABLED")?,
             snapshot_at: snapshot_time(get("SNAPSHOT_AT"))?,
             telegram_bot_token: get("TELEGRAM_BOT_TOKEN").map(Secret::new),
+            brapi_token: get("BRAPI_TOKEN").map(Secret::new),
             version: get("APP_VERSION").unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_owned()),
             commit: get("GIT_SHA").unwrap_or_else(|| "unknown".to_owned()),
         })
@@ -302,6 +306,25 @@ mod tests {
         );
         let printed = format!("{config:?}");
         assert!(!printed.contains("segredo"), "{printed}");
+        assert!(printed.contains("Secret(***)"));
+    }
+
+    #[test]
+    fn the_brapi_token_is_optional_and_never_printed() {
+        let with = |pairs: &[(&str, &str)]| {
+            let mut all = vec![("DATABASE_URL", "postgres://x"), ("AUTH_MODE", "dev")];
+            all.extend_from_slice(pairs);
+            Config::from_lookup(lookup(&all)).unwrap()
+        };
+        assert_eq!(with(&[]).brapi_token, None);
+        assert_eq!(with(&[("BRAPI_TOKEN", "   ")]).brapi_token, None);
+        let config = with(&[("BRAPI_TOKEN", " chave-da-brapi ")]);
+        assert_eq!(
+            config.brapi_token.as_ref().map(Secret::expose),
+            Some("chave-da-brapi")
+        );
+        let printed = format!("{config:?}");
+        assert!(!printed.contains("chave-da-brapi"), "{printed}");
         assert!(printed.contains("Secret(***)"));
     }
 

@@ -7,12 +7,14 @@
 pub mod alerts;
 pub mod auth;
 pub mod b3_xlsx;
+pub mod brapi;
 pub mod config;
 pub mod dividends;
 pub mod domain;
 pub mod error;
 pub mod history;
 pub mod http;
+pub mod icons;
 pub mod income;
 pub mod live;
 pub mod objectives;
@@ -32,10 +34,12 @@ use async_trait::async_trait;
 
 use crate::alerts::AlertService;
 use crate::auth::{AccessAuthenticator, Authenticator, DevAuthenticator};
+use crate::brapi::{BrapiLogos, LogoSource};
 use crate::config::{AuthConfig, Config};
 use crate::dividends::{DisabledDividends, DividendProvider, YahooDividends};
 use crate::history::{DisabledHistory, HistoryProvider, PublicHistory};
 use crate::http::{AppState, BuildInfo};
+use crate::icons::IconService;
 use crate::income::IncomeService;
 use crate::live::yahoo::YahooStreamer;
 use crate::live::LiveQuotes;
@@ -79,7 +83,7 @@ impl QuoteProvider for DisabledQuotes {
     }
 }
 
-fn http_client() -> Result<reqwest::Client, reqwest::Error> {
+fn client_builder() -> reqwest::ClientBuilder {
     reqwest::Client::builder()
         .user_agent(concat!(
             "Mozilla/5.0 (compatible; prumo/",
@@ -87,6 +91,17 @@ fn http_client() -> Result<reqwest::Client, reqwest::Error> {
             "; +https://github.com/slipalison/prumo)"
         ))
         .connect_timeout(Duration::from_secs(5))
+}
+
+fn http_client() -> Result<reqwest::Client, reqwest::Error> {
+    client_builder().build()
+}
+
+/// O mesmo cliente, sem seguir redirecionamento: o da brapi leva o token e
+/// baixa arquivo de URL que a própria resposta da API informa.
+fn pinned_http_client() -> Result<reqwest::Client, reqwest::Error> {
+    client_builder()
+        .redirect(reqwest::redirect::Policy::none())
         .build()
 }
 
@@ -177,6 +192,23 @@ pub async fn run(config: Config) -> Result<(), StartError> {
     Arc::clone(&alerts).spawn_polling();
     Arc::clone(&alerts).spawn_digest(alerts::DIGEST_EVERY);
 
+    // Logos dos ativos: só com o token da brapi. Sem ele, o que já está no
+    // cache continua servido e os ativos novos ficam com as iniciais.
+    let logos = config
+        .brapi_token
+        .clone()
+        .map(|token| -> Result<Arc<dyn LogoSource>, reqwest::Error> {
+            Ok(Arc::new(BrapiLogos::new(pinned_http_client()?, token)))
+        })
+        .transpose()?;
+    if logos.is_none() {
+        tracing::info!("BRAPI_TOKEN ausente: logos dos ativos desligados");
+    }
+    let icons = Arc::new(IconService::new(store.clone(), logos));
+    if icons.enabled() {
+        Arc::clone(&icons).spawn_refresher(icons::CHECK_EVERY);
+    }
+
     let state = AppState::new(
         store,
         auth,
@@ -188,7 +220,8 @@ pub async fn run(config: Config) -> Result<(), StartError> {
         telemetry::install_metrics(),
     )
     .with_income_service(income)
-    .with_alerts_service(alerts);
+    .with_alerts_service(alerts)
+    .with_icon_service(icons);
     let public = http::public_router(state.clone(), &config.static_dir);
     let operational = http::operational_router(state.clone());
 

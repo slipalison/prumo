@@ -9,6 +9,7 @@ pub mod cash;
 pub mod defaults;
 pub mod entitlement;
 pub mod health;
+pub mod icon;
 pub mod income;
 pub mod ledger;
 pub mod objectives;
