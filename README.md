@@ -80,12 +80,13 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   dimensões: diversificação (concentração, setores, classes, exterior, renda
   fixa), dividendos (yield, quem paga, renda que cresce e cai todo mês),
   rentabilidade (contra CDI, Ibovespa e IPCA em 12 meses e 5 anos, anos no azul,
-  volatilidade, perda desde a compra) e qualidade dos ativos (aguarda os dados de
-  fundamentos da CVM). Cada regra é sua: liga, desliga e escolhe o limite, e a
+  volatilidade, perda desde a compra) e qualidade dos ativos (ROE, lucro,
+  dívida, margem, caixa, recuperação judicial, P/VP e vacância de FII, pelos
+  balanços da CVM, ponderados pelo valor). Cada regra é sua: liga, desliga e escolhe o limite, e a
   pontuação de uma dimensão é só o percentual das regras com dado que estão ok,
   com o número exato. Regra sem dado não é falha. Traz ainda o perfil de risco
   (carteira e metas), os destaques de 12 meses e referências de preço públicas
-  (Bazin, e Graham quando houver fundamentos) para comparar com o seu teto, sem
+  (Bazin e Graham) para comparar com o seu teto, e pontos de atenção por ativo, sem
   recomendar nada. O setor vem da B3 (ações) e da CVM (FIIs). Detalhes em
   [`docs/analise.md`](docs/analise.md) e [`docs/saude.md`](docs/saude.md).
 - **Fundamentos** — na folha de cada ação e FII da B3, os números da CVM com a

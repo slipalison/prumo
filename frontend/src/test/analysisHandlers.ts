@@ -42,6 +42,14 @@ const FACTORY: Record<AnalysisRuleId, Pick<RuleConfig, "dimension" | "unit" | "d
   min_positive_years: { dimension: "returns", unit: "percent", direction: "at_least", default_threshold: 70 },
   max_volatility: { dimension: "returns", unit: "percent", direction: "at_most", default_threshold: 20 },
   max_loss: { dimension: "returns", unit: "percent", direction: "at_most", default_threshold: 30 },
+  quality_roe: { dimension: "quality", unit: "percent", direction: "at_least", default_threshold: 70 },
+  quality_profit: { dimension: "quality", unit: "percent", direction: "at_least", default_threshold: 70 },
+  quality_leverage: { dimension: "quality", unit: "percent", direction: "at_least", default_threshold: 70 },
+  quality_margin: { dimension: "quality", unit: "percent", direction: "at_least", default_threshold: 70 },
+  quality_cash: { dimension: "quality", unit: "percent", direction: "at_least", default_threshold: 70 },
+  quality_recovery: { dimension: "quality", unit: "count", direction: null, default_threshold: null },
+  quality_fii_pvp: { dimension: "quality", unit: "percent", direction: "at_least", default_threshold: 70 },
+  quality_fii_vacancy: { dimension: "quality", unit: "percent", direction: "at_least", default_threshold: 70 },
 };
 
 /** As 25 regras como o servidor as devolve de fábrica. */
@@ -187,13 +195,13 @@ export function scoreOf(rules: RuleResult[]): Score {
 }
 
 function dimension(id: DimensionId, rules: RuleResult[]): Dimension {
-  return { id, state: "ready", score: scoreOf(rules), rules };
+  return { id, score: scoreOf(rules), rules };
 }
 
 /**
  * A análise da carteira fictícia (a mesma dos outros testes), com os números
- * escolhidos para os testes: 10 pontos a ver, três dimensões com pontuação e a
- * Qualidade esperando os fundamentos.
+ * escolhidos para os testes: 13 pontos a ver, as quatro dimensões com pontuação
+ * e pontos de atenção em dois ativos.
  */
 export function defaultAnalysis(): Analysis {
   const diversification = [
@@ -289,11 +297,34 @@ export function defaultAnalysis(): Analysis {
     }),
   ];
 
+  const quality = [
+    result("quality_roe", "warning", {
+      current: 0,
+      detail: { kind: "quality", covered: 1, total: 1, failing: ["ITSA4"] },
+    }),
+    result("quality_profit", "ok", { current: 100, detail: { kind: "quality", covered: 1, total: 1, failing: [] } }),
+    result("quality_leverage", "no_data"),
+    result("quality_margin", "ok", { current: 100, detail: { kind: "quality", covered: 1, total: 1, failing: [] } }),
+    result("quality_cash", "no_data"),
+    result("quality_recovery", "ok", {
+      current: 0,
+      detail: { kind: "quality", covered: 1, total: 1, failing: [] },
+    }),
+    result("quality_fii_pvp", "warning", {
+      current: 40.5,
+      detail: { kind: "quality", covered: 4, total: 4, failing: ["KNRI11", "HGLG11"] },
+    }),
+    result("quality_fii_vacancy", "ok", {
+      current: 100,
+      detail: { kind: "quality", covered: 3, total: 4, failing: [] },
+    }),
+  ];
+
   const dimensions: Dimension[] = [
     dimension("diversification", diversification),
     dimension("dividends", dividends),
     dimension("returns", returns),
-    { id: "quality", state: "awaiting_fundamentals", score: null, rules: [] },
+    dimension("quality", quality),
   ];
   const attention = dimensions.flatMap((d) => d.rules).filter((r) => r.status === "warning").length;
 
@@ -302,6 +333,29 @@ export function defaultAnalysis(): Analysis {
     total_value: 84_300,
     attention_count: attention,
     dimensions,
+    attention: {
+      assessed: 5,
+      without_data: 1,
+      items: [
+        {
+          asset_id: "a-itsa",
+          label: "ITSA4",
+          asset_class: "br_stocks",
+          points: [
+            { kind: "low_roe", percent: 4.12 },
+            { kind: "low_net_margin", percent: 8.33 },
+            { kind: "debt_above_equity", times: 1.5 },
+            { kind: "low_revenue_growth", percent: 2.34 },
+          ],
+        },
+        {
+          asset_id: "a-btlg",
+          label: "BTLG11",
+          asset_class: "br_reits",
+          points: [{ kind: "income_drop", percent: 22.5 }],
+        },
+      ],
+    },
     profile: {
       current: { fixed_income: 70.76, variable: 29.24, profile: "conservative" },
       target: { fixed_income: 35, variable: 65, profile: "moderate" },
@@ -323,7 +377,6 @@ export function defaultAnalysis(): Analysis {
     },
     references: {
       bazin_yield: 6,
-      graham_ready: false,
       items: [
         {
           asset_id: "a-itsa",
@@ -332,7 +385,7 @@ export function defaultAnalysis(): Analysis {
           unit_price: 11.2,
           max_price: 10,
           bazin: { price: 12.5, annual_average: 0.75, years: 4 },
-          graham: null,
+          graham: 9.5,
         },
         {
           asset_id: "a-knri",

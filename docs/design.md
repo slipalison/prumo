@@ -333,20 +333,32 @@ Na tela (`AnalysisScreen`), de cima para baixo:
   "Sem dado" diz o motivo e **não** é aviso. As sete regras originais mostram os
   achados em cartões internos (`Finding`), como os avisos de antes: título,
   Agora/Limite, barra, "O que fazer".
-- **Qualidade dos ativos** e **Pontos de atenção dos ativos**: cartão com borda
-  tracejada "Aguardando dados de fundamentos" e a explicação (retorno sobre o
-  patrimônio, margens, dívida, lucro em 5 anos, P/VP de FII, dos dados abertos
-  da CVM). Sem pontuação e sem "ok": estado vazio honesto.
+- **Qualidade dos ativos**: um cartão de dimensão como os outros (pontuação,
+  número exato, regras em ordem de atenção). Cada regra diz "Entraram na conta 1
+  de 2 ativos. Abaixo do critério: FRAC3." — quem não tem o dado fica fora e
+  aparece como "Sem dado", com o motivo (banco sem dívida, fundo de papel sem
+  vacância). "Pelo menos 70% do valor em ações vem de empresas com ROE de 10% ou
+  mais" é a frase; o "O que fazer" manda olhar a folha do ativo, em Fundamentos,
+  e diz que o Prumo não manda vender.
+- **Pontos de atenção dos ativos** (`AttentionCard`): uma lista por ativo, com o
+  ícone dele (`AssetIcon`) e frases curtas e factuais ("ROE de 4,12%, abaixo de
+  10%", "Dívida líquida de 1,5 vezes o patrimônio líquido", "Provento de 12 meses
+  caiu 22,50% em relação aos 12 meses anteriores", "Em recuperação judicial"),
+  cada uma com o ícone de alerta (o texto diz tudo; o ícone só ajuda). Sem ponto,
+  diz "Nenhum ponto de atenção nos N ativos com fundamentos"; sem nenhum ativo
+  avaliado, "Ainda sem dados de fundamentos", nunca "tudo certo". Rodapé: quantos
+  foram avaliados e quantas ações e FIIs ainda esperam a busca da CVM.
 - **Destaques de 12 meses**: duas medidas (preço em 12 meses e rentabilidade
   desde a compra), cada uma com "Mais subiram" e "Mais caíram" (até 3), o
   ícone do ativo, o nome e a variação **com sinal** (+18,40%, −12,80%): o sinal
   diz o sentido, a cor só reforça. Vazio explica por quê.
 - **Referências de preço**: um aviso fixo (`role="note"`) "Referência pública,
-  não é recomendação"; por ativo, **Bazin** (e **Graham**, quando houver
-  fundamentos), **Seu teto** e **Preço de hoje**, e a média de dividendos
+  não é recomendação"; por ativo, **Bazin** e **Graham** (este só com lucro e patrimônio por ação
+  positivos), **Seu teto** e **Preço de hoje**, e a média de dividendos
   usada. O botão "Usar Bazin como meu teto" abre uma folha de **confirmação**
-  ("Definir R$ 12,50 como teto de preço de ITSA4?") antes do `PATCH`. O Graham
-  sem fundamentos diz "aguardando dados de fundamentos". Nada de "oportunidade",
+  ("Definir R$ 12,50 como teto de preço de ITSA4?") antes do `PATCH`. Cada
+  referência tem o seu botão ("Usar Graham como meu teto"), com a mesma
+  confirmação. Nada de "oportunidade",
   "compre", "preço justo" ou "upside".
 - **De onde vêm os dados**: a fonte de setor de cada classe, de quando é, se a
   última busca falhou, quantos ativos ficaram sem setor e por que os EUA não têm
@@ -357,8 +369,8 @@ linha por regra, em frase ("Nenhum ativo acima de [15] % da carteira"), o campo
 do limite (só nas regras com limite editável), o porquê em uma linha e o
 interruptor. "Voltar para 60%" aparece quando o limite não é o de fábrica.
 **Salvar regras** só habilita com mudança válida; o erro de um limite aparece na
-própria linha (`role="alert"`, `aria-invalid`). A Qualidade diz que as regras
-chegam com os fundamentos. Um cartão à parte guarda o **rendimento-alvo do
+própria linha (`role="alert"`, `aria-invalid`). A Qualidade tem as suas oito regras (a de recuperação judicial só liga
+e desliga). Um cartão à parte guarda o **rendimento-alvo do
 Bazin** (% ao ano).
 
 Na **Carteira**:

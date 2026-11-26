@@ -192,9 +192,8 @@ async fn an_empty_portfolio_has_nothing_to_warn_about(db: &Database, dir: &tempf
         .collect();
     assert_eq!(ids, ["diversification", "dividends", "returns", "quality"]);
     // Tudo ligado e sem dado: nenhuma regra falha, e a pontuação não existe.
-    for id in ["diversification", "dividends", "returns"] {
+    for id in ["diversification", "dividends", "returns", "quality"] {
         let d = dimension(&body, id);
-        assert_eq!(d["state"], "ready");
         assert!(
             d["rules"]
                 .as_array()
@@ -227,11 +226,15 @@ async fn an_empty_portfolio_has_nothing_to_warn_about(db: &Database, dir: &tempf
             .len(),
         9
     );
-    // A Qualidade espera os fundamentos.
+    // A Qualidade tem as suas oito regras, todas sem dado (nenhum fundamento).
     let quality = dimension(&body, "quality");
-    assert_eq!(quality["state"], "awaiting_fundamentals");
-    assert_eq!(quality["score"], Value::Null);
-    assert_eq!(quality["rules"], json!([]));
+    assert_eq!(quality["rules"].as_array().unwrap().len(), 8);
+    assert_eq!(quality["score"]["no_data"], 8);
+    // Os pontos de atenção também: nada avaliado, nada a dizer.
+    assert_eq!(
+        body["attention"],
+        json!({ "assessed": 0, "without_data": 0, "items": [] })
+    );
     // Perfil, destaques e referências vazios; o Bazin tem o rendimento-alvo de fábrica.
     assert_eq!(body["profile"]["current"], Value::Null);
     assert_eq!(body["profile"]["target"], Value::Null);
@@ -240,7 +243,6 @@ async fn an_empty_portfolio_has_nothing_to_warn_about(db: &Database, dir: &tempf
     assert_eq!(body["highlights"]["price_12m"]["best"], json!([]));
     assert_eq!(body["highlights"]["since_purchase"]["worst"], json!([]));
     assert_eq!(body["references"]["bazin_yield"], 6.0);
-    assert_eq!(body["references"]["graham_ready"], false);
     assert_eq!(body["references"]["items"], json!([]));
     assert_eq!(body["sources"].as_array().unwrap().len(), 2);
 }
@@ -576,7 +578,6 @@ async fn price_references_follow_the_dividend_history(db: &Database, dir: &tempf
     let body = analysis(&app).await;
     let references = &body["references"];
     assert_eq!(references["bazin_yield"], 6.0);
-    assert_eq!(references["graham_ready"], false);
     let items = references["items"].as_array().unwrap();
     // WEGE3 não tem dividendo guardado: sem referência.
     assert_eq!(items.len(), 1);
@@ -625,7 +626,7 @@ async fn configuration_is_validated_shared_with_health_and_owned(
     let defaults = get(&app.router, "/api/v1/analysis/rules").await;
     assert_eq!(defaults.status, StatusCode::OK);
     let rules = defaults.body["rules"].as_array().unwrap();
-    assert_eq!(rules.len(), 25);
+    assert_eq!(rules.len(), 33);
     assert_eq!(defaults.body["bazin_yield"], 6.0);
     for (id, threshold, unit) in [
         ("min_portfolio_assets", Some(10.0), "count"),
@@ -641,6 +642,9 @@ async fn configuration_is_validated_shared_with_health_and_owned(
         ("beat_cdi_12m", None, "percent"),
         ("income_growth", None, "percent"),
         ("brick_reit", None, "count"),
+        ("quality_roe", Some(70.0), "percent"),
+        ("quality_fii_vacancy", Some(70.0), "percent"),
+        ("quality_recovery", None, "count"),
     ] {
         let r = find(&defaults.body["rules"], "rule", id);
         assert_eq!(r["enabled"], true, "{id}");
@@ -966,6 +970,18 @@ async fn migration_0021_keeps_the_saved_rules_and_accepts_the_new_ones() {
     .await;
     assert!(before.is_err());
 
+    // A 0021 aceita as regras de dividendos e rentabilidade, mas ainda não as
+    // de Qualidade (0022).
+    migrator.run_to(21, &pool).await.unwrap();
+    let quality_early = sqlx::query(
+        "insert into health_rules (user_id, rule, enabled, threshold)
+         values ($1, 'quality_roe', true, 70)",
+    )
+    .bind(user)
+    .execute(&pool)
+    .await;
+    assert!(quality_early.is_err());
+
     migrator.run(&pool).await.unwrap();
 
     let rows: Vec<(String, bool, Option<String>)> = sqlx::query_as(
@@ -1008,6 +1024,14 @@ async fn migration_0021_keeps_the_saved_rules_and_accepts_the_new_ones() {
         "min_positive_years",
         "max_volatility",
         "max_loss",
+        "quality_roe",
+        "quality_profit",
+        "quality_leverage",
+        "quality_margin",
+        "quality_cash",
+        "quality_recovery",
+        "quality_fii_pvp",
+        "quality_fii_vacancy",
     ] {
         sqlx::query(
             "insert into health_rules (user_id, rule, enabled, threshold) values ($1, $2, true, 5)",

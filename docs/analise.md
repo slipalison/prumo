@@ -140,30 +140,62 @@ aporte não conta como ganho.
 
 ### 4. Qualidade dos ativos
 
-**Aguardando a frente de fundamentos** (dados abertos da CVM: retorno sobre o
-patrimônio, margens, dívida, crescimento do lucro em 5 anos, recuperação
-judicial, P/VP de FII). Até lá, a dimensão **não tem regra**, não entra na
-pontuação e a tela diz "Aguardando dados de fundamentos" — o mesmo para os
-**pontos de atenção dos ativos**. Nunca aparece "tudo certo".
+Lê os **fundamentos da CVM** ([fundamentos.md](fundamentos.md): balanços das
+companhias e informes dos FIIs). Cada regra pergunta **quanto do valor** de um
+grupo de ativos (as empresas, ou os FIIs) passa num critério, no estilo "pelo
+menos X% do valor em ações vem de empresas com ROE de 10% ou mais". O limite
+editável é o X (percentual, de fábrica **70%**); o critério é fixo e está na
+tabela. A conta pesa só quem **tem o dado**: banco numa medida que o plano de
+contas dele não tem (dívida, EBITDA, receita), ano sem balanço, fundo de papel
+na vacância ficam **fora** da conta, nunca viram reprovados. O número de agora
+é o percentual do valor que passa e o aviso diz quantos ativos entraram na
+conta ("1 de 2") e quem reprovou.
 
-**Onde se liga** (para quem integrar os fundamentos):
+| Regra (`rule`) | Passa quando | Grupo |
+|---|---|---|
+| `quality_roe` | ROE dos últimos 12 meses ≥ 10% (lucro dos controladores ÷ patrimônio deles) | empresas |
+| `quality_profit` | lucro positivo em ≥ 4 dos 5 exercícios (precisa de 4 conhecidos) | empresas |
+| `quality_leverage` | dívida líquida ÷ EBITDA ≤ 3 vezes (caixa líquido passa) | empresas, **sem bancos e seguradoras** |
+| `quality_margin` | margem EBITDA > 0 | empresas, sem bancos e seguradoras |
+| `quality_cash` | média do caixa operacional dos 4 últimos exercícios > 0 (os 4 conhecidos) | empresas |
+| `quality_recovery` | nenhuma empresa em recuperação judicial (cadastro da CVM) | empresas; **sem limite** |
+| `quality_fii_pvp` | P/VP ≤ 1,10 (cotação do Prumo ÷ valor patrimonial por cota) | FIIs |
+| `quality_fii_vacancy` | vacância física ≤ 15% (informe trimestral) | FIIs de tijolo; o de papel fica sem dado |
 
-1. `domain/analysis.rs`: acrescentar as `RuleId` da dimensão (o `dimension()` de
-   cada uma devolve `Dimension::Quality`), com limite padrão e validação, e
-   avaliá-las em `evaluate`/`measure` a partir de um campo novo em `Input`
-   (por ativo: ROE, margens, dívida, CAGR do lucro, recuperação judicial, P/VP).
-   Enquanto `dimensions()` não achar regra da dimensão, ela é "aguardando"; com
-   regra, vira "pronta" e ganha pontuação sozinha.
-2. `migrations`: a tabela `health_rules` ganha as regras novas no `check`
-   (como a 0021 fez); nada mais.
-3. `analysis.rs` (junção): `report(.., fundamentals: &Fundamentals)` já recebe a
-   estrutura `Fundamentals { available, per_share }`; o handler
-   (`http/analysis.rs`) hoje passa `Fundamentals::awaiting()` — é a linha que
-   passa a ler do banco. `available: true` liga o aviso do Graham.
-4. `frontend`: `RULE_TEXT`/`NO_DATA_TEXT` (em `lib/analysisText.ts`) e
-   `ANALYSIS_RULE_IDS` (em `api/analysisTypes.ts`) ganham as regras; a tela
-   `DimensionCard` já mostra a dimensão pronta, e `AssetAttention` (em
-   `AnalysisScreen.tsx`) passa a listar os pontos de atenção.
+- **Empresa** é ação de Nacionais com balanço na CVM; **FII** é o fundo com
+  informe mensal. ETF, BDR, ações e REITs dos EUA, cripto e renda fixa não têm
+  fundamentos e ficam fora (`Unsupported` em `fundamentos.md`).
+- O EBITDA do Prumo é uma **aproximação** (resultado operacional + depreciação
+  e amortização), como em `fundamentos.md`. Nos 12 meses vale o último
+  exercício mais o ITR, quando há.
+- **Banco e seguradora**: dívida, EBITDA e receita vêm como `financial_template`
+  (não se aplica): nem ok, nem falha, e fora do denominador.
+- `quality_recovery` não pesa por valor: é a contagem de empresas em
+  recuperação judicial e só passa com zero. Sem nenhuma empresa com cadastro, sem
+  dado.
+- **Sem dado em nenhum ativo do grupo**, a regra fica `no_data`; sem fundamentos
+  nenhum (a busca ainda não rodou), as oito ficam `no_data` e a dimensão não
+  tem pontuação ("Nenhuma regra com dado ainda").
+
+#### Pontos de atenção dos ativos
+
+Avisos curtos e factuais, por ativo (do maior valor para o menor), sem
+recomendação. Só aparece o que passou do corte; o limite exato **não** é ponto:
+
+| Ponto (`kind`) | Quando | Dado |
+|---|---|---|
+| `income_drop` | a renda de 12 meses do ativo caiu **10% ou mais** contra os 12 anteriores | `income_events` (recebido, líquido); precisa de 24 meses de histórico |
+| `low_revenue_growth` | CAGR da receita em 5 anos < 5% ao ano | fundamentos |
+| `low_earnings_growth` | CAGR do lucro em 5 anos < 5% ao ano | fundamentos |
+| `low_roe` | ROE < 10% | fundamentos |
+| `low_net_margin` | margem líquida < 10% (não vale para banco: a conta é outra) | fundamentos |
+| `debt_above_equity` | dívida líquida > patrimônio líquido (mais de 1 vez) | fundamentos |
+| `judicial_recovery` | em recuperação judicial | cadastro da CVM |
+
+CAGR sem número (prejuízo numa das pontas, ano faltando) não vira ponto: o motivo
+fica nos fundamentos. A resposta traz também `assessed` (ativos com
+fundamentos) e `without_data` (ações e FIIs ainda sem dados): sem nenhum ativo
+avaliado a tela diz "ainda sem dados de fundamentos", nunca "tudo certo".
 
 ## Perfil de risco
 
@@ -215,13 +247,16 @@ sobre o histórico de dividendos, sem dizer se o ativo está barato ou caro.
   Dividendo é o bruto por cota (data ex) do cache do Yahoo (`dividend_history`),
   que passou a pedir **5 anos** em vez de 2 (`dividends.rs`; o cache se refaz em
   um dia). Só ações e FIIs da B3 (em reais).
-- **Graham**: `√(22,5 × LPA × VPA)`, com lucro e patrimônio **por ação**. Precisa
-  dos fundamentos da CVM; **sem eles não aparece** ("aguardando dados de
-  fundamentos"). Com lucro ou patrimônio zero ou negativo, a raiz não existe e
-  nada é mostrado.
+- **Graham**: `√(22,5 × LPA × VPA)`, com lucro e patrimônio **por ação**: o LPA é
+  o lucro dos controladores dos últimos 12 meses ÷ ações e o VPA, o patrimônio
+  deles ÷ ações (balanços da CVM e número de ações da B3, `fundamentos.md`). Só
+  aparece quando os **dois forem positivos**; com um zero ou negativo, a raiz
+  não existe e nada é mostrado. Fica ao lado do Bazin, com o mesmo rótulo
+  ("referência pública, não é recomendação") e o mesmo botão de teto. Vale para
+  ações; FII não tem LPA.
 - **Teto de preço**: a tela mostra a referência ao lado do teto que a pessoa pôs
   no ativo (`max_price`) e do preço de hoje. Um botão ("Usar Bazin como meu
-  teto") aplica o valor como teto **depois de uma confirmação**, pelo mesmo
+  teto", ou "Usar Graham como meu teto") aplica o valor como teto **depois de uma confirmação**, pelo mesmo
   `PATCH /assets/{id}` do resto do app. O Prumo não calcula "margem" nem
   "potencial".
 
@@ -233,6 +268,9 @@ sobre o histórico de dividendos, sem dizer se o ativo está barato ou caro.
   regras novas as vê ligadas, com o limite de fábrica. O rendimento-alvo do
   Bazin mora na tabela nova `analysis_settings` (só existe linha para quem
   mexeu).
+- A **migração 0022** só amplia o `check` de `health_rules` com as oito regras de
+  Qualidade (linhas existentes intactas); quem nunca mexeu nelas as vê ligadas, com
+  70%.
 - `GET`/`PUT /analysis/rules` leem e gravam **a mesma configuração** que
   `GET`/`PUT /health/rules`: as sete originais aparecem nos dois, e as novas só
   em `/analysis/rules`. Os endereços antigos continuam respondendo (o motor de
@@ -250,6 +288,11 @@ sobre o histórico de dividendos, sem dizer se o ativo está barato ou caro.
 - O `max_loss` olha o custo do livro: ativo com saldo inicial sem preço não
   entra. Em renda fixa por valor, o "valor" já inclui o rendimento que a pessoa
   informou.
+- Os cortes da Qualidade (ROE 10%, 4 de 5 anos, 3 vezes o EBITDA, P/VP 1,10,
+  vacância 15%) e dos pontos de atenção são do Prumo e fixos; só o percentual do
+  valor (70%) é editável. O balanço atrasa: a DFP sai até março e o ITR até 45
+  dias depois do trimestre.
+- Empresa sem o total de ações da B3 fica sem LPA e VPA e, portanto, sem Graham.
 - O 12 meses de preço de um ativo com preço manual ou renda fixa por valor não
   existe (não há `price_history`).
 - Os percentuais seguem o preço ao vivo: um ponto a ver pode aparecer e sumir ao
@@ -261,4 +304,5 @@ sobre o histórico de dividendos, sem dizer se o ativo está barato ou caro.
 
 - Nenhum host externo novo: a Análise lê só o que já está guardado. O pedido de
   dividendos ao Yahoo passou de `range=2y` para `range=5y` (mesmo host).
-- Tabelas: `health_rules` (regras), `analysis_settings` (Bazin).
+- Tabelas: `health_rules` (regras), `analysis_settings` (Bazin). Os fundamentos vêm de
+  `Store::fundamentals_for_user` (`fundamentos.md`), lidos a cada `GET /analysis`.

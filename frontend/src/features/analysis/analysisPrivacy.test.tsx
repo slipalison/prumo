@@ -50,10 +50,19 @@ describe("Análise com o olho fechado", () => {
     const references = within(screen.getByRole("region", { name: "Referências de preço" }));
     const itsa = references.getAllByRole("listitem").find((li) => /ITSA4/.test(li.textContent ?? "")) as HTMLElement;
     expect(within(itsa).getByText("Bazin").nextSibling).toHaveTextContent("R$ ••••");
+    expect(within(itsa).getByText("Graham").nextSibling).toHaveTextContent("R$ ••••");
     expect(within(itsa).getByText("Seu teto").nextSibling).toHaveTextContent("R$ ••••");
     expect(within(itsa).getByText("Preço de hoje").nextSibling).toHaveTextContent("R$ ••••");
     expect(within(itsa).getByText(/Média de 4 anos de dividendos: R\$ •••• por cota ao ano/)).toBeInTheDocument();
     expect(references.getByText(/hoje 6% ao ano/)).toBeInTheDocument();
+
+    // Qualidade e pontos de atenção são percentuais, contagens e nomes: seguem à vista.
+    const attention = within(screen.getByRole("region", { name: "Pontos de atenção dos ativos" }));
+    expect(attention.getByText("ROE de 4,12%, abaixo de 10%")).toBeInTheDocument();
+    expect(attention.getByText("Provento de 12 meses caiu 22,50% em relação aos 12 meses anteriores")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("region", { name: "Qualidade dos ativos" })).getByText("Entraram na conta 4 de 4 ativos. Abaixo do critério: KNRI11, HGLG11."),
+    ).toBeInTheDocument();
 
     // O perfil e os destaques são percentuais: seguem à vista.
     const profile = within(screen.getByRole("region", { name: "Perfil de risco" }));

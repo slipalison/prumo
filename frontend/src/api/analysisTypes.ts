@@ -32,6 +32,15 @@ export const ANALYSIS_RULE_IDS = [
   "min_positive_years",
   "max_volatility",
   "max_loss",
+  // Qualidade dos ativos
+  "quality_roe",
+  "quality_profit",
+  "quality_leverage",
+  "quality_margin",
+  "quality_cash",
+  "quality_recovery",
+  "quality_fii_pvp",
+  "quality_fii_vacancy",
 ] as const;
 export type AnalysisRuleId = (typeof ANALYSIS_RULE_IDS)[number];
 
@@ -79,7 +88,9 @@ export type RuleDetail =
       benchmark_percent: number;
     }
   | { kind: "years"; positive: number; total: number }
-  | { kind: "losses"; assets: Array<{ asset_id: string; label: string; asset_class: AssetClass; loss_percent: number }> };
+  | { kind: "losses"; assets: Array<{ asset_id: string; label: string; asset_class: AssetClass; loss_percent: number }> }
+  /** Regra de Qualidade: quantos ativos do grupo entraram na conta (os que têm o dado) e quais reprovaram. */
+  | { kind: "quality"; covered: number; total: number; failing: string[] };
 
 export type RuleResult = RuleConfig & {
   status: RuleStatus;
@@ -104,9 +115,7 @@ export type Score = {
 
 export type Dimension = {
   id: DimensionId;
-  /** `awaiting_fundamentals`: a Qualidade espera os dados de fundamentos da CVM. */
-  state: "ready" | "awaiting_fundamentals";
-  score: Score | null;
+  score: Score;
   rules: RuleResult[];
 };
 
@@ -129,15 +138,37 @@ export type Reference = {
   graham: number | null;
 };
 
+/** Um ponto de atenção de um ativo: curto e factual, sem recomendação. */
+export type AttentionPoint =
+  | { kind: "income_drop"; percent: number }
+  | { kind: "low_revenue_growth"; percent: number }
+  | { kind: "low_earnings_growth"; percent: number }
+  | { kind: "low_roe"; percent: number }
+  | { kind: "low_net_margin"; percent: number }
+  /** Dívida líquida sobre patrimônio líquido, em vezes. */
+  | { kind: "debt_above_equity"; times: number }
+  | { kind: "judicial_recovery" };
+
+export type AssetAttention = { asset_id: string; label: string; asset_class: AssetClass; points: AttentionPoint[] };
+
+export type Attention = {
+  /** Ativos com fundamentos (empresa ou FII). */
+  assessed: number;
+  /** Ações e FIIs com valor que ainda não têm fundamentos. */
+  without_data: number;
+  items: AssetAttention[];
+};
+
 export type Analysis = {
   as_of: string;
   total_value: number;
   /** Quantas regras estão em aviso: "N pontos a ver". */
   attention_count: number;
   dimensions: Dimension[];
+  attention: Attention;
   profile: { current: Mix | null; target: Mix | null; conservative_max: number; moderate_max: number };
   highlights: { price_12m: Ranking; since_purchase: Ranking };
-  references: { bazin_yield: number; graham_ready: boolean; items: Reference[] };
+  references: { bazin_yield: number; items: Reference[] };
   unclassified_count: number;
   sources: SectorSourceInfo[];
 };

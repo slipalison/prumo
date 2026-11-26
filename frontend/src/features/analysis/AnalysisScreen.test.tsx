@@ -21,7 +21,6 @@ const ruleItem = (region: ReturnType<typeof card>, sentence: string) =>
 function allIn(status: RuleStatus): Analysis {
   const base = defaultAnalysis();
   const dimensions = base.dimensions.map((d) => {
-    if (d.state !== "ready") return d;
     const rules: RuleResult[] = d.rules.map((r) => result(r.rule, status, status === "ok" ? { current: 1 } : {}));
     return { ...d, rules, score: scoreOf(rules) };
   });
@@ -53,8 +52,8 @@ describe("tela Análise", () => {
     await openAnalysis();
     expect(screen.getByText(/Regra sem dado para medir fica de fora da conta/)).toBeInTheDocument();
     const verdict = card("Resumo");
-    expect(verdict.getByText("11 pontos a ver")).toBeInTheDocument();
-    expect(verdict.getByText(/Das 20 regras que tinham o que medir, 11 passaram do seu limite/)).toBeInTheDocument();
+    expect(verdict.getByText("13 pontos a ver")).toBeInTheDocument();
+    expect(verdict.getByText(/Das 26 regras que tinham o que medir, 13 passaram do seu limite/)).toBeInTheDocument();
     expect(verdict.getByRole("link", { name: "Ajustar as regras" })).toHaveAttribute("href", "#/ajustes/analise");
   });
 
@@ -181,16 +180,79 @@ describe("tela Análise", () => {
     expect(within(loss).getByText(/não entra na pontuação/)).toBeInTheDocument();
   });
 
-  it("a Qualidade e os pontos de atenção esperam os fundamentos, sem fingir que está tudo certo", async () => {
+  it("a Qualidade dos ativos pontua como as outras e pesa pelo valor de quem tem o dado", async () => {
     await openAnalysis();
     const quality = card("Qualidade dos ativos");
-    expect(quality.getByText("Aguardando dados de fundamentos")).toBeInTheDocument();
-    expect(quality.getByText(/dados abertos da CVM/)).toBeInTheDocument();
-    expect(quality.queryByRole("meter")).not.toBeInTheDocument();
-    expect(quality.queryByText("Ok")).not.toBeInTheDocument();
+    expect(quality.getByText("66,7%")).toBeInTheDocument();
+    expect(quality.getByText(/4 de 6 regras ok · 2 regras sem dado, fora da conta/)).toBeInTheDocument();
+    expect(quality.getByRole("meter", { name: "Qualidade dos ativos: 4 de 6 regras ok" })).toHaveAttribute(
+      "aria-valuenow",
+      "66.7",
+    );
+    expect(quality.queryByText("Aguardando dados de fundamentos")).not.toBeInTheDocument();
+
+    const roe = ruleItem(quality, "Pelo menos 70% do valor em ações vem de empresas com ROE de 10% ou mais");
+    expect(within(roe).getByText("Ponto a ver")).toBeInTheDocument();
+    expect(within(roe).getByText("Agora").nextSibling).toHaveTextContent("0%");
+    expect(within(roe).getByText("Mínimo").nextSibling).toHaveTextContent("70%");
+    expect(within(roe).getByText("Entraram na conta 1 de 1 ativo. Abaixo do critério: ITSA4.")).toBeInTheDocument();
+    expect(within(roe).getByText(/não manda vender/)).toBeInTheDocument();
+    expect(within(roe).getByRole("link", { name: "Abrir a Carteira" })).toHaveAttribute("href", "#/carteira");
+
+    const pvp = ruleItem(quality, "Pelo menos 70% do valor em FIIs vem de fundos com P/VP de até 1,10");
+    expect(
+      within(pvp).getByText("Entraram na conta 4 de 4 ativos. Abaixo do critério: KNRI11, HGLG11."),
+    ).toBeInTheDocument();
+
+    // Quem não tem dado fica fora da conta, com o motivo, e não é aviso.
+    const leverage = ruleItem(quality, "Pelo menos 70% do valor em ações vem de empresas com dívida líquida de até 3 vezes o EBITDA");
+    expect(within(leverage).getByText("Sem dado")).toBeInTheDocument();
+    expect(within(leverage).getByText("Precisa de empresa que não seja banco nem seguradora, com EBITDA positivo.")).toBeInTheDocument();
+
+    // A regra sem limite: recuperação judicial.
+    const recovery = ruleItem(quality, "Nenhuma empresa da carteira está em recuperação judicial");
+    expect(within(recovery).getByText("Ok")).toBeInTheDocument();
+    expect(within(recovery).getByText("Nenhuma empresa está em recuperação judicial (1 com cadastro na CVM).")).toBeInTheDocument();
+  });
+
+  it("os pontos de atenção listam, por ativo, fatos curtos com o ícone do ativo", async () => {
+    await openAnalysis();
     const attention = card("Pontos de atenção dos ativos");
-    expect(attention.getByText("Aguardando dados de fundamentos")).toBeInTheDocument();
-    expect(attention.getByText(/nenhum ponto de atenção aparece aqui, nem “tudo certo”/)).toBeInTheDocument();
+    const itsa = attention.getByRole("list", { name: "Pontos de atenção de ITSA4" });
+    expect(within(itsa).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+      "ROE de 4,12%, abaixo de 10%",
+      "Margem líquida de 8,33%, abaixo de 10%",
+      "Dívida líquida de 1,5 vezes o patrimônio líquido",
+      "Receita cresceu 2,34% ao ano em 5 anos, abaixo de 5%",
+    ]);
+    const btlg = attention.getByRole("list", { name: "Pontos de atenção de BTLG11" });
+    expect(within(btlg).getByText("Provento de 12 meses caiu 22,50% em relação aos 12 meses anteriores")).toBeInTheDocument();
+    const rows = attention.getAllByRole("listitem").filter((li) => li.classList.contains("attention"));
+    expect(rows).toHaveLength(2);
+    for (const row of rows) expect(row.querySelector(".asset-icon")).not.toBeNull();
+    expect(attention.getByText(/5 ativos avaliados; 1 ação ou FII ainda sem dados/)).toBeInTheDocument();
+    expect(attention.getByText(/Não são recomendação/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/Aguardando dados de fundamentos/);
+  });
+
+  it("os pontos de atenção dizem quando não há ponto e quando não há dado, sem fingir tudo certo", async () => {
+    const base = defaultAnalysis();
+    analysisState().analysis = { ...base, attention: { assessed: 3, without_data: 0, items: [] } };
+    const first = await openAnalysis();
+    expect(card("Pontos de atenção dos ativos").getByText("Nenhum ponto de atenção nos 3 ativos com fundamentos.")).toBeInTheDocument();
+    first.unmount();
+
+    analysisState().analysis = { ...base, attention: { assessed: 1, without_data: 0, items: [] } };
+    const second = await openAnalysis();
+    expect(card("Pontos de atenção dos ativos").getByText("Nenhum ponto de atenção nos 1 ativo com fundamentos.")).toBeInTheDocument();
+    second.unmount();
+
+    analysisState().analysis = { ...base, attention: { assessed: 0, without_data: 2, items: [] } };
+    await openAnalysis();
+    const attention = card("Pontos de atenção dos ativos");
+    expect(attention.getByText(/Ainda sem dados de fundamentos para avaliar/)).toBeInTheDocument();
+    expect(attention.getByText(/nem “tudo certo”/)).toBeInTheDocument();
+    expect(attention.queryByText(/Nenhum ponto de atenção nos/)).not.toBeInTheDocument();
   });
 
   it("perfil de risco: agora e metas, com rótulo, números e a diferença", async () => {
@@ -282,9 +344,10 @@ describe("tela Análise", () => {
     const knri = items.find((li) => /KNRI11/.test(li.textContent ?? "")) as HTMLElement;
     expect(within(knri).getByText("Seu teto").nextSibling).toHaveTextContent("Sem teto");
     expect(within(knri).getByText(/Média de 2 anos de dividendos/)).toBeInTheDocument();
-    // O Graham espera os fundamentos.
-    expect(references.getByText("Graham: aguardando dados de fundamentos.")).toBeInTheDocument();
-    expect(references.queryByText("Graham", { selector: "dt" })).not.toBeInTheDocument();
+    // O Graham aparece só para quem tem lucro e patrimônio por ação.
+    expect(within(itsa).getByText("Graham").nextSibling).toHaveTextContent(/R\$\s9,50/);
+    expect(within(knri).queryByText("Graham")).not.toBeInTheDocument();
+    expect(references.getByText(/Graham: a raiz de 22,5 vezes o lucro por ação/)).toBeInTheDocument();
     // Nada de "oportunidade" nem de "compre".
     expect(document.body.textContent).not.toMatch(/oportunidade|compre|preço justo|upside/i);
   });
@@ -330,7 +393,8 @@ describe("tela Análise", () => {
     );
     const { user } = await openAnalysis();
     const references = card("Referências de preço");
-    expect(references.queryByRole("button", { name: /teto de ITSA4/ })).not.toBeInTheDocument();
+    expect(references.queryByRole("button", { name: /Bazin como teto de ITSA4/ })).not.toBeInTheDocument();
+    expect(references.getByRole("button", { name: /Graham como teto de ITSA4/ })).toBeInTheDocument();
     await user.click(references.getByRole("button", { name: "Usar a referência de Bazin como teto de KNRI11" }));
     await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Definir teto" }));
     expect(await screen.findByText(/Teto ruim\./)).toBeInTheDocument();
@@ -345,23 +409,17 @@ describe("tela Análise", () => {
     expect(card("Referências de preço").getByText(/Sem referência por enquanto/)).toBeInTheDocument();
   });
 
-  it("com Graham pronto mostra a referência dele e não o aviso de espera", async () => {
-    const base = defaultAnalysis();
-    analysisState().analysis = {
-      ...base,
-      references: {
-        ...base.references,
-        graham_ready: true,
-        items: base.references.items.map((i) => (i.label === "ITSA4" ? { ...i, graham: 9.5 } : i)),
-      },
-    };
+  it("o Graham também vira teto, com a mesma confirmação", async () => {
     const { user } = await openAnalysis();
     const references = card("Referências de preço");
-    expect(references.queryByText("Graham: aguardando dados de fundamentos.")).not.toBeInTheDocument();
-    const itsa = references.getAllByRole("listitem").find((li) => /ITSA4/.test(li.textContent ?? "")) as HTMLElement;
-    expect(within(itsa).getByText("Graham").nextSibling).toHaveTextContent(/R\$\s9,50/);
     await user.click(references.getByRole("button", { name: "Usar a referência de Graham como teto de ITSA4" }));
-    expect(await screen.findByRole("dialog")).toHaveTextContent(/R\$\s9,50/);
+    const dialog = await screen.findByRole("dialog", { name: "Usar como teto de preço?" });
+    expect(dialog).toHaveTextContent(/Definir R\$\s9,50 como teto de preço de ITSA4\?/);
+    expect(getDb().requests.filter((r) => r.method === "PATCH")).toHaveLength(0);
+    await user.click(within(dialog).getByRole("button", { name: "Definir teto" }));
+    await screen.findByText("Teto de ITSA4 atualizado.");
+    const patch = getDb().requests.filter((r) => r.method === "PATCH" && r.path === "/api/v1/assets/a-itsa").at(-1);
+    expect(patch?.body).toEqual({ max_price: 9.5 });
   });
 
   it("diz de onde vêm os dados, quando foram buscados e o que ficou de fora", async () => {
@@ -398,7 +456,7 @@ describe("tela Análise", () => {
     await openAnalysis();
     const verdict = card("Resumo");
     expect(verdict.getByText("Nenhum ponto a ver")).toBeInTheDocument();
-    expect(verdict.getByText(/dentro dos seus limites em 25 regras/)).toBeInTheDocument();
+    expect(verdict.getByText(/dentro dos seus limites em 33 regras/)).toBeInTheDocument();
   });
 
   it("sem o que medir, diz isso em vez de fingir que está tudo bem", async () => {
@@ -423,7 +481,7 @@ describe("tela Análise", () => {
     analysisState().analysis = base;
     await openAnalysis();
     expect(card("Resumo").getByText("1 ponto a ver")).toBeInTheDocument();
-    expect(card("Resumo").getByText(/Das 25 regras que tinham o que medir, 1 passou do seu limite/)).toBeInTheDocument();
+    expect(card("Resumo").getByText(/Das 33 regras que tinham o que medir, 1 passou do seu limite/)).toBeInTheDocument();
   });
 
   it("mostra o erro com tentar de novo", async () => {

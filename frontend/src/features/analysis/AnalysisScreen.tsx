@@ -8,6 +8,7 @@ import { Skeleton } from "../../components/Skeleton";
 import { CLASS_META } from "../../lib/assetClasses";
 import { attentionText } from "../../lib/analysisText";
 import { formatRelative, plural } from "../../lib/format";
+import { AttentionCard } from "./AttentionCard";
 import { DimensionCard } from "./DimensionCard";
 import { HighlightsCard } from "./HighlightsCard";
 import { ProfileCard } from "./ProfileCard";
@@ -63,7 +64,7 @@ function Report({ analysis }: { analysis: Analysis }) {
       {analysis.dimensions.map((dimension) => (
         <DimensionCard key={dimension.id} dimension={dimension} />
       ))}
-      <AssetAttention />
+      <AttentionCard attention={analysis.attention} />
       <HighlightsCard highlights={analysis.highlights} />
       <ReferencesCard references={analysis.references} />
       <SourcesCard analysis={analysis} />
@@ -106,26 +107,6 @@ function Verdict({ analysis }: { analysis: Analysis }) {
         <a className="link-btn" href="#/ajustes/analise">
           Ajustar as regras
         </a>
-      </div>
-    </GlassCard>
-  );
-}
-
-/** Os pontos de atenção que vêm dos fundamentos (recuperação judicial, dívida, lucro em queda...). */
-function AssetAttention() {
-  const titleId = useId();
-  return (
-    <GlassCard as="section" className="dimension" aria-labelledby={titleId}>
-      <h2 id={titleId} className="section-title">
-        Pontos de atenção dos ativos
-      </h2>
-      <div className="awaiting" role="status">
-        <p className="awaiting__title">Aguardando dados de fundamentos</p>
-        <p className="field__hint">
-          Avisos sobre as empresas e os fundos que você tem, como recuperação judicial, dívida alta ou lucro em queda,
-          dependem dos dados abertos da CVM. Eles ainda não estão ligados e, por isso, nenhum ponto de atenção aparece
-          aqui, nem “tudo certo”.
-        </p>
       </div>
     </GlassCard>
   );

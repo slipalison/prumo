@@ -806,7 +806,6 @@ que a Análise não faz estão em [analise.md](analise.md). Tudo pelo dono.
   "dimensions": [
     {
       "id": "diversification",
-      "state": "ready",
       "score": { "ok": 3, "measured": 9, "no_data": 1, "percent": 33.3 },
       "rules": [
         {
@@ -851,8 +850,43 @@ que a Análise não faz estão em [analise.md](analise.md). Tudo pelo dono.
         }
       ]
     },
-    { "id": "quality", "state": "awaiting_fundamentals", "score": null, "rules": [] }
+    {
+      "id": "quality",
+      "score": { "ok": 1, "measured": 2, "no_data": 6, "percent": 50.0 },
+      "rules": [
+        {
+          "rule": "quality_roe",
+          "dimension": "quality",
+          "enabled": true,
+          "unit": "percent",
+          "direction": "at_least",
+          "threshold": 70.0,
+          "default_threshold": 70.0,
+          "status": "warning",
+          "current": 66.67,
+          "limit": 70.0,
+          "needed_contribution": null,
+          "detail": { "kind": "quality", "covered": 2, "total": 2, "failing": ["FRAC3"] }
+        }
+      ]
+    }
   ],
+  "attention": {
+    "assessed": 4,
+    "without_data": 0,
+    "items": [
+      {
+        "asset_id": "8f0c…",
+        "label": "FRAC3",
+        "asset_class": "br_stocks",
+        "points": [
+          { "kind": "judicial_recovery" },
+          { "kind": "low_roe", "percent": 2.0 },
+          { "kind": "debt_above_equity", "times": 2.9 }
+        ]
+      }
+    ]
+  },
   "profile": {
     "current": { "fixed_income": 70.76, "variable": 29.24, "profile": "conservative" },
     "target": { "fixed_income": 35.0, "variable": 65.0, "profile": "moderate" },
@@ -868,7 +902,6 @@ que a Análise não faz estão em [analise.md](analise.md). Tudo pelo dono.
   },
   "references": {
     "bazin_yield": 6.0,
-    "graham_ready": false,
     "items": [
       {
         "asset_id": "8f0c…",
@@ -877,7 +910,7 @@ que a Análise não faz estão em [analise.md](analise.md). Tudo pelo dono.
         "unit_price": 11.2,
         "max_price": 10.0,
         "bazin": { "price": 12.5, "annual_average": 0.75, "years": 4 },
-        "graham": null
+        "graham": 9.5
       }
     ]
   },
@@ -890,8 +923,7 @@ que a Análise não faz estão em [analise.md](analise.md). Tudo pelo dono.
 
 - `attention_count`: quantas regras estão em `warning` ("N pontos a ver").
 - `dimensions`: sempre as quatro, na ordem `diversification`, `dividends`,
-  `returns`, `quality`. `state: "awaiting_fundamentals"` (hoje, só a
-  `quality`) não tem regra nem `score`.
+  `returns`, `quality`, cada uma com as suas regras e a sua pontuação.
 - `score`: `ok` regras ok; `measured` as ligadas com dado (ok + `warning`);
   `no_data` as ligadas sem dado, **fora** da conta; `percent = ok ÷ measured`
   (uma casa), `null` sem nenhuma medida.
@@ -914,7 +946,18 @@ que a Análise não faz estão em [analise.md](analise.md). Tudo pelo dono.
   - `benchmark` (`benchmark` `cdi`, `ibov` ou `ipca`; `horizon` `12m` ou `5y`;
     `from`, `to`, `portfolio_percent`, `benchmark_percent`);
   - `years` (`positive`, `total`), `losses` (`assets[]` com `asset_id`, `label`,
-    `asset_class`, `loss_percent`).
+    `asset_class`, `loss_percent`);
+  - `quality` (`covered`, `total`, `failing`): as regras de Qualidade, ponderadas
+    pelo valor de quem tem o dado. `covered` é quantos ativos do grupo entraram
+    na conta, `total` quantos o grupo tem e `failing` os que reprovaram (em
+    `quality_recovery`, as empresas em recuperação judicial).
+- `attention`: os pontos de atenção por ativo (do maior valor para o menor; só
+  quem tem ponto). `assessed` são os ativos com fundamentos e `without_data` as
+  ações e FIIs ainda sem dados. Cada ponto tem `kind` — `income_drop` (`percent`),
+  `low_revenue_growth` e `low_earnings_growth` (`percent` ao ano em 5 anos),
+  `low_roe` e `low_net_margin` (`percent`), `debt_above_equity` (`times`, dívida
+  líquida ÷ patrimônio líquido) e `judicial_recovery` — e são fatos, não
+  recomendação. Cortes em [analise.md](analise.md).
 - `profile`: o perfil de agora e o das metas por classe (`null` sem ativos, ou
   sem metas); `fixed_income` + `variable` somam 100; `conservative_max` e
   `moderate_max` são os limiares de renda variável (30 e 70) que dão o rótulo
@@ -922,8 +965,8 @@ que a Análise não faz estão em [analise.md](analise.md). Tudo pelo dono.
 - `highlights`: até 3 de cada lado, só quem subiu em `best` e quem caiu em
   `worst`; ativo sem histórico não entra (`price_12m` ajusta desdobramentos).
 - `references`: `bazin_yield` é o rendimento-alvo da pessoa; `items` só tem
-  ativos da B3 com histórico de dividendos; `graham` é `null` enquanto
-  `graham_ready` for `false` (aguardando os fundamentos). Referência pública,
+  ativos da B3 com Bazin (histórico de dividendos) ou Graham (lucro e patrimônio
+  por ação, os dois positivos; `null` se faltar um). Referência pública,
   não é recomendação; o teto é o `max_price` do ativo, que a tela só muda com o
   `PATCH /assets/{id}` e uma confirmação.
 - `unclassified_count` e `sources`: como em `GET /health`.
@@ -947,7 +990,7 @@ não.
 }
 ```
 
-As 25 regras na ordem da tela, como a pessoa as deixou (o que ela nunca mexeu
+As 33 regras na ordem da tela, como a pessoa as deixou (o que ela nunca mexeu
 vale `default_threshold`), e o rendimento-alvo do Bazin (padrão 6).
 
 ### `PUT /api/v1/analysis/rules`
@@ -965,8 +1008,10 @@ Tudo ou nada: um valor inválido não grava nada.
   contagem: inteiro de 1 até o máximo da regra — `min_assets` 50,
   `min_portfolio_assets` 100, `min_classes` 7, `min_sectors` 30,
   `income_every_month` 12.
-- Regra sem limite editável (`empty_class`, `income_growth`, `brick_reit` e as
-  seis `beat_*`): mandar `threshold` é `422`; elas só ligam e desligam.
+- Regras de Qualidade (`quality_*`, exceto `quality_recovery`): percentual do valor,
+  maior que 0 e até 100, com até duas casas (padrão 70).
+- Regra sem limite editável (`empty_class`, `income_growth`, `brick_reit`,
+  `quality_recovery` e as seis `beat_*`): mandar `threshold` é `422`; elas só ligam e desligam.
 - `bazin_yield`: percentual maior que 0 e até 100, com até duas casas.
 - Regra desconhecida, campo desconhecido ou corpo que não é objeto: `422`.
 

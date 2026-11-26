@@ -19,13 +19,14 @@ use uuid::Uuid;
 use super::dto::optional_decimal;
 use super::health::{number, sources_dto, RuleChange, SectorSourceDto, WarningDto};
 use super::{ApiJson, AppState, CurrentUser};
-use crate::analysis::{self as service, AnalysisReport, Fundamentals};
+use crate::analysis::{self as service, AnalysisReport};
 use crate::domain::analysis::highlights::{Mover, Ranking};
 use crate::domain::analysis::profile::{self, Mix};
+use crate::domain::analysis::quality::{Attention, Point};
 use crate::domain::analysis::references::{validate_bazin_yield, Bazin};
 use crate::domain::analysis::{
-    AnalysisConfig, Detail, Dimension, DimensionReport, DimensionState, Direction, RuleId,
-    RuleResult, Score, Status,
+    AnalysisConfig, Detail, Dimension, DimensionReport, Direction, RuleId, RuleResult, Score,
+    Status,
 };
 use crate::domain::asset_class::AssetClass;
 use crate::domain::health::{RuleSetting, Unit};
@@ -120,6 +121,13 @@ pub enum DetailDto {
     Losses {
         assets: Vec<LossDto>,
     },
+    /// Regra de Qualidade: quantos ativos do grupo entraram na conta (os que
+    /// têm o dado) e quais reprovaram.
+    Quality {
+        covered: u32,
+        total: u32,
+        failing: Vec<String>,
+    },
 }
 
 impl DetailDto {
@@ -176,6 +184,11 @@ impl DetailDto {
             Detail::Years(years) => DetailDto::Years {
                 positive: years.positive,
                 total: years.total,
+            },
+            Detail::Quality(found) => DetailDto::Quality {
+                covered: found.covered,
+                total: found.total,
+                failing: found.failing.clone(),
             },
             Detail::Losses(losses) => DetailDto::Losses {
                 assets: losses
@@ -257,8 +270,7 @@ impl From<&RuleResult> for RuleResultDto {
 #[derive(Debug, Serialize)]
 pub struct DimensionDto {
     pub id: Dimension,
-    pub state: DimensionState,
-    pub score: Option<ScoreDto>,
+    pub score: ScoreDto,
     pub rules: Vec<RuleResultDto>,
 }
 
@@ -266,8 +278,7 @@ impl From<&DimensionReport> for DimensionDto {
     fn from(d: &DimensionReport) -> Self {
         Self {
             id: d.dimension,
-            state: d.state,
-            score: d.score.map(ScoreDto::from),
+            score: ScoreDto::from(d.score),
             rules: d.rules.iter().map(RuleResultDto::from).collect(),
         }
     }
@@ -389,9 +400,91 @@ pub struct ReferencesDto {
     /// O rendimento-alvo do Bazin, em % ao ano.
     #[serde(with = "number")]
     pub bazin_yield: Decimal,
-    /// O Graham espera os fundamentos: `false` enquanto eles não chegam.
-    pub graham_ready: bool,
     pub items: Vec<ReferenceDto>,
+}
+
+/// Um ponto de atenção, curto e factual. O `kind` diz qual.
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PointDto {
+    /// A renda de 12 meses do ativo caiu `percent` contra os 12 anteriores.
+    IncomeDrop {
+        #[serde(with = "number")]
+        percent: Decimal,
+    },
+    /// Crescimento anual composto em 5 anos, em %.
+    LowRevenueGrowth {
+        #[serde(with = "number")]
+        percent: Decimal,
+    },
+    LowEarningsGrowth {
+        #[serde(with = "number")]
+        percent: Decimal,
+    },
+    LowRoe {
+        #[serde(with = "number")]
+        percent: Decimal,
+    },
+    LowNetMargin {
+        #[serde(with = "number")]
+        percent: Decimal,
+    },
+    /// Dívida líquida sobre patrimônio líquido, em vezes.
+    DebtAboveEquity {
+        #[serde(with = "number")]
+        times: Decimal,
+    },
+    JudicialRecovery,
+}
+
+impl From<&Point> for PointDto {
+    fn from(point: &Point) -> Self {
+        match *point {
+            Point::IncomeDrop { percent } => PointDto::IncomeDrop { percent },
+            Point::LowRevenueGrowth { percent } => PointDto::LowRevenueGrowth { percent },
+            Point::LowEarningsGrowth { percent } => PointDto::LowEarningsGrowth { percent },
+            Point::LowRoe { percent } => PointDto::LowRoe { percent },
+            Point::LowNetMargin { percent } => PointDto::LowNetMargin { percent },
+            Point::DebtAboveEquity { times } => PointDto::DebtAboveEquity { times },
+            Point::JudicialRecovery => PointDto::JudicialRecovery,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct AssetAttentionDto {
+    pub asset_id: Uuid,
+    pub label: String,
+    pub asset_class: AssetClass,
+    pub points: Vec<PointDto>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AttentionDto {
+    /// Ativos com fundamentos (empresa ou FII).
+    pub assessed: u32,
+    /// Ações e FIIs com valor que ainda não têm fundamentos.
+    pub without_data: u32,
+    pub items: Vec<AssetAttentionDto>,
+}
+
+impl From<&Attention> for AttentionDto {
+    fn from(attention: &Attention) -> Self {
+        Self {
+            assessed: attention.assessed,
+            without_data: attention.without_data,
+            items: attention
+                .items
+                .iter()
+                .map(|item| AssetAttentionDto {
+                    asset_id: item.id,
+                    label: item.label.clone(),
+                    asset_class: item.asset_class,
+                    points: item.points.iter().map(PointDto::from).collect(),
+                })
+                .collect(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -402,6 +495,8 @@ pub struct AnalysisDto {
     /// Quantas regras estão em aviso: "N pontos a ver".
     pub attention_count: u32,
     pub dimensions: Vec<DimensionDto>,
+    /// Os pontos de atenção dos ativos.
+    pub attention: AttentionDto,
     pub profile: ProfileDto,
     pub highlights: HighlightsDto,
     pub references: ReferencesDto,
@@ -415,8 +510,9 @@ impl AnalysisDto {
         Self {
             as_of: day(report.today),
             total_value: report.total_value,
-            attention_count: report.attention,
+            attention_count: report.attention_count,
             dimensions: report.dimensions.iter().map(DimensionDto::from).collect(),
+            attention: AttentionDto::from(&report.asset_attention),
             profile: ProfileDto {
                 current: report.profile.current.map(MixDto::from),
                 target: report.profile.target.map(MixDto::from),
@@ -429,7 +525,6 @@ impl AnalysisDto {
             },
             references: ReferencesDto {
                 bazin_yield: report.references.bazin_yield,
-                graham_ready: report.references.graham_ready,
                 items: report
                     .references
                     .items
@@ -488,12 +583,12 @@ pub async fn analysis(
     State(state): State<AppState>,
     user: CurrentUser,
 ) -> ApiResult<Json<AnalysisDto>> {
-    // Os fundamentos (CVM) ainda não estão ligados: Qualidade e Graham aguardam.
+    let fundamentals = state.store.fundamentals_for_user(user.id).await?;
     let report = service::report(
         &state.store,
         user.id,
         OffsetDateTime::now_utc(),
-        &Fundamentals::awaiting(),
+        &fundamentals,
     )
     .await?;
     let sources = state.store.sector_sync_states().await?;
@@ -570,7 +665,7 @@ mod tests {
         let response = ConfigDto::new(&AnalysisConfig::default(), dec!(6));
         let json = serde_json::to_value(&response).unwrap();
         let rules = json["rules"].as_array().unwrap();
-        assert_eq!(rules.len(), 25);
+        assert_eq!(rules.len(), 33);
         assert_eq!(rules[0]["rule"], "max_asset");
         assert_eq!(rules[0]["dimension"], "diversification");
         assert_eq!(rules[0]["direction"], "at_most");
@@ -647,6 +742,39 @@ mod tests {
             json!({"kind": "losses", "assets": [
                 {"asset_id": id, "label": "ABCD3", "asset_class": "br_stocks", "loss_percent": 41.5}
             ]})
+        );
+    }
+
+    #[test]
+    fn attention_points_are_tagged_by_kind_and_quality_details_list_who_failed() {
+        let point = |p: Point| serde_json::to_value(PointDto::from(&p)).unwrap();
+        assert_eq!(
+            point(Point::LowRoe {
+                percent: dec!(4.12)
+            }),
+            json!({"kind": "low_roe", "percent": 4.12})
+        );
+        assert_eq!(
+            point(Point::DebtAboveEquity { times: dec!(2.9) }),
+            json!({"kind": "debt_above_equity", "times": 2.9})
+        );
+        assert_eq!(
+            point(Point::JudicialRecovery),
+            json!({"kind": "judicial_recovery"})
+        );
+        assert_eq!(
+            point(Point::IncomeDrop { percent: dec!(40) }),
+            json!({"kind": "income_drop", "percent": 40.0})
+        );
+        let detail = Detail::Quality(crate::domain::analysis::quality::Weighted {
+            share: dec!(66.67),
+            covered: 2,
+            total: 3,
+            failing: vec!["FRAC3".into()],
+        });
+        assert_eq!(
+            serde_json::to_value(DetailDto::of(RuleId::QualityRoe, &detail)).unwrap(),
+            json!({"kind": "quality", "covered": 2, "total": 3, "failing": ["FRAC3"]})
         );
     }
 

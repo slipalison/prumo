@@ -17,9 +17,9 @@ type References = Analysis["references"];
 
 /**
  * Referências de preço: Bazin (a média de até 5 anos de dividendos por cota
- * dividida pelo rendimento-alvo) e Graham (precisa dos fundamentos). São
- * fórmulas públicas, mostradas como referência: não são preço justo, nem alvo,
- * nem recomendação. Cada uma pode virar o teto de preço do ativo, com
+ * dividida pelo rendimento-alvo) e Graham (a raiz de 22,5 vezes o lucro e o
+ * patrimônio por ação, dos balanços da CVM). São fórmulas públicas, mostradas
+ * como referência: não são preço justo, nem alvo, nem recomendação. Cada uma pode virar o teto de preço do ativo, com
  * confirmação; o resto o Prumo não diz.
  */
 export function ReferencesCard({ references }: { references: References }) {
@@ -61,11 +61,15 @@ export function ReferencesCard({ references }: { references: References }) {
           Mudar o rendimento-alvo
         </a>
       </p>
+      <p className="field__hint">
+        Graham: a raiz de 22,5 vezes o lucro por ação vezes o patrimônio por ação, com os dois positivos (balanços da
+        CVM e número de ações da B3). Sem eles, a referência não aparece.
+      </p>
 
       {references.items.length === 0 ? (
         <p className="field__hint">
-          Sem referência por enquanto: ela precisa do histórico de dividendos das suas ações e FIIs da B3, que o Prumo
-          busca em segundo plano.
+          Sem referência por enquanto: o Bazin precisa do histórico de dividendos das suas ações e FIIs da B3 e o Graham,
+          do lucro e do patrimônio por ação, e o Prumo busca os dois em segundo plano.
         </p>
       ) : (
         <ul className="references__list" aria-label="Referências por ativo">
@@ -128,13 +132,6 @@ export function ReferencesCard({ references }: { references: References }) {
             </li>
           ))}
         </ul>
-      )}
-
-      {!references.graham_ready && (
-        <p className="awaiting awaiting--inline" role="status">
-          <strong>Graham: aguardando dados de fundamentos.</strong> A fórmula usa o lucro e o patrimônio por ação, que
-          virão dos dados abertos da CVM; até lá ela não aparece.
-        </p>
       )}
 
       <Sheet

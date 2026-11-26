@@ -15,12 +15,14 @@ use uuid::Uuid;
 
 use crate::domain::analysis::highlights::{self, Mover, Ranking};
 use crate::domain::analysis::profile::{self, Mix};
+use crate::domain::analysis::quality::{self, Attention, Facts, QualityAsset};
 use crate::domain::analysis::references::{self, Bazin};
 use crate::domain::analysis::returns::{self, Benchmark, Horizon, ReturnsFacts};
 use crate::domain::analysis::{
     self as rules, AnalysisAsset, AnalysisConfig, DimensionReport, Input, RuleResult,
 };
 use crate::domain::asset_class::{AssetClass, Market};
+use crate::domain::fundamentals::AssetFundamentals;
 use crate::domain::income::{today_in_brazil, DividendPoint};
 use crate::domain::performance::months_before;
 use crate::domain::retro;
@@ -35,34 +37,6 @@ use crate::store::{Store, StoreError};
 /// (fim de semana, feriado, papel sem negócio): mais velho que isso o preço
 /// não representa a data.
 const BASE_PRICE_SLACK_DAYS: i64 = 10;
-
-/// Os indicadores de fundamentos por ação, vindos da frente de fundamentos
-/// (CVM). Enquanto ela não entra, [`Fundamentals::awaiting`]: a Qualidade e o
-/// Graham ficam "aguardando dados de fundamentos".
-///
-/// **Ponto de encaixe:** quando a frente de fundamentos entrar, o handler passa
-/// a montar isto do banco (`available: true`, `per_share` com o LPA e o VPA de
-/// cada ativo) e as regras de Qualidade entram em
-/// [`crate::domain::analysis::evaluate`].
-#[derive(Debug, Clone, Default)]
-pub struct Fundamentals {
-    /// Há fonte de fundamentos ligada.
-    pub available: bool,
-    pub per_share: HashMap<Uuid, PerShare>,
-}
-
-/// Lucro e patrimônio por ação de um ativo, em reais.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PerShare {
-    pub earnings: Decimal,
-    pub book_value: Decimal,
-}
-
-impl Fundamentals {
-    pub fn awaiting() -> Self {
-        Self::default()
-    }
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProfileReport {
@@ -96,8 +70,6 @@ pub struct ReferenceItem {
 pub struct ReferencesReport {
     /// O rendimento-alvo do Bazin, em % ao ano.
     pub bazin_yield: Decimal,
-    /// O Graham depende dos fundamentos: `false` enquanto eles não chegam.
-    pub graham_ready: bool,
     pub items: Vec<ReferenceItem>,
 }
 
@@ -107,7 +79,9 @@ pub struct AnalysisReport {
     pub total_value: Decimal,
     pub dimensions: Vec<DimensionReport>,
     /// Quantas regras estão em aviso: "N pontos a ver".
-    pub attention: u32,
+    pub attention_count: u32,
+    /// Os pontos de atenção dos ativos (fundamentos e queda da renda).
+    pub asset_attention: Attention,
     pub profile: ProfileReport,
     pub highlights: HighlightsReport,
     pub references: ReferencesReport,
@@ -139,6 +113,7 @@ pub fn analysis_assets(view: &PortfolioView) -> Vec<AnalysisAsset> {
             id: a.asset.id,
             label: a.label(),
             asset_class: a.asset.asset_class,
+            symbol: a.asset.symbol.clone(),
             value: a.current_value,
             sector: a.sector.as_ref().map(|s| s.sector.clone()),
             cost_basis: a.performance.cost_basis,
@@ -259,7 +234,7 @@ async fn build_references(
     user: Uuid,
     view: &PortfolioView,
     today: Date,
-    fundamentals: &Fundamentals,
+    quality: &[QualityAsset],
 ) -> Result<ReferencesReport, StoreError> {
     let bazin_yield = store.bazin_yield(user).await?;
     let payers: Vec<(&AssetView, String)> = view
@@ -283,20 +258,29 @@ async fn build_references(
     let mut items: Vec<ReferenceItem> = payers
         .into_iter()
         .filter_map(|(asset, symbol)| {
-            let cached = cache.get(&symbol).filter(|c| c.currency == "BRL")?;
-            let points: Vec<DividendPoint> = cached
-                .events
+            let bazin = cache
+                .get(&symbol)
+                .filter(|c| c.currency == "BRL")
+                .and_then(|cached| {
+                    let points: Vec<DividendPoint> = cached
+                        .events
+                        .iter()
+                        .map(|e| DividendPoint {
+                            ex_date: e.ex_date,
+                            amount: e.amount,
+                        })
+                        .collect();
+                    references::bazin(&points, today, bazin_yield)
+                });
+            // O Graham pede lucro e patrimônio por ação, os dois positivos.
+            let graham = quality
                 .iter()
-                .map(|e| DividendPoint {
-                    ex_date: e.ex_date,
-                    amount: e.amount,
+                .find(|q| q.id == asset.asset.id)
+                .and_then(|q| match &q.facts {
+                    Facts::Company(c) => c.per_share,
+                    Facts::Fund(_) => None,
                 })
-                .collect();
-            let bazin = references::bazin(&points, today, bazin_yield);
-            let graham = fundamentals
-                .per_share
-                .get(&asset.asset.id)
-                .and_then(|p| references::graham(p.earnings, p.book_value));
+                .and_then(|(earnings, book)| references::graham(earnings, book));
             (bazin.is_some() || graham.is_some()).then(|| ReferenceItem {
                 asset_id: asset.asset.id,
                 label: asset.label(),
@@ -309,11 +293,7 @@ async fn build_references(
         })
         .collect();
     items.sort_by(|a, b| a.label.cmp(&b.label));
-    Ok(ReferencesReport {
-        bazin_yield,
-        graham_ready: fundamentals.available,
-        items,
-    })
+    Ok(ReferencesReport { bazin_yield, items })
 }
 
 /// A análise inteira da carteira da pessoa.
@@ -321,7 +301,7 @@ pub async fn report(
     store: &Store,
     user: Uuid,
     now: OffsetDateTime,
-    fundamentals: &Fundamentals,
+    fundamentals: &HashMap<String, AssetFundamentals>,
 ) -> Result<AnalysisReport, StoreError> {
     let today = today_in_brazil(now);
     let view = service::portfolio(store, user).await?;
@@ -329,6 +309,7 @@ pub async fn report(
     let income = store.income_history(user, today).await?;
     let returns = returns_facts(store, user, now, today).await?;
     let assets = analysis_assets(&view);
+    let quality = quality::quality_assets(&assets, fundamentals);
     let results: Vec<RuleResult> = rules::evaluate(
         &config,
         &Input {
@@ -336,14 +317,16 @@ pub async fn report(
             targets: view.targets,
             income: &income,
             returns: &returns,
+            quality: &quality,
         },
     );
-    let attention = rules::attention_count(&results);
+    let attention_count = rules::attention_count(&results);
     Ok(AnalysisReport {
         today,
         total_value: view.total_value,
         dimensions: rules::dimensions(results),
-        attention,
+        attention_count,
+        asset_attention: quality::attention(&assets, &quality, &income),
         profile: ProfileReport {
             current: profile::current(
                 view.assets
@@ -353,7 +336,7 @@ pub async fn report(
             target: profile::target(view.targets),
         },
         highlights: build_highlights(store, user, &view, today).await?,
-        references: build_references(store, user, &view, today, fundamentals).await?,
+        references: build_references(store, user, &view, today, &quality).await?,
         unclassified_count: unclassified_count(&view),
     })
 }

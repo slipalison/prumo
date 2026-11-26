@@ -10,6 +10,7 @@ fn asset(label: &str, class: AssetClass, value: Decimal) -> AnalysisAsset {
         id: Uuid::new_v4(),
         label: label.to_owned(),
         asset_class: class,
+        symbol: None,
         value,
         sector: None,
         cost_basis: None,
@@ -111,6 +112,7 @@ fn run(
             targets: Targets::default(),
             income,
             returns,
+            quality: &[],
         },
     );
     results.into_iter().find(|r| r.rule == rule).unwrap()
@@ -146,7 +148,7 @@ fn every_rule_has_a_unique_id_a_dimension_and_round_trips() {
     assert_eq!(count(Dimension::Diversification), 10);
     assert_eq!(count(Dimension::Dividends), 6);
     assert_eq!(count(Dimension::Returns), 9);
-    assert_eq!(count(Dimension::Quality), 0);
+    assert_eq!(count(Dimension::Quality), 8);
 }
 
 #[test]
@@ -623,6 +625,7 @@ fn the_income_rules_that_already_existed_live_in_the_dividends_dimension() {
             targets: Targets::default(),
             income: &income,
             returns: &ReturnsFacts::default(),
+            quality: &[],
         },
     );
     let every = results
@@ -854,7 +857,7 @@ fn no_data_is_not_a_failure_in_the_score() {
 }
 
 #[test]
-fn quality_is_always_listed_and_waits_for_the_fundamentals() {
+fn the_four_dimensions_are_always_listed_and_quality_without_data_is_not_a_failure() {
     let (a, b) = payers();
     let results = evaluate(
         &AnalysisConfig::default(),
@@ -863,6 +866,7 @@ fn quality_is_always_listed_and_waits_for_the_fundamentals() {
             targets: Targets::default(),
             income: &no_income(),
             returns: &ReturnsFacts::default(),
+            quality: &[],
         },
     );
     let report = dimensions(results);
@@ -872,12 +876,11 @@ fn quality_is_always_listed_and_waits_for_the_fundamentals() {
     );
     let quality = report.last().unwrap();
     assert_eq!(quality.dimension, Dimension::Quality);
-    assert_eq!(quality.state, DimensionState::AwaitingFundamentals);
-    assert_eq!(quality.score, None);
-    assert!(quality.rules.is_empty());
-    assert!(report[..3]
-        .iter()
-        .all(|d| d.state == DimensionState::Ready && d.score.is_some()));
+    assert_eq!(quality.rules.len(), 8);
+    // Sem fundamentos todas ficam sem dado: fora da pontuação, nunca falha.
+    assert!(quality.rules.iter().all(|r| r.status == Status::NoData));
+    assert_eq!(quality.score.percent, None);
+    assert_eq!(quality.score.no_data, 8);
     assert_eq!(report[0].rules.len(), 10);
     assert_eq!(report[1].rules.len(), 6);
     assert_eq!(report[2].rules.len(), 9);
@@ -934,6 +937,7 @@ proptest! {
             targets: Targets::default(),
             income: &no_income(),
             returns: &ReturnsFacts::default(),
+            quality: &[],
         });
         prop_assert_eq!(results.len(), RULE_COUNT);
         prop_assert!(results.iter().all(|r| r.status == Status::Off && r.current.is_none()));
@@ -947,6 +951,7 @@ proptest! {
             targets: Targets::default(),
             income: &no_income(),
             returns: &ReturnsFacts::default(),
+            quality: &[],
         });
         prop_assert!(results.iter().all(|r| r.status == Status::NoData));
         prop_assert_eq!(attention_count(&results), 0);

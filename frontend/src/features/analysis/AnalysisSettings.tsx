@@ -10,8 +10,8 @@ import { parseDecimal } from "../../lib/format";
 import { formatRuleValue, thresholdError } from "../../lib/healthText";
 import { useAnalysisConfig, useSaveAnalysisConfig } from "./useAnalysis";
 
-/** As dimensões que já têm regra, na ordem da tela. */
-const GROUPS: DimensionId[] = ["diversification", "dividends", "returns"];
+/** As dimensões, na ordem da tela. */
+const GROUPS: DimensionId[] = ["diversification", "dividends", "returns", "quality"];
 
 type Draft = {
   rules: Record<AnalysisRuleId, { enabled: boolean; threshold: string }>;
@@ -201,13 +201,6 @@ function RulesCard({ config }: { config: AnalysisConfig }) {
           <ul className="rule-list">{config.rules.filter((r) => r.dimension === group).map(row)}</ul>
         </GlassCard>
       ))}
-
-      <GlassCard as="section" className="health__rules" aria-labelledby={`${baseId}-quality`}>
-        <h2 id={`${baseId}-quality`} className="section-title">
-          {DIMENSION_TEXT.quality.title}
-        </h2>
-        <p className="field__hint">As regras desta dimensão chegam junto com os dados de fundamentos da CVM.</p>
-      </GlassCard>
 
       <GlassCard as="section" className="health__rules" aria-labelledby={`${baseId}-bazin`}>
         <h2 id={`${baseId}-bazin`} className="section-title">

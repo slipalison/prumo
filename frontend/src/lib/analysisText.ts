@@ -1,5 +1,6 @@
 import type {
   AnalysisRuleId,
+  AttentionPoint,
   Benchmark,
   DimensionId,
   RiskProfile,
@@ -148,6 +149,47 @@ export const RULE_TEXT: Record<AnalysisRuleId, RuleText> = {
     tail: "desde a compra",
     why: "Valor de hoje contra o custo do livro (preço médio × quantidade). Ativo sem custo conhecido não entra.",
   },
+  // Qualidade dos ativos: cada uma pesa pelo valor de quem tem o dado (balanços da CVM).
+  quality_roe: {
+    lead: "Pelo menos",
+    tail: "do valor em ações vem de empresas com ROE de 10% ou mais",
+    why: "O ROE é o lucro dos controladores sobre o patrimônio deles nos últimos 12 meses. A regra pesa pelo valor de cada empresa; quem não tem o dado fica fora da conta.",
+  },
+  quality_profit: {
+    lead: "Pelo menos",
+    tail: "do valor em ações vem de empresas com lucro em pelo menos 4 dos últimos 5 anos",
+    why: "Conta os exercícios com lucro positivo nos balanços anuais. Precisa de 4 exercícios conhecidos.",
+  },
+  quality_leverage: {
+    lead: "Pelo menos",
+    tail: "do valor em ações vem de empresas com dívida líquida de até 3 vezes o EBITDA",
+    why: "Não vale para banco nem seguradora (o plano de contas deles não tem dívida nem EBITDA): eles ficam fora. O EBITDA é uma aproximação (resultado operacional mais depreciação).",
+  },
+  quality_margin: {
+    lead: "Pelo menos",
+    tail: "do valor em ações vem de empresas com margem EBITDA positiva",
+    why: "Não vale para banco nem seguradora. Pesa pelo valor de cada empresa.",
+  },
+  quality_cash: {
+    lead: "Pelo menos",
+    tail: "do valor em ações vem de empresas com caixa operacional positivo na média de 4 anos",
+    why: "Média do caixa das atividades operacionais nos 4 últimos exercícios; precisa dos 4 conhecidos.",
+  },
+  quality_recovery: {
+    lead: "Nenhuma empresa da carteira está em recuperação judicial",
+    tail: "",
+    why: "Vem do cadastro das companhias na CVM. Não tem limite: uma empresa nessa situação já é um ponto a ver.",
+  },
+  quality_fii_pvp: {
+    lead: "Pelo menos",
+    tail: "do valor em FIIs vem de fundos com P/VP de até 1,10",
+    why: "O P/VP é a cotação do Prumo sobre o valor patrimonial por cota do informe mensal da CVM.",
+  },
+  quality_fii_vacancy: {
+    lead: "Pelo menos",
+    tail: "do valor em FIIs vem de fundos com vacância de até 15%",
+    why: "Vacância física do informe trimestral. Só o FII de tijolo declara imóvel: o de papel fica sem dado.",
+  },
 };
 
 /** Maior valor de cada limite em contagem; o padrão é 50 ativos. */
@@ -193,6 +235,14 @@ export const NO_DATA_TEXT: Record<AnalysisRuleId, string> = {
   min_positive_years: "Precisa de 2 anos civis fechados na série.",
   max_volatility: "Precisa de 12 meses de série.",
   max_loss: "Nenhum ativo tem custo conhecido no livro.",
+  quality_roe: "Precisa de empresas com fundamentos da CVM (a busca roda em segundo plano).",
+  quality_profit: "Precisa de empresa com pelo menos 4 balanços anuais conhecidos.",
+  quality_leverage: "Precisa de empresa que não seja banco nem seguradora, com EBITDA positivo.",
+  quality_margin: "Precisa de empresa que não seja banco nem seguradora.",
+  quality_cash: "Precisa de empresa com 4 exercícios de caixa operacional conhecidos.",
+  quality_recovery: "Precisa de empresa com cadastro na CVM.",
+  quality_fii_pvp: "Precisa de FII com informe mensal da CVM e cotação.",
+  quality_fii_vacancy: "Precisa de FII de tijolo com informe trimestral da CVM.",
 };
 
 export const DIMENSION_TEXT: Record<DimensionId, { title: string; lead: string }> = {
@@ -264,6 +314,12 @@ export function noDataText(score: Score): string | null {
 
 const pct = (value: number) => formatRuleValue("percent", value);
 
+/** "Entraram na conta 2 de 3 ativos. Abaixo do critério: A, B." */
+function qualityCoverage(covered: number, total: number, failing: string[], label: string): string {
+  const base = `Entraram na conta ${covered} de ${total} ${plural(total, ["ativo", "ativos"])}`;
+  return failing.length > 0 ? `${base}. ${label}: ${failing.join(", ")}.` : `${base}.`;
+}
+
 /** `+1,23%` / `−0,40%`: o sinal diz o sentido sem depender da cor. */
 export function formatSignedPercent(value: number): string {
   const text = formatPercent(Math.abs(value), 2);
@@ -333,6 +389,19 @@ export function ruleExplanation(result: RuleResult, money: Money): string | null
         : null;
     case "max_volatility":
       return current === null ? null : `Os retornos mensais oscilaram o equivalente a ${pct(current)} ao ano.`;
+    case "quality_roe":
+    case "quality_profit":
+    case "quality_leverage":
+    case "quality_margin":
+    case "quality_cash":
+    case "quality_fii_pvp":
+    case "quality_fii_vacancy":
+      return detail?.kind === "quality" ? qualityCoverage(detail.covered, detail.total, detail.failing, "Abaixo do critério") : null;
+    case "quality_recovery":
+      if (detail?.kind !== "quality") return null;
+      return detail.failing.length > 0
+        ? `Em recuperação judicial: ${detail.failing.join(", ")}.`
+        : `Nenhuma empresa está em recuperação judicial (${detail.covered} com cadastro na CVM).`;
     case "max_loss":
       if (detail?.kind === "losses") {
         return detail.assets.map((a) => `${a.label} está ${pct(a.loss_percent)} abaixo do que você pagou`).join("; ") + ".";
@@ -418,8 +487,49 @@ export function ruleAction(result: RuleResult, money: Money): WarningAction | nu
         text: "Reveja se o motivo da compra ainda vale. O Prumo não manda vender: só mostra onde a perda passou do seu limite.",
         link: { href: "#/carteira", label: "Abrir a Carteira" },
       };
+    case "quality_roe":
+    case "quality_profit":
+    case "quality_leverage":
+    case "quality_margin":
+    case "quality_cash":
+    case "quality_fii_pvp":
+    case "quality_fii_vacancy":
+      return {
+        text: "Isto mostra o que os balanços e informes da CVM dizem; não manda vender. Os números de cada ativo estão na folha dele, em Fundamentos.",
+        link: { href: "#/carteira", label: "Abrir a Carteira" },
+      };
+    case "quality_recovery":
+      return {
+        text: "Veja na folha do ativo, em Fundamentos, a situação do emissor. O Prumo não manda vender.",
+        link: { href: "#/carteira", label: "Abrir a Carteira" },
+      };
     default:
       return null;
+  }
+}
+
+/** Vezes, sem zeros à direita: `2,9 vezes`, `3 vezes`. */
+function times(value: number): string {
+  return `${value.toFixed(2).replace(".", ",").replace(/,?0+$/, "")} vezes`;
+}
+
+/** Um ponto de atenção em uma frase curta e factual; nunca recomenda. */
+export function pointText(point: AttentionPoint): string {
+  switch (point.kind) {
+    case "income_drop":
+      return `Provento de 12 meses caiu ${pct(point.percent)} em relação aos 12 meses anteriores`;
+    case "low_revenue_growth":
+      return `Receita ${point.percent >= 0 ? "cresceu" : "encolheu"} ${pct(Math.abs(point.percent))} ao ano em 5 anos, abaixo de 5%`;
+    case "low_earnings_growth":
+      return `Lucro ${point.percent >= 0 ? "cresceu" : "encolheu"} ${pct(Math.abs(point.percent))} ao ano em 5 anos, abaixo de 5%`;
+    case "low_roe":
+      return `ROE de ${pct(point.percent)}, abaixo de 10%`;
+    case "low_net_margin":
+      return `Margem líquida de ${pct(point.percent)}, abaixo de 10%`;
+    case "debt_above_equity":
+      return `Dívida líquida de ${times(point.times)} o patrimônio líquido`;
+    case "judicial_recovery":
+      return "Em recuperação judicial";
   }
 }
 

@@ -7,6 +7,7 @@ import {
   formatSignedPercent,
   limitLabel,
   noDataText,
+  pointText,
   NO_DATA_TEXT,
   ruleAction,
   ruleExplanation,
@@ -236,5 +237,63 @@ describe("o que fazer num ponto a ver", () => {
     expect(ruleAction(result("brick_reit", "warning", { current: 0 }), visible)?.link?.href).toBe("#/aportar");
     // As originais da Saúde têm o "o que fazer" nos próprios cartões.
     expect(ruleAction(result("max_asset", "warning", { current: 40 }), visible)).toBeNull();
+  });
+});
+
+describe("qualidade e pontos de atenção", () => {
+  it("diz quantos ativos entraram na conta e quem ficou abaixo do critério", () => {
+    const roe = result("quality_roe", "warning", {
+      current: 60,
+      detail: { kind: "quality", covered: 2, total: 3, failing: ["AAAA3", "BBBB3"] },
+    });
+    expect(ruleExplanation(roe, visible)).toBe("Entraram na conta 2 de 3 ativos. Abaixo do critério: AAAA3, BBBB3.");
+    const ok = result("quality_fii_vacancy", "ok", {
+      current: 100,
+      detail: { kind: "quality", covered: 1, total: 1, failing: [] },
+    });
+    expect(ruleExplanation(ok, visible)).toBe("Entraram na conta 1 de 1 ativo.");
+    expect(ruleExplanation(result("quality_roe", "no_data"), visible)).toBeNull();
+  });
+
+  it("recuperação judicial nomeia a empresa; sem nenhuma, diz quantas têm cadastro", () => {
+    const bad = result("quality_recovery", "warning", {
+      current: 1,
+      detail: { kind: "quality", covered: 3, total: 3, failing: ["RJ3"] },
+    });
+    expect(ruleExplanation(bad, visible)).toBe("Em recuperação judicial: RJ3.");
+    const fine = result("quality_recovery", "ok", {
+      current: 0,
+      detail: { kind: "quality", covered: 3, total: 4, failing: [] },
+    });
+    expect(ruleExplanation(fine, visible)).toBe("Nenhuma empresa está em recuperação judicial (3 com cadastro na CVM).");
+  });
+
+  it("o que fazer em Qualidade manda olhar os fundamentos, não vender", () => {
+    const roe = ruleAction(result("quality_roe", "warning", { current: 10, limit: 70 }), visible);
+    expect(roe?.text).toMatch(/não manda vender/);
+    expect(roe?.text).toMatch(/Fundamentos/);
+    expect(roe?.link?.href).toBe("#/carteira");
+    expect(ruleAction(result("quality_recovery", "warning", { current: 1 }), visible)?.text).toMatch(/O Prumo não manda vender/);
+  });
+
+  it("cada ponto de atenção é uma frase curta e factual, sem recomendação", () => {
+    expect(pointText({ kind: "income_drop", percent: 22.5 })).toBe(
+      "Provento de 12 meses caiu 22,50% em relação aos 12 meses anteriores",
+    );
+    expect(pointText({ kind: "low_revenue_growth", percent: 2.34 })).toBe("Receita cresceu 2,34% ao ano em 5 anos, abaixo de 5%");
+    expect(pointText({ kind: "low_earnings_growth", percent: -3 })).toBe("Lucro encolheu 3% ao ano em 5 anos, abaixo de 5%");
+    expect(pointText({ kind: "low_roe", percent: 4 })).toBe("ROE de 4%, abaixo de 10%");
+    expect(pointText({ kind: "low_net_margin", percent: 8.33 })).toBe("Margem líquida de 8,33%, abaixo de 10%");
+    expect(pointText({ kind: "debt_above_equity", times: 2.9 })).toBe("Dívida líquida de 2,9 vezes o patrimônio líquido");
+    expect(pointText({ kind: "debt_above_equity", times: 3 })).toBe("Dívida líquida de 3 vezes o patrimônio líquido");
+    expect(pointText({ kind: "debt_above_equity", times: 10.5 })).toBe("Dívida líquida de 10,5 vezes o patrimônio líquido");
+    expect(pointText({ kind: "judicial_recovery" })).toBe("Em recuperação judicial");
+    for (const point of [
+      { kind: "judicial_recovery" as const },
+      { kind: "low_roe" as const, percent: 1 },
+      { kind: "income_drop" as const, percent: 30 },
+    ]) {
+      expect(pointText(point)).not.toMatch(/compre|venda|oportunidade/i);
+    }
   });
 });

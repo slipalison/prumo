@@ -69,25 +69,6 @@
   background: var(--info);
 }
 
-.awaiting {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 14px 16px;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--r-md);
-  color: var(--text-muted);
-}
-
-.awaiting__title {
-  color: var(--text);
-  font-weight: 650;
-}
-
-.awaiting--inline {
-  display: block;
-}
-
 /* ---------- Regras ---------- */
 
 .analysis-rules {
@@ -400,4 +381,59 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px 12px;
+}
+
+/* ---------- Pontos de atenção dos ativos ---------- */
+
+.attention-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attention {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+
+.attention:first-child {
+  border-top: 0;
+}
+
+.attention__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.attention__name {
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+
+.attention__points {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attention__point {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--text-muted);
+}
+
+.attention__icon {
+  flex: none;
+  margin-top: 3px;
+  color: var(--gold-text);
 }

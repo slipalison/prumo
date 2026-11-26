@@ -46,8 +46,8 @@ describe("Ajustes, Análise", () => {
     expect(within(group("Diversificação").getByRole("list")).getAllByRole("listitem")).toHaveLength(10);
     expect(within(group("Dividendos").getByRole("list")).getAllByRole("listitem")).toHaveLength(6);
     expect(within(group("Rentabilidade").getByRole("list")).getAllByRole("listitem")).toHaveLength(9);
-    expect(screen.getAllByRole("switch")).toHaveLength(25);
-    expect(group("Qualidade dos ativos").getByText(/chegam junto com os dados de fundamentos da CVM/)).toBeInTheDocument();
+    expect(within(group("Qualidade dos ativos").getByRole("list")).getAllByRole("listitem")).toHaveLength(8);
+    expect(screen.getAllByRole("switch")).toHaveLength(33);
     expect(group("Referências de preço").getByRole("textbox", { name: "Rendimento-alvo do Bazin" })).toHaveValue("6");
   });
 
@@ -60,6 +60,24 @@ describe("Ajustes, Análise", () => {
     expect(screen.queryByRole("textbox", { name: /Limite: Renda de 12 meses maior/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: /Limite: Toda classe com meta tem ativo/ })).not.toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "A carteira rende ao menos o CDI em 12 meses" })).toBeChecked();
+  });
+
+  it("as regras de Qualidade têm limite de percentual do valor, e a de recuperação judicial só liga e desliga", async () => {
+    const { user } = await openSettings();
+    const roe = limitOf(/Limite: Pelo menos … do valor em ações vem de empresas com ROE de 10% ou mais/);
+    expect(roe).toHaveValue("70");
+    expect(limitOf(/Limite: Pelo menos … do valor em FIIs vem de fundos com vacância de até 15%/)).toHaveValue("70");
+    expect(screen.queryByRole("textbox", { name: /Limite: Nenhuma empresa da carteira está em recuperação judicial/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Nenhuma empresa da carteira está em recuperação judicial" })).toBeChecked();
+    await user.clear(roe);
+    await user.type(roe, "60");
+    await user.click(screen.getByRole("switch", { name: "Nenhuma empresa da carteira está em recuperação judicial" }));
+    await user.click(screen.getByRole("button", { name: "Salvar regras" }));
+    await screen.findByText("Regras salvas.");
+    expect(lastPut()).toEqual({ rules: { quality_roe: { threshold: 60 }, quality_recovery: { enabled: false } } });
+    await user.clear(roe);
+    await user.type(roe, "101");
+    expect(await screen.findByText(/Use um percentual maior que 0 e até 100/)).toBeInTheDocument();
   });
 
   it("liga e desliga uma regra e só manda o que mudou", async () => {

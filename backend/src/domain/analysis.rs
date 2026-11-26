@@ -16,16 +16,15 @@
 //! continuam sendo avaliadas por lá — o motor de avisos e os alertas do
 //! Telegram dependem dele — e entram aqui nas dimensões certas.
 //!
-//! **Qualidade dos ativos** espera a frente de fundamentos (CVM). Enquanto ela
-//! não entra, a dimensão não tem regra e a tela diz "aguardando dados de
-//! fundamentos". Para ligar: acrescente as [`RuleId`] com
-//! `dimension() == Dimension::Quality`, avalie-as em [`evaluate`] a partir de um
-//! campo novo de [`Input`] e [`dimensions`] passa a marcá-la como pronta.
+//! **Qualidade dos ativos** lê os fundamentos da CVM (`domain/fundamentals`):
+//! cada regra pergunta quanto do **valor** de um grupo de ativos passa num
+//! critério, e só pesa quem tem o dado ([`quality`]).
 //!
 //! Tudo aqui é puro: recebe fatos já prontos e devolve resultados.
 
 pub mod highlights;
 pub mod profile;
+pub mod quality;
 pub mod references;
 pub mod returns;
 
@@ -40,6 +39,7 @@ use super::asset_class::AssetClass;
 use super::health::{self, HealthAsset, HealthConfig, IncomeHistory, RuleSetting, Unit, Warning};
 use super::income;
 use super::performance::{months_before, to_percent};
+use quality::{Criterion, QualityAsset, Weighted};
 use returns::{Benchmark, Comparison, Horizon, ReturnsFacts, YearsFact};
 
 const HUNDRED: Decimal = Decimal::ONE_HUNDRED;
@@ -56,6 +56,8 @@ pub const MIN_GROWTH_HISTORY_MONTHS: i32 = 24;
 const BRICK_SECTOR: &str = "Tijolo";
 
 /// Maior limite aceito para as regras de contagem.
+/// Percentual do valor que precisa passar nas regras de Qualidade, de fábrica.
+const DEFAULT_QUALITY_SHARE: i64 = 70;
 const MAX_PORTFOLIO_ASSETS: u32 = 100;
 const MAX_CLASSES: u32 = 7;
 const MAX_SECTORS: u32 = 30;
@@ -148,10 +150,27 @@ pub enum RuleId {
     MaxVolatility,
     #[serde(rename = "max_loss")]
     MaxLoss,
+    // Qualidade dos ativos.
+    #[serde(rename = "quality_roe")]
+    QualityRoe,
+    #[serde(rename = "quality_profit")]
+    QualityProfit,
+    #[serde(rename = "quality_leverage")]
+    QualityLeverage,
+    #[serde(rename = "quality_margin")]
+    QualityMargin,
+    #[serde(rename = "quality_cash")]
+    QualityCash,
+    #[serde(rename = "quality_recovery")]
+    QualityRecovery,
+    #[serde(rename = "quality_fii_pvp")]
+    QualityFiiPvp,
+    #[serde(rename = "quality_fii_vacancy")]
+    QualityFiiVacancy,
 }
 
 /// Quantas regras existem.
-pub const RULE_COUNT: usize = 25;
+pub const RULE_COUNT: usize = 33;
 
 impl RuleId {
     /// A ordem da tela, dimensão por dimensão.
@@ -181,6 +200,14 @@ impl RuleId {
         RuleId::MinPositiveYears,
         RuleId::MaxVolatility,
         RuleId::MaxLoss,
+        RuleId::QualityRoe,
+        RuleId::QualityProfit,
+        RuleId::QualityLeverage,
+        RuleId::QualityMargin,
+        RuleId::QualityCash,
+        RuleId::QualityRecovery,
+        RuleId::QualityFiiPvp,
+        RuleId::QualityFiiVacancy,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -210,6 +237,14 @@ impl RuleId {
             RuleId::MinPositiveYears => "min_positive_years",
             RuleId::MaxVolatility => "max_volatility",
             RuleId::MaxLoss => "max_loss",
+            RuleId::QualityRoe => "quality_roe",
+            RuleId::QualityProfit => "quality_profit",
+            RuleId::QualityLeverage => "quality_leverage",
+            RuleId::QualityMargin => "quality_margin",
+            RuleId::QualityCash => "quality_cash",
+            RuleId::QualityRecovery => "quality_recovery",
+            RuleId::QualityFiiPvp => "quality_fii_pvp",
+            RuleId::QualityFiiVacancy => "quality_fii_vacancy",
         }
     }
 
@@ -244,6 +279,14 @@ impl RuleId {
             | RuleId::MinPositiveYears
             | RuleId::MaxVolatility
             | RuleId::MaxLoss => Dimension::Returns,
+            RuleId::QualityRoe
+            | RuleId::QualityProfit
+            | RuleId::QualityLeverage
+            | RuleId::QualityMargin
+            | RuleId::QualityCash
+            | RuleId::QualityRecovery
+            | RuleId::QualityFiiPvp
+            | RuleId::QualityFiiVacancy => Dimension::Quality,
         }
     }
 
@@ -286,6 +329,20 @@ impl RuleId {
         }
     }
 
+    /// O critério de uma regra de Qualidade ponderada por valor.
+    pub fn criterion(self) -> Option<Criterion> {
+        match self {
+            RuleId::QualityRoe => Some(Criterion::Roe),
+            RuleId::QualityProfit => Some(Criterion::ProfitYears),
+            RuleId::QualityLeverage => Some(Criterion::Leverage),
+            RuleId::QualityMargin => Some(Criterion::EbitdaMargin),
+            RuleId::QualityCash => Some(Criterion::OperatingCash),
+            RuleId::QualityFiiPvp => Some(Criterion::FundPriceToBook),
+            RuleId::QualityFiiVacancy => Some(Criterion::FundVacancy),
+            _ => None,
+        }
+    }
+
     /// Em que o número da regra (e o limite) é medido.
     pub fn value_unit(self) -> Unit {
         match self {
@@ -295,7 +352,8 @@ impl RuleId {
             | RuleId::MinClasses
             | RuleId::MinSectors
             | RuleId::IncomeEveryMonth
-            | RuleId::BrickReit => Unit::Count,
+            | RuleId::BrickReit
+            | RuleId::QualityRecovery => Unit::Count,
             _ => Unit::Percent,
         }
     }
@@ -314,6 +372,7 @@ impl RuleId {
             RuleId::MinPayingShare | RuleId::MinPositiveYears => 70,
             RuleId::MaxVolatility => 20,
             RuleId::MaxLoss => 30,
+            _ if self.criterion().is_some() => DEFAULT_QUALITY_SHARE,
             _ => return None,
         };
         Some(Decimal::from(value))
@@ -348,8 +407,18 @@ impl RuleId {
             | RuleId::BeatIbov12m
             | RuleId::BeatIbov5y
             | RuleId::BeatIpca12m
-            | RuleId::BeatIpca5y => Some(Direction::AtLeast),
-            RuleId::EmptyClass | RuleId::IncomeGrowth | RuleId::BrickReit => None,
+            | RuleId::BeatIpca5y
+            | RuleId::QualityRoe
+            | RuleId::QualityProfit
+            | RuleId::QualityLeverage
+            | RuleId::QualityMargin
+            | RuleId::QualityCash
+            | RuleId::QualityFiiPvp
+            | RuleId::QualityFiiVacancy => Some(Direction::AtLeast),
+            RuleId::EmptyClass
+            | RuleId::IncomeGrowth
+            | RuleId::BrickReit
+            | RuleId::QualityRecovery => None,
         }
     }
 
@@ -445,6 +514,8 @@ pub struct AnalysisAsset {
     /// Símbolo ou nome, para o aviso.
     pub label: String,
     pub asset_class: AssetClass,
+    /// O símbolo; `None` na renda fixa por valor. Liga o ativo aos fundamentos.
+    pub symbol: Option<String>,
     /// Valor atual em reais.
     pub value: Decimal,
     /// Setor da fonte pública; `None` quando não há.
@@ -472,6 +543,8 @@ pub struct Input<'a> {
     pub targets: Targets,
     pub income: &'a IncomeHistory,
     pub returns: &'a ReturnsFacts,
+    /// Os ativos com fundamentos da CVM (empresas e FIIs).
+    pub quality: &'a [QualityAsset],
 }
 
 // ---------------------------------------------------------------- saída --
@@ -527,6 +600,9 @@ pub enum Detail {
     Benchmark(Comparison),
     Years(YearsFact),
     Losses(Vec<AssetLoss>),
+    /// Regra de Qualidade: quantos ativos do grupo entraram na conta e quais
+    /// reprovaram.
+    Quality(Weighted),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -584,26 +660,15 @@ pub fn attention_count(results: &[RuleResult]) -> u32 {
     .unwrap_or(u32::MAX)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DimensionState {
-    Ready,
-    /// Qualidade dos ativos: espera os dados de fundamentos.
-    AwaitingFundamentals,
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct DimensionReport {
     pub dimension: Dimension,
-    pub state: DimensionState,
-    /// `None` quando a dimensão não está pronta.
-    pub score: Option<Score>,
+    pub score: Score,
     pub rules: Vec<RuleResult>,
 }
 
 /// Agrupa os resultados por dimensão, na ordem da tela. As quatro dimensões
-/// sempre aparecem; a que não tem regra (Qualidade, por enquanto) fica
-/// aguardando os fundamentos.
+/// sempre aparecem.
 pub fn dimensions(results: Vec<RuleResult>) -> Vec<DimensionReport> {
     Dimension::ALL
         .into_iter()
@@ -613,20 +678,10 @@ pub fn dimensions(results: Vec<RuleResult>) -> Vec<DimensionReport> {
                 .filter(|r| r.rule.dimension() == dimension)
                 .cloned()
                 .collect();
-            if rules.is_empty() {
-                DimensionReport {
-                    dimension,
-                    state: DimensionState::AwaitingFundamentals,
-                    score: None,
-                    rules,
-                }
-            } else {
-                DimensionReport {
-                    dimension,
-                    state: DimensionState::Ready,
-                    score: Some(score(&rules)),
-                    rules,
-                }
+            DimensionReport {
+                dimension,
+                score: score(&rules),
+                rules,
             }
         })
         .collect()
@@ -815,7 +870,13 @@ fn measure(
     if let Some((benchmark, horizon)) = rule.benchmark() {
         return beat_index(input.returns, benchmark, horizon);
     }
+    if rule == RuleId::QualityRecovery {
+        return no_judicial_recovery(input.quality);
+    }
     let limit = limit?;
+    if let Some(criterion) = rule.criterion() {
+        return quality_share(input.quality, criterion, limit);
+    }
     match rule {
         RuleId::MinPortfolioAssets => min_portfolio_assets(portfolio, limit),
         RuleId::MinClasses => min_classes(portfolio, limit),
@@ -831,6 +892,34 @@ fn measure(
         // já saíram acima.
         _ => None,
     }
+}
+
+/// Pelo menos `limit`% do valor do grupo (empresas ou FIIs) passa no critério.
+fn quality_share(
+    quality: &[QualityAsset],
+    criterion: Criterion,
+    limit: Decimal,
+) -> Option<Measured> {
+    let found = quality::weighted(quality, criterion)?;
+    Some(Measured {
+        current: Some(found.share),
+        limit: Some(limit),
+        ok: found.share >= limit,
+        needed: None,
+        detail: Detail::Quality(found),
+    })
+}
+
+/// Nenhuma empresa da carteira está em recuperação judicial.
+fn no_judicial_recovery(quality: &[QualityAsset]) -> Option<Measured> {
+    let found = quality::judicial_recovery(quality)?;
+    Some(Measured {
+        current: Some(Decimal::from(found.failing.len())),
+        limit: None,
+        ok: found.failing.is_empty(),
+        needed: None,
+        detail: Detail::Quality(found),
+    })
 }
 
 fn min_portfolio_assets(portfolio: &Portfolio<'_>, limit: Decimal) -> Option<Measured> {

@@ -18,7 +18,7 @@ function withWarnings(rules: string[], measured = true) {
     const next = d.rules.map((r) =>
       rules.includes(r.rule) ? r : result(r.rule, measured ? "ok" : "no_data", measured ? { current: 1 } : {}),
     );
-    return { ...d, rules: next, score: d.state === "ready" ? scoreOf(next) : null };
+    return { ...d, rules: next, score: scoreOf(next) };
   });
   base.attention_count = base.dimensions.flatMap((d) => d.rules).filter((r) => r.status === "warning").length;
   return base;
@@ -28,12 +28,12 @@ describe("Resumo da análise na Carteira", () => {
   it("conta os pontos a ver, mostra os dois primeiros e leva à tela", async () => {
     const { user } = await openPortfolio();
     const summary = await screen.findByRole("region", { name: "Análise da carteira" });
-    expect(within(summary).getByRole("heading", { name: "Análise: 11 pontos a ver" })).toBeInTheDocument();
+    expect(within(summary).getByRole("heading", { name: "Análise: 13 pontos a ver" })).toBeInTheDocument();
     const items = within(summary).getAllByRole("listitem");
     expect(items.map((li) => li.textContent)).toEqual([
       "Tesouro IPCA+ 2035 é 70,76% da carteira",
       "Os 5 maiores ativos somam 97,84% da carteira",
-      "e mais 9",
+      "e mais 11",
     ]);
     expect(within(summary).getByRole("link", { name: "Ver análise" })).toHaveAttribute("href", "#/analise");
     await user.click(within(summary).getByRole("link", { name: "Ver análise" }));
