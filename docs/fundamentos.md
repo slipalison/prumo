@@ -132,7 +132,7 @@ Em 2021–2025 só existiram esses cinco textos na conta 3.01 das DFP.
 |---|---|---|
 | Receita líquida | DRE 3.01 | não se aplica |
 | EBIT | DRE 3.05 ("Resultado Antes do Resultado Financeiro e dos Tributos") | não se aplica |
-| Lucro líquido | DRE "Lucro/Prejuízo ... do Período" (3.11 no comercial, 3.09 ou 3.11 nos bancos, 3.13 nas seguradoras), **a parte atribuída aos controladores** (3.11.01) quando há | sim |
+| Lucro líquido | DRE "Lucro/Prejuízo ... do Período" (3.11 no comercial, 3.09 ou 3.11 nos bancos, 3.13 nas seguradoras), **a parte atribuída aos controladores** (3.11.01) quando há; divisão entregue toda em zero com total diferente de zero (há companhia sem minoritários que faz isso) vale como não preenchida, e conta o total | sim |
 | Patrimônio líquido | BPP "Patrimônio Líquido" (2.03 no comercial, 2.07 ou 2.08 nos bancos), total | sim |
 | Patrimônio dos controladores | a conta-filha "atribuído ao controlador" (bancos) ou o total menos "não controladores" (2.03.09) | sim |
 | Dívida bruta | BPP 2.01.04 + 2.02.01 (empréstimos e financiamentos, curto e longo prazo; no plano da CVM incluem debêntures e arrendamento) | não se aplica |

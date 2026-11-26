@@ -447,10 +447,20 @@ impl<'a> Columnar<'a> {
         }) else {
             return Figure::missing(Gap::NotReported);
         };
-        let controlling = self
-            .children(Statement::Income, &profit.code)
-            .find(|l| is_controlling(&l.description));
-        Figure::known(controlling.map_or(profit.value, |l| l.value))
+        let children: Vec<&Line> = self.children(Statement::Income, &profit.code).collect();
+        let controlling = children.iter().find(|l| is_controlling(&l.description));
+        let minority = children.iter().find(|l| is_non_controlling(&l.description));
+        // Há companhia sem minoritários que preenche só o total e entrega as
+        // duas linhas da divisão zeradas (a Sabesp, de 2023 em diante). Divisão
+        // toda em zero com total diferente de zero é divisão não preenchida, e
+        // não lucro zero dos controladores.
+        let split_blank = !profit.value.is_zero()
+            && controlling.is_none_or(|l| l.value.is_zero())
+            && minority.is_none_or(|l| l.value.is_zero());
+        match controlling {
+            Some(own) if !split_blank => Figure::known(own.value),
+            _ => Figure::known(profit.value),
+        }
     }
 
     /// O patrimônio total e o dos controladores.
@@ -1417,6 +1427,35 @@ mod tests {
         let y = m.years[4].figures.as_ref().unwrap();
         assert_eq!(y.net_income.value(), Some(dec!(146.41)));
         assert_eq!(y.roe.value(), Some(dec!(0.029282)));
+    }
+
+    #[test]
+    fn a_split_filed_as_zeros_is_a_split_not_filled() {
+        let mut filing = five_years().remove(4);
+        for line in &mut filing.lines {
+            if line.code.starts_with("3.11.") {
+                line.value = Decimal::ZERO;
+            }
+        }
+        let m = company_metrics(99901, &[filing], None, None, None).unwrap();
+        let y = m.years[4].figures.as_ref().unwrap();
+        assert_eq!(y.net_income.value(), Some(dec!(146.41)));
+    }
+
+    #[test]
+    fn a_real_loss_with_a_filled_split_stays_a_loss_of_the_controllers() {
+        let mut filing = five_years().remove(4);
+        for line in &mut filing.lines {
+            match line.code.as_str() {
+                "3.11" => line.value = dec!(-50),
+                "3.11.01" => line.value = dec!(-60),
+                "3.11.02" => line.value = dec!(10),
+                _ => {}
+            }
+        }
+        let m = company_metrics(99901, &[filing], None, None, None).unwrap();
+        let y = m.years[4].figures.as_ref().unwrap();
+        assert_eq!(y.net_income.value(), Some(dec!(-60)));
     }
 
     #[test]
