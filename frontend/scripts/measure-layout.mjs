@@ -8,10 +8,12 @@
 //   mkdir /tmp/pw && cd /tmp/pw && npm i playwright@1.65.1 && npx playwright install chromium
 //   node <repo>/frontend/scripts/measure-layout.mjs <pasta-das-capturas>
 //
-// `MEASURE_URL` troca o endereço (padrão http://localhost:5180) e
-// `MEASURE_VIEWPORTS` escolhe as larguras (veja `ALL_VIEWPORTS`). Escreve
+// `MEASURE_URL` troca o endereço (padrão http://localhost:5180),
+// `MEASURE_VIEWPORTS` escolhe as larguras (veja `ALL_VIEWPORTS`) e
+// `MEASURE_THEME=light` mede no tema claro (padrão: escuro). Escreve
 // `medidas.json` e `medidas.md` na pasta das capturas, mais um PNG de página
-// inteira por tela, folha e largura.
+// inteira por tela, folha e largura. Também aponta rolagem lateral: da página,
+// da folha e de qualquer tabela ou bloco que rola de lado por dentro.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -34,6 +36,7 @@ const ALL_VIEWPORTS = [
 
 // `MEASURE_VIEWPORTS=1440x900,1920x1080` mede só essas larguras.
 const only = process.env.MEASURE_VIEWPORTS?.split(",");
+const THEME = process.env.MEASURE_THEME === "light" ? "light" : "dark";
 const VIEWPORTS = only ? ALL_VIEWPORTS.filter((v) => only.includes(v.name)) : ALL_VIEWPORTS;
 
 /** Espera a tela assentar: rede parada e as entradas animadas terminadas. */
@@ -101,6 +104,17 @@ const SHEETS = [
   { id: "folha-teto", path: "analise", open: (page) => page.getByRole("button", { name: /como teto de/ }).first().click() },
 ];
 
+/** Blocos que rolam de lado por dentro (tabela larga, lista de pílulas): quais e quanto passa. */
+function innerScrollers() {
+  return [...document.querySelectorAll("main *, [role='dialog'] *")]
+    .filter((el) => {
+      if (el.scrollWidth <= el.clientWidth + 1 || el.clientWidth === 0) return false;
+      const overflowX = getComputedStyle(el).overflowX;
+      return overflowX === "auto" || overflowX === "scroll";
+    })
+    .map((el) => `${el.tagName.toLowerCase()}.${String(el.className).split(" ")[0]} +${el.scrollWidth - el.clientWidth}px`);
+}
+
 /** Altura, largura útil e o que cabe acima da dobra. */
 function measurePage() {
   const vh = window.innerHeight;
@@ -112,9 +126,12 @@ function measurePage() {
   const titles = [...document.querySelectorAll("main h1, main h2, main h3")]
     .filter((el) => el.getClientRects().length > 0)
     .map((el) => ({ text: el.textContent.trim().replace(/\s+/g, " ").slice(0, 60), top: Math.round(el.getBoundingClientRect().top + window.scrollY) }));
+  const root = document.documentElement;
   return {
     viewport: `${vw}x${vh}`,
     height,
+    hscroll: root.scrollWidth > root.clientWidth ? root.scrollWidth - root.clientWidth : 0,
+    innerScroll: window.innerScrollers(),
     screens: Math.round((height / vh) * 100) / 100,
     mainWidth: box ? Math.round(box.width) : null,
     navWidth: nav && nav.width < vw ? Math.round(nav.width) : 0,
@@ -136,6 +153,8 @@ function measureSheet() {
     dialogHeight: Math.round(rect.height),
     dialogWidth: Math.round(rect.width),
     contentHeight: Math.round(content),
+    hscroll: body.scrollWidth > body.clientWidth ? body.scrollWidth - body.clientWidth : 0,
+    innerScroll: window.innerScrollers(),
     screens: Math.round((content / rect.height) * 100) / 100,
     title: dialog.querySelector("h2")?.textContent.trim(),
   };
@@ -150,6 +169,8 @@ for (const viewport of VIEWPORTS) {
     // `MEASURE_REDUCED_MOTION=1`: sem animação, para comparar capturas pixel a pixel.
     reducedMotion: process.env.MEASURE_REDUCED_MOTION === "1" ? "reduce" : "no-preference",
   });
+  await context.addInitScript(`window.innerScrollers = ${innerScrollers}`);
+  await context.addInitScript((theme) => window.localStorage.setItem("prumo.theme", theme), THEME);
   const page = await context.newPage();
   page.on("pageerror", (error) => console.error(`[${viewport.name}] erro na página:`, error.message));
 
@@ -164,7 +185,8 @@ for (const viewport of VIEWPORTS) {
     const data = await page.evaluate(measurePage);
     (results.screens[screen.id] ??= {})[viewport.name] = data;
     await page.screenshot({ path: join(OUT, `${screen.id}--${viewport.name}.png`), fullPage: true });
-    console.log(`${viewport.name} ${screen.id}: ${data.height}px = ${data.screens} telas`);
+    const side = data.hscroll || data.innerScroll.length ? `  ROLAGEM LATERAL: página +${data.hscroll}px ${data.innerScroll.join(", ")}` : "";
+    console.log(`${viewport.name} ${screen.id}: ${data.height}px = ${data.screens} telas${side}`);
   }
 
   for (const sheet of SHEETS) {
@@ -179,7 +201,8 @@ for (const viewport of VIEWPORTS) {
       (results.sheets[sheet.id] ??= {})[viewport.name] = data;
       // A folha rola por dentro: a captura mostra a primeira "tela" dela.
       await page.screenshot({ path: join(OUT, `${sheet.id}--${viewport.name}.png`) });
-      console.log(`${viewport.name} ${sheet.id}: ${data?.contentHeight}px em ${data?.dialogHeight}px = ${data?.screens}`);
+      const side = data?.hscroll || data?.innerScroll.length ? `  ROLAGEM LATERAL: folha +${data.hscroll}px ${data.innerScroll.join(", ")}` : "";
+      console.log(`${viewport.name} ${sheet.id}: ${data?.contentHeight}px em ${data?.dialogHeight}px = ${data?.screens}${side}`);
     } catch (error) {
       console.error(`${viewport.name} ${sheet.id}: não abriu (${error.message.split("\n")[0]})`);
     }
@@ -202,5 +225,18 @@ lines.push(`| Folha | ${names.join(" | ")} |`, `|---|${names.map(() => "---").jo
 for (const [id, byViewport] of Object.entries(results.sheets)) {
   lines.push(`| ${id} | ${names.map((n) => (byViewport[n] ? `${byViewport[n].screens} (${byViewport[n].contentHeight}px)` : "—")).join(" | ")} |`);
 }
+lines.push("", "## Rolagem lateral (nenhuma é o esperado)", "");
+const scrolls = [];
+for (const kind of ["screens", "sheets"]) {
+  for (const [id, byViewport] of Object.entries(results[kind])) {
+    for (const [name, data] of Object.entries(byViewport)) {
+      if (data && (data.hscroll || data.innerScroll.length)) {
+        const own = data.hscroll ? `${kind === "sheets" ? "folha" : "página"} +${data.hscroll}px` : "";
+        scrolls.push(`- ${id} em ${name}: ${[own, ...data.innerScroll].filter(Boolean).join(", ")}`);
+      }
+    }
+  }
+}
+lines.push(...(scrolls.length ? scrolls : ["Nenhuma."]));
 writeFileSync(join(OUT, "medidas.md"), `${lines.join("\n")}\n`);
 console.log(`Medidas em ${OUT}`);

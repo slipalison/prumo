@@ -42,6 +42,54 @@ Folhas (conteúdo ÷ altura da folha; a folha rola por dentro):
 | Checklist (aberta do aviso do plano) | 2,36–2,45 | 2,98 |
 | Novo ativo, Registrar aporte, Lançar provento, Meta de renda, Objetivo, Teto | 1,00 | 1,00–1,18 |
 
+### Depois da etapa 2 (consolidado)
+
+Medido de novo, no modo de demonstração, depois da integração dos quatro
+grupos e dos acertos da frente `layout-fix` (§ 10), com a mesma carteira
+fictícia e o mesmo script (§ 9). Cada célula é **antes → depois**, em telas
+(altura da página ÷ altura da janela; 1,02 é o piso da casca, que nunca é menor
+que a janela).
+
+| Tela | 1440×900 | 1920×1080 | iPad 1366×1024 | iPad 1024×1366 | Celular 390×844 |
+|---|---|---|---|---|---|
+| Aportar (vazio) | 1,03 → 1,02 | 1,02 → 1,01 | 1,02 → 1,02 | 1,02 → 1,01 | 1 → 1 |
+| Aportar (plano calculado) | 2,2 → 1,02 | 1,83 → 1,01 | 2,11 → 1,02 | 1,71 → 1,02 | 4,14 → 2,48 |
+| Carteira | 3,01 → 1,19 | 2,51 → 1,01 | 2,64 → 1,1 | 2,02 → 1,13 | 4,05 → 2,47 |
+| Renda | 2,61 → 1,23 | 2,17 → 1,02 | 2,28 → 1,08 | 1,61 → 1,15 | 3,42 → 2,26 |
+| Desempenho | 1,84 → 1,02 | 1,53 → 1,01 | 1,62 → 1,02 | 1,27 → 1,01 | 2,74 → 1,86 |
+| Análise | 11,16 → 2,76 | 9,3 → 2,25 | 9,9 → 2,5 | 7,85 → 2,27 | 17,25 → 6,4 |
+| Ajustes › Metas | 1,44 → 1,02 | 1,2 → 1,01 | 1,29 → 1,02 | 1,02 → 1,01 | 2,77 → 1,81 |
+| Ajustes › Critérios | 1,03 → 1,02 | 1,02 → 1,01 | 1,02 → 1,02 | 1,02 → 1,01 | 2,13 → 1,63 |
+| Ajustes › Objetivos | 1,03 → 1,02 | 1,02 → 1,01 | 1,02 → 1,02 | 1,02 → 1,01 | 1,36 → 1 |
+| Ajustes › Análise | 4,7 → 1,61 | 3,92 → 1,24 | 4,16 → 1,47 | 3,69 → 1,34 | 8,78 → 4,49 |
+| Ajustes › Importar da B3 | 1,03 → 1,02 | 1,02 → 1,01 | 1,02 → 1,02 | 1,02 → 1,01 | 1,71 → 1,05 |
+| Ajustes › Impostos | 4,3 → 1,93 | 3,58 → 1,41 | 3,82 → 1,71 | 3,1 → 1,77 | 6,38 → 4,41 |
+| Ajustes › Alertas | 2,18 → 1,02 | 1,82 → 1,01 | 1,99 → 1,02 | 1,6 → 1,01 | 3,65 → 2,25 |
+| Ajustes › Proventos automáticos | 1,03 → 1,02 | 1,02 → 1,01 | 1,02 → 1,02 | 1,02 → 1,01 | 1,91 → 1 |
+
+Folhas (conteúdo ÷ altura da folha; 1 cabe sem rolar por dentro):
+
+| Folha | 1440×900 | 1920×1080 | iPad 1366×1024 | iPad 1024×1366 | Celular 390×844 |
+|---|---|---|---|---|---|
+| Folha do ativo (ação) | 1,89 → 1 | 1,82 → 1 | 1,82 → 1 | 1,82 → 1 | 2,31 → 1,71 |
+| Folha do ativo (FII) | 2,4 → 1,17 | 2,31 → 1,13 | 2,31 → 1,13 | 2,31 → 1,14 | 2,89 → 2,04 |
+| Folha novo ativo | 1 → 1 | 1 → 1 | 1 → 1 | 1 → 1 | 1 → 1 |
+| Folha do checklist | 2,45 → 1,17 | 2,36 → 1,13 | 2,36 → 1,13 | 2,36 → 1,14 | 2,98 → 2,13 |
+| Folha registrar aporte | 1 → 1 | 1 → 1 | 1 → 1 | 1 → 1 | 1 → 1 |
+| Folha lançar provento | 1 → 1 | 1 → 1 | 1 → 1 | 1 → 1 | 1,18 → 1,18 |
+| Folha meta de renda | 1 → 1 | 1 → 1 | 1 → 1 | 1 → 1 | 1 → 1 |
+| Folha objetivo | 1 → 1 | 1 → 1 | 1 → 1 | 1 → 1 | 1 → 1 |
+| Folha teto | 1 → 1 | — → 1 | — → 1 | 1 → 1 | 1 → 1 |
+
+Rolagem lateral, medida em todas as telas e folhas, nas cinco larguras e nos
+dois temas (`document.documentElement.scrollWidth > clientWidth`, e o mesmo
+dentro de qualquer bloco que rola): **nenhuma página rola de lado**, e no desktop
+e no iPad (1366 e 1024) nenhum bloco rola de lado por dentro. Sobram só os blocos
+que rolam **de propósito** no celular: a lista de seções de Ajustes (uma linha
+de pílulas) e as tabelas de 13 colunas de Renda (Ano por mês) e Desempenho (Mês
+a mês). Em 768–820 px (iPad mini e Air em pé, fora da lista medida) as tabelas
+de Análise, Renda, Desempenho e Impostos também rolam por dentro, nunca a página.
+
 ### O que a medida mostrou
 
 - **Coluna estreita numa tela larga.** O conteúdo parava em 1100 px e o trilho
@@ -118,7 +166,9 @@ Medido no código (molas convertidas em tempo de assentamento a 2%):
 
 - O trilho estreito devolve 168 px ao conteúdo em 1440 px e cabe no iPad
   deitado; o nome continua visível (11 px) sob cada ícone, e o olho e o tema
-  ficam só com o ícone (o nome acessível não muda).
+  ficam só com o ícone (o nome acessível não muda). O trilho e o item quase não
+  têm recheio (74 px por item): "Desempenho", o nome mais largo, cabe inteiro, sem
+  reticências.
 - Tela que ainda não foi redesenhada fica na coluna de antes (1100 px,
   `--content-legacy`). Tela redesenhada declara `<Page>` e ganha a largura
   larga (`.main:has(.page)`).
@@ -350,6 +400,39 @@ linhas de pílulas, do grupo 4).
 - **Meta:** Carteira ≤ 1,3 (antes 3,0); celular ≤ 2,5 (antes 4,1). Folha do
   ativo ≤ 1,2 no desktop (antes 1,9–2,4).
 
+**Depois (grupo 2, feito).** Medido pelo grupo no modo de demonstração, em
+telas (altura da página ÷ altura da janela; 1,01 é o piso da casca):
+
+| Tela | 1440×900 | 1920×1080 | iPad 1366×1024 | iPad 1024×1366 | Celular 390×844 |
+|---|---|---|---|---|---|
+| Carteira (antes 3,01 / 2,51 / 2,64 / 2,02 / 4,05) | 1,19 | 1,01 | 1,10 | 1,13 | 2,47 |
+| Ajustes › Importar da B3, antes de ler (antes 1,03 / 1,02 / 1,02 / 1,02 / 1,71) | 1,02 | 1,01 | 1,02 | 1,01 | 1,25 |
+
+Folhas (conteúdo ÷ altura da folha; antes entre parênteses):
+
+| Folha | Desktop e iPad deitado (1366–1920) | iPad 1024×1366 | Celular |
+|---|---|---|---|
+| Ativo, ação (1,82–1,89) | 1,00 | 1,00 | 1,71 (antes 2,31) |
+| Ativo, FII (2,31–2,40) | 1,13–1,17 | 1,14 | 2,04 (antes 2,89) |
+| Checklist aberta do plano (2,36–2,45) | 1,13–1,17 | 1,14 | 2,13 (antes 2,98) |
+| Novo ativo | 1,00 | 1,00 | 1,00 |
+
+O que mudou:
+
+- **Carteira:** a faixa de números (patrimônio com o selo ao vivo, lucro total
+  com as três parcelas no ⓘ, "abaixo do ideal" e o resumo da Análise) em três ou
+  duas colunas conforme a largura; um painel por classe com a barra e o prumo no
+  cabeçalho e uma `DataTable` dos ativos; à direita a rosca por classe, os
+  setores e o histórico de aportes recolhido. Quando a grade vira uma coluna, os
+  painéis laterais ficam lado a lado e o setor vira recolher só no celular.
+- **Folha do ativo** em duas colunas (`size="wide"`), dicas em ⓘ e o checklist em
+  linhas compactas; a folha do checklist segue o mesmo desenho. Ação: 1,0 (cabe
+  sem rolar por dentro); FII e checklist: 1,13–1,17 (meta 1,2).
+- **Importar da B3:** passo a passo curto com os limites num recolher, os
+  números da prévia em faixas e a tabela por ativo em `DataTable` com
+  `StatusPill` na situação.
+- Em `components/`: nada foi alterado pelo grupo.
+
 ### 7.4 Renda, Desempenho, Proventos automáticos e Impostos (grupo 3)
 
 **Renda**
@@ -538,9 +621,9 @@ O que mudou, e onde o desenho foi outro:
   seção aberta trazida à vista. Seção sem `<Page>` fica limitada a
   `--content-legacy`.
 - Em `components/` e nos congelados: nada foi alterado. A `DataTable` comum
-  rola de lado (`overflow-x: auto`) e isso corta o ⓘ da primeira linha; as
-  tabelas da Análise, que nunca precisam rolar, usam `overflow: visible` no
-  próprio CSS (`analysis.css`).
+  rolava de lado (`overflow-x: auto`) e isso cortava o ⓘ da primeira linha; o G4
+  contornou com `overflow: visible` no `analysis.css`. O contorno foi desfeito na
+  integração (§ 10): a causa estava na primitiva.
 
 ## 8. Etapa 2: grupos e arquivos
 
@@ -651,6 +734,7 @@ node <repo>/frontend/scripts/measure-layout.mjs <pasta-das-capturas>
 # só algumas larguras:          MEASURE_VIEWPORTS=1440x900,1920x1080
 # sem animação (comparar pixel): MEASURE_REDUCED_MOTION=1
 # outro endereço:                MEASURE_URL=http://localhost:5180
+# tema claro (padrão: escuro):  MEASURE_THEME=light
 ```
 
 Ele abre cada tela e folha em 1440×900, 1920×1080, iPad deitado e em pé e
@@ -658,3 +742,35 @@ celular, espera a rede e as animações, mede a altura, a largura útil e quais
 títulos ficam acima da dobra, tira uma captura de página inteira e escreve
 `medidas.json` e `medidas.md`. As capturas "antes" estão em
 `D:\REPO\prumo-wt\layout-shots\antes\` (fora do repositório).
+
+## 10. Integração (frente layout-fix)
+
+Acertos feitos depois dos quatro grupos, com a causa de cada um:
+
+- **ⓘ cortado pela tabela.** `overflow-x: auto` obriga `overflow-y: auto`, e o
+  balão (`position: absolute`) era cortado na primeira linha de qualquer
+  `DataTable`. Conserto na primitiva, em dois passos: (1) o `Toggletip` abre na
+  **camada de topo** do navegador (atributo `popover="manual"`, posição na janela
+  calculada em `lib/placeBubble.ts` e refeita a cada rolagem), então nenhum
+  `overflow` nem o `backdrop-filter` do vidro o corta, nem na tabela que rola;
+  sem `popover` (navegador velho, jsdom) o balão fica no fluxo como antes;
+  (2) a `DataTable` só rola de lado (`data-scrolls`) quando a tabela de fato
+  não cabe, medida por `ResizeObserver`: a área de toque de 44 px do ⓘ no canto
+  da tabela não cria mais uma rolagem fantasma de 2 px, e o `overflow: visible`
+  local do `analysis.css` saiu (ele deixava a tabela larga e o texto só de leitor
+  de tela alargarem a **página** em 768–820 px).
+- **Impostos.** A tabela de meses tinha 764 px para 641–690 px. O vencimento foi
+  para baixo do DARF e o recheio lateral das células ficou em um passo menor.
+- **Metas no celular (1 px).** A suspeita do `::after` do ⓘ estava certa pela
+  metade: a fileira de três perfis e o ⓘ passava 9 px da largura do cabeçalho, e
+  a área de toque do ⓘ chegava a 1 px além da janela. A fileira encolhe.
+- **Menu lateral (84 px).** "Desempenho" tem 73 px e o item tinha 62 px. O recheio
+  do trilho e do item caiu; na barra de baixo do celular, abaixo de 380 px, letra
+  e recheio cedem.
+- **Consistência.** Eyebrow repetido sai de Metas, Critérios, Objetivos,
+  Importar da B3 e Proventos automáticos (a casca de Ajustes já situa); o botão
+  primário do cabeçalho tem 44 px em toda tela; as pílulas de Ajustes quebram em
+  duas linhas no iPad em pé em vez de esconder as últimas; as tabelas anuais de
+  Renda e Desempenho cabem em 1024 px.
+- **Medida.** O `measure-layout.mjs` passou a apontar rolagem lateral (da página,
+  da folha e de blocos internos) e aceita `MEASURE_THEME=light`.
