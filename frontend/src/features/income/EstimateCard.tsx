@@ -1,5 +1,6 @@
 import { useId } from "react";
 import type { IncomeEstimate } from "../../api/incomeTypes";
+import { AssetIcon } from "../../components/AssetIcon";
 import { CountUp } from "../../components/CountUp";
 import { GlassCard } from "../../components/GlassCard";
 import { formatRelative } from "../../lib/format";
@@ -49,6 +50,7 @@ export function EstimateCard({ estimate }: { estimate: IncomeEstimate }) {
         <ul className="income-list">
           {top.map((asset) => (
             <li key={asset.asset_id} className="income-row">
+              <AssetIcon symbol={asset.symbol} name={asset.display_name} size="sm" />
               <span className="income-row__who">
                 <strong>{asset.symbol ?? asset.display_name}</strong>
                 <span className="muted"> · {money.brl(asset.per_unit_12m)} por cota em 12 meses</span>

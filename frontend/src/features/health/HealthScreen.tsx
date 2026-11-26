@@ -2,6 +2,7 @@ import { motion } from "motion/react";
 import { useEffect, useId, useMemo, useState } from "react";
 import { errorMessage } from "../../api/client";
 import type { Health, HealthRuleResult, HealthWarning, RuleChange, RuleId, RulesRequest } from "../../api/healthTypes";
+import { AssetIcon } from "../../components/AssetIcon";
 import { GlassCard } from "../../components/GlassCard";
 import { IconAlert, IconCheck } from "../../components/icons";
 import { LimitBar } from "../../components/LimitBar";
@@ -10,6 +11,7 @@ import { Plumb } from "../../components/Plumb";
 import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/toastContext";
 import { CLASS_META } from "../../lib/assetClasses";
+import { iconSubjectOfLabel } from "../../lib/assetIcon";
 import { cx } from "../../lib/cx";
 import { useMoney } from "../../lib/privacy";
 import { formatRelative, parseDecimal, plural } from "../../lib/format";
@@ -22,6 +24,7 @@ import {
   STATUS_TEXT,
   thresholdError,
   warningAction,
+  warningAssets,
   warningMembers,
   warningTitle,
 } from "../../lib/healthText";
@@ -119,6 +122,7 @@ function WarningCard({ warning, index }: { warning: HealthWarning; index: number
   const money = useMoney();
   const action = warningAction(warning, money);
   const members = warningMembers(warning);
+  const assets = warningAssets(warning);
   const percent = warning.unit === "percent";
   const title = warningTitle(warning);
 
@@ -133,6 +137,15 @@ function WarningCard({ warning, index }: { warning: HealthWarning; index: number
           <IconAlert className="warning-card__icon" />
           <h2 className="warning-card__title">{title}</h2>
         </header>
+        {assets.length > 0 && (
+          <ul className="warning-card__assets" aria-hidden="true">
+            {assets.map((asset) => (
+              <li key={asset.label}>
+                <AssetIcon size="sm" assetClass={asset.assetClass} {...iconSubjectOfLabel(asset.label)} />
+              </li>
+            ))}
+          </ul>
+        )}
         {members && <p className="field__hint">{members}</p>}
         <dl className="warning-card__numbers">
           <div>

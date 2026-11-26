@@ -1,6 +1,7 @@
 import { useId, useState, type KeyboardEvent } from "react";
 import { useSymbolSearch } from "../../api/queries";
 import type { SymbolSuggestion } from "../../api/types";
+import { AssetIcon } from "../../components/AssetIcon";
 import { IconSearch } from "../../components/icons";
 import { acceptsB3Listing, CLASS_META } from "../../lib/assetClasses";
 import { cx } from "../../lib/cx";
@@ -117,6 +118,13 @@ export function SymbolCombobox({
                 if (event.key === "Enter") choose(suggestion);
               }}
             >
+              <AssetIcon
+                symbol={suggestion.symbol}
+                name={suggestion.display_name}
+                assetClass={suggestion.suggested_class}
+                treasury={suggestion.treasury}
+                size="sm"
+              />
               {/* A chave do título do Tesouro não é um ticker: a pessoa lê o nome. */}
               <span className="combo__symbol">{suggestion.treasury ? suggestion.display_name : suggestion.symbol}</span>
               <span className="combo__name">{suggestion.treasury ? suggestion.exchange : suggestion.display_name}</span>

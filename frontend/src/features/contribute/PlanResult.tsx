@@ -1,6 +1,7 @@
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useState } from "react";
 import type { Asset, AssetClass, Plan, PlanNotice } from "../../api/types";
+import { AssetIcon } from "../../components/AssetIcon";
 import { ClassBar } from "../../components/ClassBar";
 import { CountUp } from "../../components/CountUp";
 import { Donut } from "../../components/Donut";
@@ -184,9 +185,12 @@ export function PlanResult({ plan, assets, onConfirm, ...actions }: PlanResultPr
                 <span className="plan-card__stripe" aria-hidden="true" />
                 <div className="plan-card__head">
                   <span className="plan-card__class">{CLASS_META[item.asset_class].shortLabel}</span>
-                  <strong className={cx("plan-card__symbol", (!item.symbol || item.treasury) && "plan-card__symbol--name")}>
-                    {assetName(item)}
-                  </strong>
+                  <div className="plan-card__title">
+                    <AssetIcon symbol={item.symbol} name={item.display_name} assetClass={item.asset_class} treasury={item.treasury} />
+                    <strong className={cx("plan-card__symbol", (!item.symbol || item.treasury) && "plan-card__symbol--name")}>
+                      {assetName(item)}
+                    </strong>
+                  </div>
                   {item.symbol && !item.treasury && <span className="plan-card__name">{item.display_name}</span>}
                 </div>
                 <div className="plan-card__foot">

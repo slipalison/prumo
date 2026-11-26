@@ -3,6 +3,7 @@ import { useState } from "react";
 import { errorMessage } from "../../api/client";
 import { useRefreshQuotes } from "../../api/queries";
 import type { Asset, AssetClass, ClassSummary, Portfolio } from "../../api/types";
+import { AssetIcon } from "../../components/AssetIcon";
 import { ClassBar } from "../../components/ClassBar";
 import { CountUp } from "../../components/CountUp";
 import { Donut } from "../../components/Donut";
@@ -275,17 +276,25 @@ function AssetRow({ asset, classAssets, onClick }: { asset: Asset; classAssets: 
   return (
     <button type="button" className={cx("asset-row", notOwned && "asset-row--wish")} onClick={onClick}>
       <span className="asset-row__id">
-        <span className="asset-row__symbol">
-          {assetName(asset)}
-          {b3Tag && (
-            <span className="asset-row__tag" title="Negociado na B3">
-              B3
-            </span>
-          )}
+        <AssetIcon
+          symbol={asset.symbol}
+          name={asset.display_name}
+          assetClass={asset.asset_class}
+          treasury={asset.treasury}
+        />
+        <span className="asset-row__text">
+          <span className="asset-row__symbol">
+            {assetName(asset)}
+            {b3Tag && (
+              <span className="asset-row__tag" title="Negociado na B3">
+                B3
+              </span>
+            )}
+          </span>
+          <span className="asset-row__name">
+            {asset.treasury ? "Tesouro Direto" : asset.symbol ? asset.display_name : quantityLine}
+          </span>
         </span>
-        <span className="asset-row__name">
-        {asset.treasury ? "Tesouro Direto" : asset.symbol ? asset.display_name : quantityLine}
-      </span>
       </span>
       <span className="asset-row__qty">{asset.symbol ? quantityLine : ""}</span>
       <span className="asset-row__value">

@@ -1,0 +1,110 @@
+/*
+ * Ícone do ativo (components/AssetIcon.tsx): círculo na cor da classe com as
+ * iniciais do ticker, um desenho próprio (Tesouro, cripto) ou, por cima, o logo
+ * quando o servidor o tem. A tinta (--icon-ink) é escura sobre as cores claras
+ * do tema escuro e branca sobre as cores escuras do tema claro: 4,5:1 ou mais
+ * nas oito cores nos dois temas (teste em lib/assetIcon.test.ts).
+ */
+:root {
+  --icon-ink: #0b1020;
+}
+
+[data-theme="light"] {
+  --icon-ink: #ffffff;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --icon-ink: #ffffff;
+  }
+}
+
+.asset-icon {
+  --icon-size: 36px;
+  position: relative;
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--icon-size);
+  height: var(--icon-size);
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: var(--icon-bg, var(--text-muted));
+  color: var(--icon-ink);
+  font-family: var(--font-display);
+  font-size: calc(var(--icon-size) * 0.36);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  user-select: none;
+}
+
+.asset-icon--sm {
+  --icon-size: 24px;
+}
+
+.asset-icon--lg {
+  --icon-size: 44px;
+}
+
+.asset-icon__glyph {
+  width: 62%;
+  height: 62%;
+}
+
+/* O logo cobre o círculo, mas só aparece depois de carregado: sem piscar. */
+.asset-icon__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: var(--surface-strong);
+  opacity: 0;
+}
+
+.asset-icon__img[data-loaded] {
+  opacity: 1;
+}
+
+/* --- Onde o ícone entra nas listas de ativos --- */
+
+.asset-row__id {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+
+.asset-row__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.combo__option {
+  grid-template-columns: auto auto 1fr auto;
+}
+
+.plan-card__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.contribution-form__id {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.contribution-form__text {
+  display: flex;
+  flex-direction: column;
+}
+
+.warning-card__assets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

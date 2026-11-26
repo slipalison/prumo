@@ -1,3 +1,4 @@
+import type { AssetClass } from "../api/types";
 import type { GapPayer, HealthWarning, RuleId, RuleStatus, RuleUnit } from "../api/healthTypes";
 import { CLASS_META } from "./assetClasses";
 import { formatPercent, plural } from "./format";
@@ -129,6 +130,25 @@ export function warningMembers(warning: HealthWarning): string | null {
   if (subject.kind === "top_assets") return subject.labels.join(", ");
   if (subject.kind === "income_months") return `Meses sem provento: ${subject.empty_months.map(monthLabel).join(", ")}`;
   return null;
+}
+
+/**
+ * Os ativos que o aviso cita, para o card mostrar o ícone de cada um (só
+ * enfeite: os nomes já estão no texto). Setor e classe não citam ativo.
+ */
+export function warningAssets(warning: HealthWarning): Array<{ label: string; assetClass: AssetClass | null }> {
+  const { subject } = warning;
+  switch (subject.kind) {
+    case "asset":
+    case "payer":
+      return [{ label: subject.label, assetClass: null }];
+    case "top_assets":
+      return subject.labels.map((label) => ({ label, assetClass: null }));
+    case "income_months":
+      return subject.payers.map((payer) => ({ label: payer.label, assetClass: payer.asset_class }));
+    default:
+      return [];
+  }
 }
 
 export type WarningAction = { text: string; link?: { href: string; label: string } };

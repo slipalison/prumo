@@ -1,5 +1,7 @@
 import type { IncomePayer } from "../../api/incomeTypes";
+import { AssetIcon } from "../../components/AssetIcon";
 import { Donut } from "../../components/Donut";
+import { iconSubjectOfLabel } from "../../lib/assetIcon";
 import { formatPercent } from "../../lib/format";
 import { payerSlices } from "../../lib/income";
 import { useMoney } from "../../lib/privacy";
@@ -25,6 +27,7 @@ export function PayerBreakdown({ payers, total }: { payers: IncomePayer[]; total
           <li key={slice.key} className="payers__item">
             <span className="payers__name">
               <span className="dot" style={{ background: slice.color }} aria-hidden="true" />
+              {slice.key !== "others" && <AssetIcon size="sm" {...iconSubjectOfLabel(slice.label)} />}
               {slice.label}
             </span>
             <span className="payers__numbers">

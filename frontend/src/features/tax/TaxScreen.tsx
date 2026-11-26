@@ -15,6 +15,7 @@ import type {
   TaxMonth,
   TaxMonths,
 } from "../../api/taxTypes";
+import { AssetIcon } from "../../components/AssetIcon";
 import { GlassCard } from "../../components/GlassCard";
 import { IconAlert } from "../../components/icons";
 import { LimitBar } from "../../components/LimitBar";
@@ -525,6 +526,7 @@ function AssetRow({ asset }: { asset: IrpfAsset }) {
   return (
     <li className="tax-irpf__item">
       <div className="tax-irpf__head">
+        <AssetIcon symbol={asset.symbol} assetClass={asset.instrument === "crypto" ? "crypto" : null} size="sm" />
         <strong>{asset.symbol}</strong>
         <span className="field__hint">
           Grupo {asset.group} · Código {asset.code} · {irpfLabel(asset.group, asset.code, asset.label)}

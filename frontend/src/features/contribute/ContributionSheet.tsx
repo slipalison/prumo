@@ -2,6 +2,7 @@ import { useId, useRef, useState } from "react";
 import { errorMessage } from "../../api/client";
 import { useContribute } from "../../api/queries";
 import type { Contribution, Plan, PlanItem } from "../../api/types";
+import { AssetIcon } from "../../components/AssetIcon";
 import { MagneticButton } from "../../components/MagneticButton";
 import { MoneyInput } from "../../components/MoneyInput";
 import { QuantityInput } from "../../components/QuantityInput";
@@ -81,8 +82,11 @@ function ContributionForm({ plan, cashUsed, onRegistered }: { plan: Plan; cashUs
           return (
             <li key={item.asset_id} className="contribution-form__row">
               <div className="contribution-form__id">
-                <strong>{assetName(item)}</strong>
-                <span className="field__hint">{money.brl(valueOf(item))}</span>
+                <AssetIcon symbol={item.symbol} name={item.display_name} assetClass={item.asset_class} treasury={item.treasury} />
+                <span className="contribution-form__text">
+                  <strong>{assetName(item)}</strong>
+                  <span className="field__hint">{money.brl(valueOf(item))}</span>
+                </span>
               </div>
               {unit === "value" ? (
                 <MoneyInput id={id} label="Valor aplicado" value={quantities[item.asset_id] ?? 0} onChange={set} />

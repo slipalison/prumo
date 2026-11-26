@@ -3,6 +3,7 @@ import { useState } from "react";
 import { errorMessage } from "../../api/client";
 import { useDeleteIncome } from "../../api/incomeQueries";
 import type { IncomeEvent } from "../../api/incomeTypes";
+import { AssetIcon } from "../../components/AssetIcon";
 import { IconTrash } from "../../components/icons";
 import { useToast } from "../../components/toastContext";
 import { cx } from "../../lib/cx";
@@ -28,6 +29,7 @@ export function UpcomingList({ events }: { events: IncomeEvent[] }) {
           transition={{ delay: Math.min(index, 8) * 0.04 }}
         >
           <span className="income-row__date">{formatIsoDay(event.pay_date)}</span>
+          <AssetIcon symbol={event.symbol} name={event.display_name} size="sm" />
           <span className="income-row__who">
             <strong>{payer(event)}</strong>
             <span className="muted"> · {KIND_LABEL[event.kind]}</span>
@@ -66,6 +68,7 @@ export function EventList({ events }: { events: IncomeEvent[] }) {
         return (
           <li key={event.id} className="income-row income-row--event">
             <span className="income-row__date">{formatIsoDate(event.pay_date)}</span>
+            <AssetIcon symbol={event.symbol} name={event.display_name} size="sm" />
             <span className="income-row__who">
               <strong>{payer(event)}</strong>
               <span className="muted">
