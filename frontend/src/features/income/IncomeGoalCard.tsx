@@ -4,8 +4,8 @@ import { errorMessage } from "../../api/client";
 import { useDeleteIncomeGoal, useSaveIncomeGoal } from "../../api/incomeQueries";
 import type { IncomeGoal } from "../../api/incomeTypes";
 import { CountUp } from "../../components/CountUp";
-import { GlassCard } from "../../components/GlassCard";
 import { IconEdit, IconTarget } from "../../components/icons";
+import { Panel } from "../../components/Layout";
 import { MagneticButton } from "../../components/MagneticButton";
 import { MoneyInput } from "../../components/MoneyInput";
 import { Sheet } from "../../components/Sheet";
@@ -28,7 +28,6 @@ type IncomeGoalCardProps = {
  * (média mensal); sem nada recebido ainda, usa a estimativa e diz isso.
  */
 export function IncomeGoalCard({ goal, monthlyAverage, estimatedMonthly }: IncomeGoalCardProps) {
-  const titleId = useId();
   const money = useMoney();
   const [editing, setEditing] = useState(false);
   const basis = goal?.basis ?? (monthlyAverage > 0 ? "received" : "estimate");
@@ -37,27 +36,27 @@ export function IncomeGoalCard({ goal, monthlyAverage, estimatedMonthly }: Incom
   const shown = Math.min(Math.max(percent, 0), 100);
 
   return (
-    <GlassCard as="section" className="income-goal" aria-labelledby={titleId}>
-      <header className="income-goal__head">
-        <div>
-          <p className="eyebrow" id={titleId}>
-            Meta de renda mensal
-          </p>
-          <p className="income-goal__now">
-            <CountUp value={current} className="income-goal__value" />
-            <span className="income-goal__per"> por mês</span>
-          </p>
-          <p className="field__hint">
-            {basis === "received"
-              ? "Média do que você recebeu nos últimos 12 meses."
-              : "Estimativa pelo que cada cota pagou nos últimos 12 meses. Ainda não há proventos recebidos lançados."}
-          </p>
-        </div>
+    <Panel
+      className="income-goal"
+      title="Meta de renda mensal"
+      info={
+        basis === "received"
+          ? "Média do que você recebeu nos últimos 12 meses."
+          : "Estimativa pelo que cada cota pagou nos últimos 12 meses. Ainda não há proventos recebidos lançados."
+      }
+      infoLabel="Como a renda da meta é medida"
+      actions={
         <MagneticButton variant="ghost" magnetic={false} onClick={() => setEditing(true)}>
           {goal ? <IconEdit /> : <IconTarget />}
           {goal ? "Editar meta" : "Definir meta"}
         </MagneticButton>
-      </header>
+      }
+    >
+      <p className="income-goal__now">
+        <CountUp value={current} className="income-goal__value" />
+        <span className="income-goal__per"> por mês</span>
+        {basis === "estimate" && <span className="income-tag"> estimativa</span>}
+      </p>
 
       {goal ? (
         <>
@@ -79,7 +78,6 @@ export function IncomeGoalCard({ goal, monthlyAverage, estimatedMonthly }: Incom
           </div>
           <p className="income-goal__legend">
             <strong>{formatPercent(percent, 0)}</strong> de {money.brl(goal.target)} por mês
-            {basis === "estimate" && <span className="income-tag"> estimativa</span>}
           </p>
           {goal.achieved_at && (
             <p className="income-goal__done" role="status">
@@ -88,13 +86,11 @@ export function IncomeGoalCard({ goal, monthlyAverage, estimatedMonthly }: Incom
           )}
         </>
       ) : (
-        <p className="field__hint">
-          Quanto você quer receber de proventos por mês? Defina e acompanhe a barra encher a cada pagamento.
-        </p>
+        <p className="field__hint">Defina quanto quer receber por mês e acompanhe a barra encher a cada pagamento.</p>
       )}
 
       <GoalSheet open={editing} goal={goal} onClose={() => setEditing(false)} />
-    </GlassCard>
+    </Panel>
   );
 }
 

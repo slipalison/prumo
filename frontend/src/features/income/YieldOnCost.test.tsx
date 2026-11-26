@@ -40,24 +40,36 @@ describe("Renda: yield on cost", () => {
     expect(mxrf).toHaveTextContent("yield on cost informe o preço médio");
   });
 
+  /** O número do yield da carteira: um dos quatro do topo, com a explicação no ⓘ. */
+  async function yieldStat(label: string) {
+    const stats = await screen.findByRole("region", { name: "Resumo dos últimos 12 meses" });
+    const stat = within(stats).getByText(label, { selector: "dt" }).closest("div") as HTMLElement;
+    return { stats, stat };
+  }
+
   it("mostra o yield da carteira e diz quem ficou de fora", async () => {
     openSummary();
-    renderApp("renda");
-    const card = await screen.findByRole("region", { name: "Yield on cost" });
-    expect(card).toHaveTextContent(/\d,\d%/);
-    expect(card).toHaveTextContent("recebida");
-    expect(card).toHaveTextContent("Parcial: fica de fora o que está sem preço médio (MXRF11)");
+    const { user } = renderApp("renda");
+    // Com custo desconhecido, o próprio nome do número diz que é parcial.
+    const { stat } = await yieldStat("Yield on cost (parcial)");
+    expect(stat).toHaveTextContent(/\d,\d%/);
+    await user.click(within(stat).getByRole("button", { name: "Sobre Yield on cost (parcial)" }));
+    const tip = within(stat).getByRole("status");
+    expect(tip).toHaveTextContent("recebida");
+    expect(tip).toHaveTextContent("Parcial: fica de fora o que está sem preço médio (MXRF11)");
   });
 
   it("sem recebido, o yield vem da estimativa e a tela avisa", async () => {
     const summary = sampleSummary();
     summary.yield_on_cost = { ...summary.yield_on_cost, basis: "estimate", percent: 9, partial: false, unknown_cost: [] };
     server.use(http.get("/api/v1/income/summary", () => HttpResponse.json(summary)));
-    renderApp("renda");
-    const card = await screen.findByRole("region", { name: "Yield on cost" });
-    expect(card).toHaveTextContent("9,0% (estimado)");
-    expect(card).toHaveTextContent("estimada, não é extrato");
-    expect(card).not.toHaveTextContent("Parcial");
+    const { user } = renderApp("renda");
+    const { stat } = await yieldStat("Yield on cost");
+    expect(stat).toHaveTextContent("9,0% (estimado)");
+    await user.click(within(stat).getByRole("button", { name: "Sobre Yield on cost" }));
+    const tip = within(stat).getByRole("status");
+    expect(tip).toHaveTextContent("estimada, não é extrato");
+    expect(tip).not.toHaveTextContent("Parcial");
   });
 
   it("carteira sem custo conhecido diz o motivo no lugar do número", async () => {
@@ -65,18 +77,19 @@ describe("Renda: yield on cost", () => {
     summary.yield_on_cost = { ...summary.yield_on_cost, percent: null, gap: "unknown_cost", message: "informe o preco medio", partial: true, unknown_cost: ["KNRI11"] };
     server.use(http.get("/api/v1/income/summary", () => HttpResponse.json(summary)));
     renderApp("renda");
-    const card = await screen.findByRole("region", { name: "Yield on cost" });
-    expect(card).toHaveTextContent("informe o preço médio");
+    const { stat } = await yieldStat("Yield on cost (parcial)");
+    expect(stat).toHaveTextContent("informe o preço médio");
   });
 
   it("com o olho fechado, o percentual fica e o dinheiro some", async () => {
     window.localStorage.setItem(HIDE_VALUES_KEY, "1");
     openSummary();
-    renderApp("renda");
-    const card = await screen.findByRole("region", { name: "Yield on cost" });
-    expect(card).toHaveTextContent(/\d,\d%/);
-    expect(card).toHaveTextContent(MASK_BRL);
-    expect(card.textContent ?? "").not.toMatch(/R\$\s*\d/);
+    const { user } = renderApp("renda");
+    const { stats, stat } = await yieldStat("Yield on cost (parcial)");
+    expect(stat).toHaveTextContent(/\d,\d%/);
+    await user.click(within(stat).getByRole("button", { name: "Sobre Yield on cost (parcial)" }));
+    expect(within(stat).getByRole("status")).toHaveTextContent(MASK_BRL);
+    expect(stats.textContent ?? "").not.toMatch(/R\$\s*\d/);
     const payers = await screen.findByRole("region", { name: "Quem pagou" });
     expect(within(payers).getAllByText(/yield on cost/).length).toBeGreaterThan(0);
     expect(payers.textContent ?? "").not.toMatch(/R\$\s*\d/);

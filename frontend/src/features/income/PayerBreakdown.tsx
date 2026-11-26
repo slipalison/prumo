@@ -14,8 +14,8 @@ export function PayerBreakdown({ payers, total }: { payers: IncomePayer[]; total
   return (
     <div className="payers">
       <Donut
-        size={170}
-        thickness={16}
+        size={124}
+        thickness={12}
         label={`Renda dos últimos 12 meses por pagador: ${slices.map((s) => `${s.label} ${formatPercent(s.percent)}`).join(", ")}`}
         segments={slices.map((s) => ({ key: s.key, value: s.total, color: s.color, label: s.label }))}
       >

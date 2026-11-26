@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import type { IncomeEvent, IncomeSummary } from "../../api/incomeTypes";
@@ -24,6 +25,19 @@ async function openIncome() {
   const rendered = renderApp("renda");
   await screen.findByRole("heading", { name: "Quanto sua carteira paga?" });
   return rendered;
+}
+
+/** Abre o ⓘ de nome `name` (a explicação só entra na tela quando a pessoa pede). */
+async function openTip(user: ReturnType<typeof userEvent.setup>, root: HTMLElement, name: string) {
+  await user.click(within(root).getByRole("button", { name }));
+  return within(root).getByRole("status");
+}
+
+/** Abre a lista de proventos lançados, que fica recolhida. */
+async function openLedger(user: ReturnType<typeof userEvent.setup>) {
+  const ledger = await screen.findByRole("region", { name: "Proventos lançados" });
+  await user.click(within(ledger).getByText("Proventos lançados"));
+  return ledger;
 }
 
 const requestsTo = (method: string, path: string) =>
@@ -56,9 +70,11 @@ describe("Renda: sem proventos", () => {
     const summary = emptySummary();
     summary.estimate = { monthly: 410.5, updated_at: "2026-11-25T11:00:00Z", assets: [], missing: [] };
     useSummary(summary);
-    await openIncome();
+    const { user } = await openIncome();
     const goal = await screen.findByRole("region", { name: "Meta de renda mensal" });
-    expect(within(goal).getByText(/Estimativa pelo que cada cota pagou/)).toBeInTheDocument();
+    // O número estimado diz "estimativa" na tela; a explicação abre no ⓘ.
+    expect(within(goal).getByText("estimativa")).toBeInTheDocument();
+    expect(await openTip(user, goal, "Como a renda da meta é medida")).toHaveTextContent(/Estimativa pelo que cada cota pagou/);
     expect(within(goal).getByText(/R\$\s410,50/)).toBeInTheDocument();
   });
 
@@ -90,7 +106,7 @@ describe("Renda: com proventos", () => {
     const summary = sampleSummary();
     useSummary(summary);
     useEvents([sampleEvent(), sampleEvent({ id: "e-2", symbol: "ITSA4", kind: "jcp", gross: 100, withholding: 15, net: 85, pay_date: "2026-10-30" })]);
-    await openIncome();
+    const { user } = await openIncome();
 
     // Barra de progresso contra a meta, com texto para o leitor de tela.
     const bar = await screen.findByRole("progressbar", { name: "Progresso da meta de renda mensal" });
@@ -124,7 +140,7 @@ describe("Renda: com proventos", () => {
     // Estimativa, rotulada.
     const estimate = screen.getByRole("region", { name: "Estimativa da carteira de hoje" });
     expect(within(estimate).getByText("estimativa")).toBeInTheDocument();
-    expect(within(estimate).getByText(/Não é extrato/)).toBeInTheDocument();
+    expect(await openTip(user, estimate, "Como a estimativa é feita")).toHaveTextContent(/Não é extrato/);
     expect(within(estimate).getByText(/ZZZZ3/)).toBeInTheDocument();
     expect(within(estimate).getByText("~R$ 10,50/mês")).toBeInTheDocument();
 
@@ -140,9 +156,8 @@ describe("Renda: com proventos", () => {
     expect(within(payers as HTMLElement).getByText(/60,0%/)).toBeInTheDocument();
     expect(within(payers as HTMLElement).getByRole("img", { name: /por pagador: KNRI11 60,0%/ })).toBeInTheDocument();
 
-    // Lançados.
-    const ledger = await screen.findByRole("heading", { name: "Proventos lançados" });
-    const list = ledger.closest("section") as HTMLElement;
+    // Lançados (recolhidos, com a contagem).
+    const list = await openLedger(user);
     expect(await within(list).findByText("14/11/2026")).toBeInTheDocument();
     expect(within(list).getByText(/IR R\$\s15,00/)).toBeInTheDocument();
     expect(within(list).getAllByText("Recebido")).toHaveLength(2);
@@ -164,10 +179,11 @@ describe("Renda: com proventos", () => {
     summary.monthly_average = 0;
     summary.goal = { id: "g", target: 500, achieved_at: null, current_monthly: 410.5, basis: "estimate", percent: 82.1, reached: false };
     useSummary(summary);
-    await openIncome();
+    const { user } = await openIncome();
     const bar = await screen.findByRole("progressbar");
     expect(bar.getAttribute("aria-valuetext")).toMatch(/pela estimativa/);
-    expect(screen.getByText(/Ainda não há proventos recebidos lançados/)).toBeInTheDocument();
+    const goal = screen.getByRole("region", { name: "Meta de renda mensal" });
+    expect(await openTip(user, goal, "Como a renda da meta é medida")).toHaveTextContent(/Ainda não há proventos recebidos lançados/);
   });
 
   it("junta o que passa de seis pagadores em Outros", async () => {
@@ -379,8 +395,8 @@ describe("Renda: apagar provento", () => {
 
   it("a lista de lançados mostra o que ainda vai cair como a receber", async () => {
     useEvents([sampleEvent({ status: "upcoming", pay_date: "2026-12-10", symbol: null, display_name: "CDB Banco X" })]);
-    await openIncome();
-    const ledger = (await screen.findByRole("heading", { name: "Proventos lançados" })).closest("section") as HTMLElement;
+    const { user } = await openIncome();
+    const ledger = await openLedger(user);
     expect(await within(ledger).findByText("CDB Banco X")).toBeInTheDocument();
     expect(within(ledger).getByText("A receber")).toBeInTheDocument();
   });

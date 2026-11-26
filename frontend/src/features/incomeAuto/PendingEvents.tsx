@@ -1,5 +1,5 @@
 import type { PendingStockEvent } from "../../api/incomeAutoTypes";
-import { GlassCard } from "../../components/GlassCard";
+import { Panel } from "../../components/Layout";
 import { useMoney } from "../../lib/privacy";
 import { pendingSentence } from "./text";
 import { useIncomeAuto } from "./useIncomeAuto";
@@ -26,17 +26,14 @@ export function PendingEventList({ events }: { events: PendingStockEvent[] }) {
   );
 }
 
-/** O cartão da tela Renda: só aparece com os automáticos ligados e alguma pendência. */
+/** O painel da tela Renda: só aparece com os automáticos ligados e alguma pendência. */
 export function PendingEventsCard() {
   const auto = useIncomeAuto();
   const events = auto.data?.enabled ? auto.data.pending_events : [];
   if (events.length === 0) return null;
   return (
-    <GlassCard as="section" className="income-card" aria-labelledby="income-pending-events">
-      <h2 id="income-pending-events" className="section-title">
-        Eventos anunciados pela B3
-      </h2>
+    <Panel title="Eventos anunciados pela B3">
       <PendingEventList events={events} />
-    </GlassCard>
+    </Panel>
   );
 }

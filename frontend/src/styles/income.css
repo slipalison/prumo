@@ -1,44 +1,57 @@
 /* ================= Renda ================= */
+/* Desenho em docs/layout.md, seção 7.4. Só tokens de espaço e de movimento. */
 
-.income__actions {
+/* --- Topo: a meta e os números lado a lado --- */
+
+.income-top__stats {
   display: flex;
-  justify-content: flex-start;
+  min-width: 0;
 }
 
-.income-card {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 18px;
+.income-top__stats .stat-strip {
+  flex: 1;
+  grid-auto-rows: 1fr;
 }
 
-/* --- Meta --- */
-
-.income-goal,
-.income-estimate {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 20px;
+/* Com espaço, os quatro números em 2x2 acompanham a altura do painel da meta. */
+@container page (min-width: 1000px) {
+  .income-top__stats .stat-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
-.income-goal__head,
-.income-estimate__head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
+.income-top__stats .stat {
+  justify-content: center;
+}
+
+/* --- Meta e estimativa --- */
+
+/* O botão do cabeçalho do painel: mais baixo que o padrão, 44 px no toque. */
+.income-goal .btn {
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-md);
+}
+
+@media (pointer: coarse) {
+  .income-goal .btn {
+    min-height: var(--touch);
+  }
 }
 
 .income-goal__now {
-  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-1);
+  margin: 0;
   color: var(--text-muted);
 }
 
 .income-goal__value {
   color: var(--gold-text);
   font-family: var(--font-display);
-  font-size: clamp(1.9rem, 6vw, 2.6rem);
+  font-size: clamp(1.6rem, 4vw, 2rem);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -47,8 +60,15 @@
   color: var(--text-muted);
 }
 
+.income-goal__now .income-tag {
+  align-self: center;
+  margin-left: var(--space-2);
+}
+
 .income-goal__legend {
+  margin: 0;
   color: var(--text-muted);
+  font-size: var(--text-md);
 }
 
 .income-goal__legend strong {
@@ -57,13 +77,14 @@
 }
 
 .income-goal__done {
+  margin: 0;
   color: var(--success);
   font-weight: 600;
 }
 
 .income-progress {
   position: relative;
-  height: 14px;
+  height: 10px;
   overflow: hidden;
   border: 1px solid var(--border-strong);
   border-radius: var(--r-pill);
@@ -74,7 +95,7 @@
   height: 100%;
   border-radius: var(--r-pill);
   background: linear-gradient(90deg, var(--gold-2), var(--gold));
-  box-shadow: 0 0 18px var(--gold-glow);
+  box-shadow: 0 0 14px var(--gold-glow);
 }
 
 /* A estimativa se lê diferente do recebido: listrada, não cheia. */
@@ -88,42 +109,16 @@
   align-self: flex-start;
 }
 
-/* --- Números do topo --- */
-
-.income-stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.income-stat {
+/* Uma coluna de painéis: o último cresce para as duas colunas terminarem juntas. */
+.income-side {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 14px 16px;
+  gap: var(--gap-grid);
+  min-width: 0;
 }
 
-.income-stat__label {
-  color: var(--text-muted);
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-
-.income-stat__value {
-  font-family: var(--font-display);
-  font-size: clamp(1rem, 3.4vw, 1.35rem);
-  font-variant-numeric: tabular-nums;
-}
-
-@media (max-width: 520px) {
-  .income-stats {
-    grid-template-columns: 1fr;
-  }
-
-  .income-goal__head,
-  .income-estimate__head {
-    flex-direction: column;
-  }
+.income-side > :last-child {
+  flex: 1;
 }
 
 /* --- Barras mensais --- */
@@ -131,11 +126,16 @@
 .income-bars {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-2);
   margin: 0;
 }
 
+.income-bars__plot {
+  min-width: 0;
+}
+
 .income-bars__svg {
+  display: block;
   width: 100%;
   height: auto;
   overflow: visible;
@@ -152,6 +152,11 @@
   font-variant-numeric: tabular-nums;
 }
 
+.income-bars__received,
+.income-bars__upcoming {
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
 .income-bars__received {
   fill: var(--gold-text);
 }
@@ -160,6 +165,17 @@
   stroke: var(--gold-text);
   stroke-width: 1.2;
   stroke-dasharray: 3 2;
+}
+
+/* O ponteiro acende o mês e apaga um pouco os outros. */
+.income-bars__svg:hover .income-bars__received,
+.income-bars__svg:hover .income-bars__upcoming {
+  opacity: 0.55;
+}
+
+.income-bars__svg g:hover > .income-bars__received,
+.income-bars__svg g:hover > .income-bars__upcoming {
+  opacity: 1;
 }
 
 .income-bars__hatch-bg {
@@ -186,15 +202,18 @@
 .income-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 18px;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
   color: var(--text-muted);
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
 }
 
 .income-legend li {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .income-legend__swatch {
@@ -224,22 +243,27 @@
 .income-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .income-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  border-radius: var(--r-md);
+  gap: var(--space-3);
+  min-height: var(--row-height);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--r-sm);
   background: var(--surface-sunken);
+  font-size: var(--text-md);
 }
 
 .income-row__date {
   min-width: 5.5ch;
   color: var(--text-muted);
-  font-size: 0.88rem;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -247,6 +271,16 @@
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* O detalhe de uma linha (a conta por cota): na linha de baixo, menor. */
+.income-row__who--stacked {
+  line-height: 1.25;
+}
+
+.income-row__who--stacked > .muted {
+  display: block;
+  font-size: var(--text-xs);
 }
 
 .income-row__value {
@@ -258,39 +292,52 @@
 
 .income-row__confirm {
   display: inline-flex;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .income-row--event {
   flex-wrap: wrap;
 }
 
-/* --- Ano × mês --- */
+/* Os proventos lançados: a lista, dentro do recolher. */
+.income-ledger {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) 0 var(--space-1);
+}
+
+/* --- Ano x mês --- */
 
 .income-table-wrap {
   overflow-x: auto;
-  border-radius: var(--r-md);
+  border-radius: var(--r-sm);
 }
-
 
 .income-table {
   width: 100%;
-  min-width: 860px;
+  min-width: 760px;
   border-collapse: collapse;
-  font-size: 0.82rem;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
 
 .income-table th,
 .income-table td {
-  padding: 8px 6px;
+  padding: var(--space-2) var(--space-1);
   border-bottom: 1px solid var(--border);
   text-align: right;
   white-space: nowrap;
 }
 
+.income-table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
 .income-table thead th {
-  color: var(--text-muted);
+  padding-top: 0;
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
   font-weight: 600;
   text-transform: capitalize;
 }
@@ -299,6 +346,14 @@
   color: var(--text);
   font-family: var(--font-display);
   text-align: left;
+}
+
+.income-table tbody tr {
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.income-table tbody tr:hover {
+  background: var(--surface-hover);
 }
 
 .income-table td.is-empty {
@@ -316,39 +371,64 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 18px;
+  gap: var(--space-4);
 }
 
 .payers__list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
+  align-content: center;
+  gap: var(--space-1) var(--space-2);
+  flex: 1;
   width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .payers__item {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 8px 12px;
+  gap: 0 var(--space-3);
+  min-height: var(--row-height);
+  padding: var(--space-1) var(--space-3);
   border-radius: var(--r-sm);
   background: var(--surface-sunken);
+  font-size: var(--text-md);
 }
 
 .payers__name {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
   font-weight: 600;
 }
 
 .payers__numbers {
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 
-@media (min-width: 720px) {
+.payers__yield {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.payers__yield strong {
+  color: var(--text);
+}
+
+/* Estreito (celular): a rosca sai, a lista já diz o nome, o valor e a parte de cada um. */
+@container (max-width: 420px) {
+  .payers > .donut {
+    display: none;
+  }
+}
+
+/* O painel é o contêiner: a rosca ao lado da lista quando cabe. */
+@container (min-width: 520px) {
   .payers {
     flex-direction: row;
     align-items: center;
@@ -360,8 +440,8 @@
 .income-preview {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 18px;
-  padding: 12px 14px;
+  gap: var(--space-1) var(--space-4);
+  padding: var(--space-3);
   border-radius: var(--r-md);
   background: var(--surface-sunken);
   color: var(--text-muted);
@@ -370,24 +450,5 @@
 .income-preview strong {
   color: var(--text);
   font-family: var(--font-display);
-  font-variant-numeric: tabular-nums;
-}
-
-/* --- Yield on cost --- */
-
-.payers__yield {
-  color: var(--text-muted);
-  font-size: 0.85rem;
-}
-
-.payers__yield strong {
-  color: var(--text);
-}
-
-.income-yield__value {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: clamp(1.3rem, 4.4vw, 1.8rem);
-  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }

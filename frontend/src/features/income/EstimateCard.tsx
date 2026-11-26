@@ -1,8 +1,7 @@
-import { useId } from "react";
 import type { IncomeEstimate } from "../../api/incomeTypes";
 import { AssetIcon } from "../../components/AssetIcon";
 import { CountUp } from "../../components/CountUp";
-import { GlassCard } from "../../components/GlassCard";
+import { Panel } from "../../components/Layout";
 import { formatRelative } from "../../lib/format";
 import { useMoney } from "../../lib/privacy";
 
@@ -15,7 +14,6 @@ const SHOWN = 5;
  * lançou (ou importou) sempre vale mais.
  */
 export function EstimateCard({ estimate }: { estimate: IncomeEstimate }) {
-  const titleId = useId();
   const money = useMoney();
   const top = estimate.assets.filter((a) => a.monthly > 0).slice(0, SHOWN);
   const rest = estimate.assets.filter((a) => a.monthly > 0).length - top.length;
@@ -24,36 +22,35 @@ export function EstimateCard({ estimate }: { estimate: IncomeEstimate }) {
   const unavailable = estimate.assets.length === 0 && estimate.missing.length > 0;
 
   return (
-    <GlassCard as="section" className="income-estimate" aria-labelledby={titleId}>
-      <header className="income-estimate__head">
-        <div>
-          <p className="eyebrow" id={titleId}>
-            Estimativa da carteira de hoje
-          </p>
-          {unavailable ? (
-            <p className="income-goal__now">Estimativa indisponível por enquanto.</p>
-          ) : (
-            <p className="income-goal__now">
-              <span aria-hidden="true">~</span>
-              <CountUp value={estimate.monthly} className="income-goal__value" />
-              <span className="income-goal__per"> por mês</span>
-            </p>
-          )}
-        </div>
-        <span className="income-tag">estimativa</span>
-      </header>
-      <p className="field__hint">
-        Pelo que cada cota pagou nos últimos 12 meses (valor bruto, data ex; o JCP vem junto com o dividendo). Não é extrato:
-        {estimate.updated_at ? ` histórico de ${formatRelative(estimate.updated_at)}.` : " ainda sem histórico."}
-      </p>
+    <Panel
+      className="income-estimate"
+      title="Estimativa da carteira de hoje"
+      info={
+        <>
+          Pelo que cada cota pagou nos últimos 12 meses (valor bruto, data ex; o JCP vem junto com o dividendo). Não é extrato:
+          {estimate.updated_at ? ` histórico de ${formatRelative(estimate.updated_at)}.` : " ainda sem histórico."}
+        </>
+      }
+      infoLabel="Como a estimativa é feita"
+      actions={<span className="income-tag">estimativa</span>}
+    >
+      {unavailable ? (
+        <p className="income-goal__now">Estimativa indisponível por enquanto.</p>
+      ) : (
+        <p className="income-goal__now">
+          <span aria-hidden="true">~</span>
+          <CountUp value={estimate.monthly} className="income-goal__value" />
+          <span className="income-goal__per"> por mês</span>
+        </p>
+      )}
       {top.length > 0 && (
         <ul className="income-list">
           {top.map((asset) => (
             <li key={asset.asset_id} className="income-row">
               <AssetIcon symbol={asset.symbol} name={asset.display_name} size="sm" />
-              <span className="income-row__who">
+              <span className="income-row__who income-row__who--stacked">
                 <strong>{asset.symbol ?? asset.display_name}</strong>
-                <span className="muted"> · {money.brl(asset.per_unit_12m)} por cota em 12 meses</span>
+                <span className="muted">{money.brl(asset.per_unit_12m)} por cota em 12 meses</span>
               </span>
               <strong className="income-row__value">~{money.brl(asset.monthly)}/mês</strong>
             </li>
@@ -62,10 +59,8 @@ export function EstimateCard({ estimate }: { estimate: IncomeEstimate }) {
         </ul>
       )}
       {estimate.missing.length > 0 && (
-        <p className="field__hint">
-          Sem histórico ainda (ficam fora da conta; ele é buscado em segundo plano): {estimate.missing.join(", ")}.
-        </p>
+        <p className="field__hint">Sem histórico ainda (ficam fora da conta): {estimate.missing.join(", ")}.</p>
       )}
-    </GlassCard>
+    </Panel>
   );
 }
