@@ -55,6 +55,34 @@ acompanhados de nome (cor nunca é a única pista):
 | Renda Fixa | laranja-cobre |
 | Renda Fixa Internacional | lavanda |
 
+### Ícone do ativo
+
+Cada ativo, em qualquer lista (Carteira, plano e registro do aporte, Renda,
+busca de símbolo, Saúde, Impostos), leva um círculo à esquerda do nome
+(`AssetIcon`, três tamanhos: 24, 36 e 44 px). O nome do ativo sempre está ao
+lado, então o ícone é **enfeite**: `aria-hidden`, e a imagem leva `alt=""`.
+
+- **Logo**, quando o servidor tem (ações e FIIs da B3, via brapi): um `<img>`
+  de `/api/v1/icons/<símbolo>?v=<versão>` (mesmo domínio, CSP intacta), com
+  `loading="lazy"`, recortado no círculo (`--r-pill`).
+- **Iniciais do ticker** (`ITSA4` → IT; sem ticker, as do nome: `Caixa Reserva`
+  → CR) no círculo **com a cor da classe**, quando não há logo. A tinta é
+  `--icon-ink`: escura sobre as cores claras do tema escuro, branca sobre as
+  cores escuras do tema claro; **4,5:1 ou mais** nas sete classes e no neutro,
+  nos dois temas (conferido por teste, `lib/assetIcon.test.ts`). Sem como dizer a
+  classe (lista que só traz o ticker e o ticker não ajuda), o círculo é neutro.
+- **Desenhos próprios**, sem fonte externa, para o que não tem logo de empresa:
+  Tesouro (um frontão com colunas), bitcoin (um "B" com dois traços) e cripto
+  genérica (uma moeda com um losango), na cor da classe. O nome da marca vai
+  como texto, nunca no desenho. O logo vence o desenho (um ETF de bitcoin da B3
+  mostra o logo do gestor).
+- **Não pisca**: o círculo de iniciais está sempre por baixo; o logo fica
+  transparente até o `load` e só então aparece. Se a imagem falha, ela sai e
+  ficam as iniciais (uma versão nova do logo tem nova chance).
+- **Sem 404 em cascata**: a tela consulta `GET /icons` uma vez e só pede a
+  imagem do que está na lista. Logo de ativo recém-adicionado chega em segundos
+  e aparece quando a lista é pedida de novo (ao voltar para a aba ou ao abrir uma tela, se já passou 1 minuto da última).
+
 ## Movimento
 
 Biblioteca `motion` (Framer Motion). Molas em vez de curvas de tempo; nada dura
@@ -627,6 +655,8 @@ junto do tema) mascara os valores em todas as telas e fica salvo no
   desenho (`aria-hidden`), e o texto ao lado diz os dois números.
 - Na navegação e nas seções de Ajustes, a atual leva `aria-current="page"`.
 - Alvos de toque ≥ 44px.
+- Ícone do ativo: só enfeite (`aria-hidden`, `alt` vazio); nenhuma informação
+  depende dele. Iniciais com contraste ≥ 4,5:1 nos dois temas.
 - Cor nunca sozinha: os avisos do teto e do limite são frase com ícone; o
   estado da chave do limite também vem escrito. O controle do limite anuncia
   o valor como "15% da carteira" (`aria-valuetext`).

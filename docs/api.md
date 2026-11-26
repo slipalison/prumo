@@ -2054,6 +2054,56 @@ carteira, e responde `200` com `{ "sent": true }`.
 | `429` (`too_many_requests`) | outro teste há menos de 10 segundos |
 | `502` (`telegram_unavailable`) | o Telegram não aceitou a mensagem; o motivo cru vai para o log, não para a resposta |
 
+## Logos dos ativos
+
+Cada ativo da B3 mostra o logo da empresa ou do fundo. O navegador **nunca** fala
+com a brapi (nem com `icons.brapi.dev`): o servidor busca o logo uma vez, saneia
+o SVG, guarda no banco e o serve do próprio domínio do Prumo. Como funciona, a
+escolha de segurança e a nota sobre a licença da brapi: [icones.md](icones.md).
+
+Sem `BRAPI_TOKEN` no servidor, a busca está desligada: o que já estiver guardado
+continua sendo servido e nada disto dá erro. As duas rotas pedem a mesma
+autenticação do resto da API e **não** passam pela regra `Cache-Control:
+no-store` (o logo tem o próprio cache).
+
+### `GET /api/v1/icons`
+
+Quais símbolos têm logo guardado, sem os bytes. A tela faz esta consulta uma vez
+e só pede a imagem do que está na lista (em vez de bater em 404 a cada linha).
+
+```json
+{ "icons": [{ "symbol": "ITSA4", "version": "6ae93b13c1d04f5e9a1b7c2d3e4f5a6b" }] }
+```
+
+`version` é o `ETag` do logo (sem aspas): a tela o põe na URL como `?v=` e o
+navegador busca a imagem de novo quando o logo muda. `Cache-Control: no-store`.
+
+### `GET /api/v1/icons/{symbol}`
+
+O logo do símbolo (`ITSA4`, `KNRI11`; maiúsculas ou minúsculas, até 12 letras e
+dígitos), do cache do banco. A chave do Tesouro (`TD-…`), cripto de verdade e
+ativo dos EUA não têm logo: a tela usa o ícone próprio ou as iniciais.
+
+| Status | Quando |
+|---|---|
+| `200` | há logo: corpo `image/svg+xml` já saneado |
+| `304` | o `If-None-Match` cobre o `ETag` (aceita `*`, lista e `W/"…"`) |
+| `404` | sem logo guardado, símbolo inválido ou logo recusado no saneamento; `Cache-Control: no-store` (ele pode chegar a qualquer momento) |
+| `401` | sem credencial |
+
+Cabeçalhos do `200` e do `304`:
+
+| Cabeçalho | Valor |
+|---|---|
+| `ETag` | `"<md5 do SVG>"` |
+| `Cache-Control` | `private, max-age=86400` |
+| `Content-Security-Policy` | `default-src 'none'; style-src 'unsafe-inline'; sandbox` |
+| `X-Content-Type-Options` | `nosniff` |
+| `Content-Disposition` | `inline` |
+| `Cross-Origin-Resource-Policy` | `same-origin` |
+
+A CSP da página (`img-src 'self' data:`) não muda: a imagem é do mesmo domínio.
+
 ## Operacional (porta interna 9090)
 
 `GET /healthz` (processo de pé), `GET /readyz` (`select 1` no Postgres),

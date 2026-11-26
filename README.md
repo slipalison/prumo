@@ -83,6 +83,14 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   hora é sua, e dá para mandar sem valores em reais. Você cria o bot no
   @BotFather e o vincula por um código, sem procurar chat id. Passo a passo em
   [`docs/alertas.md`](docs/alertas.md).
+- **Logos dos ativos** — cada ação e FII da B3 mostra o logo da empresa ou do
+  fundo; Tesouro, cripto e o que não tem logo usam ícone próprio ou as iniciais
+  do ticker na cor da classe. A fonte é a [brapi](https://brapi.dev): o
+  servidor busca cada logo **uma vez** (o plano gratuito dá 15 mil pedidos por
+  mês), saneia o SVG e o serve do domínio do Prumo; o navegador não fala com
+  terceiros. Para ligar: crie uma conta gratuita na brapi e guarde a chave em
+  `BRAPI_TOKEN`; sem ela, tudo segue com as iniciais. Detalhes, segurança e a
+  nota sobre a licença em [`docs/icones.md`](docs/icones.md).
 - **Desempenho** — patrimônio no tempo (aplicado × ganho, e os proventos) e
   rentabilidade pelo método de cotas, com os proventos como retorno, contra
   CDI, IPCA e Ibovespa, com a tabela mês a mês. A série começa no primeiro
@@ -122,6 +130,7 @@ Documentos:
 - [`docs/design.md`](docs/design.md) — interface, identidade e movimento
 - [`docs/ir.md`](docs/ir.md) — regras de IR por ano, com fonte, e o que não é calculado
 - [`docs/alertas.md`](docs/alertas.md) — alertas no Telegram: criar o bot, vincular, tipos, privacidade
+- [`docs/icones.md`](docs/icones.md) — logos dos ativos: fonte (brapi), como ligar, segurança do SVG e licença
 - [`docs/desempenho.md`](docs/desempenho.md) — rentabilidade por cotas, índices e fontes
 - [`deploy/README.md`](deploy/README.md) — como o app chega ao cluster
 
@@ -163,6 +172,7 @@ npm run dev
 | `QUOTES_REFRESH_SECS` | `900` | intervalo da atualização automática (mín. 60) |
 | `SECTORS_ENABLED` | `true` | `false` desliga a busca de setor (B3 e CVM, a cada 30 dias) |
 | `SNAPSHOT_AT` | `19:00` | horário de Brasília da foto diária do desempenho (`HH:MM`), ou `off` |
+| `BRAPI_TOKEN` | — | segredo: chave da brapi (conta gratuita em brapi.dev), só do servidor. Sem ela, os logos dos ativos ficam desligados (iniciais no lugar); precisa de saída HTTPS para `brapi.dev` e `icons.brapi.dev` |
 | `TELEGRAM_BOT_TOKEN` | — | segredo: token do bot do Telegram (criado por você no @BotFather). Sem ele, os alertas ficam desligados e a tela diz isso; precisa de saída HTTPS para `api.telegram.org` |
 
 O binário recusa subir com configuração pela metade.
