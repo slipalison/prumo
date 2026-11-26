@@ -96,7 +96,7 @@ trilho à esquerda e conteúdo centralizado (máx. ~1100px).
   Hoje: Aportar, Carteira, Renda, Desempenho, Ajustes.
 - Ajustes agrupa **seções** (`SETTINGS_SECTIONS`,
   `frontend/src/features/settings/sections.ts`): Metas por classe, Critérios,
-  Objetivos, Saúde da carteira, Importar da B3 e Impostos.
+  Objetivos, Saúde da carteira, Importar da B3, Impostos e Alertas.
   Seção nova também é uma linha. A lista de seções fica no topo de Ajustes
   (links com `aria-current="page"` na atual), cada seção tem endereço próprio
   (`#/ajustes/metas`, `#/ajustes/criterios`, `#/ajustes/objetivos`, `#/ajustes/saude`,
@@ -534,6 +534,43 @@ acessível dos botões e da barra; percentuais, datas, códigos e tickers ficam.
 "Copiar" leva o valor de verdade para a área de transferência: é o que a pessoa
 pediu, e a tela continua mascarada.
 
+### 11. Ajustes › Alertas
+
+Seção `#/ajustes/alertas`. Responde "como o Prumo me avisa fora do app?" sem
+virar painel: três cartões de vidro, na ordem em que a pessoa os usa. O
+funcionamento e a configuração do bot estão em [alertas.md](alertas.md).
+
+1. **Telegram.** Quatro estados, cada um com texto (nenhum só por cor):
+   - **Desligado no servidor** (sem token do bot): uma frase "os alertas estão
+     desligados neste servidor", o nome da variável e a indicação do
+     `docs/alertas.md`. Não é erro (`role="status"`, não `alert`) e a tela não
+     mostra o resto.
+   - **Sem vínculo:** "Vincular o Telegram".
+   - **Vinculando:** os passos numerados com o link `t.me/<bot>?start=<código>`,
+     o comando `/start <código>` em destaque (selecionável de um toque), a
+     validade ("uma vez só, até 15:10") e "Cancelar". A tela confere o estado a
+     cada 3 s e, quando o chat liga, volta ao estado "vinculado" com um aviso
+     "Telegram vinculado.".
+   - **Vinculado:** "Vinculado em 20/11/2026", **Enviar teste agora** e
+     **Desvincular**.
+2. **O que avisar.** A mesma lista de regras da Saúde (`rule-row`): uma frase,
+   o limite quando o tipo tem (campo numérico, desligado junto do interruptor),
+   a explicação em uma linha e o interruptor à direita. O isentômetro aparece
+   **desligado e sem poder ser ligado**, com a razão escrita.
+3. **Quando e com quê.** Hora do resumo (`<input type="time">`, horário de
+   Brasília), o interruptor **Sem valores no resumo** (com a explicação de que
+   o resumo passa pelos servidores do Telegram) e **Salvar alertas**. Erros
+   ficam ao lado do campo (`role="alert"`) e travam o botão; "Descartar
+   mudanças" volta ao salvo.
+4. **Como o resumo fica.** Um exemplo, com dados **fictícios**, só dos tipos
+   ligados, no texto exato do servidor (com acento, como chega no Telegram). Acompanha
+   "Sem valores no resumo" na hora, antes de salvar.
+
+Com o olho fechado (ver "Ocultar valores"): a tela só tem valor em reais no
+exemplo do resumo, e ali cada `R$` vira `R$ ••••`, inclusive para o leitor de
+tela. O olho **não** muda o que o servidor envia: isso é "Sem valores no
+resumo".
+
 ### Histórico
 
 Dentro de Carteira (ou do Aportar): lista dos aportes registrados com data,
@@ -568,6 +605,9 @@ junto do tema) mascara os valores em todas as telas e fica salvo no
   na lista, a linha diz só o tipo, a data e "•• cotas × R$ ••••"; os campos
   do formulário seguem a regra dos campos de valor acima. Na linha da
   Carteira, "PM R$ ••••". O câmbio do lançamento é cotação pública e fica.
+- **Alertas**: o exemplo do resumo mostra `R$ ••••` no lugar de cada valor. O
+  olho só protege a tela; o que o servidor manda ao Telegram é decidido por
+  "Sem valores no resumo" (ver [alertas.md](alertas.md)).
 - Ficam visíveis o que não é valor em reais: percentuais (inclusive a rentabilidade da posição), notas, nomes e
   tickers, e os atalhos fixos do campo do aporte (R$ 500, R$ 1.000...).
 

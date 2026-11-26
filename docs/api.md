@@ -136,6 +136,8 @@ Ativo com nota 0 não recebe aporte.
 | `tax_year_before_balance` | 422 | IR de um ano antes do saldo de prejuízo informado |
 | `tax_book_invalid` | 422 | o livro não fecha para o IR (o detalhe diz o ticker) |
 | `darf_not_due` | 422 | marcar como pago um DARF que o Prumo não apurou a pagar |
+| `too_many_requests` | 429 | pedido repetido cedo demais (só `POST /alerts/test`) |
+| `telegram_unavailable` | 502 | o Telegram não aceitou o envio (só `POST /alerts/test`; ver [Alertas](#alertas)) |
 | `internal` | 500 | o resto (detalhe genérico; o log tem o porquê) |
 
 ## Rotas
@@ -1949,6 +1951,107 @@ regra):
 
 `PUT` troca o saldo inteiro: `year` (com regra) e os seis valores (ausente =
 zero), em centavos e não negativos. Responde `200` com o `GET`.
+
+## Alertas
+
+Avisos fora do app, pelo Telegram, num resumo diário (como funciona, como criar
+o bot e o que cada tipo avisa: [alertas.md](alertas.md)). Tudo pelo dono. Sem
+`TELEGRAM_BOT_TOKEN` no servidor, a funcionalidade está desligada e nada
+disto dá erro: `GET /alerts` responde com `telegram.configured: false`.
+
+### `GET /api/v1/alerts`
+
+```json
+{
+  "telegram": {
+    "configured": true,
+    "bot_username": "prumo_exemplo_bot",
+    "linked": true,
+    "linked_at": "2026-11-20T12:00:00Z"
+  },
+  "send_at": "08:00",
+  "hide_values": false,
+  "types": [
+    { "kind": "income_tomorrow", "enabled": true, "available": true,
+      "threshold": null, "default_threshold": null, "unit": null },
+    { "kind": "class_drift", "enabled": true, "available": true,
+      "threshold": 5.0, "default_threshold": 5.0, "unit": "percentage_points" },
+    { "kind": "price_below_ceiling", "enabled": true, "available": true,
+      "threshold": null, "default_threshold": null, "unit": null },
+    { "kind": "objective_achieved", "enabled": true, "available": true,
+      "threshold": null, "default_threshold": null, "unit": null },
+    { "kind": "tax_exemption", "enabled": false, "available": false,
+      "threshold": 80.0, "default_threshold": 80.0, "unit": "percent_of_limit" },
+    { "kind": "health_warning", "enabled": true, "available": true,
+      "threshold": null, "default_threshold": null, "unit": null }
+  ]
+}
+```
+
+- `telegram.configured`: o servidor tem o token do bot. `bot_username` (sem o
+  `@`) é `null` sem token ou se o Telegram não respondeu.
+- `send_at`: `HH:MM`, horário de Brasília. Padrão `08:00`.
+- `hide_values`: o resumo vai sem valores em reais, só nomes e percentuais.
+- `types`: sempre os seis, nesta ordem. `available: false` é um tipo que o
+  servidor ainda não apura (hoje, `tax_exemption`); ele não liga.
+  `unit` diz em que o limite é medido: `percentage_points` (p.p. da carteira) ou
+  `percent_of_limit` (% do limite mensal); `null` nos que não têm limite.
+
+### `PUT /api/v1/alerts`
+
+Muda o que vier; o que ficar de fora fica como está. Ao menos um campo.
+
+```json
+{
+  "send_at": "07:30",
+  "hide_values": true,
+  "types": {
+    "class_drift": { "threshold": 7.5 },
+    "health_warning": { "enabled": false }
+  }
+}
+```
+
+Devolve o mesmo corpo do `GET`. `422` para: hora fora de `HH:MM` (`00:00` a
+`23:59`), tipo desconhecido, tipo sem `enabled` nem `threshold`, limite fora de
+0–100 (exclusive o 0, até duas casas), limite num tipo que não tem, ligar um
+tipo com `available: false`, campo desconhecido. Ligar um tipo, ou mudar o
+limite dele, faz a próxima apuração só guardar o que já vale, sem avisar.
+
+### `POST /api/v1/alerts/telegram`
+
+Gera o código de vinculação (`201`):
+
+```json
+{
+  "code": "K7M2QX9PTA",
+  "command": "/start K7M2QX9PTA",
+  "bot_username": "prumo_exemplo_bot",
+  "expires_at": "2026-11-25T15:10:00Z"
+}
+```
+
+A pessoa manda `command` ao bot (ou abre `https://t.me/<bot_username>?start=<code>`).
+O código vale 10 minutos e uma vez; um novo invalida o anterior. O servidor lê
+a mensagem por `getUpdates` e liga o `chat_id` à pessoa: a tela confere o
+estado com `GET /alerts` até `telegram.linked` virar `true`. `422` se o
+servidor não tem o token.
+
+### `DELETE /api/v1/alerts/telegram`
+
+Desvincula o chat (`204`, também quando não havia). O mesmo vale se a pessoa
+mandar `/stop` ao bot, ou se o Telegram recusar um envio (bot bloqueado).
+
+### `POST /api/v1/alerts/test`
+
+"Enviar teste agora": manda ao chat vinculado uma mensagem curta, sem dado da
+carteira, e responde `200` com `{ "sent": true }`.
+
+| Status | Quando |
+|---|---|
+| `422` | sem token no servidor, ou nenhum chat vinculado |
+| `429` (`too_many_requests`) | outro teste há menos de 10 segundos |
+| `502` (`telegram_unavailable`) | o Telegram não aceitou a mensagem; o motivo cru vai para o log, não para a resposta |
 
 ## Operacional (porta interna 9090)
 
