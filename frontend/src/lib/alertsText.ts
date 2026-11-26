@@ -41,8 +41,8 @@ export const KIND_TEXT: Record<AlertKind, KindText> = {
     unavailable: "Indisponível: o Prumo ainda não tem a regra de IR deste ano, e não usa a de outro ano.",
   },
   health_warning: {
-    name: "Aviso novo de saúde da carteira",
-    why: "Quando uma regra de Saúde da carteira passa a avisar. O que já estava avisando não se repete.",
+    name: "Aviso novo da análise da carteira",
+    why: "Quando uma regra da Análise da carteira passa a avisar. O que já estava avisando não se repete.",
   },
 };
 
@@ -90,7 +90,7 @@ export function sampleDigest(types: AlertType[], hideValues: boolean, money: Mon
   );
   add(
     "health_warning",
-    "Saúde da carteira",
+    "Análise da carteira",
     hideValues
       ? "- KNRI11 está com 23,5% da carteira (limite 15%)."
       : `- KNRI11 está com 23,5% da carteira (limite 15%). Um aporte de cerca de ${money.brl(1234.5)} em outros ativos volta ao limite.`,

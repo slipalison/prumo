@@ -45,7 +45,7 @@ pub enum AlertKind {
     ObjectiveAchieved,
     /// Isentômetro de ações acima de X% do limite mensal.
     TaxExemption,
-    /// Aviso novo de saúde da carteira.
+    /// Aviso novo da análise da carteira.
     HealthWarning,
 }
 
@@ -608,7 +608,7 @@ fn section_title(kind: AlertKind) -> &'static str {
         AlertKind::PriceBelowCeiling => "No seu teto de preço",
         AlertKind::ObjectiveAchieved => "Objetivos atingidos",
         AlertKind::TaxExemption => "Isentômetro de ações",
-        AlertKind::HealthWarning => "Saúde da carteira",
+        AlertKind::HealthWarning => "Análise da carteira",
     }
 }
 
@@ -939,7 +939,7 @@ mod tests {
              Objetivos atingidos\n\
              - Objetivo de renda mensal atingido: R$ 3.000,00.\n\
              \n\
-             Saúde da carteira\n\
+             Análise da carteira\n\
              - KNRI11 está com 23,5% da carteira (limite 15%). Um aporte de cerca de R$ 1.234,50 em outros ativos volta ao limite."
         );
     }

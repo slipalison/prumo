@@ -115,7 +115,7 @@ describe("Alertas: tipos, horário e valores", () => {
     const save = await screen.findByRole("button", { name: "Salvar alertas" });
     expect(save).toBeDisabled();
 
-    await user.click(screen.getByRole("switch", { name: "Aviso novo de saúde da carteira" }));
+    await user.click(screen.getByRole("switch", { name: "Aviso novo da análise da carteira" }));
     const limit = screen.getByRole("textbox", { name: "Limite: Classe fora da meta" });
     await user.clear(limit);
     await user.type(limit, "7,5");
@@ -126,7 +126,7 @@ describe("Alertas: tipos, horário e valores", () => {
       types: { health_warning: { enabled: false }, class_drift: { threshold: 7.5 } },
     });
     expect(await screen.findByText("Alertas salvos.")).toBeInTheDocument();
-    expect(screen.getByRole("switch", { name: "Aviso novo de saúde da carteira" })).not.toBeChecked();
+    expect(screen.getByRole("switch", { name: "Aviso novo da análise da carteira" })).not.toBeChecked();
     expect(screen.getByRole("button", { name: "Salvar alertas" })).toBeDisabled();
   });
 
