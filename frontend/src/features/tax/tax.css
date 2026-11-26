@@ -1,70 +1,76 @@
-/* Impostos (Ajustes › Impostos). Desenho em docs/design.md § Impostos. */
+/* Impostos (Ajustes, Impostos). Desenho em docs/layout.md, seção 7.4 e docs/design.md. */
 
+/* O aviso de responsabilidade: uma linha, o resto no ⓘ. */
 .tax-disclaimer {
   display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  padding: 14px 16px;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
   border-radius: var(--r-md);
   border: 1px solid color-mix(in srgb, var(--gold) 40%, transparent);
   background: color-mix(in srgb, var(--gold) 10%, transparent);
   color: var(--text);
-  font-size: 0.88rem;
-  line-height: 1.5;
+  font-size: var(--text-md);
+  line-height: 1.4;
 }
 
 .tax-disclaimer p {
+  flex: 1;
   margin: 0;
 }
 
 .tax-disclaimer__icon {
   flex: none;
-  margin-top: 2px;
   color: var(--gold-text);
 }
 
 .tax__loading {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--gap-stack);
 }
 
-.tax-card {
+/* A coluna do lado: o isentômetro e o saldo de antes, um sobre o outro. */
+.tax-side {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 20px;
+  gap: var(--gap-grid);
   min-width: 0;
 }
 
-.tax-card p {
+/* --- Isentômetro --- */
+
+.tax-meter p {
   margin: 0;
 }
 
-.tax-subtitle {
-  margin: 8px 0 0;
-  font-family: var(--font-display);
-  font-size: 1rem;
-  color: var(--text);
+.tax-meter__month {
+  color: var(--text-subtle);
+  font-size: var(--text-sm);
 }
 
 .tax-meter__value {
-  font-size: 1rem;
   color: var(--text-muted);
+  font-size: var(--text-md);
 }
 
 .tax-meter__value strong {
   display: block;
   font-family: var(--font-display);
-  font-size: 1.8rem;
+  font-size: 1.6rem;
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
 
 .tax-meter__percent {
   color: var(--text-muted);
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
+}
+
+.tax-meter__status {
+  color: var(--text-muted);
+  font-size: var(--text-md);
 }
 
 .tax-meter__over {
@@ -72,55 +78,71 @@
   font-weight: 600;
 }
 
-.tax-doubt {
-  padding: 10px 12px;
-  border-radius: var(--r-sm);
-  border-left: 3px solid var(--info);
-  background: color-mix(in srgb, var(--info) 10%, transparent);
-  font-size: 0.86rem;
-  line-height: 1.45;
+/* --- Ponto a confirmar com o contador: o i azul, nunca a cor sozinha (tem nome e texto) --- */
+
+.tax-doubt-tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 24px;
+  margin-left: var(--space-1);
+  padding: 2px;
+  border: 0;
+  border-radius: var(--r-pill);
+  color: var(--info);
+  vertical-align: middle;
+  transition: filter var(--dur-fast) var(--ease-out);
 }
 
-.tax-table-wrap {
-  overflow-x: auto;
-  border-radius: var(--r-sm);
+.tax-doubt-tip:hover,
+.tax-doubt-tip[aria-expanded="true"] {
+  filter: brightness(1.2);
 }
 
-.tax-table {
-  width: 100%;
-  min-width: 640px;
-  border-collapse: collapse;
-  font-size: 0.85rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.tax-table--compact {
-  min-width: 720px;
-  font-size: 0.8rem;
-}
-
-.tax-table th,
-.tax-table td {
-  padding: 8px 6px;
-  border-bottom: 1px solid var(--border);
-  text-align: right;
-  vertical-align: top;
-}
-
-.tax-table thead th {
-  color: var(--text-muted);
+/* Em uma linha própria (a apuração de um mês), o ícone leva o nome da dúvida. */
+.tax-doubt-tip--text {
+  margin-left: 0;
+  padding: 2px var(--space-3) 2px var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--info) 40%, transparent);
+  font-size: var(--text-xs);
   font-weight: 600;
-  white-space: nowrap;
 }
 
-.tax-table tbody th {
-  text-align: left;
-  font-weight: 600;
+.tax-doubts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+/* Alvo de toque de 44 px sem empurrar o texto. */
+.tax-doubt-tip::after {
+  content: "";
+  position: absolute;
+  inset: -10px;
+}
+
+/* --- Meses --- */
+
+.tax-month-name {
   text-transform: capitalize;
 }
 
-.tax-table .is-empty {
+.tax-empty {
   color: var(--text-subtle);
+}
+
+.tax-months tbody tr {
+  vertical-align: middle;
+}
+
+/* Empilhada (celular), a célula vazia não ocupa linha: o mês sem nada fica só com o nome. */
+@container (max-width: 560px) {
+  .tax-months tbody td:empty,
+  .tax-months tbody td:has(> .tax-empty:only-child) {
+    display: none;
+  }
 }
 
 .tax-line {
@@ -131,51 +153,58 @@
 .tax-line--muted {
   display: block;
   color: var(--text-subtle);
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
+  font-weight: 400;
   white-space: normal;
 }
 
 .tax-paid {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-2);
+  white-space: nowrap;
 }
 
-.tax-status {
-  font-weight: 700;
+.tax-code {
+  white-space: nowrap;
 }
 
-.tax-status--paid {
-  color: var(--success);
+.tax-paid__button {
+  min-height: 28px;
 }
 
-.tax-status--due {
-  color: var(--gold-text);
+@media (pointer: coarse) {
+  .tax-paid__button {
+    min-height: var(--touch);
+  }
 }
 
 .tax-closing,
 .tax-facts {
+  margin: 0;
   color: var(--text-muted);
-  font-size: 0.88rem;
+  font-size: var(--text-md);
   line-height: 1.5;
 }
 
 ul.tax-facts {
-  margin: 0;
-  padding-left: 1.1rem;
+  padding-left: var(--space-5);
 }
+
+/* --- A apuração de cada mês (dentro do recolher) --- */
 
 .tax-details {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
+  padding: var(--space-2) 0 var(--space-1);
 }
 
 .tax-month {
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
-  padding: 10px 12px;
 }
 
 .tax-month summary {
@@ -186,39 +215,55 @@ ul.tax-facts {
 .tax-month[open] {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-2);
 }
 
-.tax-irpf,
+/* --- Declaração --- */
+
+.tax-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.tax-subtitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 650;
+  color: var(--text);
+}
+
+.tax-asset {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.tax-sheet {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.tax-payers {
+  display: block;
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
+
+/* --- Fora da conta --- */
+
 .tax-skipped,
 .tax-never {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
   margin: 0;
-  padding: 0;
+  padding: var(--space-1) 0 var(--space-2);
   list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.tax-irpf__item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px 12px;
-  border-radius: var(--r-sm);
-  background: var(--surface-sunken);
-  align-items: flex-start;
-}
-
-.tax-irpf__head {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 10px;
-  align-items: center;
-}
-
-.tax-irpf__text {
-  font-variant-numeric: tabular-nums;
 }
 
 .tax-skipped li {
@@ -228,21 +273,34 @@ ul.tax-facts {
 }
 
 .tax-never {
-  padding-left: 1.1rem;
+  padding-left: var(--space-5);
   list-style: disc;
   color: var(--text-muted);
-  font-size: 0.86rem;
-  gap: 4px;
+  font-size: var(--text-md);
+  gap: var(--space-1);
 }
+
+.tax-fold-text {
+  margin: 0;
+  padding: var(--space-1) var(--space-1) var(--space-2);
+}
+
+/* --- Saldo de antes do Prumo --- */
 
 .tax-carry {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
+}
+
+.tax-carry__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
+  gap: var(--space-3);
 }
 
 .tax-carry__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: var(--space-2);
 }

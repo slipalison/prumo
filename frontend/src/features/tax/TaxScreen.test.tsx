@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HIDE_VALUES_KEY } from "../../lib/privacy";
@@ -31,6 +32,13 @@ async function openTaxes() {
   return rendered;
 }
 
+/** Abre o ⓘ de nome `name` (o ponto a confirmar só entra na tela quando a pessoa pede). */
+async function openTip(user: ReturnType<typeof userEvent.setup>, name: string | RegExp, root: HTMLElement = document.body) {
+  const trigger = within(root).getByRole("button", { name });
+  await user.click(trigger);
+  return within(trigger.closest(".toggletip") as HTMLElement).getByRole("status");
+}
+
 const requests = (method: string, prefix: string) =>
   getDb().requests.filter((r) => r.method === method && r.path.startsWith(prefix));
 
@@ -47,14 +55,15 @@ describe("Impostos", () => {
   });
 
   it("mostra o isentômetro do mês de hoje com a barra e o day trade a confirmar", async () => {
-    await openTaxes();
+    const { user } = await openTaxes();
     const meter = screen.getByRole("region", { name: "Isentômetro" });
-    expect(meter).toHaveTextContent("novembro de 2026");
+    expect(meter).toHaveTextContent("Novembro de 2026");
     expect(meter).toHaveTextContent(/R\$\s12\.000,00 em vendas de ações, de R\$\s20\.000,00 isentos/);
     expect(within(meter).getByRole("meter")).toHaveAttribute("aria-valuenow", "60");
     expect(meter).toHaveTextContent("60,0% do limite");
     expect(meter).toHaveTextContent(/Ainda cabem R\$\s8\.000,00 em vendas/);
-    expect(within(meter).getByText(/Ponto a confirmar com contador/).parentElement).toHaveTextContent(
+    // O ponto a confirmar é um ⓘ azul com nome, ao lado do número que ele mexe.
+    expect(await openTip(user, "Ponto a confirmar com contador: vendas em day trade no isentômetro", meter)).toHaveTextContent(
       /vendas em day trade entraram no total/,
     );
   });
@@ -77,7 +86,7 @@ describe("Impostos", () => {
 
   it("lista os DARF do ano com vencimento e marca e desmarca como pago", async () => {
     const { user } = await openTaxes();
-    const table = screen.getByRole("region", { name: "DARF por mês em 2026" });
+    const table = screen.getByRole("table", { name: "DARF por mês em 2026" });
     const may = within(table).getByRole("row", { name: /^maio/ });
     expect(may).toHaveTextContent(/6015 · R\$\s450,00/);
     expect(may).toHaveTextContent("30/06/2026");
@@ -114,7 +123,7 @@ describe("Impostos", () => {
       ),
     );
     const { user } = await openTaxes();
-    const may = within(screen.getByRole("region", { name: "DARF por mês em 2026" })).getByRole("row", { name: /^maio/ });
+    const may = within(screen.getByRole("table", { name: "DARF por mês em 2026" })).getByRole("row", { name: /^maio/ });
     expect(may).toHaveTextContent("o valor mudou depois de marcar: confira");
     await user.click(within(may).getByRole("button", { name: "Desmarcar o DARF 6015 de maio" }));
     expect(await screen.findByText(/Algo deu errado do nosso lado/)).toBeInTheDocument();
@@ -122,6 +131,10 @@ describe("Impostos", () => {
 
   it("abre a apuração de cada mês com grupo, compensação e as dúvidas que tocam o número", async () => {
     const { user } = await openTaxes();
+    // A apuração fica recolhida, com a contagem dos meses que têm o que mostrar.
+    const fold = screen.getByRole("region", { name: "Como cada mês foi apurado" });
+    expect(fold).toHaveTextContent("6");
+    await user.click(within(fold).getByText("Como cada mês foi apurado"));
     await user.click(screen.getByText("Maio", { selector: "summary" }));
     const may = screen.getByRole("region", { name: "Apuração de maio" });
     const row = within(may).getByRole("row", { name: /Ações, ETF e BDR/ });
@@ -133,7 +146,9 @@ describe("Impostos", () => {
     await user.click(screen.getByText("Setembro", { selector: "summary" }));
     expect(screen.getByLabelText("Cripto em setembro")).toHaveTextContent(/imposto de R\$\s750,00/);
     await user.click(screen.getByText("Agosto", { selector: "summary" }));
-    expect(screen.getByText(/só compensa com lucro de Fiagro/)).toBeInTheDocument();
+    expect(await openTip(user, "Ponto a confirmar com contador: prejuízo de Fiagro separado do FII")).toHaveTextContent(
+      /só compensa com lucro de Fiagro/,
+    );
     expect(screen.getByText(/Prejuízo a compensar em 31\/12/)).toHaveTextContent(/Fiagro R\$\s100,00/);
   });
 
@@ -142,23 +157,28 @@ describe("Impostos", () => {
     // Depois do `userEvent.setup()`, que põe a área de transferência dele.
     const writeText = vi.fn(() => Promise.resolve());
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
-    const goods = await screen.findByRole("list", { name: "Bens e Direitos" });
-    const itsa = within(goods).getByText("ITSA4").closest("li") as HTMLElement;
+    const goods = await screen.findByRole("table", { name: "Bens e Direitos" });
+    const itsa = within(goods).getByRole("row", { name: /ITSA4/ });
     expect(itsa).toHaveTextContent("Grupo 03 · Código 01 · Ações (inclusive as listadas em bolsa)");
-    expect(itsa).toHaveTextContent(/2\.500 unidades · situação em 31\/12: R\$\s25\.000,00/);
-    const btc = within(goods).getByText("BTC").closest("li") as HTMLElement;
+    expect(itsa).toHaveTextContent(/2\.500 unidades/);
+    expect(itsa).toHaveTextContent(/R\$\s25\.000,00/);
+    const btc = within(goods).getByRole("row", { name: /BTC/ });
     expect(btc).toHaveTextContent("0,05 unidades");
     await user.click(within(itsa).getByRole("button", { name: "Copiar a linha de ITSA4" }));
     expect(writeText).toHaveBeenCalledWith(expect.stringMatching(/ITSA4 \(Ação ou unit\): 2\.500 unidades\. Grupo 03, código 01\. Situação em 31\/12: R\$\s25\.000,00/));
     expect(await screen.findByText("Linha de ITSA4 copiada.")).toBeInTheDocument();
 
-    const exempt = screen.getByRole("list", { name: "Rendimentos isentos" });
-    expect(within(exempt).getByText("Código 09").closest("li")).toHaveTextContent(/R\$\s300,00/);
-    expect(within(exempt).getByText("Código 99").closest("li")).toHaveTextContent("Outros: rendimentos de FII e Fiagro");
-    const exclusive = screen.getByRole("list", { name: "Tributação exclusiva" });
-    expect(exclusive).toHaveTextContent(/Líquido R\$\s165,00 \(bruto R\$\s200,00, retido R\$\s35,00\)/);
-    expect(screen.getByText(/O JCP foi levado pelo valor líquido/)).toBeInTheDocument();
-    expect(screen.getByText(/vieram de informes de corretoras/)).toBeInTheDocument();
+    const exempt = screen.getByRole("table", { name: "Rendimentos isentos" });
+    expect(within(exempt).getByRole("row", { name: /Código 09/ })).toHaveTextContent(/R\$\s300,00/);
+    expect(within(exempt).getByRole("row", { name: /Código 99/ })).toHaveTextContent("Outros: rendimentos de FII e Fiagro");
+    const exclusive = screen.getByRole("table", { name: "Tributação exclusiva" });
+    expect(exclusive).toHaveTextContent(/Líquido R\$\s165,00/);
+    expect(exclusive).toHaveTextContent(/bruto R\$\s200,00, retido R\$\s35,00/);
+    // As dúvidas jurídicas ficam num ⓘ azul ao lado do bloco que elas tocam.
+    expect(await openTip(user, "Ponto a confirmar com contador: JCP levado pelo valor líquido")).toHaveTextContent(/O JCP foi levado pelo valor líquido/);
+    expect(await openTip(user, "Ponto a confirmar com contador: códigos de Bens e Direitos e de rendimentos")).toHaveTextContent(
+      /vieram de informes de corretoras/,
+    );
   });
 
   it("copiar sem área de transferência avisa", async () => {
@@ -172,20 +192,24 @@ describe("Impostos", () => {
   });
 
   it("diz o que não foi calculado e por quê, sem repetir", async () => {
-    await openTaxes();
+    const { user } = await openTaxes();
+    const fold = screen.getByRole("region", { name: "O que o Prumo não calculou" });
+    await user.click(within(fold).getByText("O que o Prumo não calculou"));
     const out = await screen.findByRole("list", { name: "Fora da conta" });
     await waitFor(() => expect(within(out).getAllByRole("listitem")).toHaveLength(3));
     expect(within(out).getByText("CDB Exemplo").closest("li")).toHaveTextContent(/Fora do IR do Prumo/);
     expect(within(out).getByText("KNRI11").closest("li")).toHaveTextContent(/10\/03\/2026 · R\$\s10,00/);
     expect(within(out).getByText("AAPL34").closest("li")).toHaveTextContent(/rendimento do exterior/);
-    expect(screen.getByText(/IR retido na fonte da nota/)).toBeInTheDocument();
+    const never = screen.getByRole("region", { name: "Nunca entra na conta" });
+    await user.click(within(never).getByText("Nunca entra na conta"));
+    expect(within(never).getByText(/IR retido na fonte da nota/)).toBeInTheDocument();
   });
 
   it("troca de ano e mostra o erro claro de ano sem regra", async () => {
     const { user } = await openTaxes();
     await user.click(screen.getByRole("button", { name: "2025" }));
-    expect(await screen.findByRole("region", { name: "DARF por mês em 2025" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Isentômetro" })).toHaveTextContent("dezembro de 2025");
+    expect(await screen.findByRole("table", { name: "DARF por mês em 2025" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Isentômetro" })).toHaveTextContent("Dezembro de 2025");
     expect(await screen.findByRole("heading", { name: "Declaração de 2025" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "2025" })).toHaveAttribute("aria-pressed", "true");
   });
@@ -248,7 +272,7 @@ describe("Impostos", () => {
   it("com o olho fechado mascara todo R$ e toda quantidade, e deixa percentuais e datas", async () => {
     window.localStorage.setItem(HIDE_VALUES_KEY, "1");
     const { user } = await openTaxes();
-    await screen.findByRole("list", { name: "Bens e Direitos" });
+    await screen.findByRole("table", { name: "Bens e Direitos" });
     for (const summary of document.querySelectorAll("summary")) await user.click(summary);
     await screen.findByRole("list", { name: "Fora da conta" });
     for (const text of everythingHeard(document.body)) expect(text).not.toMatch(MONEY);
@@ -256,10 +280,10 @@ describe("Impostos", () => {
     const meter = screen.getByRole("region", { name: "Isentômetro" });
     expect(meter).toHaveTextContent("60,0% do limite");
     expect(meter).toHaveTextContent("R$ •••• em vendas de ações");
-    const goods = screen.getByRole("list", { name: "Bens e Direitos" });
+    const goods = screen.getByRole("table", { name: "Bens e Direitos" });
     expect(goods).toHaveTextContent("•• unidades");
     expect(goods).not.toHaveTextContent("2.500");
-    const may = within(screen.getByRole("region", { name: "DARF por mês em 2026" })).getByRole("row", { name: /^maio/ });
+    const may = within(screen.getByRole("table", { name: "DARF por mês em 2026" })).getByRole("row", { name: /^maio/ });
     expect(may).toHaveTextContent("6015 · R$ ••••");
     expect(may).toHaveTextContent("30/06/2026");
 

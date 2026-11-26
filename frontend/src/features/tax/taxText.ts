@@ -1,8 +1,14 @@
 import type { Doubt, Instrument, Pool, SkipReason, TaxInstrument } from "../../api/taxTypes";
 
-/** O aviso de docs/ir.md, sempre visível na tela. */
+/**
+ * O aviso de docs/ir.md, sempre à vista e em uma linha: o que ele é e de quem é
+ * a responsabilidade. O resto vai no ⓘ ao lado.
+ */
 export const DISCLAIMER =
-  "O Prumo calcula uma estimativa do imposto a partir do que você lançou. Não é orientação tributária e não substitui o contador, o programa da Receita nem o informe de rendimentos da corretora. Confira cada DARF e cada linha da declaração antes de pagar ou entregar. Erro de imposto gera multa e juros, e a responsabilidade pelo que vai para a Receita é de quem declara.";
+  "O Prumo estima o imposto a partir do que você lançou: não substitui o contador, o programa da Receita nem o informe da corretora. A responsabilidade pelo que vai para a Receita é de quem declara.";
+
+export const DISCLAIMER_MORE =
+  "Confira cada DARF e cada linha da declaração antes de pagar ou entregar. Erro de imposto gera multa e juros.";
 
 export const INSTRUMENT_LABEL: Record<TaxInstrument, string> = {
   stock: "Ação ou unit",
@@ -71,6 +77,18 @@ export const DOUBT_TEXT: Record<Doubt, string> = {
   dividend_withholding:
     "Dividendo com retenção de 10% (desde 2026): confirme a ficha do dividendo e do imposto retido na declaração.",
   interest_on_equity_net: "O JCP foi levado pelo valor líquido: confirme no programa do IRPF.",
+};
+
+/** O nome curto de cada dúvida: dá nome ao ⓘ (o texto inteiro abre nele). */
+export const DOUBT_SHORT: Record<Doubt, string> = {
+  day_trade_in_stock_exemption: "vendas em day trade no isentômetro",
+  agribusiness_separate_from_real_estate: "prejuízo de Fiagro separado do FII",
+  irpf_codes: "códigos de Bens e Direitos e de rendimentos",
+  crypto_per_sale: "cripto apurada por venda",
+  year_end: "31/12 sem expediente bancário",
+  withholding_leftover: "IR retido que sobrou no fim do ano",
+  dividend_withholding: "dividendo com retenção de 10%",
+  interest_on_equity_net: "JCP levado pelo valor líquido",
 };
 
 /** O que o Prumo nunca calcula (docs/ir.md § 3), sempre listado. */

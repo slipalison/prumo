@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { setIcons } from "../../test/iconsHandlers";
 import { renderApp } from "../../test/render";
@@ -11,8 +11,8 @@ describe("Impostos", () => {
     setIcons(LOGOS);
     renderApp("ajustes/impostos");
     await screen.findByRole("heading", { name: "Imposto de renda" });
-    const goods = await screen.findByRole("list", { name: "Bens e Direitos" });
-    const rows = within(goods).getAllByRole("listitem");
+    const goods = await screen.findByRole("table", { name: "Bens e Direitos" });
+    const rows = Array.from(goods.querySelectorAll<HTMLElement>("tbody tr"));
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) expect(row.querySelector(".asset-icon")).not.toBeNull();
     expect(await logoOf(rows.find((r) => /ITSA4/.test(r.textContent ?? "")) as HTMLElement)).toBe(
