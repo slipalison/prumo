@@ -6,6 +6,7 @@ import type { Asset, AssetClass, ClassSummary, Portfolio } from "../../api/types
 import { AssetIcon } from "../../components/AssetIcon";
 import { ClassBar } from "../../components/ClassBar";
 import { CountUp } from "../../components/CountUp";
+import { Disclosure } from "../../components/Disclosure";
 import { Donut } from "../../components/Donut";
 import { GlassCard } from "../../components/GlassCard";
 import { IconAlert, IconArrowDown, IconPlus, IconRefresh } from "../../components/icons";
@@ -29,6 +30,7 @@ import { formatSignedPercent } from "../ledger/format";
 import "../ledger/ledger.css";
 import { AddAssetSheet } from "./AddAssetSheet";
 import { ContributionHistory } from "./ContributionHistory";
+import { useNarrow } from "./useNarrow";
 import { EditAssetSheet } from "./EditAssetSheet";
 import { ProfitSummary } from "./ProfitSummary";
 import { SectorBreakdown } from "./SectorBreakdown";
@@ -50,6 +52,7 @@ export function PortfolioScreen({ portfolio }: PortfolioScreenProps) {
   const shown = portfolio.classes.filter((c) => c.asset_count > 0 || c.target_percent > 0);
   const others = portfolio.classes.filter((c) => c.asset_count === 0 && c.target_percent === 0);
   const sectorClasses = shown.filter((c) => c.asset_count > 0);
+  const narrow = useNarrow();
 
   const refreshQuotes = () => {
     refresh.mutate(undefined, {
@@ -63,6 +66,14 @@ export function PortfolioScreen({ portfolio }: PortfolioScreenProps) {
       onError: (error) => toast({ tone: "error", message: errorMessage(error) }),
     });
   };
+
+  const sectors = sectorClasses.map((c) => (
+    <SectorBreakdown
+      key={c.asset_class}
+      assetClass={c.asset_class}
+      assets={portfolio.assets.filter((a) => a.asset_class === c.asset_class)}
+    />
+  ));
 
   const openAdd = (initialClass?: AssetClass) => setAdding({ open: true, initialClass });
 
@@ -143,13 +154,14 @@ export function PortfolioScreen({ portfolio }: PortfolioScreenProps) {
 
         <div className="portfolio__aside">
           <ClassDonut portfolio={portfolio} />
-          {sectorClasses.map((c) => (
-            <SectorBreakdown
-              key={c.asset_class}
-              assetClass={c.asset_class}
-              assets={portfolio.assets.filter((a) => a.asset_class === c.asset_class)}
-            />
-          ))}
+          {narrow ? (
+            // No celular o setor é secundário: fica recolhido, a um toque.
+            <Disclosure summary="Por setor e por tipo de fundo" className="portfolio__sectors">
+              {sectors}
+            </Disclosure>
+          ) : (
+            sectors
+          )}
           <ContributionHistory />
         </div>
       </Grid>
@@ -208,8 +220,8 @@ function ClassDonut({ portfolio }: { portfolio: Portfolio }) {
     <Panel title="Por classe" className="class-donut">
       <div className="class-donut__body">
         <Donut
-          size={132}
-          thickness={14}
+          size={112}
+          thickness={13}
           label={`Carteira por classe: ${held
             .map((c) => `${CLASS_META[c.asset_class].label} ${formatPercent(c.current_percent)}`)
             .join(", ")}`}
