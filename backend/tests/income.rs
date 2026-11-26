@@ -177,17 +177,31 @@ async fn reset_cache(env: &Env) {
         .unwrap();
 }
 
-/// Espera a tarefa em segundo plano gravar o histórico dos símbolos.
-async fn wait_cached(env: &Env, symbols: &[&str]) {
+async fn cached(env: &Env, symbols: &[&str]) -> bool {
     let wanted: Vec<String> = symbols.iter().map(|s| (*s).to_owned()).collect();
-    for _ in 0..100 {
-        let (count,): (i64,) =
-            sqlx::query_as("select count(*) from dividend_fetches where symbol = any($1)")
-                .bind(&wanted)
-                .fetch_one(&env.pool)
-                .await
-                .unwrap();
-        if usize::try_from(count).unwrap() == wanted.len() {
+    let (count,): (i64,) =
+        sqlx::query_as("select count(*) from dividend_fetches where symbol = any($1)")
+            .bind(&wanted)
+            .fetch_one(&env.pool)
+            .await
+            .unwrap();
+    usize::try_from(count).unwrap() == wanted.len()
+}
+
+/// Depois do `settle`: a busca disparada pelo cadastro já terminou, sem prazo
+/// de relógio (a esteira, com cobertura e vários Postgres, é lenta).
+async fn assert_cached(env: &Env, symbols: &[&str]) {
+    assert!(
+        cached(env, symbols).await,
+        "historico nao chegou ao cache: {symbols:?}"
+    );
+}
+
+/// Espera a tarefa PERIÓDICA (que roda sozinha, sem `settle`) gravar o
+/// histórico. O prazo só pesa quando ela não grava; folgado para a esteira.
+async fn wait_cached(env: &Env, symbols: &[&str]) {
+    for _ in 0..600 {
+        if cached(env, symbols).await {
             return;
         }
         tokio::time::sleep(StdDuration::from_millis(50)).await;
@@ -617,7 +631,8 @@ async fn estimate_comes_from_the_cache_the_background_fills(env: &Env, dir: &tem
     )
     .await;
     // Criar o ativo dispara a busca do histórico em segundo plano.
-    wait_cached(env, &["KNRI11.SA"]).await;
+    me.income.settle().await;
+    assert_cached(env, &["KNRI11.SA"]).await;
     // Cripto e renda fixa por valor não pagam provento: o provedor nem é chamado.
     add_asset(
         &me,
@@ -721,7 +736,8 @@ async fn estimate_in_other_currency_and_unavailable_provider(env: &Env, dir: &te
         json!({ "asset_class": "br_stocks", "symbol": "WEGE3", "quantity": 100 }),
     )
     .await;
-    wait_cached(env, &["AAPL"]).await;
+    me.income.settle().await;
+    assert_cached(env, &["AAPL"]).await;
 
     let summary = get(&me.router, "/api/v1/income/summary").await;
     let estimate = &summary.body["estimate"];
@@ -777,7 +793,8 @@ async fn income_goal_crud_and_progress(env: &Env, dir: &tempfile_dir::Dir) {
         json!({ "asset_class": "br_reits", "symbol": "KNRI11", "quantity": 10 }),
     )
     .await;
-    wait_cached(env, &["KNRI11.SA"]).await;
+    me.income.settle().await;
+    assert_cached(env, &["KNRI11.SA"]).await;
     let created = put(&me.router, "/api/v1/income/goal", json!({ "target": 20 })).await;
     assert_eq!(created.status, StatusCode::OK, "{}", created.text);
     assert_eq!(created.body["target"], 20.0);
@@ -858,7 +875,8 @@ async fn plan_shows_the_income_it_adds(env: &Env, dir: &tempfile_dir::Dir) {
         json!({ "asset_class": "br_reits", "symbol": "KNRI11", "quantity": 10, "score_override": 8 }),
     )
     .await;
-    wait_cached(env, &["KNRI11.SA"]).await;
+    me.income.settle().await;
+    assert_cached(env, &["KNRI11.SA"]).await;
 
     let plan = post(&me.router, "/api/v1/plans", json!({ "amount": 1420 })).await;
     assert_eq!(plan.status, StatusCode::OK, "{}", plan.text);

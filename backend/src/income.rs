@@ -87,6 +87,9 @@ pub struct IncomeService {
     provider: Arc<dyn DividendProvider>,
     /// Símbolos que falharam há pouco e quando.
     resting: Mutex<HashMap<String, Instant>>,
+    /// As buscas disparadas por [`IncomeService::prefetch`] que ainda podem
+    /// estar rodando: [`IncomeService::settle`] espera por elas.
+    inflight: Mutex<Vec<tokio::task::JoinHandle<()>>>,
 }
 
 /// O símbolo no provedor de um ativo que paga provento, ou `None`.
@@ -103,6 +106,7 @@ impl IncomeService {
             store,
             provider,
             resting: Mutex::default(),
+            inflight: Mutex::default(),
         }
     }
 
@@ -280,9 +284,32 @@ impl IncomeService {
             return;
         };
         let service = Arc::clone(self);
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             service.fill(&[symbol], OffsetDateTime::now_utc()).await;
         });
+        if let Ok(mut inflight) = self.inflight.lock() {
+            inflight.retain(|task| !task.is_finished());
+            inflight.push(handle);
+        }
+    }
+
+    /// Espera as buscas disparadas por [`IncomeService::prefetch`] terminarem,
+    /// inclusive as que forem disparadas enquanto espera. Para quem precisa do
+    /// resultado sem adivinhar quanto a busca demora (teste, encerramento).
+    pub async fn settle(&self) {
+        loop {
+            let pending = match self.inflight.lock() {
+                Ok(mut inflight) => std::mem::take(&mut *inflight),
+                Err(_) => return,
+            };
+            if pending.is_empty() {
+                return;
+            }
+            for task in pending {
+                // Uma busca que entrou em pânico não segura quem espera.
+                let _ = task.await;
+            }
+        }
     }
 
     /// Rodada periódica, até o processo encerrar: a primeira na hora, as outras

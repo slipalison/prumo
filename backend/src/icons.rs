@@ -85,6 +85,9 @@ pub struct IconService {
     gate: tokio::sync::Mutex<()>,
     /// Até quando a tarefa fica parada (limite, token recusado).
     paused_until: Mutex<Option<OffsetDateTime>>,
+    /// As buscas disparadas por [`IconService::prefetch`] que ainda podem estar
+    /// rodando: [`IconService::settle`] espera por elas.
+    inflight: Mutex<Vec<tokio::task::JoinHandle<()>>>,
 }
 
 impl IconService {
@@ -94,6 +97,7 @@ impl IconService {
             source,
             gate: tokio::sync::Mutex::new(()),
             paused_until: Mutex::new(None),
+            inflight: Mutex::new(Vec::new()),
         }
     }
 
@@ -271,9 +275,32 @@ impl IconService {
             return;
         };
         let service = Arc::clone(self);
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             service.fill(&[symbol], OffsetDateTime::now_utc()).await;
         });
+        if let Ok(mut inflight) = self.inflight.lock() {
+            inflight.retain(|task| !task.is_finished());
+            inflight.push(handle);
+        }
+    }
+
+    /// Espera as buscas disparadas por [`IconService::prefetch`] terminarem,
+    /// inclusive as que forem disparadas enquanto espera. Para quem precisa do
+    /// resultado sem adivinhar quanto a busca demora (teste, encerramento).
+    pub async fn settle(&self) {
+        loop {
+            let pending = match self.inflight.lock() {
+                Ok(mut inflight) => std::mem::take(&mut *inflight),
+                Err(_) => return,
+            };
+            if pending.is_empty() {
+                return;
+            }
+            for task in pending {
+                // Uma busca que entrou em pânico não segura quem espera.
+                let _ = task.await;
+            }
+        }
     }
 
     /// Rodada periódica, até o processo encerrar: a primeira na hora.

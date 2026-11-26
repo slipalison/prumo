@@ -441,14 +441,13 @@ async fn fetch(router: &axum::Router, uri: &str, extra: &[(&str, &str)]) -> Raw 
     }
 }
 
-async fn wait_for_icon(store: &Store, symbol: &str) {
-    for _ in 0..100 {
-        if store.icon(symbol).await.unwrap().is_some() {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-    panic!("o logo de {symbol} nao chegou");
+/// Depois do `settle`: a busca disparada pelo cadastro já terminou, sem prazo
+/// de relógio (a esteira, com cobertura e vários Postgres, é lenta).
+async fn assert_icon(store: &Store, symbol: &str) {
+    assert!(
+        store.icon(symbol).await.unwrap().is_some(),
+        "o logo de {symbol} nao chegou"
+    );
 }
 
 #[tokio::test]
@@ -485,8 +484,9 @@ async fn the_portfolio_decides_what_is_fetched_and_new_assets_fetch_their_own() 
     }
 
     // Cada ativo novo da B3 busca o próprio logo; os outros não vão à brapi.
+    svc.settle().await;
     for symbol in ["WEGE3", "KNRI11", "QBTC11"] {
-        wait_for_icon(&db.store, symbol).await;
+        assert_icon(&db.store, symbol).await;
     }
     assert_eq!(source.calls(), names(&["KNRI11", "QBTC11", "WEGE3"]));
 
@@ -509,7 +509,8 @@ async fn the_portfolio_decides_what_is_fetched_and_new_assets_fetch_their_own() 
     )
     .await;
     assert_eq!(moved.status, StatusCode::CREATED, "{}", moved.text);
-    wait_for_icon(&db.store, "MXRF11").await;
+    svc.settle().await;
+    assert_icon(&db.store, "MXRF11").await;
 }
 
 #[tokio::test]
