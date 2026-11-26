@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:demo": "vite --mode demo --port 5180 --strictPort",
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc -b",
     "build": "npm run lint && tsc -b && vite build",

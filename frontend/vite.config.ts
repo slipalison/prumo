@@ -1,16 +1,40 @@
 /// <reference types="vitest/config" />
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 
-export default defineConfig({
-  plugins: [react()],
+/**
+ * Modo de demonstração (`npm run dev:demo`, docs/layout.md): serve o service
+ * worker do msw direto do pacote instalado, em vez de copiá-lo para `public/`
+ * — assim ele nunca entra no build de produção e nunca fica de versão
+ * diferente da biblioteca.
+ */
+function demoWorker(): Plugin {
+  const file = createRequire(import.meta.url).resolve("msw/mockServiceWorker.js");
+  return {
+    name: "prumo-demo-worker",
+    apply: "serve",
+    configureServer(server) {
+      server.middlewares.use("/mockServiceWorker.js", (_request, response) => {
+        response.setHeader("Content-Type", "text/javascript");
+        response.setHeader("Service-Worker-Allowed", "/");
+        response.end(readFileSync(file));
+      });
+    },
+  };
+}
+
+export default defineConfig(({ mode }) => ({
+  plugins: mode === "demo" ? [react(), demoWorker()] : [react()],
   server: {
     // Em produção o mesmo binário serve a API e os estáticos, então o caminho
     // relativo `/api/v1/...` vale nos dois lados e não há URL para configurar.
-    // `PRUMO_API` troca o alvo quando a 8080 da máquina já tem dono.
-    proxy: {
-      "/api": { target: process.env.PRUMO_API ?? "http://127.0.0.1:8080", changeOrigin: false },
-    },
+    // `PRUMO_API` troca o alvo quando a 8080 da máquina já tem dono. Na
+    // demonstração não há servidor: o msw responde no navegador.
+    ...(mode === "demo"
+      ? {}
+      : { proxy: { "/api": { target: process.env.PRUMO_API ?? "http://127.0.0.1:8080", changeOrigin: false } } }),
   },
   build: {
     target: "es2022",
@@ -43,7 +67,7 @@ export default defineConfig({
       // Sem `include`, o vitest 4 só conta arquivo que algum teste importa — um
       // módulo esquecido sumiria do denominador em vez de derrubar o piso.
       include: ["src/**/*.{ts,tsx}"],
-      exclude: ["src/**/*.test.{ts,tsx}", "src/test/**", "src/main.tsx", "src/**/*.d.ts"],
+      exclude: ["src/**/*.test.{ts,tsx}", "src/test/**", "src/demo/**", "src/main.tsx", "src/**/*.d.ts"],
     },
   },
-});
+}));

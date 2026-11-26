@@ -61,9 +61,15 @@ export default tseslint.config(
     languageOptions: { globals: { ...globals.node } },
   },
 
-  // Este arquivo não está em nenhum tsconfig: sem tipo para ler.
+  // Scripts de apoio: rodam no Node e mandam funções para o navegador (Playwright).
   {
-    files: ["**/*.js"],
+    files: ["scripts/**/*.mjs"],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
+  },
+
+  // Estes arquivos não estão em nenhum tsconfig: sem tipo para ler.
+  {
+    files: ["**/*.js", "**/*.mjs"],
     extends: [tseslint.configs.disableTypeChecked],
   },
 );

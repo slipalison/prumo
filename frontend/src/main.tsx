@@ -18,11 +18,22 @@ import { applyTheme, readThemePreference } from "./lib/theme";
 
 applyTheme(readThemePreference());
 
-const root = document.getElementById("root");
-if (root) {
-  createRoot(root).render(
-    <StrictMode>
-      <App />
-    </StrictMode>,
-  );
+async function boot(): Promise<void> {
+  // `npm run dev:demo`: a API é o banco falso dos testes, no navegador. O
+  // build de produção troca `MODE` por "production" e corta este ramo (e o
+  // msw) do pacote.
+  if (import.meta.env.MODE === "demo") {
+    const { startDemo } = await import("./demo/startDemo");
+    await startDemo();
+  }
+  const root = document.getElementById("root");
+  if (root) {
+    createRoot(root).render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+  }
 }
+
+void boot();

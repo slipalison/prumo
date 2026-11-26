@@ -182,6 +182,11 @@ npm run dev
 `AUTH_MODE=dev` aceita toda requisição como `DEV_USER_EMAIL` (padrão
 `dev@prumo.local`). Em produção é `cloudflare-access`.
 
+Só para olhar a interface, sem backend nem banco: `npm run dev:demo` (porta
+5180) serve a carteira **fictícia** dos testes pelo service worker do msw, no
+próprio navegador; recarregar volta ao começo. É o modo usado para medir as
+telas (`docs/layout.md`, "Como medir").
+
 ### Variáveis do backend
 
 | Variável | Padrão | |
