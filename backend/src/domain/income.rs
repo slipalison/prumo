@@ -3,16 +3,19 @@
 //! O dinheiro que a carteira paga — dividendo, JCP, rendimento de FII,
 //! amortização — vira um evento com data de pagamento. Daqui saem o valor
 //! líquido, o status (recebido ou a receber, só pela data), a janela de 12
-//! meses, a média mensal, a distribuição por pagador e a **estimativa** de renda
-//! a partir do histórico por cota. A estimativa nunca se mistura com o que a
-//! pessoa recebeu: são dois números, e o rótulo diz qual é qual.
+//! meses, a média mensal, a distribuição por pagador e a meta. A
+//! **estimativa** de renda da carteira de hoje está em [`estimate`]. Ela nunca
+//! se mistura com o que a pessoa recebeu: são dois números, e o rótulo diz
+//! qual é qual.
 
 use std::collections::BTreeMap;
 
 use rust_decimal::Decimal;
-use time::{Date, Duration, OffsetDateTime, UtcOffset};
+use time::{Date, OffsetDateTime, UtcOffset};
 
 use super::allocation::{percent, round_cents};
+
+pub mod estimate;
 
 /// IR retido na fonte sobre o JCP pago até 31/12/2025: 15% do valor bruto
 /// (Lei 9.249/1995, art. 9º, § 2º, na redação até 2025).
@@ -35,8 +38,9 @@ pub fn jcp_withholding_rate(pay_date: Date) -> Decimal {
 /// Quantos meses a janela de "renda dos últimos 12 meses" cobre.
 pub const WINDOW_MONTHS: usize = 12;
 
-/// Dias do histórico por cota que formam a estimativa de renda anual.
-const TRAILING_DAYS: i64 = 365;
+/// Dias do histórico por cota que formam a estimativa de renda anual (a
+/// janela por data ex de `estimate::in_window`).
+pub const TRAILING_DAYS: i64 = 365;
 
 /// O tipo do provento. O nome vai para o banco e para o JSON.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -378,17 +382,6 @@ pub struct DividendPoint {
     pub amount: Decimal,
 }
 
-/// Quanto a cota pagou nos últimos 365 dias (por data ex, bruto): a soma dos
-/// pontos em `(hoje − 365 dias, hoje]`.
-pub fn trailing_per_unit(points: &[DividendPoint], today: Date) -> Decimal {
-    let since = today.saturating_sub(Duration::days(TRAILING_DAYS));
-    points
-        .iter()
-        .filter(|p| p.ex_date > since && p.ex_date <= today)
-        .map(|p| p.amount)
-        .sum()
-}
-
 /// A renda mensal que `quantity` cotas rendem se pagarem o que a cota pagou em
 /// 12 meses, em centavos.
 pub fn monthly_estimate(per_unit_12m: Decimal, quantity: Decimal) -> Decimal {
@@ -447,6 +440,7 @@ mod tests {
     use proptest::prelude::*;
     use rust_decimal_macros::dec;
     use time::macros::{date, datetime};
+    use time::Duration;
 
     fn entry(pay_date: Date, net: Decimal, payer: &str) -> Entry {
         Entry {
@@ -733,8 +727,9 @@ mod tests {
                 amount: dec!(7.00),
             },
         ];
-        assert_eq!(trailing_per_unit(&points, today), dec!(1.75));
-        assert_eq!(trailing_per_unit(&[], today), dec!(0));
+        let payments = estimate::yahoo_unit_payments(&points, Decimal::ONE);
+        assert_eq!(estimate::trailing(&payments, today).gross, dec!(1.75));
+        assert_eq!(estimate::trailing(&[], today).gross, dec!(0));
     }
 
     #[test]

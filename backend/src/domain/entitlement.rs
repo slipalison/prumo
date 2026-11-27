@@ -31,11 +31,8 @@
 use rust_decimal::Decimal;
 use time::{Date, Duration};
 
-use super::income::DividendPoint;
+use super::income::{DividendPoint, TRAILING_DAYS};
 use super::ledger::{replay, Entry, Kind, LedgerError};
-
-/// A janela da estimativa, a mesma de `income::trailing_per_unit`.
-const TRAILING_DAYS: i64 = 365;
 
 /// A data com de um provento: o dia anterior à data ex. Sem data ex, vale o dia
 /// do pagamento (nunca depois de `today`: o livro não tem lançamento no futuro).

@@ -13,12 +13,12 @@ use uuid::Uuid;
 use super::dto::{decimal, decimal_out, optional_decimal, PlanDto};
 use super::yoc::{PortfolioYieldDto, YieldDto, YieldReport};
 use super::{ApiJson, ApiPath, ApiQuery, AppState, CurrentUser};
-use crate::domain::allocation::round_cents;
 use crate::domain::asset_class::UnitKind;
 use crate::domain::entitlement::{quantity_on, record_date};
+use crate::domain::income::estimate::{EstimateSource, UsualEstimate};
 use crate::domain::income::{
-    amounts, goal_progress, summarize, today_in_brazil, AmountsError, Entry, GoalProgress,
-    IncomeKind, IncomeSource, IncomeStatus, IncomeSummary, ProgressBasis, WINDOW_MONTHS,
+    amounts, goal_progress, monthly_estimate, summarize, today_in_brazil, AmountsError, Entry,
+    GoalProgress, IncomeKind, IncomeSource, IncomeStatus, IncomeSummary, ProgressBasis,
 };
 use crate::domain::yoc::asset_yield;
 use crate::error::{ApiError, ApiResult};
@@ -210,6 +210,36 @@ fn serialize_decimals<S: serde::Serializer>(
     seq.end()
 }
 
+/// Um valor líquido do IR do JCP e o bruto ao lado.
+#[derive(Debug, Serialize)]
+pub struct UsualDto {
+    /// Quantos anos de 365 dias entraram na média (2 a 5).
+    pub years: u32,
+    /// Por cota, por ano. O líquido usa a parte de JCP dos 12 meses do ativo
+    /// (o histórico longo é do Yahoo, que não separa o JCP).
+    #[serde(with = "decimal_out")]
+    pub per_unit_year: Decimal,
+    #[serde(with = "decimal_out")]
+    pub per_unit_year_gross: Decimal,
+    /// Com a quantidade de hoje, por mês.
+    #[serde(with = "decimal_out")]
+    pub monthly: Decimal,
+    #[serde(with = "decimal_out")]
+    pub monthly_gross: Decimal,
+}
+
+impl From<&UsualEstimate> for UsualDto {
+    fn from(usual: &UsualEstimate) -> Self {
+        Self {
+            years: usual.years,
+            per_unit_year: usual.per_unit_year.net,
+            per_unit_year_gross: usual.per_unit_year.gross,
+            monthly: usual.monthly.net,
+            monthly_gross: usual.monthly.gross,
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct EstimateAssetDto {
     pub asset_id: Uuid,
@@ -217,26 +247,46 @@ pub struct EstimateAssetDto {
     pub display_name: String,
     #[serde(with = "decimal_out")]
     pub quantity: Decimal,
-    /// O que uma cota pagou em 12 meses, em reais, bruto.
+    /// De onde veio o valor por cota: `b3` (anúncios da B3, JCP separado) ou
+    /// `yahoo` (bruto, JCP junto).
+    pub source: EstimateSource,
+    /// O que uma cota pagou em 12 meses, em reais, líquido do IR do JCP.
     #[serde(with = "decimal_out")]
     pub per_unit_12m: Decimal,
     #[serde(with = "decimal_out")]
+    pub per_unit_12m_gross: Decimal,
+    /// `per_unit_12m × quantity ÷ 12`: líquido.
+    #[serde(with = "decimal_out")]
     pub monthly: Decimal,
-    /// O que a posição teria rendido em 12 meses (bruto), com as cotas que o
-    /// livro tinha na data com de cada dividendo — não as de hoje.
+    #[serde(with = "decimal_out")]
+    pub monthly_gross: Decimal,
+    /// A média anual do habitual (até 5 anos); `null` com menos de 2 anos de
+    /// histórico.
+    pub usual: Option<UsualDto>,
+    /// Os 12 meses passam de 1,5 × a média do habitual.
+    pub above_usual: bool,
+    /// O que a posição teria rendido em 12 meses, com as cotas que o livro
+    /// tinha na data com de cada provento — não as de hoje. Líquido pela B3;
+    /// bruto pelo Yahoo.
     #[serde(with = "decimal_out::option")]
     pub trailing_12m: Option<Decimal>,
 }
 
-/// A estimativa de renda mensal da carteira, a partir do histórico por cota.
+/// A estimativa de renda mensal da carteira, a partir do que cada cota pagou.
 #[derive(Debug, Serialize)]
 pub struct EstimateDto {
+    /// Líquido do IR do JCP.
     #[serde(with = "decimal_out")]
     pub monthly: Decimal,
+    #[serde(with = "decimal_out")]
+    pub monthly_gross: Decimal,
+    /// A parte líquida de `monthly` que vem de ativos acima do habitual.
+    #[serde(with = "decimal_out")]
+    pub above_usual_monthly: Decimal,
     #[serde(with = "time::serde::rfc3339::option")]
     pub updated_at: Option<OffsetDateTime>,
     pub assets: Vec<EstimateAssetDto>,
-    /// Papéis sem histórico no provedor (ou sem câmbio): ficam fora da conta.
+    /// Papéis sem histórico em nenhuma fonte (ou sem câmbio): ficam fora da conta.
     pub missing: Vec<String>,
 }
 
@@ -301,10 +351,10 @@ pub struct PlanIncomeDto {
     /// Ativos que pagam provento e ficaram sem estimativa (histórico ainda não
     /// buscado ou provedor fora do ar).
     pub missing: Vec<String>,
-    /// O que os itens do plano rendem por mês, estimado.
+    /// O que os itens do plano rendem por mês, estimado e líquido do IR do JCP.
     #[serde(with = "decimal_out")]
     pub added_monthly: Decimal,
-    /// A renda mensal estimada da carteira hoje.
+    /// A renda mensal estimada da carteira hoje (líquida, a mesma da Renda).
     #[serde(with = "decimal_out")]
     pub before_monthly: Decimal,
     #[serde(with = "decimal_out")]
@@ -312,7 +362,8 @@ pub struct PlanIncomeDto {
 }
 
 impl PlanDto {
-    /// Junta a renda estimada (do cache) ao plano: a de cada item e a do topo.
+    /// Junta a renda estimada (do banco) ao plano: a de cada item e a do topo,
+    /// líquidas do IR do JCP como a estimativa da Renda e a meta.
     /// Sem ativo que pague provento não há o que estimar e o plano segue como
     /// estava; com ativo e sem cache, `income.available` é `false`.
     pub fn with_income(mut self, income: &PortfolioIncome) -> Self {
@@ -321,9 +372,10 @@ impl PlanDto {
         }
         let mut added = Decimal::ZERO;
         for item in &mut self.items {
-            let monthly = income.asset(item.asset_id).map(|estimate| {
-                round_cents(estimate.per_unit_12m * item.quantity / Decimal::from(WINDOW_MONTHS))
-            });
+            // Líquida, como a renda da carteira: a mesma conta da Renda.
+            let monthly = income
+                .asset(item.asset_id)
+                .map(|asset| monthly_estimate(asset.estimate.per_unit_12m.net, item.quantity));
             item.estimated_monthly_income = monthly;
             added += monthly.unwrap_or(Decimal::ZERO);
         }
@@ -668,8 +720,13 @@ pub async fn summary(
                 symbol: a.asset.symbol.clone(),
                 display_name: a.asset.display_name.clone(),
                 quantity: a.asset.quantity,
-                per_unit_12m: e.per_unit_12m,
-                monthly: e.monthly,
+                source: e.estimate.source,
+                per_unit_12m: e.estimate.per_unit_12m.net,
+                per_unit_12m_gross: e.estimate.per_unit_12m.gross,
+                monthly: e.estimate.monthly.net,
+                monthly_gross: e.estimate.monthly.gross,
+                usual: e.estimate.usual.as_ref().map(UsualDto::from),
+                above_usual: e.estimate.above_usual,
                 trailing_12m: e.trailing_12m,
             })
         })
@@ -730,6 +787,8 @@ pub async fn summary(
         upcoming,
         estimate: EstimateDto {
             monthly: estimate.monthly_total,
+            monthly_gross: estimate.monthly_total_gross,
+            above_usual_monthly: estimate.above_usual_monthly,
             updated_at: estimate.updated_at,
             assets: estimated_assets,
             missing: estimate.missing,

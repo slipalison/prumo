@@ -17,9 +17,13 @@ use serde::Deserialize;
 use time::{Date, OffsetDateTime};
 
 /// A janela de dividendos que o provedor devolve. A estimativa de renda olha
-/// 12 meses; a referência de Bazin da Análise tira a média de até 5 anos
-/// (`domain::analysis::references::MAX_YEARS`).
-const HISTORY_RANGE: &str = "5y";
+/// 12 meses; a referência de Bazin da Análise e a média do habitual da
+/// estimativa tiram a média de até 5 anos (`analysis::references::MAX_YEARS`,
+/// `income::estimate::USUAL_YEARS`). As duas só contam um ano **inteiro**,
+/// isto é, com pagamento conhecido de antes do começo dele: com `5y` o
+/// primeiro pagamento é sempre depois do começo do quinto ano para trás, e a
+/// média nunca passava de 4 anos. `10y` cobre os 5 anos inteiros com folga.
+const HISTORY_RANGE: &str = "10y";
 
 /// Um dividendo por cota, bruto, na data ex.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,7 +49,7 @@ pub enum DividendError {
 
 #[async_trait]
 pub trait DividendProvider: Send + Sync {
-    /// O histórico dos últimos 5 anos de `provider_symbol` (`KNRI11.SA`). Um
+    /// O histórico dos últimos 10 anos de `provider_symbol` (`KNRI11.SA`). Um
     /// símbolo que não paga nada volta com `events` vazio.
     async fn history(&self, provider_symbol: &str) -> Result<DividendHistory, DividendError>;
 }

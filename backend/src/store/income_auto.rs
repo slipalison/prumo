@@ -32,6 +32,19 @@ pub struct AutoOutcome {
     pub covered: usize,
 }
 
+/// O que a B3 diz dos proventos de um ativo, para a estimativa de renda
+/// (`domain::income::estimate`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct B3IncomeSource {
+    pub isin: String,
+    /// A última busca bem-sucedida do emissor.
+    pub fetched_at: OffsetDateTime,
+    /// Os anúncios em dinheiro do ISIN com data com desde a pedida.
+    pub cash: Vec<CashAnnouncement>,
+    /// Os eventos em ações do ISIN com data com desde a pedida.
+    pub stock: Vec<StockAnnouncement>,
+}
+
 /// O que a tela de ajustes mostra.
 #[derive(Debug, Clone, PartialEq)]
 pub struct IncomeAutoState {
@@ -94,6 +107,34 @@ struct StockRow {
     approved_on: Option<Date>,
 }
 
+impl From<CashRow> for CashAnnouncement {
+    fn from(r: CashRow) -> Self {
+        CashAnnouncement {
+            issuer: r.issuer,
+            isin: r.isin,
+            label: r.label,
+            record_date: r.record_date,
+            rate: r.rate.normalize(),
+            pay_date: r.pay_date,
+            approved_on: r.approved_on,
+            related_to: r.related_to,
+        }
+    }
+}
+
+impl From<StockRow> for StockAnnouncement {
+    fn from(r: StockRow) -> Self {
+        StockAnnouncement {
+            issuer: r.issuer,
+            isin: r.isin,
+            label: r.label,
+            record_date: r.record_date,
+            factor: r.factor.normalize(),
+            approved_on: r.approved_on,
+        }
+    }
+}
+
 /// Um ativo da B3 da pessoa, com o código já lido.
 struct B3Asset {
     row: AssetRow,
@@ -146,19 +187,7 @@ async fn cash_announcements(
     .bind(issuers)
     .fetch_all(&mut *conn)
     .await?;
-    Ok(rows
-        .into_iter()
-        .map(|r| CashAnnouncement {
-            issuer: r.issuer,
-            isin: r.isin,
-            label: r.label,
-            record_date: r.record_date,
-            rate: r.rate.normalize(),
-            pay_date: r.pay_date,
-            approved_on: r.approved_on,
-            related_to: r.related_to,
-        })
-        .collect())
+    Ok(rows.into_iter().map(CashAnnouncement::from).collect())
 }
 
 async fn stock_announcements(
@@ -173,17 +202,7 @@ async fn stock_announcements(
     .bind(issuers)
     .fetch_all(&mut *conn)
     .await?;
-    Ok(rows
-        .into_iter()
-        .map(|r| StockAnnouncement {
-            issuer: r.issuer,
-            isin: r.isin,
-            label: r.label,
-            record_date: r.record_date,
-            factor: r.factor.normalize(),
-            approved_on: r.approved_on,
-        })
-        .collect())
+    Ok(rows.into_iter().map(StockAnnouncement::from).collect())
 }
 
 /// Os ativos da B3 da pessoa com o ISIN resolvido (cadastro da B3 ou a regra
@@ -245,6 +264,13 @@ fn isins_by_issuer<'a>(
             .push(isin.to_owned());
     }
     map
+}
+
+fn isins_by_issuer_owned(rows: Vec<(String, String)>) -> HashMap<String, Vec<String>> {
+    isins_by_issuer(
+        rows.iter()
+            .map(|(issuer, isin)| (issuer.as_str(), isin.as_str())),
+    )
 }
 
 async fn known_income(conn: &mut PgConnection, user: Uuid) -> Result<Vec<KnownIncome>, StoreError> {
@@ -401,6 +427,114 @@ impl Store {
                 Some((ticker.issuer, venue))
             },
         )))
+    }
+
+    /// A B3 de cada ativo pedido (`id`, classe, código): só os que a B3 tem, isto
+    /// é, cujo emissor já foi buscado com sucesso e cujo ISIN foi achado (o
+    /// cadastro da B3 ou a regra do tipo de papel, como nos proventos
+    /// automáticos). Os anúncios vêm com data com a partir de `since`. Tudo é
+    /// compartilhado entre as carteiras: não depende de quem pede.
+    pub async fn b3_income_sources(
+        &self,
+        assets: &[(Uuid, AssetClass, String)],
+        since: Date,
+    ) -> Result<HashMap<Uuid, B3IncomeSource>, StoreError> {
+        let parsed: Vec<(Uuid, crate::domain::income_auto::Ticker, Venue)> = assets
+            .iter()
+            .filter_map(|(id, class, symbol)| {
+                let ticker = parse_ticker(symbol)?;
+                let venue = Venue::of(*class, &ticker);
+                Some((*id, ticker, venue))
+            })
+            .collect();
+        if parsed.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let mut issuers: Vec<String> = parsed.iter().map(|(_, t, _)| t.issuer.clone()).collect();
+        issuers.sort();
+        issuers.dedup();
+        let tickers: Vec<String> = parsed.iter().map(|(_, t, _)| t.code.clone()).collect();
+        let mut conn = self.pool.acquire().await?;
+        let fetched: HashMap<String, OffsetDateTime> =
+            sqlx::query_as::<_, (String, OffsetDateTime)>(
+                "select issuer, fetched_at from b3_issuer_fetches
+              where issuer = any($1) and fetched_at is not null",
+            )
+            .bind(&issuers)
+            .fetch_all(&mut *conn)
+            .await?
+            .into_iter()
+            .collect();
+        let listings: HashMap<String, String> = sqlx::query_as::<_, (String, String)>(
+            "select ticker, isin from b3_listings where ticker = any($1)",
+        )
+        .bind(&tickers)
+        .fetch_all(&mut *conn)
+        .await?
+        .into_iter()
+        .collect();
+        // Os ISIN que cada emissor já anunciou, de qualquer época: a regra de
+        // reserva do ISIN (fundo não tem cadastro com `otherCodes`).
+        let known = isins_by_issuer_owned(
+            sqlx::query_as::<_, (String, String)>(
+                "select issuer, isin from b3_cash_announcements where issuer = any($1)
+                 union
+                 select issuer, isin from b3_stock_announcements where issuer = any($1)",
+            )
+            .bind(&issuers)
+            .fetch_all(&mut *conn)
+            .await?,
+        );
+        let cash: Vec<CashRow> = sqlx::query_as(
+            "select issuer, isin, label, record_date, rate, pay_date, approved_on, related_to
+               from b3_cash_announcements where issuer = any($1) and record_date >= $2
+              order by isin, record_date, label, rate, pay_date",
+        )
+        .bind(&issuers)
+        .bind(since)
+        .fetch_all(&mut *conn)
+        .await?;
+        let stock: Vec<StockRow> = sqlx::query_as(
+            "select issuer, isin, label, record_date, factor, approved_on
+               from b3_stock_announcements where issuer = any($1) and record_date >= $2
+              order by isin, record_date, label",
+        )
+        .bind(&issuers)
+        .bind(since)
+        .fetch_all(&mut *conn)
+        .await?;
+        let cash: Vec<CashAnnouncement> = cash.into_iter().map(CashAnnouncement::from).collect();
+        let stock: Vec<StockAnnouncement> =
+            stock.into_iter().map(StockAnnouncement::from).collect();
+
+        let mut sources = HashMap::new();
+        for (id, ticker, venue) in parsed {
+            let Some(fetched_at) = fetched.get(&ticker.issuer).copied() else {
+                continue;
+            };
+            let isins: Vec<&str> = known
+                .get(&ticker.issuer)
+                .map(|list| list.iter().map(String::as_str).collect())
+                .unwrap_or_default();
+            let Some(isin) = isin_for(
+                &ticker,
+                venue,
+                listings.get(&ticker.code).map(String::as_str),
+                &isins,
+            ) else {
+                continue;
+            };
+            sources.insert(
+                id,
+                B3IncomeSource {
+                    cash: cash.iter().filter(|c| c.isin == isin).cloned().collect(),
+                    stock: stock.iter().filter(|s| s.isin == isin).cloned().collect(),
+                    isin,
+                    fetched_at,
+                },
+            );
+        }
+        Ok(sources)
     }
 
     /// A vez de buscar `issuer`: `true` para quem marcou primeiro, e só se a

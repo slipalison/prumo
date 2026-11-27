@@ -1,13 +1,19 @@
-//! A estimativa de renda da carteira: histórico de dividendo por cota do
-//! provedor, guardado no banco, vezes a quantidade que a pessoa tem.
+//! A estimativa de renda da carteira: o que cada cota pagou em 12 meses,
+//! líquido do IR do JCP, vezes a quantidade que a pessoa tem. A regra está em
+//! `domain::income::estimate`.
 //!
-//! É **estimativa**: o provedor dá data ex e valor bruto (JCP misturado ao
-//! dividendo, sem data de pagamento), e o passado não garante o futuro. Quem
-//! mostra o número escreve "estimativa", e o que a pessoa de fato recebeu
-//! (`income_events`) sempre vence.
+//! **Fontes.** Ações e FIIs da B3: os anúncios da própria B3 que os proventos
+//! automáticos já guardam (`b3_cash_announcements`, com o JCP separado). O
+//! histórico de dividendo por cota do Yahoo, guardado no banco, é a reserva
+//! (a B3 sem o ativo ou fora do ar), a fonte de EUA, BDR e ETF, e o histórico
+//! longo da média do habitual.
+//!
+//! É **estimativa**: o passado não garante o futuro. Quem mostra o número
+//! escreve "estimativa", e o que a pessoa de fato recebeu (`income_events`)
+//! sempre vence.
 //!
 //! **Nenhuma requisição espera pela rede.** [`IncomeService::estimate`] lê só o
-//! cache do banco; quem o enche é uma tarefa em segundo plano
+//! banco; quem o enche é uma tarefa em segundo plano
 //! ([`IncomeService::spawn_refresher`], no mesmo esquema do refresher de
 //! cotações) e a busca disparada quando um ativo nasce
 //! ([`IncomeService::prefetch`]). Gravar é idempotente, então duas réplicas
@@ -23,9 +29,13 @@ use uuid::Uuid;
 
 use crate::dividends::{DisabledDividends, DividendError, DividendProvider};
 use crate::domain::allocation::round_cents;
-use crate::domain::asset_class::Market;
+use crate::domain::asset_class::{AssetClass, Market};
 use crate::domain::entitlement::trailing_income;
-use crate::domain::income::{monthly_estimate, trailing_per_unit, DividendPoint};
+use crate::domain::income::estimate::{
+    asset_estimate, b3_trailing_income, b3_unit_payments, b3_window_start, pick_source,
+    yahoo_unit_payments, AssetEstimate, EstimateSource,
+};
+use crate::domain::income::DividendPoint;
 use crate::quotes::fx_symbol;
 use crate::service::PortfolioView;
 use crate::store::{CachedDividends, Store};
@@ -49,14 +59,13 @@ const FETCH_BATCH: usize = 8;
 #[derive(Debug, Clone, PartialEq)]
 pub struct AssetIncome {
     pub asset_id: Uuid,
-    /// O que uma cota pagou em 12 meses, em reais, bruto.
-    pub per_unit_12m: Decimal,
-    /// Renda mensal estimada com a quantidade atual, em reais.
-    pub monthly: Decimal,
-    /// O que a posição teria rendido nos últimos 12 meses, em reais e bruto,
-    /// com as cotas que o livro tinha na data com de cada dividendo (e não as
-    /// de hoje). `None` quando a estimativa foi pedida sem o livro, ou o livro
-    /// não fecha.
+    /// A fonte, os 12 meses por cota e por mês (líquido e bruto), a média do
+    /// habitual e a marca "acima do habitual".
+    pub estimate: AssetEstimate,
+    /// O que a posição teria rendido nos últimos 12 meses, em reais, com as
+    /// cotas que o livro tinha na data com de cada provento (e não as de hoje):
+    /// líquido pela B3; pelo Yahoo, bruto (ele não separa o JCP). `None` quando
+    /// a estimativa foi pedida sem o livro, ou o livro não fecha.
     pub trailing_12m: Option<Decimal>,
 }
 
@@ -64,13 +73,17 @@ pub struct AssetIncome {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PortfolioIncome {
     pub assets: HashMap<Uuid, AssetIncome>,
-    /// Soma das rendas mensais por ativo.
+    /// Soma das rendas mensais líquidas por ativo.
     pub monthly_total: Decimal,
+    /// A mesma soma, bruta.
+    pub monthly_total_gross: Decimal,
+    /// A parte líquida de `monthly_total` que vem de ativos acima do habitual.
+    pub above_usual_monthly: Decimal,
     /// Quantos ativos da carteira pagam provento (B3 e EUA). Com zero, não há
     /// o que estimar; com algum e nenhuma estimativa, ela está indisponível.
     pub payers: usize,
-    /// Símbolos que pagam dividendo mas ficaram sem estimativa (histórico ainda
-    /// não buscado, provedor fora do ar ou sem câmbio).
+    /// Símbolos que pagam dividendo mas ficaram sem estimativa (nem a B3 nem o
+    /// histórico do Yahoo, ou sem câmbio).
     pub missing: Vec<String>,
     /// De quando é o dado mais velho que entrou na conta.
     pub updated_at: Option<OffsetDateTime>,
@@ -80,6 +93,21 @@ impl PortfolioIncome {
     pub fn asset(&self, id: Uuid) -> Option<&AssetIncome> {
         self.assets.get(&id)
     }
+}
+
+/// Um ativo que paga provento, como a estimativa o lê da carteira.
+struct Payer {
+    asset_id: Uuid,
+    class: AssetClass,
+    quantity: Decimal,
+    /// O símbolo no Yahoo (`KNRI11.SA`).
+    provider_symbol: String,
+}
+
+/// As ações e FIIs da B3: a B3 é a fonte deles. ETF e BDR (outras classes
+/// negociadas na B3) ficam com o Yahoo.
+fn b3_sourced(market: Market, class: AssetClass) -> bool {
+    market == Market::B3 && matches!(class, AssetClass::BrStocks | AssetClass::BrReits)
 }
 
 pub struct IncomeService {
@@ -116,7 +144,8 @@ impl IncomeService {
     }
 
     /// Estima a renda mensal de cada ativo que paga dividendo, **só com o que
-    /// está no cache**: não fala com o provedor. `today` é o dia de Brasília.
+    /// está no banco** (os anúncios da B3 e o cache do Yahoo): não fala com
+    /// nenhum provedor. `today` é o dia de Brasília.
     /// Sem o livro: `trailing_12m` fica vazio.
     pub async fn estimate(&self, view: &PortfolioView, today: Date) -> PortfolioIncome {
         self.estimate_with(None, view, today).await
@@ -139,6 +168,7 @@ impl IncomeService {
         view: &PortfolioView,
         today: Date,
     ) -> PortfolioIncome {
+        let now = OffsetDateTime::now_utc();
         let ledgers = match user {
             Some(user) => self
                 .store
@@ -150,17 +180,36 @@ impl IncomeService {
                 }),
             None => HashMap::new(),
         };
-        let payers: Vec<(Uuid, Decimal, String)> = view
+        let payers: Vec<Payer> = view
             .assets
             .iter()
             .filter_map(|a| {
-                let symbol = payer_symbol(a.asset.market(), a.asset.symbol.as_deref())?;
-                Some((a.asset.id, a.asset.quantity, symbol))
+                let provider_symbol = payer_symbol(a.asset.market(), a.asset.symbol.as_deref())?;
+                Some(Payer {
+                    asset_id: a.asset.id,
+                    class: a.asset.asset_class,
+                    quantity: a.asset.quantity,
+                    provider_symbol,
+                })
             })
             .collect();
+        let b3_candidates: Vec<(Uuid, AssetClass, String)> = view
+            .assets
+            .iter()
+            .filter(|a| b3_sourced(a.asset.market(), a.asset.asset_class))
+            .filter_map(|a| Some((a.asset.id, a.asset.asset_class, a.asset.symbol.clone()?)))
+            .collect();
+        let b3 = self
+            .store
+            .b3_income_sources(&b3_candidates, b3_window_start(today))
+            .await
+            .unwrap_or_else(|error| {
+                tracing::error!(error = %error, "anuncios da B3 ilegiveis para a estimativa");
+                HashMap::new()
+            });
         let symbols: Vec<String> = payers
             .iter()
-            .map(|(_, _, s)| s.clone())
+            .map(|p| p.provider_symbol.clone())
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
@@ -186,52 +235,80 @@ impl IncomeService {
             ..PortfolioIncome::default()
         };
         let mut missing = BTreeSet::new();
-        for (asset_id, quantity, symbol) in payers {
-            let Some(cached) = cache.get(&symbol) else {
-                missing.insert(symbol);
-                continue;
+        for payer in payers {
+            // O histórico do Yahoo, em reais: a reserva da B3 e o histórico longo
+            // da média do habitual.
+            let yahoo = cache.get(&payer.provider_symbol).and_then(|cached| {
+                let rate = if cached.currency == "BRL" {
+                    Some(Decimal::ONE)
+                } else {
+                    fx.get(&fx_symbol(&cached.currency)).map(|q| q.price)
+                }?;
+                let points: Vec<DividendPoint> = cached
+                    .events
+                    .iter()
+                    .map(|e| DividendPoint {
+                        ex_date: e.ex_date,
+                        amount: e.amount,
+                    })
+                    .collect();
+                Some((points, rate, cached.fetched_at))
+            });
+            let announced = b3.get(&payer.asset_id);
+            let source = pick_source(announced.map(|a| a.fetched_at), yahoo.is_some(), now);
+            let history = yahoo
+                .as_ref()
+                .map(|(points, rate, _)| yahoo_unit_payments(points, *rate))
+                .unwrap_or_default();
+            let entries = ledgers.get(&payer.asset_id).map_or(&[][..], Vec::as_slice);
+            let (source, payments, fetched_at, trailing) = match (source, announced, &yahoo) {
+                (Some(EstimateSource::B3), Some(announced), _) => (
+                    EstimateSource::B3,
+                    b3_unit_payments(&announced.cash, &announced.stock, payer.class, today),
+                    announced.fetched_at,
+                    user.map(|_| {
+                        b3_trailing_income(&announced.cash, payer.class, entries, today)
+                            .map(|total| total.net)
+                    }),
+                ),
+                (Some(_), _, Some((points, rate, fetched_at))) => (
+                    EstimateSource::Yahoo,
+                    history.clone(),
+                    *fetched_at,
+                    user.map(|_| {
+                        trailing_income(points, today, entries)
+                            .map(|gross| round_cents(gross * rate))
+                    }),
+                ),
+                // Nem a B3 nem o Yahoo têm o ativo (ou falta o câmbio).
+                _ => {
+                    missing.insert(payer.provider_symbol);
+                    continue;
+                }
             };
-            let rate = if cached.currency == "BRL" {
-                Some(Decimal::ONE)
-            } else {
-                fx.get(&fx_symbol(&cached.currency)).map(|q| q.price)
-            };
-            let Some(rate) = rate else {
-                missing.insert(symbol);
-                continue;
-            };
-            let points: Vec<DividendPoint> = cached
-                .events
-                .iter()
-                .map(|e| DividendPoint {
-                    ex_date: e.ex_date,
-                    amount: e.amount,
-                })
-                .collect();
-            let per_unit_12m = (trailing_per_unit(&points, today) * rate).round_dp(8);
-            let monthly = monthly_estimate(per_unit_12m, quantity);
-            let trailing_12m = user.and_then(|_| {
-                let entries = ledgers.get(&asset_id).map_or(&[][..], Vec::as_slice);
-                match trailing_income(&points, today, entries) {
-                    Ok(gross) => Some(round_cents(gross * rate)),
-                    Err(error) => {
-                        tracing::error!(error = %error, "livro nao fecha na estimativa");
-                        None
-                    }
+            let trailing_12m = trailing.and_then(|result| match result {
+                Ok(total) => Some(total),
+                Err(error) => {
+                    tracing::error!(error = %error, "livro nao fecha na estimativa");
+                    None
                 }
             });
-            income.monthly_total += monthly;
+            let estimate = asset_estimate(source, &payments, &history, payer.quantity, today);
+            income.monthly_total += estimate.monthly.net;
+            income.monthly_total_gross += estimate.monthly.gross;
+            if estimate.above_usual {
+                income.above_usual_monthly += estimate.monthly.net;
+            }
             income.updated_at = Some(
                 income
                     .updated_at
-                    .map_or(cached.fetched_at, |at| at.min(cached.fetched_at)),
+                    .map_or(fetched_at, |at| at.min(fetched_at)),
             );
             income.assets.insert(
-                asset_id,
+                payer.asset_id,
                 AssetIncome {
-                    asset_id,
-                    per_unit_12m,
-                    monthly,
+                    asset_id: payer.asset_id,
+                    estimate,
                     trailing_12m,
                 },
             );
