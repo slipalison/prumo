@@ -38,7 +38,7 @@ pub(crate) mod number {
     }
 
     pub mod option {
-        use super::*;
+        use super::{Decimal, Serializer};
 
         pub fn serialize<S: Serializer>(
             value: &Option<Decimal>,

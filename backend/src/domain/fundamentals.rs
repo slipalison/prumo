@@ -267,11 +267,13 @@ pub fn fold(text: &str) -> String {
     text.chars()
         .flat_map(char::to_lowercase)
         .map(|c| match c {
-            'á' | 'à' | 'â' | 'ã' | 'ä' => 'a',
-            'é' | 'è' | 'ê' | 'ë' => 'e',
-            'í' | 'ì' | 'î' | 'ï' => 'i',
-            'ó' | 'ò' | 'ô' | 'õ' | 'ö' => 'o',
-            'ú' | 'ù' | 'û' | 'ü' => 'u',
+            // Faixas contíguas do Latin-1: cada uma é a vogal com os acentos
+            // grave, agudo, circunflexo, til (quando há) e trema.
+            'à'..='ä' => 'a', // à á â ã ä
+            'è'..='ë' => 'e', // è é ê ë
+            'ì'..='ï' => 'i', // ì í î ï
+            'ò'..='ö' => 'o', // ò ó ô õ ö
+            'ù'..='ü' => 'u', // ù ú û ü
             'ç' => 'c',
             other => other,
         })

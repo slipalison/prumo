@@ -35,7 +35,7 @@ pub(crate) mod decimal_out {
     }
 
     pub mod option {
-        use super::*;
+        use super::{Decimal, Serializer};
 
         pub fn serialize<S: Serializer>(
             value: &Option<Decimal>,
