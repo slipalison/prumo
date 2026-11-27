@@ -199,6 +199,10 @@ inteira. `alignStart` alinha os cartões no topo em vez de esticar.
   baixo. O ganho no celular vem do texto que vira ⓘ, das tabelas compactas (que
   empilham abaixo de 560 px com o nome da coluna antes de cada valor) e dos
   recolheres — a meta é **metade da altura** de hoje nas telas longas.
+- A barra de abas tem sete telas desde a Agenda: vai até 560 px de largura e,
+  abaixo de 600 px de janela, só a aba aberta mostra o nome (as outras ficam com
+  o ícone, e o nome continua no link para o leitor de tela). "Desempenho", o
+  nome mais largo, cabe inteiro em 320 px.
 - iPad em retrato (1024 px): trilho estreito e 2 colunas onde a grade pede.
   iPad deitado (1366 px): 3 colunas nas grades de 3.
 - Alvos de toque seguem ≥ 44 px (o ⓘ tem 16 px à vista e 44 px de alvo).

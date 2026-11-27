@@ -63,6 +63,17 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   aparecem como pendência para lançar. Liga e desliga em Ajustes. Cada pagador, o ativo e a carteira mostram o **yield on cost**
   (renda de 12 meses ÷ o que você pagou; sem preço médio, a tela pede o preço
   médio em vez de inventar).
+- **Agenda** — a linha do tempo e o calendário do mês, só dos seus ativos:
+  data com e pagamento dos proventos (o líquido, como na Renda; o anunciado
+  ainda sem data de pagamento, estimado pelas cotas da data com), o provento
+  anunciado **fora do padrão** (corte ou aumento contra a média dos pagamentos
+  parecidos dos 12 meses e dos 5 anos; o selo aparece também em "Próximos
+  pagamentos" da Renda), o resultado entregue à CVM (ITR e DFP), fatos
+  relevantes, comunicados, avisos e assembleias com o link do documento
+  original, e os dias sem pregão da B3. Filtra por tipo, classe e ativo. Tudo
+  na tela, sem recomendação. Os documentos das companhias vêm dos dados abertos
+  da CVM (atualizados uma vez por semana) e os dos FIIs, do Fundos.NET. Detalhes
+  em [`docs/agenda.md`](docs/agenda.md).
 - **Caixa** — o que os proventos recebidos e as vendas deixaram e você ainda não
   aportou. O campo do aporte oferece "+ R$ X em caixa — incluir?", com um detalhe
   de onde o saldo veio; registrar o aporte baixa o que foi usado, e o resto é
@@ -73,10 +84,6 @@ comprar para a carteira ficar o mais perto possível das suas metas.
 - **Lucro total** — na Carteira: ganho de capital (realizado + não realizado)
   mais os proventos recebidos. O que falta saber (preço médio, cotação) deixa o
   número marcado como parcial, sem estimativa.
-  renda estimada ele soma e oferece incluir os proventos recebidos desde o
-  último aporte. A renda "da carteira de hoje" é **estimativa** (líquida do IR
-  retido na fonte, a mesma da Renda; buscada em segundo plano: nenhuma tela espera por
-  ela): o que você lança, e depois o que importa da B3, vale mais.
 - **Objetivos** — em Ajustes: um patrimônio total, um valor numa classe
   ("R$ 1 milhão", "R$ 100 mil em FIIs") ou uma renda por mês ("quando a renda
   cobre R$ 3 mil", pela média ou pelo pior mês de 12). Cada um mostra o

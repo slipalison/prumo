@@ -2775,6 +2775,162 @@ Números fictícios:
 - `synced_at`: a última vez que o Prumo conferiu a CVM com sucesso (empresas:
   os arquivos de DFP; FIIs: o informe mensal).
 
+## Agenda
+
+A linha do tempo dos ativos da carteira: data com e pagamento dos proventos,
+provento fora do padrão, resultado entregue à CVM, fato relevante, comunicados e
+avisos, dias sem pregão. Fontes (CVM IPE, índice do ITR/DFP, Fundos.NET),
+regras e limites em [`agenda.md`](agenda.md). A rota só lê o banco: nenhuma
+requisição espera fonte externa.
+
+### `GET /api/v1/agenda?from=AAAA-MM-DD&to=AAAA-MM-DD`
+
+Os eventos de `[from, to]` (os dois inclusive), do dia mais velho ao mais novo
+e, no mesmo dia, pela ordem dos tipos abaixo. Sem `from`/`to`: de 30 dias atrás
+a 90 dias à frente. `from` depois de `to`, período de mais de 400 dias ou
+parâmetro desconhecido: `422`. Só os ativos da pessoa. Números fictícios:
+
+```json
+{
+  "today": "2026-11-27",
+  "from": "2026-11-01",
+  "to": "2026-11-30",
+  "calendar_until": 2027,
+  "updated": { "cvm_documents": "2026-11-27T09:00:00Z", "fund_documents": "2026-11-27T09:05:00Z" },
+  "events": [
+    {
+      "date": "2026-11-20",
+      "type": "market_closed",
+      "assets": [],
+      "income": null, "unusual": null, "document": null,
+      "closure": "black_consciousness"
+    },
+    {
+      "date": "2026-11-24",
+      "type": "unusual_income",
+      "assets": [{ "asset_id": "…", "symbol": "FUND11", "display_name": "Fundo Fictício", "asset_class": "br_reits" }],
+      "income": null, "document": null, "closure": null,
+      "unusual": {
+        "direction": "cut",
+        "per_unit": 0.6,
+        "record_date": "2026-11-30",
+        "ex_date": "2026-12-01",
+        "approved_on": "2026-11-24",
+        "pay_dates": ["2026-12-15"],
+        "recent": { "usual": 0.8, "change": -0.25, "payments": 12 },
+        "long": { "usual": 0.79, "change": -0.2405, "payments": 59 },
+        "years": 5
+      }
+    },
+    {
+      "date": "2026-11-30",
+      "type": "income_record",
+      "assets": [{ "asset_id": "…", "symbol": "FUND11", "display_name": "Fundo Fictício", "asset_class": "br_reits" }],
+      "unusual": null, "document": null, "closure": null,
+      "income": {
+        "income_id": "…",
+        "kind": "reit_income",
+        "record_date": "2026-11-30",
+        "ex_date": "2026-12-01",
+        "pay_date": "2026-12-15",
+        "amount_per_unit": 0.6,
+        "quantity": 100.0,
+        "gross": 60.0,
+        "net": 60.0,
+        "state": "upcoming",
+        "source": "b3_announcement",
+        "unusual": {
+          "direction": "cut",
+          "recent": { "usual": 0.8, "change": -0.25, "payments": 12 },
+          "long": { "usual": 0.79, "change": -0.2405, "payments": 59 },
+          "years": 5
+        }
+      }
+    },
+    {
+      "date": "2026-11-11",
+      "type": "results",
+      "assets": [{ "asset_id": "…", "symbol": "FICT3", "display_name": "Cia Fictícia", "asset_class": "br_stocks" }],
+      "income": null, "unusual": null, "closure": null,
+      "document": {
+        "category": "results",
+        "source": "cvm_filing",
+        "title": null,
+        "subject": null,
+        "reference_date": "2026-09-30",
+        "version": 1,
+        "url": "https://www.rad.cvm.gov.br/ENETCONSULTA/frmDownloadDocumento.aspx?CodigoInstituicao=1&NumeroSequencialDocumento=1",
+        "filing": "quarterly"
+      }
+    }
+  ]
+}
+```
+
+- `type`, na ordem do dia: `market_closed` (dia de semana sem pregão na B3),
+  `income_record` (data com), `income_payment` (pagamento), `unusual_income`
+  (provento anunciado fora do padrão, no dia do anúncio), `results` (resultado
+  entregue), `material_fact` (fato relevante), `notice` (comunicado, aviso,
+  assembleia, relatório gerencial). Exatamente um de `income`, `unusual`,
+  `document`, `closure` vem preenchido.
+- `assets`: os ativos da pessoa que o evento cita (ON e PN da mesma companhia
+  recebem o mesmo documento), em ordem de código; vazio em `market_closed`.
+- `income`: o provento da Renda (`income_id` é o `IncomeEvent`), com o
+  **líquido** dela. `state`: `received`, `upcoming` ou `undated` — o anúncio da
+  B3 ainda sem data de pagamento, só com a data com, `pay_date: null`,
+  `income_id: null` e o líquido **estimado** pelas cotas do livro no fim da data
+  com. `record_date`: a do anúncio no automático; o pregão antes da `ex_date` no
+  resto (`null` sem data ex: aí só vem o pagamento). `amount_per_unit` é o bruto
+  por cota da época.
+- `unusual` (no evento e dentro de `income`): `direction` `increase` ou `cut`;
+  `recent` é o habitual dos 12 meses antes da data ex e `long` o de até 5 anos
+  (`null` com menos de 2 anos de histórico; `years` diz quantos anos entraram, 0
+  sem ele). `usual` é a média dos pagamentos parecidos (de metade ao dobro do
+  valor) por cota de hoje, `change` é `valor ÷ habitual − 1` e `payments` quantos
+  entraram (1 quando não houve parecido e valeu o mais próximo). No evento,
+  `per_unit` é o valor da data com por cota de hoje, bruto. Regra e limiares (1,25
+  no FII, 1,5 no resto) em [`agenda.md`](agenda.md#4-provento-fora-do-padrão).
+- `document`: `category` (`material_fact`, `market_notice`,
+  `shareholder_notice`, `meeting`, `results`, `management_report`), `source`
+  (`cvm_ipe`, `cvm_filing` — ITR/DFP —, `fundos_net`), `title` e `subject`
+  como a fonte escreve (podem vir `null`), `url` do original (RAD da CVM ou
+  Fundos.NET, sempre `https`; pode faltar no ITR/DFP) e `filing` (`annual` =
+  DFP, `quarterly` = ITR) no resultado da companhia.
+- `closure`: `new_year`, `carnival`, `good_friday`, `tiradentes`, `labour_day`,
+  `corpus_christi`, `independence`, `aparecida`, `all_souls`, `republic`,
+  `black_consciousness`, `christmas_eve`, `christmas`, `year_end` (31/12).
+- `calendar_until`: o último ano com calendário de pregões; depois dele, nenhum
+  `market_closed`.
+- `updated.cvm_documents`: a conferência mais recente do IPE (a CVM o atualiza
+  uma vez por semana); `updated.fund_documents`: a busca mais velha dos FIIs da
+  pessoa no Fundos.NET. `null` antes da primeira.
+
+### `GET /api/v1/agenda/unusual-income`
+
+Os proventos **a receber** da pessoa (`pay_date` depois de hoje) que estão fora
+do padrão: o selo de "Próximos pagamentos" da Renda.
+
+```json
+{
+  "items": [
+    {
+      "income_id": "…",
+      "asset_id": "…",
+      "record_date": "2026-11-30",
+      "ex_date": "2026-12-01",
+      "per_unit": 0.6,
+      "direction": "cut",
+      "recent": { "usual": 0.8, "change": -0.25, "payments": 12 },
+      "long": null,
+      "years": 0
+    }
+  ]
+}
+```
+
+`income_id` é o `IncomeEvent` de `GET /income/summary` (`upcoming`). Lista
+vazia quando nada está fora do padrão.
+
 ## Logos dos ativos
 
 Cada ativo da B3 mostra o logo da empresa ou do fundo. O navegador **nunca** fala

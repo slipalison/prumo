@@ -129,7 +129,11 @@ estão em [layout.md](layout.md).
 - A barra lista as telas de `APP_ROUTES` (`frontend/src/app/routes.tsx`): tela
   nova é **uma linha** nessa lista, e a barra (que reparte a largura entre
   quantas houver), o título da aba, o `aria-current` e o roteamento saem dela.
-  Hoje: Aportar, Carteira, Renda, Desempenho, Análise, Ajustes.
+  Hoje: Aportar, Carteira, Renda, Agenda, Desempenho, Análise, Ajustes. As
+  sete abas com nome pedem ~75 px cada ("Desempenho" é o mais largo): a barra
+  de baixo vai até 560 px e, abaixo de 600 px de janela (celular), só a aba
+  aberta mostra o nome e fica com a largura dele; as outras dividem o resto só
+  com o ícone, e o nome de todas continua no link para o leitor de tela.
 - Ajustes agrupa **seções** (`SETTINGS_SECTIONS`,
   `frontend/src/features/settings/sections.ts`): Metas por classe, Critérios,
   Objetivos, Análise, Importar da B3, Impostos e Alertas.
@@ -715,7 +719,10 @@ e o botão **Lançar provento** à direita.
    uma tabela escondida (`sr-only`) traz os 12 meses para o leitor de tela. À
    direita (1/3), **Próximos pagamentos** (data, ativo, tipo e líquido; o
    provento que o Prumo calculou do anúncio da B3 leva o selo **"automático
-   (B3)"**, borda pontilhada e texto) com a **altura do mês a mês**: a lista
+   (B3)"**, borda pontilhada e texto; o provento cujo valor por cota se afastou
+   do habitual leva o selo da Agenda, **"Corte de 25%"** em vermelho ou
+   **"Aumento de 71%"** em verde, com o habitual no texto só de leitor de tela)
+   com a **altura do mês a mês**: a lista
    rola por dentro, então pagamento demais não alonga a página. O painel
    **Eventos anunciados pela B3** (só com os automáticos ligados e alguma
    pendência: uma frase por bonificação, desdobramento ou grupamento e as cotas
@@ -1045,6 +1052,50 @@ frase do que ligar e desligar faz estão nos ⓘ.
 Com o olho fechado, a quantidade da data com vira `••` ("Você tinha •• cotas
 na data com"), sem singular que entregue o número; o fator do evento é
 percentual e fica.
+
+### 13. Agenda
+
+Aba entre Renda e Desempenho (`#/agenda`, uma linha em `APP_ROUTES`, ícone de
+folha de calendário). Responde "o que acontece com os meus ativos este mês?",
+só com os ativos da carteira. Regra e fontes em [agenda.md](agenda.md).
+
+- **Cabeçalho**: "Agenda da carteira", o ⓘ (o que entra e "informa, não
+  recomenda") e, à direita, a alternância **Linha do tempo / Calendário**
+  (`segmented`, `aria-pressed`).
+- **Mês**: ‹ mês ›, com "Voltar para hoje" quando é outro mês. A consulta é o
+  mês inteiro; trocar de mês mantém o anterior na tela até o novo chegar.
+- **Filtros**: um chip por tipo (Data com, Pagamento, Fora do padrão,
+  Resultado, Fato relevante, Comunicados e avisos, Sem pregão), com o ponto da
+  cor do tipo e quantos há no mês, ligado e desligado com `aria-pressed`; a
+  **classe** e o **ativo** em listas (o ativo só oferece os da classe), e
+  "Limpar filtros". No celular as duas listas ficam lado a lado.
+- **Linha do tempo** (painel): os dias com evento, cada um com o nome do dia
+  ("Qua., 2 de dez."); **hoje** tem a etiqueta e aparece mesmo sem evento
+  ("Nada hoje."); os dias que passaram ficam mais apagados. Cada linha: o
+  **selo do tipo** (cor + nome: "Data com", "Assembleia"...), o ícone do ativo, o
+  código e o que é, um detalhe ("data ex 11/11 · paga em 24/11", "entregue à
+  CVM", o assunto do documento) e, à direita, o **líquido** do provento
+  ("~R$ 41,25" no "a definir") ou **Abrir** (o documento original, nova aba,
+  nome acessível "Abrir o documento: Fato relevante de ITSA4 (abre em nova
+  aba)").
+- **Fora do padrão**: a linha diz "Corte de 25% no provento de MXRF11" e o
+  detalhe "R$ 0,075 por cota; habitual de R$ 0,10 nos 12 meses e R$ 0,098 em 5
+  anos · data com 10/11". A data com e o pagamento do mesmo provento levam o
+  selo "Corte de 25%" (vermelho) ou "Aumento de 71%" (verde); o texto está
+  sempre escrito, a cor só reforça.
+- **Calendário**: o mês de domingo a sábado numa tabela; cada dia é um botão
+  (≥ 44 px) com o número e um ponto por tipo de evento (até três e "+N"); o
+  rótulo do botão diz o dia e os tipos ("quarta-feira, 10 de novembro: 1 evento:
+  Data com"). Hoje tem borda dourada; o escolhido, fundo dourado; o dia sem
+  pregão é listrado. Ao lado (abaixo, no celular), o painel do dia escolhido com
+  as mesmas linhas da linha do tempo.
+- **Vazio**: "Nada na agenda de novembro de 2026 com esses filtros." Mês depois
+  do calendário de pregões cadastrado: uma linha avisa que os dias sem pregão
+  ainda não aparecem.
+- **Olho fechado**: líquido, valor por cota e habitual viram "R$ ••••",
+  inclusive no texto só de leitor de tela.
+- Medido no `dev:demo` (1440 e 390, claro e escuro): sem rolagem lateral nem
+  texto cortado; a linha do tempo tem 1,3 tela em 1440x900 e o calendário 1,0.
 
 ### Histórico
 

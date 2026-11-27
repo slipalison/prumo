@@ -95,6 +95,10 @@ as tem na mesma escala incerta); a diferença costuma ficar abaixo de 1%.
   lida no começo da rodada pode estar velha, porque a outra réplica pode ter
   acabado de ler o arquivo e soltado a reserva.
 - `FUNDAMENTALS_ENABLED=false` desliga as buscas; o gravado continua servido.
+- **A Agenda lê outros arquivos da CVM** com as mesmas peças (GET condicional,
+  `cvm_sources`, reserva, `due_with`): o IPE do ano (fato relevante,
+  comunicados) e só o índice do ITR e da DFP (a data de entrega), que é a
+  primeira entrada do `.zip` — o download para ali. Ver [agenda.md](agenda.md).
 
 ## O que é guardado
 
