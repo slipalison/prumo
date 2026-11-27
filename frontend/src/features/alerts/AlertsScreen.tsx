@@ -70,11 +70,11 @@ function TelegramCard({
   alerts,
   pairing,
   onPairing,
-}: {
+}: Readonly<{
   alerts: Alerts;
   pairing: LinkCode | null;
   onPairing: (code: LinkCode | null) => void;
-}) {
+}>) {
   const { telegram } = alerts;
   const toast = useToast();
   const link = useLinkTelegram();
@@ -84,10 +84,10 @@ function TelegramCard({
   if (!telegram.configured) {
     return (
       <Panel className="alerts__card" title="Telegram">
-        <p role="status">
+        <output>
           Os alertas estão desligados neste servidor: falta o token do bot do Telegram (a variável{" "}
           <code>TELEGRAM_BOT_TOKEN</code>). Nada é enviado enquanto ele não existir.
-        </p>
+        </output>
         <p className="field__hint">
           O passo a passo, do bot no @BotFather ao segredo no servidor, está em <code>docs/alertas.md</code>.
         </p>
@@ -111,24 +111,28 @@ function TelegramCard({
       onError: (error) => toast({ tone: "error", message: errorMessage(error) }),
     });
 
+  if (telegram.linked) {
+    return (
+      <Panel className="alerts__card" title="Telegram">
+        <output>
+          Vinculado{telegram.linked_at ? ` em ${formatDay(telegram.linked_at)}` : ""}. O resumo chega no chat com o bot
+          {telegram.bot_username ? ` @${telegram.bot_username}` : ""}.
+        </output>
+        <div className="alerts__actions">
+          <MagneticButton variant="soft" loading={test.isPending} onClick={sendTest}>
+            Enviar teste agora
+          </MagneticButton>
+          <MagneticButton variant="ghost" magnetic={false} loading={unlink.isPending} onClick={stop}>
+            Desvincular
+          </MagneticButton>
+        </div>
+      </Panel>
+    );
+  }
+
   return (
     <Panel className="alerts__card" title="Telegram">
-      {telegram.linked ? (
-        <>
-          <p role="status">
-            Vinculado{telegram.linked_at ? ` em ${formatDay(telegram.linked_at)}` : ""}. O resumo chega no chat com o bot
-            {telegram.bot_username ? ` @${telegram.bot_username}` : ""}.
-          </p>
-          <div className="alerts__actions">
-            <MagneticButton variant="soft" loading={test.isPending} onClick={sendTest}>
-              Enviar teste agora
-            </MagneticButton>
-            <MagneticButton variant="ghost" magnetic={false} loading={unlink.isPending} onClick={stop}>
-              Desvincular
-            </MagneticButton>
-          </div>
-        </>
-      ) : pairing ? (
+      {pairing ? (
         <Pairing code={pairing} botUsername={pairing.bot_username ?? telegram.bot_username} onCancel={() => onPairing(null)} />
       ) : (
         <>
@@ -152,7 +156,7 @@ function expiryTime(iso: string): string {
   return Number.isNaN(date.getTime()) ? "" : date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
-function Pairing({ code, botUsername, onCancel }: { code: LinkCode; botUsername: string | null; onCancel: () => void }) {
+function Pairing({ code, botUsername, onCancel }: Readonly<{ code: LinkCode; botUsername: string | null; onCancel: () => void }>) {
   return (
     <div className="alerts__pairing">
       <ol className="alerts__steps">
@@ -163,8 +167,7 @@ function Pairing({ code, botUsername, onCancel }: { code: LinkCode; botUsername:
               :{" "}
               <a className="link-btn" href={`https://t.me/${botUsername}?start=${code.code}`} target="_blank" rel="noopener noreferrer">
                 @{botUsername}
-              </a>
-              . O link já leva o código.
+              </a>. O link já leva o código.
             </>
           ) : (
             "."
@@ -211,7 +214,7 @@ function thresholdError(type: AlertType, text: string): string | null {
  * O resto da tela, com o Telegram já configurado, em duas colunas: à esquerda
  * o vínculo e o que avisar; à direita quando e com quê, e o exemplo do resumo.
  */
-function PreferencesCard({ alerts, telegram }: { alerts: Alerts; telegram: ReactNode }) {
+function PreferencesCard({ alerts, telegram }: Readonly<{ alerts: Alerts; telegram: ReactNode }>) {
   const saved = useMemo(() => toDraft(alerts), [alerts]);
   const [draft, setDraft] = useState<Draft>(saved);
   const [touched, setTouched] = useState(false);
@@ -420,7 +423,7 @@ function PreferencesCard({ alerts, telegram }: { alerts: Alerts; telegram: React
           {preview.length === 0 ? (
             <p>Nenhum tipo ligado: nada será enviado.</p>
           ) : (
-            <div className="alerts__digest" role="group" aria-label="Exemplo do resumo">
+            <fieldset className="alerts__digest" aria-label="Exemplo do resumo">
               <p className="alerts__digest-title">Prumo – resumo de 25/11</p>
               {preview.map((section) => (
                 <div key={section.title}>
@@ -430,7 +433,7 @@ function PreferencesCard({ alerts, telegram }: { alerts: Alerts; telegram: React
                   ))}
                 </div>
               ))}
-            </div>
+            </fieldset>
           )}
         </Panel>
       </div>
