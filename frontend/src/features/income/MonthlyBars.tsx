@@ -1,10 +1,43 @@
 import { motion } from "motion/react";
-import { useId } from "react";
+import { useId, useState } from "react";
 import type { IncomeMonth } from "../../api/incomeTypes";
 import { useMoney } from "../../lib/privacy";
 import { barGeometry, barsSummary, monthLabel, monthShort, niceCeiling } from "../../lib/income";
 import { DURATION, SPRING, STAGGER } from "../../lib/motion";
 import { useWidth } from "./useWidth";
+import "./monthlyBars.css";
+
+/** `2025-12` → "dezembro de 2025". */
+function monthTitle(month: string): string {
+  const text = new Date(`${month}-15T12:00:00Z`).toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** A caixinha do mês sob o ponteiro: o recebido e, se houver, o a receber. */
+function MonthTooltip({ month, left, top }: Readonly<{ month: IncomeMonth; left: number; top: number }>) {
+  const money = useMoney();
+  // Perto das bordas a caixa se apoia para dentro, para não sair do painel.
+  let side = "";
+  if (left < 20) side = " is-start";
+  else if (left > 80) side = " is-end";
+  return (
+    <div className={`income-bars__tooltip${side}`} style={{ left: `${left}%`, top: `${top}%` }} aria-hidden="true">
+      <strong className="income-bars__tooltip-title">{monthTitle(month.month)}</strong>
+      <span className="income-bars__tooltip-row">
+        <span className="income-legend__swatch income-legend__swatch--received" />
+        <span>Recebido</span>
+        <strong>{money.brl(month.received)}</strong>
+      </span>
+      {month.upcoming > 0 && (
+        <span className="income-bars__tooltip-row">
+          <span className="income-legend__swatch income-legend__swatch--upcoming" />
+          <span>A receber</span>
+          <strong>{money.brl(month.upcoming)}</strong>
+        </span>
+      )}
+    </div>
+  );
+}
 
 type MonthlyBarsProps = {
   months: IncomeMonth[];
@@ -41,10 +74,15 @@ export function MonthlyBars({ months, goal }: Readonly<MonthlyBarsProps>) {
   const baseY = TOP + plotH;
   const tallest = Math.max(...months.map((m) => m.received + m.upcoming), goal ?? 0, 0);
   const ceiling = niceCeiling(tallest);
+  // A coluna inteira do mês responde ao ponteiro (não só a barra, que num mês
+  // fraco é um fio); a barra desenhada fica centrada nela.
   const bars = barGeometry(months, plotW, plotH, ceiling).map((bar) => {
     const barWidth = Math.min((plotW / Math.max(months.length, 1)) * 0.62, MAX_BAR);
-    return { ...bar, x: bar.x + (bar.width - barWidth) / 2, width: barWidth };
+    return { ...bar, columnX: bar.x, columnWidth: bar.width, x: bar.x + (bar.width - barWidth) / 2, width: barWidth };
   });
+  const [hover, setHover] = useState<number | null>(null);
+  const hovered = hover === null ? undefined : bars[hover];
+  const hoveredMonth = hover === null ? undefined : months[hover];
   const ticks = [0, ceiling / 2, ceiling];
   const goalY = goal ? baseY - (goal / ceiling) * plotH : null;
 
@@ -56,6 +94,7 @@ export function MonthlyBars({ months, goal }: Readonly<MonthlyBarsProps>) {
           role="img"
           aria-label={barsSummary(months, money.brl)}
           className="income-bars__svg"
+          onPointerLeave={() => setHover(null)}
         >
           <defs>
             <pattern id={patternId} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -78,12 +117,18 @@ export function MonthlyBars({ months, goal }: Readonly<MonthlyBarsProps>) {
             const month = months[index];
             if (!month) return null;
             const x = LEFT + bar.x;
-            const upcoming = month.upcoming > 0 ? `, ${money.brl(month.upcoming)} a receber` : "";
             return (
               <g key={bar.month}>
-                <title>
-                  {`${monthLabel(bar.month)}: ${money.brl(month.received)} recebidos${upcoming}`}
-                </title>
+                <rect
+                  x={LEFT + bar.columnX}
+                  y={TOP}
+                  width={bar.columnWidth}
+                  height={plotH}
+                  className="income-bars__hit"
+                  data-testid={`income-bars-hit-${bar.month}`}
+                  onPointerEnter={() => setHover(index)}
+                  onPointerDown={() => setHover(index)}
+                />
                 <motion.rect
                   x={x}
                   width={bar.width}
@@ -123,6 +168,13 @@ export function MonthlyBars({ months, goal }: Readonly<MonthlyBarsProps>) {
             </g>
           ) : null}
         </svg>
+        {hovered && hoveredMonth && (
+          <MonthTooltip
+            month={hoveredMonth}
+            left={((LEFT + hovered.x + hovered.width / 2) / width) * 100}
+            top={((baseY - hovered.receivedHeight - hovered.upcomingHeight) / height) * 100}
+          />
+        )}
       </div>
       <ul className="income-legend" aria-label="Legenda">
         <li>

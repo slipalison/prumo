@@ -1,0 +1,56 @@
+/*
+ * O valor de cada mês no gráfico "Mês a mês" da Renda. A coluna inteira do mês
+ * responde ao ponteiro; a caixa fica acima da barra, no mesmo desenho da do
+ * Desempenho (`.chart__tooltip`). Só para quem vê: os números também estão na
+ * tabela escondida para o leitor de tela.
+ */
+
+.income-bars__plot {
+  position: relative;
+}
+
+.income-bars__hit {
+  fill: transparent;
+}
+
+.income-bars__tooltip {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  gap: 4px;
+  min-width: 170px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow-md);
+  transform: translate(-50%, calc(-100% - 8px));
+  pointer-events: none;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.income-bars__tooltip.is-start {
+  transform: translate(-16px, calc(-100% - 8px));
+}
+
+.income-bars__tooltip.is-end {
+  transform: translate(calc(-100% + 16px), calc(-100% - 8px));
+}
+
+.income-bars__tooltip-title {
+  color: var(--text);
+}
+
+.income-bars__tooltip-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+}
+
+.income-bars__tooltip-row strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
