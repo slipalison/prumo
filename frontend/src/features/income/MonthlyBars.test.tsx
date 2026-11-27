@@ -26,7 +26,9 @@ describe("Mês a mês: o valor no ponteiro", () => {
   it("mostra o recebido do mês sob o ponteiro, na coluna inteira, e some ao sair", () => {
     renderBars();
     expect(tooltip()).toBeNull();
-    fireEvent.pointerEnter(screen.getByTestId("income-bars-hit-2025-12"));
+    // Sobre a própria barra (ela fica por cima da coluna).
+    const bar = screen.getByTestId("income-bars-hit-2025-12").parentElement?.querySelector(".income-bars__received");
+    fireEvent.pointerEnter(bar as Element);
     expect(tooltip()).toHaveTextContent("Dezembro de 2025");
     expect(tooltip()).toHaveTextContent(/Recebido\s*R\$\s1\.580,40/);
     expect(tooltip()).not.toHaveTextContent("A receber");
@@ -35,6 +37,19 @@ describe("Mês a mês: o valor no ponteiro", () => {
     expect(tooltip()).toHaveTextContent(/Recebido\s*R\$\s120,00/);
     fireEvent.pointerLeave(document.querySelector(".income-bars__svg") as Element);
     expect(tooltip()).toBeNull();
+  });
+
+  it("as colunas dos meses cobrem o gráfico de ponta a ponta, sem vão entre elas", () => {
+    renderBars();
+    const hits = MONTHS.map((m) => screen.getByTestId(`income-bars-hit-${m.month}`));
+    const n = (el: Element, attr: string) => Number(el.getAttribute(attr));
+    for (let i = 1; i < hits.length; i++) {
+      const before = hits[i - 1] as Element;
+      expect(n(before, "x") + n(before, "width")).toBeCloseTo(n(hits[i] as Element, "x"));
+    }
+    // Cada coluna é mais larga que a barra que leva.
+    const bar = hits[0]?.parentElement?.querySelector(".income-bars__received") as Element;
+    expect(n(hits[0] as Element, "width")).toBeGreaterThan(n(bar, "width"));
   });
 
   it("traz o a receber quando há", () => {

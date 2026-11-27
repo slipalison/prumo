@@ -76,9 +76,10 @@ export function MonthlyBars({ months, goal }: Readonly<MonthlyBarsProps>) {
   const ceiling = niceCeiling(tallest);
   // A coluna inteira do mês responde ao ponteiro (não só a barra, que num mês
   // fraco é um fio); a barra desenhada fica centrada nela.
+  const slot = plotW / Math.max(months.length, 1);
   const bars = barGeometry(months, plotW, plotH, ceiling).map((bar) => {
-    const barWidth = Math.min((plotW / Math.max(months.length, 1)) * 0.62, MAX_BAR);
-    return { ...bar, columnX: bar.x, columnWidth: bar.width, x: bar.x + (bar.width - barWidth) / 2, width: barWidth };
+    const barWidth = Math.min(slot * 0.62, MAX_BAR);
+    return { ...bar, x: bar.x + (bar.width - barWidth) / 2, width: barWidth };
   });
   const [hover, setHover] = useState<number | null>(null);
   const hovered = hover === null ? undefined : bars[hover];
@@ -118,16 +119,17 @@ export function MonthlyBars({ months, goal }: Readonly<MonthlyBarsProps>) {
             if (!month) return null;
             const x = LEFT + bar.x;
             return (
-              <g key={bar.month}>
+              // O grupo do mês (coluna, barras e rótulo) responde ao ponteiro: a
+              // barra fica por cima da coluna, e o `pointerenter` só chega a
+              // quem está sob o ponteiro e aos ancestrais dele.
+              <g key={bar.month} onPointerEnter={() => setHover(index)} onPointerDown={() => setHover(index)}>
                 <rect
-                  x={LEFT + bar.columnX}
+                  x={LEFT + slot * index}
                   y={TOP}
-                  width={bar.columnWidth}
+                  width={slot}
                   height={plotH}
                   className="income-bars__hit"
                   data-testid={`income-bars-hit-${bar.month}`}
-                  onPointerEnter={() => setHover(index)}
-                  onPointerDown={() => setHover(index)}
                 />
                 <motion.rect
                   x={x}
