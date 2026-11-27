@@ -81,6 +81,7 @@ function areaPath(values: Array<number | null>, s: Scale): string {
 export function LineChart({ dates, series, format, label, zeroLine = false, fromZero = false }: LineChartProps) {
   const [hover, setHover] = useState<number | null>(null);
   const gradient = useId();
+  const reveal = useId();
   const s = scale(series, zeroLine, fromZero);
   const count = dates.length;
   const ticks = [s.max - (s.max - s.min) * 0.08, (s.max + s.min) / 2, s.min + (fromZero ? 0 : (s.max - s.min) * 0.08)];
@@ -117,6 +118,20 @@ export function LineChart({ dates, series, format, label, zeroLine = false, from
               <stop offset="0%" stopColor="var(--perf-portfolio)" stopOpacity="0.28" />
               <stop offset="100%" stopColor="var(--perf-portfolio)" stopOpacity="0" />
             </linearGradient>
+            {/* As linhas se revelam da esquerda para a direita por um recorte, não
+                por `pathLength`: com `vector-effect: non-scaling-stroke` o Chrome mede
+                o tracejado da animação em pixels de tela, e num gráfico mais largo que
+                o viewBox a linha ficava cortada no meio (e perdia o próprio tracejado). */}
+            <clipPath id={reveal}>
+              <motion.rect
+                x={0}
+                y={0}
+                height={H}
+                initial={{ width: 0 }}
+                animate={{ width: W }}
+                transition={SPRING.value}
+              />
+            </clipPath>
           </defs>
           {ticks.map((tick, i) => (
             <line key={i} className="chart__grid" x1={0} x2={W} y1={yAt(tick, s)} y2={yAt(tick, s)} />
@@ -127,7 +142,7 @@ export function LineChart({ dates, series, format, label, zeroLine = false, from
             const area = line.area ? areaPath(line.values, s) : "";
             const lone = count === 1 && line.values[0] !== null && line.values[0] !== undefined;
             return (
-              <g key={line.key} data-series={line.key}>
+              <g key={line.key} data-series={line.key} clipPath={`url(#${reveal})`}>
                 {area && (
                   <motion.path
                     d={area}
@@ -138,7 +153,7 @@ export function LineChart({ dates, series, format, label, zeroLine = false, from
                   />
                 )}
                 {d && !lone && (
-                  <motion.path
+                  <path
                     d={d}
                     fill="none"
                     stroke={line.color}
@@ -147,9 +162,6 @@ export function LineChart({ dates, series, format, label, zeroLine = false, from
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     vectorEffect="non-scaling-stroke"
-                    initial={{ pathLength: 0 }}
-                    animate={{ pathLength: 1 }}
-                    transition={SPRING.value}
                   />
                 )}
               </g>
