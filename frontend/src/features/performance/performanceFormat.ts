@@ -1,4 +1,5 @@
 import { formatPercent } from "../../lib/format";
+import type { Money } from "../../lib/money";
 
 /** `2026-11-25` → `25/11` (ou `25/11/2026`). */
 export function formatDay(iso: string, withYear = false): string {
@@ -47,3 +48,19 @@ export const MONTH_NAMES = [
   "novembro",
   "dezembro",
 ] as const;
+
+export const MONTH_SHORT = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"] as const;
+
+/** `3, 2025` → `mar/2025`. */
+export function monthLabel(month: number, year: number): string {
+  return `${MONTH_SHORT[month - 1] ?? month}/${year}`;
+}
+
+/**
+ * `+R$ 10,00` / `−R$ 10,00`. Com o olho fechado sai só a máscara, sem o sinal:
+ * o sentido também é informação sobre o valor.
+ */
+export function signedMoney(money: Money, value: number): string {
+  const sign = money.hidden || Math.abs(value) < 0.005 ? "" : value > 0 ? "+" : "−";
+  return `${sign}${money.brl(Math.abs(value))}`;
+}

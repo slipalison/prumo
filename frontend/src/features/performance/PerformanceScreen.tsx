@@ -1,14 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { errorMessage } from "../../api/client";
 import { useNetWorth, usePerformance } from "../../api/performance";
-import type {
-  BenchmarkCode,
-  NetWorth,
-  Performance,
-  PerformancePeriod,
-  PerformanceYear,
-  VersusCdi,
-} from "../../api/performanceTypes";
+import type { BenchmarkCode, NetWorth, Performance, PerformancePeriod, VersusCdi } from "../../api/performanceTypes";
 import { CountUp } from "../../components/CountUp";
 import { GlassCard } from "../../components/GlassCard";
 import { Grid, Page, PageHeader, Panel, StatStrip, type Stat } from "../../components/Layout";
@@ -20,15 +13,21 @@ import type { Money } from "../../lib/money";
 import { useMoney } from "../../lib/privacy";
 import { parseSection, useHash } from "../../lib/route";
 import { RISK_SECTION, RiskLink, RiskScreen } from "../risk/RiskScreen";
+import { ClassReturnsPanel } from "./ClassReturnsPanel";
+import { Swatch } from "./Legend";
 import { LineChart, type ChartSeries } from "./LineChart";
+import { NetWorthPanel } from "./NetWorthPanel";
 import "./performance.css";
-import { formatDay, formatSignedPercent, MONTH_NAMES, MONTHS, spansYears, trend, versusText } from "./performanceFormat";
+import { formatDay, formatSignedPercent, spansYears, trend, versusText } from "./performanceFormat";
+import { YearByYearPanel } from "./YearByYearPanel";
 
 const PERIODS: Array<{ id: PerformancePeriod; label: string }> = [
   { id: "month", label: "Mês" },
-  { id: "ytd", label: "No ano" },
+  { id: "ytd", label: "Ano atual" },
   { id: "12m", label: "12 meses" },
-  { id: "all", label: "Desde o início" },
+  { id: "2y", label: "2 anos" },
+  { id: "5y", label: "5 anos" },
+  { id: "all", label: "Tudo" },
 ];
 
 /** Cor e tracejado de cada linha: a cor nunca é a única pista (docs/design.md). */
@@ -37,6 +36,7 @@ const LINE: Record<"portfolio" | BenchmarkCode, { label: string; color: string; 
   cdi: { label: "CDI", color: "var(--perf-cdi)", dash: "7 5" },
   ipca: { label: "IPCA", color: "var(--perf-ipca)", dash: "2 5" },
   ibov: { label: "Ibovespa", color: "var(--perf-ibov)", dash: "12 5 2 5" },
+  ifix: { label: "IFIX", color: "var(--perf-ifix)", dash: "12 4 2 4 2 4" },
   selic: { label: "Selic", color: "var(--perf-cdi)", dash: "4 4" },
 };
 
@@ -93,12 +93,12 @@ function PerformanceOverview() {
           </MagneticButton>
         </GlassCard>
       )}
-      {worth.data && perf.data && <Loaded worth={worth.data} perf={perf.data} />}
+      {worth.data && perf.data && <Loaded worth={worth.data} perf={perf.data} period={period} />}
     </Page>
   );
 }
 
-function Loaded({ worth, perf }: { worth: NetWorth; perf: Performance }) {
+function Loaded({ worth, perf, period }: { worth: NetWorth; perf: Performance; period: PerformancePeriod }) {
   const money = useMoney();
   if (!perf.starts_on) {
     return (
@@ -133,10 +133,13 @@ function Loaded({ worth, perf }: { worth: NetWorth; perf: Performance }) {
         <StatStrip items={statsOf(perf, worth, money)} />
       </section>
       <Grid cols={2}>
-        <NetWorthCard worth={worth} />
+        <NetWorthPanel worth={worth} />
         <ReturnCard perf={perf} />
       </Grid>
-      <MonthTable years={perf.years} />
+      <Grid cols="aside-main" alignStart>
+        <ClassReturnsPanel period={period} />
+        <YearByYearPanel perf={perf} />
+      </Grid>
     </>
   );
 }
@@ -199,78 +202,6 @@ function versusStat(id: string, label: string, data: VersusCdi | null, twelveMon
         : when,
     ...(started && trend(data.return_percent) !== "flat" ? { tone: trend(data.return_percent) as "up" | "down" } : {}),
   };
-}
-
-function NetWorthCard({ worth }: { worth: NetWorth }) {
-  const money = useMoney();
-  const last = worth.points[worth.points.length - 1];
-  if (!last) return null;
-  const first = worth.points[0]?.date ?? last.date;
-  const withYear = spansYears(first, last.date);
-  const series: ChartSeries[] = [
-    {
-      key: "market_value",
-      label: "Patrimônio",
-      color: "var(--perf-portfolio)",
-      area: true,
-      values: worth.points.map((p) => p.market_value),
-    },
-    {
-      key: "invested",
-      label: "Aplicado",
-      color: "var(--text-subtle)",
-      dash: "6 5",
-      values: worth.points.map((p) => p.invested),
-    },
-  ];
-  return (
-    <Panel
-      title="Patrimônio no tempo"
-      info={
-        <>
-          O ganho é o do preço; os proventos recebidos ficam ao lado e entram na rentabilidade.
-          {last.partial && ` O ponto de hoje (${formatDay(last.date)}) usa o preço do momento; a foto do dia é tirada depois do fechamento.`}
-        </>
-      }
-      infoLabel="Como ler o patrimônio no tempo"
-      actions={last.partial ? <span className="perf-card__badge">Hoje é parcial</span> : undefined}
-    >
-      <Legend items={series.map((s) => ({ key: s.key, label: s.label, color: s.color, dash: s.dash }))} />
-      <LineChart
-        dates={worth.points.map((p) => p.date)}
-        series={series}
-        format={money.compact}
-        fromZero
-        label={`Patrimônio de ${formatDay(first, withYear)} a ${formatDay(last.date, withYear)}: ${money.brl(
-          last.market_value,
-        )}, com ${money.brl(last.invested)} aplicados.`}
-      />
-    </Panel>
-  );
-}
-
-type LegendItem = { key: string; label: string; color: string; dash?: string | undefined; value?: string };
-
-function Swatch({ color, dash }: { color: string; dash?: string | undefined }) {
-  return (
-    <svg className="legend__swatch" width="26" height="10" viewBox="0 0 26 10" aria-hidden="true">
-      <line x1="1" x2="25" y1="5" y2="5" stroke={color} strokeWidth="2.5" strokeDasharray={dash} strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function Legend({ items }: { items: LegendItem[] }) {
-  return (
-    <ul className="legend">
-      {items.map((item) => (
-        <li key={item.key} className="legend__item">
-          <Swatch color={item.color} dash={item.dash} />
-          <span>{item.label}</span>
-          {item.value && <strong>{item.value}</strong>}
-        </li>
-      ))}
-    </ul>
-  );
 }
 
 function ReturnCard({ perf }: { perf: Performance }) {
@@ -362,58 +293,3 @@ function indexNotes(perf: Performance): ReactNode {
     </>
   );
 }
-
-function MonthTable({ years }: { years: PerformanceYear[] }) {
-  return (
-    <Panel title="Mês a mês">
-      {years.length === 0 ? (
-        <p className="field__hint">A tabela aparece quando um mês tiver dois fechamentos.</p>
-      ) : (
-        // A tabela é o gráfico em números, para quem lê com leitor de tela. A
-        // rolagem lateral (celular) é do próprio navegador: contêiner rolável
-        // já recebe foco pelo teclado no Chrome e no Firefox atuais.
-        <div className="month-table__scroll">
-          <table className="month-table">
-            <caption className="sr-only">Rentabilidade da carteira por mês, no ano e o CDI do ano</caption>
-            <thead>
-              <tr>
-                <th scope="col">Ano</th>
-                {MONTHS.map((m, i) => (
-                  <th key={m} scope="col">
-                    <abbr title={MONTH_NAMES[i]}>{m}</abbr>
-                  </th>
-                ))}
-                <th scope="col">No ano</th>
-                <th scope="col">CDI</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...years].reverse().map((row) => (
-                <tr key={row.year}>
-                  <th scope="row">{row.year}</th>
-                  {row.months.map((value, i) => (
-                    <td key={i} className={cx(value !== null && `is-${trend(value)}`)}>
-                      {value === null ? (
-                        <>
-                          <span aria-hidden="true">—</span>
-                          <span className="sr-only">sem dado</span>
-                        </>
-                      ) : (
-                        formatSignedPercent(value)
-                      )}
-                    </td>
-                  ))}
-                  <td className={cx("month-table__total", `is-${trend(row.return_percent)}`)}>
-                    {formatSignedPercent(row.return_percent)}
-                  </td>
-                  <td>{row.cdi_percent === null ? "—" : formatSignedPercent(row.cdi_percent)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Panel>
-  );
-}
-

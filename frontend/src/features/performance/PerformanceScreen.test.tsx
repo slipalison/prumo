@@ -3,83 +3,22 @@ import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { REBUILD_POLL_MS, whileRebuilding } from "../../api/performance";
-import type { NetWorth, Performance, PerformanceYear } from "../../api/performanceTypes";
+import type { ClassesPerformance, NetWorth, Performance, PerformanceYear } from "../../api/performanceTypes";
 import { HIDE_VALUES_KEY } from "../../lib/privacy";
+import {
+  emptyClasses,
+  sampleClasses,
+  sampleNetWorth as worthFixture,
+  samplePerformance as perfFixture,
+} from "../../test/performanceHandlers";
 import { renderApp } from "../../test/render";
 import { server } from "../../test/server";
 import { formatDay, formatSignedPercent, spansYears, trend, versusText } from "./performanceFormat";
 
-/** Série fictícia de três fechamentos. */
-function worthFixture(overrides: Partial<NetWorth> = {}): NetWorth {
-  return {
-    period: "12m",
-    starts_on: "2026-11-23",
-    rebuilding_since: null,
-    points: [
-      { date: "2026-11-23", market_value: 1000, invested: 1000, gain: 0, income: 0, partial: false },
-      { date: "2026-11-24", market_value: 1510, invested: 1500, gain: 10, income: 0, partial: false },
-      { date: "2026-11-25", market_value: 1490, invested: 1500, gain: -10, income: 12.5, partial: true },
-    ],
-    ...overrides,
-  };
-}
-
-function perfFixture(overrides: Partial<Performance> = {}): Performance {
-  return {
-    period: "12m",
-    starts_on: "2026-11-23",
-    rebuilding_since: null,
-    window: { from: "2026-11-23", to: "2026-11-25" },
-    return_percent: 1.2345,
-    benchmarks: [
-      { code: "cdi", label: "CDI", return_percent: 0.1016, as_of: "2026-11-25" },
-      { code: "ipca", label: "IPCA", return_percent: null, as_of: null },
-      { code: "ibov", label: "Ibovespa", return_percent: -0.4321, as_of: "2026-11-24" },
-    ],
-    points: [
-      { date: "2026-11-23", portfolio: 0, benchmarks: { cdi: 0, ipca: 0, ibov: 0 } },
-      { date: "2026-11-24", portfolio: 1, benchmarks: { cdi: 0.05, ipca: null, ibov: -0.4321 } },
-      { date: "2026-11-25", portfolio: 1.2345, benchmarks: { cdi: 0.1016, ipca: null, ibov: null } },
-    ],
-    summary: {
-      twelve_months: {
-        from: "2026-11-23",
-        to: "2026-11-25",
-        return_percent: 1.2345,
-        cdi_percent: 0.1016,
-        cdi_as_of: "2026-11-25",
-        excess_over_cdi: 1.1317,
-        percent_of_cdi: 1215,
-        full_window: false,
-      },
-      since_start: {
-        from: "2026-11-23",
-        to: "2026-11-25",
-        return_percent: -0.2,
-        cdi_percent: 0.1016,
-        cdi_as_of: "2026-11-25",
-        excess_over_cdi: -0.3014,
-        percent_of_cdi: null,
-        full_window: true,
-      },
-    },
-    years: [
-      { year: 2025, months: [...Array<null>(11).fill(null), 0.5], return_percent: 0.5, cdi_percent: null },
-      {
-        year: 2026,
-        months: [1, -0.25, ...Array<null>(9).fill(null), 1.2345],
-        return_percent: 1.99,
-        cdi_percent: 12.1,
-      },
-    ],
-    ...overrides,
-  };
-}
-
 /** Os caminhos pedidos, na ordem. */
 let asked: string[] = [];
 
-function serve(worth: NetWorth, perf: Performance) {
+function serve(worth: NetWorth, perf: Performance, classes: ClassesPerformance = sampleClasses()) {
   asked = [];
   const path = (request: Request) => {
     const url = new URL(request.url);
@@ -93,6 +32,10 @@ function serve(worth: NetWorth, perf: Performance) {
     http.get("/api/v1/performance", ({ request }) => {
       path(request);
       return HttpResponse.json(perf);
+    }),
+    http.get("/api/v1/performance/classes", ({ request }) => {
+      path(request);
+      return HttpResponse.json(classes);
     }),
   );
 }
@@ -111,8 +54,10 @@ async function stat(label: string) {
 
 /** Abre o ⓘ de nome `name` dentro de `root` e devolve o texto que ele mostra. */
 async function openTip(user: ReturnType<typeof userEvent.setup>, root: HTMLElement, name: string) {
-  await user.click(within(root).getByRole("button", { name }));
-  return within(root).getByRole("status");
+  const button = within(root).getByRole("button", { name });
+  await user.click(button);
+  // Cada ⓘ tem a própria região de estado; a deste botão é a que ele controla.
+  return document.getElementById(button.getAttribute("aria-controls") ?? "") as HTMLElement;
 }
 
 afterEach(() => vi.restoreAllMocks());
@@ -128,8 +73,9 @@ describe("Desempenho", () => {
 
   it("sem patrimônio, explica de onde a série começa", async () => {
     serve(
-      worthFixture({ starts_on: null, points: [] }),
+      worthFixture({ starts_on: null, points: [], summary: null }),
       perfFixture({ starts_on: null, window: null, return_percent: null, benchmarks: [], points: [], years: [], summary: { twelve_months: null, since_start: null } }),
+      emptyClasses(),
     );
     await open();
     const heading = await screen.findByRole("heading", { name: "Ainda não há série" });
@@ -140,7 +86,11 @@ describe("Desempenho", () => {
   it("série nova: diz a data de início em vez de inventar número", async () => {
     const day = { from: "2026-11-25", to: "2026-11-25", return_percent: 0, cdi_percent: null, cdi_as_of: null, excess_over_cdi: null, percent_of_cdi: null, full_window: false };
     serve(
-      worthFixture({ starts_on: "2026-11-25", points: [{ date: "2026-11-25", market_value: 837, invested: 837, gain: 0, income: 0, partial: true }] }),
+      worthFixture({
+        starts_on: "2026-11-25",
+        points: [{ date: "2026-11-25", market_value: 837, invested: 837, gain: 0, income: 0, partial: true }],
+        summary: { from: null, to: "2026-11-25", start_value: 0, contributions: 837, market: 0, income: 0, end_value: 837, invested: 837, gain: 0, income_total: 0 },
+      }),
       perfFixture({
         starts_on: "2026-11-25",
         window: { from: "2026-11-25", to: "2026-11-25" },
@@ -177,33 +127,36 @@ describe("Desempenho", () => {
     expect(gain).toHaveTextContent(/−R\$\s10,00/);
     expect(await openTip(user, gain, "Sobre Ganho")).toHaveTextContent(/os proventos recebidos ficam ao lado/);
 
-    const worth = screen.getByRole("region", { name: "Patrimônio no tempo" });
+    const worth = screen.getByRole("region", { name: "Patrimônio × aportado" });
     expect(within(worth).getByText("Hoje é parcial")).toBeInTheDocument();
-    expect(within(worth).getByRole("img", { name: /Patrimônio de 23\/11 a 25\/11/ })).toBeInTheDocument();
-    expect(await openTip(user, worth, "Como ler o patrimônio no tempo")).toHaveTextContent(/O ponto de hoje \(25\/11\) usa o preço do momento/);
+    expect(within(worth).getByRole("img", { name: /Patrimônio de 23\/11 a 25\/11: R\$\s1\.490,00, com R\$\s1\.500,00 aportados/ })).toBeInTheDocument();
+    expect(await openTip(user, worth, "Como ler patrimônio × aportado")).toHaveTextContent(/O ponto de hoje \(25\/11\) usa o preço do momento/);
 
     const returns = screen.getByRole("region", { name: "Rentabilidade contra os índices" });
-    expect(within(returns).getByRole("img", { name: /carteira \+1,23%, CDI \+0,10%, IPCA sem dado, Ibovespa −0,43%/ })).toBeInTheDocument();
+    expect(within(returns).getByRole("img", { name: /carteira \+1,23%, CDI \+0,10%, IPCA sem dado, Ibovespa −0,43%, IFIX \+0,61%/ })).toBeInTheDocument();
     const notes = await openTip(user, returns, "De quando é cada índice");
     expect(notes).toHaveTextContent(/Ibovespa até 24\/11\/2026/);
     expect(notes).toHaveTextContent(/Ainda sem dado no período: IPCA/);
 
-    const table = screen.getByRole("table");
-    const rows = within(table).getAllByRole("row");
-    expect(rows).toHaveLength(3);
+    const years = screen.getByRole("region", { name: "Ano a ano" });
+    const rows = within(within(years).getByRole("table")).getAllByRole("row");
+    // Cabeçalho, e cada ano com a linha do CDI embaixo.
+    expect(rows).toHaveLength(5);
     // Ano mais novo em cima.
     expect(within(rows[1] as HTMLElement).getByRole("rowheader")).toHaveTextContent("2026");
     expect(rows[1]).toHaveTextContent("−0,25%");
-    expect(rows[1]).toHaveTextContent("+12,10%");
     expect(within(rows[1] as HTMLElement).getAllByText("sem dado")).toHaveLength(9);
-    expect(rows[2]).toHaveTextContent("+0,50%");
+    expect(within(rows[2] as HTMLElement).getByRole("rowheader")).toHaveTextContent("2026, CDI");
+    expect(rows[2]).toHaveTextContent("+12,10%");
+    expect(rows[3]).toHaveTextContent("+0,50%");
   });
 
   it("olho fechado: R$ mascarado na tela, na régua e no que o leitor de tela lê; percentuais ficam", async () => {
     window.localStorage.setItem(HIDE_VALUES_KEY, "1");
     serve(worthFixture(), perfFixture());
     await open();
-    const worth = await screen.findByRole("region", { name: "Patrimônio no tempo" });
+    const worth = await screen.findByRole("region", { name: "Patrimônio × aportado" });
+    await within(await screen.findByRole("region", { name: "Por classe" })).findByText("Fundos Imobiliários");
     const plot = within(worth).getByTestId("chart-plot");
     vi.spyOn(plot, "getBoundingClientRect").mockReturnValue({
       left: 0, top: 0, width: 300, height: 220, right: 300, bottom: 220, x: 0, y: 0, toJSON: () => ({}),
@@ -220,9 +173,12 @@ describe("Desempenho", () => {
       }
     }
     for (const text of heard) expect(text).not.toMatch(/R\$\s*\d/);
-    expect(within(worth).getByRole("img", { name: /R\$ ••••, com R\$ •••• aplicados/ })).toBeInTheDocument();
-    // O ganho não diz o sentido com o olho fechado.
+    expect(within(worth).getByRole("img", { name: /R\$ ••••, com R\$ •••• aportados/ })).toBeInTheDocument();
+    // O ganho e o mercado não dizem o sentido com o olho fechado.
     expect(within(await stat("Ganho")).queryByText(/^[+−]/)).toBeNull();
+    const market = within(worth).getByText("Mercado", { selector: "dt" }).closest("div") as HTMLElement;
+    expect(within(market).getByText("R$ ••••")).toBeInTheDocument();
+    expect(market).not.toHaveClass("stat--down");
     // A rentabilidade continua à vista.
     expect(within(await stat("Últimos 12 meses")).getByText("+1,23%")).toBeInTheDocument();
   });
@@ -232,7 +188,8 @@ describe("Desempenho", () => {
     const { user } = await open();
     const returns = await screen.findByRole("region", { name: "Rentabilidade contra os índices" });
     const plot = () => within(returns).getByTestId("chart-plot");
-    expect(plot().querySelectorAll("[data-series]")).toHaveLength(4);
+    expect(plot().querySelectorAll("[data-series]")).toHaveLength(5);
+    expect(plot().querySelector('[data-series="ifix"]')).not.toBeNull();
     const ibov = within(returns).getByRole("button", { name: /Ibovespa/ });
     expect(ibov).toHaveAttribute("aria-pressed", "true");
     await user.click(ibov);
@@ -265,11 +222,12 @@ describe("Desempenho", () => {
     serve(worthFixture(), perfFixture());
     const { user } = await open();
     await stat("Últimos 12 meses");
-    await user.click(screen.getByRole("button", { name: "Desde o início" }));
-    expect(screen.getByRole("button", { name: "Desde o início" })).toHaveAttribute("aria-pressed", "true");
-    expect(asked).toContain("/api/v1/performance?period=12m&benchmarks=cdi,ipca,ibov");
-    await waitFor(() => expect(asked).toContain("/api/v1/performance?period=all&benchmarks=cdi,ipca,ibov"));
+    await user.click(screen.getByRole("button", { name: "Tudo" }));
+    expect(screen.getByRole("button", { name: "Tudo" })).toHaveAttribute("aria-pressed", "true");
+    expect(asked).toContain("/api/v1/performance?period=12m&benchmarks=cdi,ipca,ibov,ifix");
+    await waitFor(() => expect(asked).toContain("/api/v1/performance?period=all&benchmarks=cdi,ipca,ibov,ifix"));
     expect(asked).toContain("/api/v1/history/net-worth?period=all");
+    await waitFor(() => expect(asked).toContain("/api/v1/performance/classes?period=all"));
   });
 
   it("série longa vinda do livro: datas com ano, filtros e uma linha por ano na tabela", async () => {
@@ -286,12 +244,18 @@ describe("Desempenho", () => {
         partial: i === dates.length - 1,
       })),
     });
-    const years: PerformanceYear[] = [2023, 2024, 2025, 2026].map((year) => ({
-      year,
-      months: Array.from({ length: 12 }, (_, m) => (year === 2023 && m < 2) || (year === 2026 && m > 10) ? null : 0.8),
-      return_percent: 9.6,
-      cdi_percent: 11.2,
-    }));
+    const years: PerformanceYear[] = [2023, 2024, 2025, 2026].map((year) => {
+      const months = Array.from({ length: 12 }, (_, m) => ((year === 2023 && m < 2) || (year === 2026 && m > 10) ? null : 0.8));
+      return {
+        year,
+        months,
+        return_percent: 9.6,
+        cdi_percent: 11.2,
+        accumulated: months,
+        accumulated_percent: 9.6,
+        benchmarks: { cdi: { months, accumulated: months, return_percent: 11.2, accumulated_percent: 11.2, as_of: `${year}-12-31` } },
+      };
+    });
     const perf = perfFixture({
       starts_on: "2023-03-01",
       window: { from: "2023-03-01", to: "2026-11-25" },
@@ -301,7 +265,7 @@ describe("Desempenho", () => {
     });
     serve(worth, perf);
     const { user } = await open();
-    const worthCard = await screen.findByRole("region", { name: "Patrimônio no tempo" });
+    const worthCard = await screen.findByRole("region", { name: "Patrimônio × aportado" });
     expect(within(worthCard).getByRole("img", { name: /Patrimônio de 01\/03\/2023 a 25\/11\/2026/ })).toBeInTheDocument();
     // As pontas do eixo levam o ano.
     expect(worthCard.querySelector(".chart__dates")).toHaveTextContent("01/03/2023");
@@ -309,21 +273,25 @@ describe("Desempenho", () => {
     const returns = screen.getByRole("region", { name: "Rentabilidade contra os índices" });
     expect(within(returns).getByRole("img", { name: /de 01\/03\/2023 a 25\/11\/2026/ })).toBeInTheDocument();
 
-    const rows = within(screen.getByRole("table")).getAllByRole("row");
-    expect(rows).toHaveLength(5);
+    const yearPanel = screen.getByRole("region", { name: "Ano a ano" });
+    const rows = within(within(yearPanel).getByRole("table")).getAllByRole("row");
+    expect(rows).toHaveLength(9);
     expect(within(rows[1] as HTMLElement).getByRole("rowheader")).toHaveTextContent("2026");
-    expect(within(rows[4] as HTMLElement).getByRole("rowheader")).toHaveTextContent("2023");
-    expect(within(rows[4] as HTMLElement).getAllByText("sem dado")).toHaveLength(2);
+    expect(within(rows[7] as HTMLElement).getByRole("rowheader")).toHaveTextContent("2023");
+    expect(within(rows[7] as HTMLElement).getAllByText("sem dado")).toHaveLength(2);
 
     for (const [label, period] of [
       ["Mês", "month"],
-      ["No ano", "ytd"],
+      ["Ano atual", "ytd"],
       ["12 meses", "12m"],
-      ["Desde o início", "all"],
+      ["2 anos", "2y"],
+      ["5 anos", "5y"],
+      ["Tudo", "all"],
     ] as const) {
       await user.click(screen.getByRole("button", { name: label }));
-      await waitFor(() => expect(asked).toContain(`/api/v1/performance?period=${period}&benchmarks=cdi,ipca,ibov`));
+      await waitFor(() => expect(asked).toContain(`/api/v1/performance?period=${period}&benchmarks=cdi,ipca,ibov,ifix`));
       expect(asked).toContain(`/api/v1/history/net-worth?period=${period}`);
+      await waitFor(() => expect(asked).toContain(`/api/v1/performance/classes?period=${period}`));
       expect(screen.getByRole("button", { name: label })).toHaveAttribute("aria-pressed", "true");
     }
   });
@@ -352,7 +320,7 @@ describe("Desempenho", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Não consegui carregar o desempenho");
     fail = false;
     await user.click(screen.getByRole("button", { name: "Tentar de novo" }));
-    expect(await screen.findByRole("region", { name: "Patrimônio no tempo" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Patrimônio × aportado" })).toBeInTheDocument();
   });
 });
 
