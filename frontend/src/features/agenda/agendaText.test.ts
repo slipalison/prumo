@@ -25,6 +25,7 @@ import {
   todayInBrazil,
   unitText,
   installmentsText,
+  keyedEvents,
   kindPhrase,
   referenceText,
   unusualTitle,
@@ -142,5 +143,14 @@ describe("filtros", () => {
     expect(labels).toContain("Assembleia");
     expect(labels).toContain("Fora do padrão");
     expect(labels).not.toContain("Comunicados e avisos");
+  });
+
+  it("dá a cada evento do dia uma chave pelo conteúdo, e aos iguais a ordem entre eles", () => {
+    const keys = keyedEvents(events).map((item) => item.key);
+    expect(new Set(keys).size).toBe(events.length);
+    const [first] = events;
+    expect(first).toBeDefined();
+    const twins = keyedEvents([first as AgendaEvent, first as AgendaEvent]).map((item) => item.key);
+    expect(twins[1]).toBe(`${twins[0]}#1`);
   });
 });

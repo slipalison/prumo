@@ -262,6 +262,41 @@ export function byDay(events: AgendaEvent[]): Map<string, AgendaEvent[]> {
   return days;
 }
 
+/** O que distingue um evento dos outros do mesmo dia: o tipo, os ativos e o que ele traz. */
+function eventSignature(event: AgendaEvent): string {
+  const { income, unusual, document } = event;
+  const parts = [
+    event.type,
+    event.closure,
+    event.assets.map((a) => a.asset_id).join(","),
+    income?.income_id,
+    income?.kind,
+    income?.record_date,
+    income?.pay_date,
+    unusual?.kind,
+    unusual?.record_date,
+    document?.category,
+    document?.url,
+    document?.title,
+    document?.version,
+  ];
+  return parts.map((part) => part ?? "").join("|");
+}
+
+/**
+ * Os eventos de uma lista com a chave do React: o conteúdo do evento e, se dois
+ * saírem iguais, a ordem entre os iguais (é só o que os distingue).
+ */
+export function keyedEvents(events: AgendaEvent[]): { key: string; event: AgendaEvent }[] {
+  const seen = new Map<string, number>();
+  return events.map((event) => {
+    const signature = eventSignature(event);
+    const repeat = seen.get(signature) ?? 0;
+    seen.set(signature, repeat + 1);
+    return { key: repeat === 0 ? signature : `${signature}#${repeat}`, event };
+  });
+}
+
 /** Quem o evento cita, como a linha mostra: `ITSA3, ITSA4`. */
 export function assetNames(event: AgendaEvent): string {
   return event.assets.map((a) => a.symbol ?? a.display_name).join(", ");

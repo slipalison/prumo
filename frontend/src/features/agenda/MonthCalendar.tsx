@@ -13,6 +13,11 @@ function summary(list: AgendaEvent[]): string {
   return `${list.length} ${list.length === 1 ? "evento" : "eventos"}: ${types.join(", ")}`;
 }
 
+/** A semana se chama pelo primeiro dia do mês que ela tem (toda semana da grade tem ao menos um). */
+function weekKey(week: (string | null)[]): string {
+  return week.find((day) => day !== null) ?? "";
+}
+
 type Props = {
   month: YearMonth;
   days: Map<string, AgendaEvent[]>;
@@ -26,7 +31,7 @@ type Props = {
  * evento em pontos coloridos (com o nome no leitor de tela) e abre a lista do
  * dia ao lado.
  */
-export function MonthCalendar({ month, days, today, selected, onSelect }: Props) {
+export function MonthCalendar({ month, days, today, selected, onSelect }: Readonly<Props>) {
   return (
     <table className="agenda-calendar">
       <thead>
@@ -39,10 +44,12 @@ export function MonthCalendar({ month, days, today, selected, onSelect }: Props)
         </tr>
       </thead>
       <tbody>
-        {calendarWeeks(month).map((week, row) => (
-          <tr key={row}>
-            {week.map((day, column) => {
-              if (!day) return <td key={column} className="agenda-calendar__blank" />;
+        {calendarWeeks(month).map((week) => (
+          <tr key={weekKey(week)}>
+            {WEEKDAYS.map((weekday, column) => {
+              const day = week[column];
+              // A casa vazia (antes do dia 1 ou depois do último) é a coluna do dia da semana.
+              if (!day) return <td key={weekday} className="agenda-calendar__blank" />;
               const list = days.get(day) ?? [];
               const closed = list.some((e) => e.type === "market_closed");
               const types = [...new Set(list.filter((e) => e.type !== "market_closed").map((e) => e.type))];

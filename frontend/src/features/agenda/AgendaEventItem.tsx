@@ -18,7 +18,7 @@ import {
 } from "./agendaText";
 
 /** O selo de fora do padrão na data com e no pagamento. */
-export function UnusualBadge({ mark, installments = 1 }: { mark: UnusualMark; installments?: number }) {
+export function UnusualBadge({ mark, installments = 1 }: Readonly<{ mark: UnusualMark; installments?: number }>) {
   const money = useMoney();
   return (
     <span className={cx("agenda-unusual", `agenda-unusual--${mark.direction}`)}>
@@ -39,7 +39,7 @@ function incomeLine(income: AgendaIncome, type: AgendaEvent["type"]): string {
   return income.record_date ? `${state} · data com ${shortDate(income.record_date)}` : state;
 }
 
-function EventBody({ event }: { event: AgendaEvent }) {
+function EventBody({ event }: Readonly<{ event: AgendaEvent }>) {
   const money = useMoney();
   const names = assetNames(event);
   const { income, unusual, document } = event;
@@ -80,11 +80,10 @@ function EventBody({ event }: { event: AgendaEvent }) {
   }
   if (document) {
     const label = event.type === "results" ? resultsTitle(document) : categoryLabel(document);
-    const where = document.source === "fundos_net" ? "Fundos.NET" : "CVM";
-    const detail =
-      event.type === "results"
-        ? `entregue ${document.source === "fundos_net" ? "no" : "à"} ${where}`
-        : (document.subject ?? document.title ?? where);
+    const fundsNet = document.source === "fundos_net";
+    const where = fundsNet ? "Fundos.NET" : "CVM";
+    const preposition = fundsNet ? "no" : "à";
+    const detail = event.type === "results" ? `entregue ${preposition} ${where}` : (document.subject ?? document.title ?? where);
     return (
       <>
         <span className="agenda-item__text">
@@ -115,7 +114,7 @@ function EventBody({ event }: { event: AgendaEvent }) {
 }
 
 /** Uma linha da Agenda: o tipo, quem, o quê e (no provento) quanto. */
-export function AgendaEventItem({ event, past }: { event: AgendaEvent; past: boolean }) {
+export function AgendaEventItem({ event, past }: Readonly<{ event: AgendaEvent; past: boolean }>) {
   const first = event.assets[0];
   return (
     <li className={cx("agenda-item", `agenda-item--${event.type}`, past && "is-past")}>

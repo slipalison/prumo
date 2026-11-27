@@ -6,7 +6,7 @@ import { UnusualBadge } from "./AgendaEventItem";
  * anunciado se afastou do habitual do ativo (docs/agenda.md). Uma consulta só
  * para a lista inteira (o cache do react-query); sem selo, nada aparece.
  */
-export function UnusualIncomeTag({ eventId }: { eventId: string }) {
+export function UnusualIncomeTag({ eventId }: Readonly<{ eventId: string }>) {
   const unusual = useUnusualIncome();
   const found = unusual.data?.items.find((item) => item.income_ids.includes(eventId));
   if (!found) return null;

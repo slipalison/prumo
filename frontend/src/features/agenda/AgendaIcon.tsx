@@ -2,7 +2,7 @@ import type { SVGProps } from "react";
 import { Svg } from "../../components/icons";
 
 /** A aba Agenda: a folha do calendário com as argolas e um dia marcado. */
-export function IconAgenda(props: SVGProps<SVGSVGElement>) {
+export function IconAgenda(props: Readonly<SVGProps<SVGSVGElement>>) {
   return (
     <Svg {...props}>
       <rect x="3.5" y="5" width="17" height="15.5" rx="2.5" />

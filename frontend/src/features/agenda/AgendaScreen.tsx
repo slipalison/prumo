@@ -20,6 +20,7 @@ import {
   dayLong,
   EVENT_TYPE_LABEL,
   FILTER_ORDER,
+  keyedEvents,
   monthOf,
   monthRange,
   monthTitle,
@@ -29,6 +30,7 @@ import {
   type YearMonth,
 } from "./agendaText";
 import { MonthCalendar } from "./MonthCalendar";
+import "./nativeTags.css";
 
 type View = "timeline" | "calendar";
 
@@ -44,7 +46,7 @@ const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1
  * tempo ou calendário, com filtro por tipo, classe e ativo. Informa; não
  * recomenda.
  */
-export function AgendaScreen({ portfolio }: { portfolio: Portfolio }) {
+export function AgendaScreen({ portfolio }: Readonly<{ portfolio: Portfolio }>) {
   const [view, setView] = useState<View>("timeline");
   const [month, setMonth] = useState<YearMonth>(() => monthOf(todayInBrazil()));
   const [filter, setFilter] = useState<AgendaFilter>({ types: ALL_TYPES, assetClass: null, assetId: null });
@@ -83,9 +85,9 @@ export function AgendaScreen({ portfolio }: { portfolio: Portfolio }) {
   );
 }
 
-function ViewToggle({ view, onChange }: { view: View; onChange: (view: View) => void }) {
+function ViewToggle({ view, onChange }: Readonly<{ view: View; onChange: (view: View) => void }>) {
   return (
-    <div className="segmented" role="group" aria-label="Como ver a agenda">
+    <fieldset className="segmented" aria-label="Como ver a agenda">
       {VIEWS.map((option) => (
         <button
           key={option.id}
@@ -98,11 +100,11 @@ function ViewToggle({ view, onChange }: { view: View; onChange: (view: View) => 
           <span className="segmented__label">{option.label}</span>
         </button>
       ))}
-    </div>
+    </fieldset>
   );
 }
 
-function MonthNav({ month, onChange, today }: { month: YearMonth; onChange: (month: YearMonth) => void; today: string }) {
+function MonthNav({ month, onChange, today }: Readonly<{ month: YearMonth; onChange: (month: YearMonth) => void; today: string }>) {
   const current = monthOf(today);
   const isCurrent = current.year === month.year && current.month === month.month;
   return (
@@ -134,7 +136,7 @@ type LoadedProps = {
   month: YearMonth;
 };
 
-function Loaded({ agenda, portfolio, filter, onFilter, view, month }: LoadedProps) {
+function Loaded({ agenda, portfolio, filter, onFilter, view, month }: Readonly<LoadedProps>) {
   const shown = useMemo(() => agenda.events.filter((e) => passes(e, filter)), [agenda.events, filter]);
   const counts = useMemo(() => {
     const byType = new Map<AgendaEventType, number>();
@@ -172,7 +174,7 @@ function Loaded({ agenda, portfolio, filter, onFilter, view, month }: LoadedProp
 }
 
 /** Quando cada fonte foi conferida, no ⓘ. */
-function Freshness({ agenda }: { agenda: Agenda }) {
+function Freshness({ agenda }: Readonly<{ agenda: Agenda }>) {
   const { cvm_documents: cvm, fund_documents: funds } = agenda.updated;
   return (
     <>
@@ -190,7 +192,7 @@ type FiltersProps = {
   counts: Map<AgendaEventType, number>;
 };
 
-function AgendaFilters({ portfolio, filter, onFilter, counts }: FiltersProps) {
+function AgendaFilters({ portfolio, filter, onFilter, counts }: Readonly<FiltersProps>) {
   const ids = { cls: useId(), asset: useId() };
   const classes = useMemo(
     () => [...new Set(portfolio.assets.map((a) => a.asset_class))].sort((a, b) => CLASS_META[a].label.localeCompare(CLASS_META[b].label)),
@@ -214,7 +216,7 @@ function AgendaFilters({ portfolio, filter, onFilter, counts }: FiltersProps) {
 
   return (
     <section className="agenda-filters" aria-label="Filtros da agenda">
-      <div className="chips agenda-filters__types" role="group" aria-label="Tipos de evento">
+      <fieldset className="chips agenda-filters__types" aria-label="Tipos de evento">
         {FILTER_ORDER.map((type) => (
           <button
             key={type}
@@ -228,7 +230,7 @@ function AgendaFilters({ portfolio, filter, onFilter, counts }: FiltersProps) {
             <span className="agenda-chip__count">{counts.get(type) ?? 0}</span>
           </button>
         ))}
-      </div>
+      </fieldset>
       <div className="agenda-filters__selects">
         <div className="field">
           <label htmlFor={ids.cls} className="field__label">
@@ -276,7 +278,7 @@ function AgendaFilters({ portfolio, filter, onFilter, counts }: FiltersProps) {
   );
 }
 
-function EmptyMonth({ month }: { month: YearMonth }) {
+function EmptyMonth({ month }: Readonly<{ month: YearMonth }>) {
   return <p className="field__hint">Nada na agenda de {monthTitle(month)} com esses filtros.</p>;
 }
 
@@ -284,7 +286,7 @@ function EmptyMonth({ month }: { month: YearMonth }) {
  * Os dias do mês com evento, na ordem; os que passaram mais apagados. Hoje
  * sempre aparece quando é deste mês, mesmo sem evento: é o "você está aqui".
  */
-function Timeline({ events, today, month }: { events: AgendaEvent[]; today: string; month: YearMonth }) {
+function Timeline({ events, today, month }: Readonly<{ events: AgendaEvent[]; today: string; month: YearMonth }>) {
   const grouped = byDay(events);
   if (grouped.size === 0) return <EmptyMonth month={month} />;
   const { from, to } = monthRange(month);
@@ -302,8 +304,8 @@ function Timeline({ events, today, month }: { events: AgendaEvent[]; today: stri
             <p className="field__hint agenda-day__empty">Nada hoje.</p>
           ) : (
             <ul className="agenda-list">
-              {list.map((event, index) => (
-                <AgendaEventItem key={`${day}-${event.type}-${index}`} event={event} past={day < today} />
+              {keyedEvents(list).map(({ key, event }) => (
+                <AgendaEventItem key={key} event={event} past={day < today} />
               ))}
             </ul>
           )}
@@ -313,7 +315,7 @@ function Timeline({ events, today, month }: { events: AgendaEvent[]; today: stri
   );
 }
 
-function CalendarView({ agenda, events, month }: { agenda: Agenda; events: AgendaEvent[]; month: YearMonth }) {
+function CalendarView({ agenda, events, month }: Readonly<{ agenda: Agenda; events: AgendaEvent[]; month: YearMonth }>) {
   const days = useMemo(() => byDay(events), [events]);
   const { from, to } = monthRange(month);
   const fallback = agenda.today >= from && agenda.today <= to ? agenda.today : ([...days.keys()][0] ?? from);
@@ -331,8 +333,8 @@ function CalendarView({ agenda, events, month }: { agenda: Agenda; events: Agend
           <p className="field__hint">Nada neste dia com esses filtros.</p>
         ) : (
           <ul className="agenda-list">
-            {list.map((event, index) => (
-              <AgendaEventItem key={`${selected}-${event.type}-${index}`} event={event} past={selected < agenda.today} />
+            {keyedEvents(list).map(({ key, event }) => (
+              <AgendaEventItem key={key} event={event} past={selected < agenda.today} />
             ))}
           </ul>
         )}

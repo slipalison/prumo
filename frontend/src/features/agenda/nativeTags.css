@@ -1,0 +1,12 @@
+/*
+ * Os grupos de botões da Agenda são <fieldset> (o papel "group" nativo, com o
+ * nome no aria-label). O navegador põe borda, margem, recheio e largura mínima
+ * no fieldset; aqui eles voltam ao que uma <div> teria. O :where() deixa a
+ * regra sem peso: o que a classe do componente define continua valendo.
+ */
+:where(fieldset.segmented, fieldset.agenda-filters__types) {
+  min-width: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
