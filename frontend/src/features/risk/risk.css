@@ -33,12 +33,22 @@
   }
 }
 
+/* A escolha da janela é um <fieldset> (o grupo nativo): sem a moldura, o recuo e a largura mínima padrão. */
+.risk fieldset.chips {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* O carregando e o aviso de "refazendo a série" são <output> (o status nativo), que nasce inline. */
 .risk__loading {
   display: grid;
   gap: var(--gap-stack);
 }
 
 .risk__notice {
+  display: block;
   margin: 0;
   padding: var(--space-2) var(--space-4);
   border: 1px solid var(--border);

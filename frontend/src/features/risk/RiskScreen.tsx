@@ -66,7 +66,7 @@ export function RiskScreen() {
             <a className="chip chip--quick risk-link" href="#/desempenho">
               ← Rentabilidade
             </a>
-            <div className="chips" role="group" aria-label="Janela">
+            <fieldset className="chips" aria-label="Janela">
               {WINDOWS.map((w) => (
                 <button
                   key={w.id}
@@ -78,16 +78,16 @@ export function RiskScreen() {
                   {w.label}
                 </button>
               ))}
-            </div>
+            </fieldset>
           </>
         }
       />
 
       {risk.isPending && (
-        <div className="risk__loading" role="status" aria-label="Carregando o risco">
+        <output className="risk__loading" aria-label="Carregando o risco">
           <Skeleton height={96} radius={22} />
           <Skeleton height={300} radius={22} />
-        </div>
+        </output>
       )}
       {risk.isError && (
         <GlassCard as="section" className="state-card" role="alert">
@@ -101,7 +101,7 @@ export function RiskScreen() {
   );
 }
 
-function Loaded({ risk }: { risk: Risk }) {
+function Loaded({ risk }: Readonly<{ risk: Risk }>) {
   const priced = risk.assets.filter((a) => a.status === "ok");
   if (risk.assets.length === 0 && !risk.portfolio) {
     return (
@@ -117,9 +117,9 @@ function Loaded({ risk }: { risk: Risk }) {
   return (
     <>
       {risk.rebuilding_since && (
-        <p className="risk__notice" role="status">
+        <output className="risk__notice">
           Refazendo a série desde {formatDay(risk.rebuilding_since, true)}. Os números se acertam em instantes.
-        </p>
+        </output>
       )}
       {risk.from && risk.to && (
         <p className="risk__window">
@@ -152,12 +152,24 @@ function shortNote(metrics: RiskMetrics | null): ReactNode {
   return <span className="stat__note">a série começa em {formatDay(metrics.from, true)}</span>;
 }
 
+/** A queda máxima da carteira; sem queda só quando há retorno medido. */
+function drawdownValue(p: RiskMetrics | null): string {
+  if (p?.drawdown) return formatSignedPercent(p.drawdown.depth_percent);
+  return p?.return_percent != null ? "Sem queda" : "—";
+}
+
+/** As datas da queda da carteira; sem ela, a queda do Ibovespa, se houver. */
+function drawdownDetail(p: RiskMetrics | null, b: RiskMetrics | null): string | undefined {
+  if (p?.drawdown) return drawdownDates(p.drawdown);
+  return b?.drawdown ? `Ibovespa ${formatSignedPercent(b.drawdown.depth_percent)}` : undefined;
+}
+
 function summary(risk: Risk): Stat[] {
   const p = risk.portfolio;
   const b = risk.benchmark;
   const ibovVol = b?.volatility_percent ?? null;
   const ibovRet = b?.return_percent ?? null;
-  const short = p && p.volatility_percent === null;
+  const short = p?.volatility_percent === null;
   const items: Stat[] = [
     {
       id: "volatility",
@@ -175,8 +187,8 @@ function summary(risk: Risk): Stat[] {
     {
       id: "drawdown",
       label: "Queda máxima",
-      value: p?.drawdown ? formatSignedPercent(p.drawdown.depth_percent) : p?.return_percent != null ? "Sem queda" : "—",
-      detail: p?.drawdown ? drawdownDates(p.drawdown) : b?.drawdown ? `Ibovespa ${formatSignedPercent(b.drawdown.depth_percent)}` : undefined,
+      value: drawdownValue(p),
+      detail: drawdownDetail(p, b),
       info: "A maior queda da cota de um pico até o fundo seguinte, dentro da janela, e quando ela voltou ao pico.",
       ...(p?.drawdown ? { tone: "down" as const } : {}),
     },
@@ -200,7 +212,7 @@ function summary(risk: Risk): Stat[] {
   return items;
 }
 
-function RiskReturnPanel({ risk, priced }: { risk: Risk; priced: AssetRisk[] }) {
+function RiskReturnPanel({ risk, priced }: Readonly<{ risk: Risk; priced: AssetRisk[] }>) {
   const bubbles: Bubble[] = priced
     .filter((a) => a.metrics?.volatility_percent != null && a.metrics.return_percent != null)
     .map((a) => ({
@@ -260,7 +272,7 @@ function RiskReturnPanel({ risk, priced }: { risk: Risk; priced: AssetRisk[] }) 
 }
 
 /** Os pares que mais andam juntos, em texto (na matriz, com contorno). */
-function PairsPanel({ risk }: { risk: Risk }) {
+function PairsPanel({ risk }: Readonly<{ risk: Risk }>) {
   const byId = new Map(risk.assets.map((a) => [a.asset_id, a.label]));
   const pairs = risk.correlation.top_pairs;
   return (
@@ -292,7 +304,7 @@ function PairsPanel({ risk }: { risk: Risk }) {
 }
 
 /** As maiores partes do risco da carteira de hoje (a lista inteira está na tabela). */
-function SharesPanel({ risk }: { risk: Risk }) {
+function SharesPanel({ risk }: Readonly<{ risk: Risk }>) {
   const top = risk.assets
     .filter((a) => a.risk_share_percent !== null)
     .sort((a, b) => (b.risk_share_percent ?? 0) - (a.risk_share_percent ?? 0))
@@ -323,7 +335,7 @@ function SharesPanel({ risk }: { risk: Risk }) {
   );
 }
 
-function CorrelationPanel({ risk }: { risk: Risk }) {
+function CorrelationPanel({ risk }: Readonly<{ risk: Risk }>) {
   const byId = new Map(risk.assets.map((a) => [a.asset_id, a.label]));
   const ids = risk.correlation.asset_ids;
   const labels = ids.map((id) => byId.get(id) ?? "?");
@@ -383,8 +395,8 @@ function volatilityText(metrics: RiskMetrics | null): string {
   return metrics?.volatility_percent != null ? formatPercent(metrics.volatility_percent, 1) : "—";
 }
 
-function DrawdownCell({ metrics }: { metrics: RiskMetrics | null }) {
-  if (!metrics || metrics.return_percent === null) return <>—</>;
+function DrawdownCell({ metrics }: Readonly<{ metrics: RiskMetrics | null }>) {
+  if (metrics?.return_percent == null) return <>—</>;
   if (!metrics.drawdown) return <>Sem queda</>;
   return (
     <span className="risk-dd" title={`Do pico ao fundo: ${drawdownDates(metrics.drawdown)}`}>
@@ -394,14 +406,17 @@ function DrawdownCell({ metrics }: { metrics: RiskMetrics | null }) {
   );
 }
 
-function AssetsPanel({ risk }: { risk: Risk }) {
-  const rows: Row[] = [
-    { kind: "reference", key: "portfolio", label: "Sua carteira", metrics: risk.portfolio },
-    ...(risk.benchmark ? [{ kind: "reference" as const, key: "benchmark", label: risk.benchmark.label, metrics: risk.benchmark }] : []),
-    ...risk.assets.map((asset) => ({ kind: "asset" as const, key: asset.asset_id, asset })),
-  ];
-  const metricsOf = (row: Row) => (row.kind === "asset" ? row.asset.metrics : row.metrics);
-  const columns: DataColumn<Row>[] = [
+const metricsOf = (row: Row) => (row.kind === "asset" ? row.asset.metrics : row.metrics);
+
+/** A classe da linha: a carteira e o Ibovespa de referência, o ativo sem número esmaecido. */
+function rowClass(row: Row): string | undefined {
+  if (row.kind === "reference") return "risk-row--reference";
+  return row.asset.status === "ok" ? undefined : "risk-row--muted";
+}
+
+/** As colunas da tabela por ativo; `risk` traz os limites e o modelo da carteira de hoje. */
+function assetColumns(risk: Risk): DataColumn<Row>[] {
+  return [
     {
       key: "label",
       label: "Ativo",
@@ -464,6 +479,14 @@ function AssetsPanel({ risk }: { risk: Risk }) {
       },
     },
   ];
+}
+
+function AssetsPanel({ risk }: Readonly<{ risk: Risk }>) {
+  const rows: Row[] = [
+    { kind: "reference", key: "portfolio", label: "Sua carteira", metrics: risk.portfolio },
+    ...(risk.benchmark ? [{ kind: "reference" as const, key: "benchmark", label: risk.benchmark.label, metrics: risk.benchmark }] : []),
+    ...risk.assets.map((asset) => ({ kind: "asset" as const, key: asset.asset_id, asset })),
+  ];
   return (
     <Panel
       title="Por ativo"
@@ -480,10 +503,10 @@ function AssetsPanel({ risk }: { risk: Risk }) {
       <DataTable
         className="risk-table"
         caption={`Risco por ativo em ${windowLabel(risk.window)}, com a carteira e o Ibovespa de referência`}
-        columns={columns}
+        columns={assetColumns(risk)}
         rows={rows}
         rowKey={(row) => row.key}
-        rowClassName={(row) => (row.kind === "reference" ? "risk-row--reference" : row.asset.status !== "ok" ? "risk-row--muted" : undefined)}
+        rowClassName={rowClass}
       />
     </Panel>
   );

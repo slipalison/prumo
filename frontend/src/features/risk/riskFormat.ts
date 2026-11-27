@@ -23,11 +23,17 @@ export function formatCoefficient(value: number): string {
   return value < -0.005 ? `−${text}` : text;
 }
 
+/** A força de uma correlação (de 0,2 para cima), em uma palavra. */
+function strengthWord(strength: number): string {
+  if (strength >= 0.7) return "fortemente";
+  return strength >= 0.4 ? "moderadamente" : "fracamente";
+}
+
 /** O que a correlação diz, em palavras (sem juízo: só o sentido e a força). */
 export function describeCoefficient(value: number): string {
   const strength = Math.abs(value);
   if (strength < 0.2) return "quase sem relação";
-  const word = strength >= 0.7 ? "fortemente" : strength >= 0.4 ? "moderadamente" : "fracamente";
+  const word = strengthWord(strength);
   return value > 0 ? `andam juntos ${word}` : `andam em sentidos opostos ${word}`;
 }
 

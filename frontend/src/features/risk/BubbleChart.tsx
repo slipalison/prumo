@@ -45,7 +45,7 @@ function radius(weight: number, largest: number): number {
  * texto legível em qualquer largura. O desenho é `role="img"` com um resumo;
  * quem lê a tela tem a tabela por ativo, com os mesmos números.
  */
-export function BubbleChart({ bubbles, label }: BubbleChartProps) {
+export function BubbleChart({ bubbles, label }: Readonly<BubbleChartProps>) {
   const [hover, setHover] = useState<string | null>(null);
   const plot = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
@@ -76,6 +76,8 @@ export function BubbleChart({ bubbles, label }: BubbleChartProps) {
   const top = (y: number) => (1 - (y - y0) / (y1 - y0)) * 100;
   const largest = Math.max(...bubbles.map((b) => b.weight ?? 0));
   const diameter = (b: Bubble) => (b.kind === "asset" ? radius(b.weight ?? 0, largest) * 2 : MARK);
+  // Perto da borda direita o nome vai para a esquerda da marca.
+  const sideOf = (x: number): Side => (left(x) > 70 ? "left" : "right");
 
   let sides: Map<string, Side>;
   if (size) {
@@ -98,7 +100,7 @@ export function BubbleChart({ bubbles, label }: BubbleChartProps) {
           .sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0))
           .slice(0, FALLBACK_LABELS),
       );
-    sides = new Map(named.map((b) => [b.key, left(b.x) > 70 ? "left" : "right"]));
+    sides = new Map(named.map((b) => [b.key, sideOf(b.x)]));
   }
   // As bolhas maiores atrás, para as pequenas não sumirem embaixo delas.
   const order = [...bubbles].sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0));
@@ -113,7 +115,13 @@ export function BubbleChart({ bubbles, label }: BubbleChartProps) {
           </span>
         ))}
       </div>
-      <div ref={plot} className="bubble-chart__plot" role="img" aria-label={label} onPointerLeave={() => setHover(null)}>
+      <div // NOSONAR: bolhas em HTML sobre a grade em SVG; <img> pediria um arquivo, e o role="img" com aria-label é o que as nomeia
+        ref={plot}
+        className="bubble-chart__plot"
+        role="img"
+        aria-label={label}
+        onPointerLeave={() => setHover(null)}
+      >
         <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
           {yTicks.map((tick) => (
             <line key={`y${tick}`} className="chart__grid" x1={0} x2={W} y1={(top(tick) / 100) * H} y2={(top(tick) / 100) * H} />
@@ -125,7 +133,8 @@ export function BubbleChart({ bubbles, label }: BubbleChartProps) {
         </svg>
         {order.map((b) => {
           const d = diameter(b);
-          const side = sides.get(b.key) ?? (hover === b.key ? (left(b.x) > 70 ? "left" : "right") : null);
+          const hovered = hover === b.key ? sideOf(b.x) : null;
+          const side = sides.get(b.key) ?? hovered;
           return (
             <span
               key={b.key}

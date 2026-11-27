@@ -233,7 +233,7 @@ describe("Risco", () => {
       correlation: { asset_ids: [], values: [], top_pairs: [] },
     });
     await open();
-    expect(await screen.findByText(/Refazendo a série desde 20\/11\/2026/)).toHaveAttribute("role", "status");
+    expect(await screen.findByText(/Refazendo a série desde 20\/11\/2026/)).toHaveRole("status");
     expect(await stat("Volatilidade da carteira")).toHaveTextContent("histórico curto: 12 pregões");
     expect(await stat("Volatilidade da carteira")).toHaveTextContent("a série começa em 10/02/2026");
     expect(await stat("Com os pesos de hoje")).toHaveTextContent("precisa de 60 pregões em comum");

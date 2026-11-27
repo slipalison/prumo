@@ -37,7 +37,7 @@ export const DENSE_FROM = 10;
  * ativos, a matriz rola por dentro numa altura limitada, com o nome das linhas
  * e das colunas fixo nas bordas.
  */
-export function CorrelationMatrix({ labels, ids, values, pairs, caption }: CorrelationMatrixProps) {
+export function CorrelationMatrix({ labels, ids, values, pairs, caption }: Readonly<CorrelationMatrixProps>) {
   const highlighted = new Set(pairs.flatMap((p) => [`${p.a}|${p.b}`, `${p.b}|${p.a}`]));
   const dense = labels.length > DENSE_FROM;
   return (
