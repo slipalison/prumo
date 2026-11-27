@@ -2,6 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import type { ClassesPerformance, NetWorth, Performance } from "../../api/performanceTypes";
+import { performanceKeys } from "../../api/performance";
 import { HIDE_VALUES_KEY } from "../../lib/privacy";
 import { sampleClasses, sampleNetWorth, samplePerformance } from "../../test/performanceHandlers";
 import { renderApp } from "../../test/render";
@@ -238,5 +239,9 @@ describe("formatação nova do desempenho", () => {
     expect(signedMoney(money, -10)).toMatch(/^−R\$\s10,00$/);
     expect(signedMoney(money, 0)).toMatch(/^R\$\s0,00$/);
     expect(signedMoney(createMoney(true), -10)).toBe("R$ ••••");
+  });
+
+  it("as classes ficam sob a chave do desempenho: invalidar o desempenho (importação da B3) refaz as duas", () => {
+    expect(performanceKeys.classes("5y").slice(0, 1)).toEqual(performanceKeys.performance("5y").slice(0, 1));
   });
 });

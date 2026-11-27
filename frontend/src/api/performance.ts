@@ -17,7 +17,8 @@ export const performanceApi = {
 export const performanceKeys = {
   netWorth: (period: PerformancePeriod) => ["net-worth", period] as const,
   performance: (period: PerformancePeriod) => ["performance", period] as const,
-  classes: (period: PerformancePeriod) => ["performance-classes", period] as const,
+  /** Sob "performance": quem invalida o desempenho (a importação da B3) leva as classes junto. */
+  classes: (period: PerformancePeriod) => ["performance", "classes", period] as const,
 };
 
 /** Os índices que a tela compara; a legenda liga e desliga cada um. */
