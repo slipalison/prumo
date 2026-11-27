@@ -12,7 +12,10 @@ import { agendaOf, sampleMonth } from "../test/agendaHandlers";
 function demoUnusual(): UnusualIncome[] {
   return [
     {
-      income_id: "e-demo-up-1",
+      income_ids: ["e-demo-up-1"],
+      installments: 1,
+      basis: "similar",
+      kind: "dividend",
       asset_id: "a-demo-2",
       record_date: "2026-11-27",
       ex_date: "2026-11-30",
@@ -23,7 +26,10 @@ function demoUnusual(): UnusualIncome[] {
       years: 5,
     },
     {
-      income_id: "e-demo-up-4",
+      income_ids: ["e-demo-up-4"],
+      installments: 3,
+      basis: "largest",
+      kind: null,
       asset_id: "a-demo-0",
       record_date: "2026-12-01",
       ex_date: "2026-12-02",

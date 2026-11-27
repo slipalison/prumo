@@ -7,6 +7,7 @@ import type {
   UnusualDirection,
   UnusualMark,
 } from "../../api/agendaTypes";
+import type { IncomeKind } from "../../api/incomeTypes";
 import type { AssetClass } from "../../api/types";
 import type { Money } from "../../lib/money";
 
@@ -192,10 +193,32 @@ export function unitText(money: Money, value: number): string {
   return money.hidden ? money.brl(value) : formatUnit(value);
 }
 
-/** O habitual dos dois períodos, em uma frase. */
-export function usualText(money: Money, mark: Pick<UnusualMark, "recent" | "long" | "years">): string {
-  const recent = `${unitText(money, mark.recent.usual)} nos 12 meses`;
-  return mark.long ? `${recent} e ${unitText(money, mark.long.usual)} em ${mark.years} anos` : recent;
+/**
+ * A referência em uma frase, pela base da comparação: o habitual (a média dos
+ * parecidos), o pagamento regular (a mediana do tipo) ou o maior pagamento.
+ */
+export function referenceText(money: Money, mark: Pick<UnusualMark, "basis" | "recent" | "long" | "years">): string {
+  const recent = unitText(money, mark.recent.usual);
+  const long = mark.long ? unitText(money, mark.long.usual) : null;
+  if (mark.basis === "largest") {
+    const head = `o maior pagamento dos 12 meses foi de ${recent}`;
+    return long ? `${head}, e o de ${mark.years} anos, de ${long}` : head;
+  }
+  const head = mark.basis === "regular" ? `o pagamento regular é de ${recent} nos 12 meses` : `habitual de ${recent} nos 12 meses`;
+  return long ? `${head} e ${long} em ${mark.years} anos` : head;
+}
+
+/** "no rendimento", "no JCP", "no dividendo"; sem tipo (o total), "no provento". */
+export function kindPhrase(kind: IncomeKind | null): string {
+  if (kind === "jcp") return "no JCP";
+  if (kind === "dividend") return "no dividendo";
+  if (kind === "reit_income") return "no rendimento";
+  return "no provento";
+}
+
+/** ` em 3 parcelas` quando a data com paga em mais de uma. */
+export function installmentsText(installments: number): string {
+  return installments > 1 ? ` em ${installments} parcelas` : "";
 }
 
 /** "DFP de 2025" / "ITR do trimestre até 30/09/2026" / o nome do documento do FII. */

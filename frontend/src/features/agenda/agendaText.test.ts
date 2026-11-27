@@ -24,8 +24,10 @@ import {
   shortDate,
   todayInBrazil,
   unitText,
+  installmentsText,
+  kindPhrase,
+  referenceText,
   unusualTitle,
-  usualText,
 } from "./agendaText";
 
 const doc = (fields: Partial<AgendaDocument>): AgendaDocument => ({
@@ -84,9 +86,23 @@ describe("textos dos eventos", () => {
     const visible = createMoney(false);
     const hidden = createMoney(true);
     expect(unitText(hidden, 0.6)).toBe(MASK_BRL);
-    const mark = { recent: { usual: 0.8, change: -0.25, payments: 12 }, long: { usual: 0.79, change: -0.24, payments: 58 }, years: 5 };
-    expect(usualText(visible, mark)).toMatch(/0,80.*12 meses e .*0,79 em 5 anos/);
-    expect(usualText(hidden, { ...mark, long: null })).toBe(`${MASK_BRL} nos 12 meses`);
+    const mark = {
+      basis: "similar" as const,
+      recent: { usual: 0.8, change: -0.25, payments: 12 },
+      long: { usual: 0.79, change: -0.24, payments: 58 },
+      years: 5,
+    };
+    expect(referenceText(visible, mark)).toMatch(/^habitual de .*0,80.*12 meses e .*0,79 em 5 anos$/);
+    expect(referenceText(hidden, { ...mark, long: null })).toBe(`habitual de ${MASK_BRL} nos 12 meses`);
+    expect(referenceText(visible, { ...mark, basis: "regular", long: null })).toMatch(/^o pagamento regular é de .*0,80 nos 12 meses$/);
+    expect(referenceText(visible, { ...mark, basis: "largest" })).toMatch(/^o maior pagamento dos 12 meses foi de .*0,80, e o de 5 anos, de .*0,79$/);
+    expect(referenceText(visible, { ...mark, basis: "largest", long: null })).toMatch(/^o maior pagamento dos 12 meses foi de .*0,80$/);
+    expect(kindPhrase("jcp")).toBe("no JCP");
+    expect(kindPhrase("dividend")).toBe("no dividendo");
+    expect(kindPhrase("reit_income")).toBe("no rendimento");
+    expect(kindPhrase(null)).toBe("no provento");
+    expect(installmentsText(3)).toBe(" em 3 parcelas");
+    expect(installmentsText(1)).toBe("");
   });
 
   it("nomeia o resultado e o documento pela fonte", () => {

@@ -28,7 +28,7 @@ use super::income::{amounts, IncomeKind, IncomeSource};
 use super::income_auto::{cash_kind, VALUE_TOLERANCE};
 use super::ledger::{Entry, LedgerError};
 use super::tax::calendar::{is_trading_day, Closure};
-use unusual::{Direction, Reference, Unusual};
+use unusual::{Basis, Direction, Reference, Unusual};
 
 /// O período mais longo que uma consulta da Agenda pode pedir.
 pub const MAX_RANGE_DAYS: i64 = 400;
@@ -167,6 +167,9 @@ pub enum IncomeState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UnusualMark {
     pub direction: Direction,
+    pub basis: Basis,
+    /// O tipo comparado; `None` no aumento extraordinário (o total).
+    pub kind: Option<IncomeKind>,
     pub recent: Reference,
     pub long: Option<Reference>,
     pub years: u32,
@@ -176,6 +179,8 @@ impl From<&Unusual> for UnusualMark {
     fn from(u: &Unusual) -> Self {
         Self {
             direction: u.direction,
+            basis: u.basis,
+            kind: u.kind,
             recent: u.recent,
             long: u.long,
             years: u.years,
@@ -210,6 +215,8 @@ pub struct UnusualDetail {
     pub approved_on: Option<Date>,
     /// As datas de pagamento conhecidas (parcelas), em ordem.
     pub pay_dates: Vec<Date>,
+    /// Em quantas parcelas a data com paga (1 sem parcelas).
+    pub installments: usize,
     pub unusual: Unusual,
 }
 
@@ -339,6 +346,14 @@ impl Declared {
         dates.sort_unstable();
         dates.dedup();
         dates
+    }
+
+    /// Em quantas parcelas a data com paga: as datas de pagamento distintas
+    /// (a "a definir" conta como uma). JCP e dividendo pagos no mesmo dia são
+    /// uma parcela.
+    pub fn installments(&self) -> usize {
+        let undated = usize::from(self.rows.iter().any(|r| r.pay_date.is_none()));
+        (self.pay_dates().len() + undated).max(1)
     }
 
     /// Se um provento da Renda é deste anúncio: mesmo ativo e a mesma data com
@@ -501,6 +516,7 @@ pub fn build(input: &Input) -> Vec<Event> {
                 ex_date: declared.ex_date,
                 approved_on: declared.rows.iter().filter_map(|r| r.approved_on).min(),
                 pay_dates: declared.pay_dates(),
+                installments: declared.installments(),
                 unusual: found,
             }),
         });

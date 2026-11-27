@@ -848,7 +848,9 @@ e o botão **Lançar provento** à direita.
    provento que o Prumo calculou do anúncio da B3 leva o selo **"automático
    (B3)"**, borda pontilhada e texto; o provento cujo valor por cota se afastou
    do habitual leva o selo da Agenda, **"Corte de 25%"** em vermelho ou
-   **"Aumento de 71%"** em verde, com o habitual no texto só de leitor de tela)
+   **"Aumento de 71%"** em verde — "· 3 parcelas" quando a data com paga em
+   parcelas, e o mesmo selo em cada uma —, com a referência no texto só de
+   leitor de tela)
    com a **altura do mês a mês**: a lista
    rola por dentro, então pagamento demais não alonga a página. O painel
    **Eventos anunciados pela B3** (só com os automáticos ligados e alguma
@@ -1275,9 +1277,13 @@ só com os ativos da carteira. Regra e fontes em [agenda.md](agenda.md).
   ("~R$ 41,25" no "a definir") ou **Abrir** (o documento original, nova aba,
   nome acessível "Abrir o documento: Fato relevante de ITSA4 (abre em nova
   aba)").
-- **Fora do padrão**: a linha diz "Corte de 25% no provento de MXRF11" e o
-  detalhe "R$ 0,075 por cota; habitual de R$ 0,10 nos 12 meses e R$ 0,098 em 5
-  anos · data com 10/11". A data com e o pagamento do mesmo provento levam o
+- **Fora do padrão**: a linha diz o tipo comparado ("Corte de 25% no rendimento
+  de MXRF11"; no aumento extraordinário, que compara o total, "Aumento de 519% no
+  provento de ITSA4") e o detalhe diz o valor, as parcelas e a referência pela
+  base: "R$ 0,075 por cota; habitual de R$ 0,10 nos 12 meses e R$ 0,098 em 5
+  anos · data com 10/11", "o pagamento regular é de…" ou "R$ 1,2384 por cota em
+  3 parcelas; o maior pagamento dos 12 meses foi de R$ 0,20". A data com e o
+  pagamento do mesmo provento levam o
   selo "Corte de 25%" (vermelho) ou "Aumento de 71%" (verde); o texto está
   sempre escrito, a cor só reforça.
 - **Calendário**: o mês de domingo a sábado numa tabela; cada dia é um botão

@@ -28,8 +28,18 @@ export type UsualReference = {
   payments: number;
 };
 
+/**
+ * Contra o que o valor foi comparado: `similar` (a média dos parecidos do
+ * mesmo tipo), `regular` (a mediana do tipo: o pagamento ocupa o lugar do
+ * regular) ou `largest` (o maior do período: aumento extraordinário).
+ */
+export type UnusualBasis = "similar" | "regular" | "largest";
+
 export type UnusualMark = {
   direction: UnusualDirection;
+  basis: UnusualBasis;
+  /** O tipo comparado; `null` no aumento extraordinário (o total da data com). */
+  kind: IncomeKind | null;
   /** Os 12 meses antes da data ex. */
   recent: UsualReference;
   /** Até 5 anos antes; `null` com menos de 2 anos de histórico. */
@@ -57,8 +67,12 @@ export type AgendaIncome = {
 
 export type AgendaUnusual = {
   direction: UnusualDirection;
-  /** O que a data com pagou por cota de hoje, bruto. */
+  basis: UnusualBasis;
+  kind: IncomeKind | null;
+  /** O valor comparado por cota de hoje, bruto (as parcelas somadas). */
   per_unit: number;
+  /** Em quantas parcelas a data com paga. */
+  installments: number;
   record_date: string;
   ex_date: string;
   approved_on: string | null;
@@ -128,7 +142,9 @@ export type Agenda = {
 
 /** `GET /agenda/unusual-income`: os proventos a receber fora do padrão. */
 export type UnusualIncome = UnusualMark & {
-  income_id: string;
+  /** Os proventos da Renda desta data com (um por parcela a receber). */
+  income_ids: string[];
+  installments: number;
   asset_id: string;
   record_date: string;
   ex_date: string;

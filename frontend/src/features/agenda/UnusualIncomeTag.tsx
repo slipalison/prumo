@@ -8,12 +8,12 @@ import { UnusualBadge } from "./AgendaEventItem";
  */
 export function UnusualIncomeTag({ eventId }: { eventId: string }) {
   const unusual = useUnusualIncome();
-  const found = unusual.data?.items.find((item) => item.income_id === eventId);
+  const found = unusual.data?.items.find((item) => item.income_ids.includes(eventId));
   if (!found) return null;
   return (
     <>
       {" "}
-      <UnusualBadge mark={found} />
+      <UnusualBadge mark={found} installments={found.installments} />
     </>
   );
 }

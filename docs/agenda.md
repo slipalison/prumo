@@ -174,58 +174,90 @@ cadastrado (hoje 2027) a tela avisa que o mês ainda não tem os dias sem pregã
 O anúncio da B3 cujo valor por cota se afasta do que o ativo costuma pagar —
 **aumento ou corte** — vira um evento na Agenda (no dia do anúncio, o
 `approvedOn` da B3) e um selo na data com, no pagamento e em **Próximos
-pagamentos** da Renda ("Corte de 25%", "Aumento de 71%").
+pagamentos** da Renda ("Corte de 25%", "Aumento de 519% · 3 parcelas"). Uma
+data com é **um** item, por mais parcelas que pague.
 
 ### A conta
 
-1. **O pagamento**: tudo o que a empresa declarou com a mesma data com — JCP,
-   dividendo, rendimento, cada parcela — **por cota de hoje** (cada
-   bonificação, desdobramento e grupamento posterior divide o valor, a mesma
-   base da estimativa da Renda, `shares_after`), **bruto** (o IR não muda o que
-   é fora do padrão, como no "acima do habitual").
-2. **O histórico**: os pagamentos do ativo por data ex — os da B3 desde o
-   primeiro anúncio que ela mostra e, antes disso, o Yahoo (10 anos em cache,
-   já na base de hoje). É o mesmo histórico da média do habitual da Renda.
-3. **O habitual de um período** é a **média dos pagamentos parecidos** com o
-   anunciado — os de **metade ao dobro** do valor — com data ex no período. Sem
-   nenhum parecido, é o pagamento mais próximo (na razão).
-4. **Dois períodos**: os **12 meses** antes da data ex e **até 5 anos** antes
-   dela (só anos inteiros que o histórico alcança; com menos de 2 anos, só os 12
-   meses valem, como na média do habitual da Renda).
-5. **Fora do padrão** quando o valor fica acima de `limiar × habitual`
-   (aumento) ou abaixo de `habitual ÷ limiar` (corte) **nos dois períodos, no
-   mesmo sentido**:
+1. **O pagamento**: o que a empresa declarou numa data com, **por cota de
+   hoje** (cada bonificação, desdobramento e grupamento posterior divide o
+   valor, a mesma base da estimativa da Renda, `shares_after`), **bruto**, com
+   as **parcelas somadas** (o dividendo pago em 2026, 2027 e 2028 é um
+   pagamento de 3 × 0,4128). Separado **por tipo** — dividendo, JCP,
+   rendimento de FII — e no total. Amortização (devolve capital) e o "outro"
+   da B3 numa ação (a correção do valor entre a data com e o pagamento) não
+   formam padrão: entram só no total.
+2. **O histórico**: por tipo, os anúncios da B3 (só ela diz o tipo; cobre de 12
+   a 18 meses e cresce com o tempo); no total, a B3 e, antes dela, o Yahoo (10
+   anos em cache, já na base de hoje, sem o tipo).
+3. **Três maneiras de estar fora do padrão**, nesta ordem:
+
+| Base (`basis`) | Quando | Referência |
+|---|---|---|
+| `similar` — corte ou aumento de um pagamento regular | o tipo tem pelo menos **2 pagamentos parecidos** (de metade ao dobro do valor) nos 12 meses antes da data ex | a média deles |
+| `regular` — corte do pagamento regular | sem parecido, o valor fica **abaixo de todos** do tipo e **ocupa o lugar do pagamento regular**: o tipo tem pelo menos 2 pagamentos nos 12 meses, intervalo típico (mediana) de até 200 dias, e o pagamento anterior ficou a pelo menos 60% desse intervalo | a mediana do tipo nos 12 meses |
+| `largest` — aumento extraordinário | o **total** da data com passa de `limiar ×` o **maior** pagamento dos 12 meses (com pelo menos 2 pagamentos neles) | o maior |
+
+4. **Os 5 anos confirmam**: com 2 anos ou mais de histórico, o total da data
+   com tem de dar o mesmo veredito contra os pagamentos de até 5 anos (os
+   parecidos, com pelo menos **3**; o lugar do regular; ou o maior, com pelo
+   menos 3 pagamentos). Com menos de 2 anos, só os 12 meses valem, como na
+   média do habitual da Renda.
+5. **O limiar**:
 
 | Classe | Limiar | Aumento a partir de | Corte a partir de |
 |---|---|---|---|
 | FII | 1,25 | +25% | −20% |
 | Ação (e o resto) | 1,5 (o mesmo do "acima do habitual") | +50% | −33% |
 
-A tela mostra o valor por cota e os dois habituais ("R$ 0,60 por cota; habitual
-de R$ 0,80 nos 12 meses e R$ 0,79 em 5 anos").
+Pagamento que não cai em nenhuma das três — sem parecido e fora do lugar do
+regular, ou entre dois padrões — é **avulso** e não vira nada: nem corte, nem
+aumento. A tela diz o valor, as parcelas e a referência pela base ("R$ 0,60 por
+cota; habitual de R$ 0,80 nos 12 meses e R$ 0,79 em 5 anos"; "R$ 1,2384 por
+cota em 3 parcelas; o maior pagamento dos 12 meses foi de R$ 0,20").
 
 ### Por que assim
 
 - **Parecidos, não todos.** Muita empresa paga em duas cadências: um banco com
   JCP mensal de R$ 0,018 e complementos de R$ 0,35 duas vezes por ano. A média
   de todos os pagamentos de um ano (R$ 0,065) faria todo JCP mensal parecer um
-  corte de 72%. Com "de metade ao dobro", o JCP mensal é comparado aos mensais e o
-  complemento aos complementos; o complemento que cai para R$ 0,12 não tem
-  parecido e é comparado ao mais próximo (R$ 0,35): corte de 66%.
+  corte de 72%. Com "de metade ao dobro", o JCP mensal é comparado aos mensais
+  e o complemento aos complementos.
+- **Nunca contra um pagamento só.** A primeira versão (27/11/2026) comparava o
+  valor sem parecido com o **pagamento mais próximo**, e o `payments: 1` da
+  resposta era isso — não um histórico curto: o pagador anual tinha os 5 anos
+  no histórico, mas nenhum pagamento entre metade e o dobro de um resíduo de
+  0,0046. Na carteira real isso deu dois "cortes" falsos (0,0046 contra 1,1166
+  e 0,0449 contra 0,7302): um resíduo pequeno contra um único pagamento grande
+  não é corte. Agora a referência tem pelo menos 2 pagamentos nos 12 meses e 3
+  em 5 anos, a comparação é dentro do mesmo tipo (o JCP residual não é medido
+  contra o dividendo), e o corte sem parecido só vale no **lugar** do pagamento
+  regular: o FII que paga 0,30 no lugar dos 0,80 do mês é corte; o resíduo que
+  cai três meses depois do dividendo anual, ou vinte dias depois do semestral,
+  é avulso.
+- **O aumento extraordinário não precisa de parecido.** Uma antecipação é, por
+  definição, sem parecido: ela é marcada quando passa do maior pagamento dos 12
+  meses (e dos 5 anos) pelo limiar. O corte, ao contrário, só existe contra um
+  padrão.
+- **Pagador anual**: um pagamento por ano não forma padrão em 12 meses, e ele
+  não é avaliado.
 - **Os dois períodos.** Pedir os 12 meses **e** os 5 anos no mesmo sentido
   corta o falso alarme de quem volta ao normal: o FII que pagou R$ 1,00 durante
-  um ano extraordinário e volta aos R$ 0,80 de sempre não é "corte" (é o
-  habitual de 5 anos), e a petroleira que paga R$ 1,35 depois de um ano de
-  R$ 0,70 não é "aumento" se em 5 anos ela pagou isso.
+  um ano extraordinário e volta aos R$ 0,80 de sempre não é "corte".
 - **Limiar por classe.** O FII distribui quase todo o resultado do semestre e
   o rendimento mês a mês varia pouco: nas páginas públicas da B3 e no Yahoo
   (27/11/2026), FIIs mensais variaram 5–6% de um mês ao outro, e um corte de
   20% já é notícia para quem vive da renda. Em ação, o provento por data com
   segue o lucro e o calendário da empresa: com limiar de 1,25, elétrica,
-  petroleira e banco seriam marcados a cada trimestre (4 de 9 pagamentos de uma
-  petroleira em 2 anos); com 1,5, sobram os de fato fora da curva (uma
-  antecipação de 111% acima, um corte de 35%), cerca de um por ativo a cada dois
-  anos.
+  petroleira e banco seriam marcados a cada trimestre; com 1,5, sobram os de
+  fato fora da curva.
+- **Calibragem** (páginas públicas da B3 de 7 emissores — bancos com JCP mensal,
+  FIIs mensais, elétrica, petroleira, holding —, 27/11/2026): nenhum FII mensal
+  sem mudança é marcado; o JCP mensal e os complementos do banco ficam quietos;
+  os testes com números fictícios no formato da carteira real
+  (`domain/agenda/unusual.rs` e `tests/agenda.rs`) mostram o corte de 25% e o
+  de 62% do FII mensal, o aumento extraordinário em três parcelas, e o resíduo
+  avulso sem marca.
 - Ativo sem anúncio da B3 (ETF, BDR, EUA) não é avaliado: não há "anunciado"
   antes do pagamento. Anúncio sem nada antes dele no histórico também não.
 
@@ -257,7 +289,8 @@ de R$ 0,80 nos 12 meses e R$ 0,79 em 5 anos").
   anúncio). Não há projeção de provento na Agenda.
 - **Fundos.NET** é uma página pública da B3, sem documentação formal: mudança
   de formato vira falha registrada (e o gravado fica), não dado errado.
-- O "fora do padrão" com menos de 2 anos de histórico usa só os 12 meses.
+- O "fora do padrão" com menos de 2 anos de histórico usa só os 12 meses, e o
+  pagador anual não é avaliado (um pagamento por ano não forma padrão).
 
 ## 7. Banco (migração 0028)
 

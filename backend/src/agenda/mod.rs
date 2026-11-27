@@ -29,7 +29,9 @@ use uuid::Uuid;
 
 use self::cvm::{filing_path, ipe_path, parse_ipe, parse_receipts, FilingReceipt};
 use self::fundos_net::FundDocuments;
-use crate::domain::agenda::unusual::{by_ex_date, merged, ratio_for, unusual, Unusual};
+use crate::domain::agenda::unusual::{
+    by_ex_date, merged, ratio_for, unusual, Declaration, History, Unusual,
+};
 use crate::domain::agenda::{
     build, mark_for, undated_income, undated_rows, Declared, DeclaredRow, Document,
     DocumentCategory, DocumentSource, Event, IncomeItem, Input,
@@ -37,8 +39,8 @@ use crate::domain::agenda::{
 use crate::domain::asset_class::{AssetClass, Market};
 use crate::domain::fundamentals::{coverage, Coverage, FilingKind};
 use crate::domain::income::estimate::{b3_unit_payments, yahoo_unit_payments};
-use crate::domain::income::{today_in_brazil, DividendPoint};
-use crate::domain::income_auto::ex_date_after;
+use crate::domain::income::{today_in_brazil, DividendPoint, IncomeKind};
+use crate::domain::income_auto::{cash_kind, ex_date_after, CashAnnouncement};
 use crate::domain::tax::calendar::{covered_years, trading_closures};
 use crate::fundamentals::download::{self, FetchError, Opened, Validators};
 use crate::fundamentals::{due_with, Mode, CLAIM_FOR};
@@ -423,10 +425,13 @@ pub struct Agenda {
     pub freshness: AgendaFreshness,
 }
 
-/// Um provento a receber fora do padrão (o selo da Renda).
+/// Uma data com a receber fora do padrão (o selo da Renda): uma por ativo e
+/// data ex, com os proventos da Renda dela (um por parcela).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnusualIncome {
-    pub income_id: Uuid,
+    pub income_ids: Vec<Uuid>,
+    /// Em quantas parcelas a data com paga.
+    pub installments: usize,
     pub asset_id: Uuid,
     pub record_date: Date,
     pub ex_date: Date,
@@ -518,25 +523,68 @@ async fn declared_income(
                 by_ex_date(&yahoo_unit_payments(&points, Decimal::ONE, Decimal::ZERO))
             })
             .unwrap_or_default();
-        let b3_history = by_ex_date(&b3_unit_payments(
-            &source.cash,
-            &source.stock,
-            *class,
-            today,
-        ));
-        let history = merged(&b3_history, &yahoo);
-        let mut groups: HashMap<Date, Vec<&crate::domain::income_auto::CashAnnouncement>> =
-            HashMap::new();
+        // Amortização devolve capital: fica fora do padrão de renda.
+        let paid: Vec<CashAnnouncement> = source
+            .cash
+            .iter()
+            .filter(|c| cash_kind(&c.label, *class) != IncomeKind::Amortization)
+            .cloned()
+            .collect();
+        let per_unit = |rows: &[CashAnnouncement]| -> Decimal {
+            b3_unit_payments(rows, &source.stock, *class, today)
+                .iter()
+                .map(|p| p.gross)
+                .sum()
+        };
+        let mut by_kind: Vec<(IncomeKind, Vec<CashAnnouncement>)> = Vec::new();
+        for cash in &paid {
+            let kind = cash_kind(&cash.label, *class);
+            match by_kind.iter_mut().find(|(k, _)| *k == kind) {
+                Some((_, rows)) => rows.push(cash.clone()),
+                None => by_kind.push((kind, vec![cash.clone()])),
+            }
+        }
+        let history = History {
+            by_kind: by_kind
+                .iter()
+                .map(|(kind, rows)| {
+                    let payments = b3_unit_payments(rows, &source.stock, *class, today);
+                    (*kind, by_ex_date(&payments))
+                })
+                .collect(),
+            totals: merged(
+                &by_ex_date(&b3_unit_payments(&paid, &source.stock, *class, today)),
+                &yahoo,
+            ),
+        };
+        let mut groups: HashMap<Date, Vec<&CashAnnouncement>> = HashMap::new();
         for cash in &source.cash {
             groups.entry(cash.record_date).or_default().push(cash);
         }
         for (record_date, rows) in groups {
             let ex_date = ex_date_after(record_date);
-            let owned: Vec<_> = rows.iter().map(|r| (*r).clone()).collect();
-            let value: Decimal = b3_unit_payments(&owned, &source.stock, *class, today)
-                .iter()
-                .map(|p| p.gross)
-                .sum();
+            let declaration = Declaration {
+                ex_date,
+                by_kind: by_kind
+                    .iter()
+                    .map(|(kind, all)| {
+                        let mine: Vec<CashAnnouncement> = all
+                            .iter()
+                            .filter(|c| c.record_date == record_date)
+                            .cloned()
+                            .collect();
+                        (*kind, per_unit(&mine))
+                    })
+                    .filter(|(_, value)| *value > Decimal::ZERO)
+                    .collect(),
+                total: per_unit(
+                    &paid
+                        .iter()
+                        .filter(|c| c.record_date == record_date)
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                ),
+            };
             declared.push(Declared {
                 asset_id: *id,
                 record_date,
@@ -550,7 +598,7 @@ async fn declared_income(
                         approved_on: r.approved_on,
                     })
                     .collect(),
-                unusual: unusual(value, ex_date, &history, ratio_for(*class)),
+                unusual: unusual(&declaration, &history, ratio_for(*class)),
             });
         }
     }
@@ -724,21 +772,34 @@ pub async fn unusual_income(
         .collect();
     let income = income_items(store, user, &assets).await?;
     let declared = declared_income(store, &assets, today).await?;
-    let mut list: Vec<UnusualIncome> = income
-        .iter()
-        .filter(|item| item.pay_date > today)
-        .filter_map(|item| {
-            let found = mark_for(item, &declared)?;
-            Some(UnusualIncome {
-                income_id: item.id,
-                asset_id: item.asset_id,
+    // Uma por data com: as parcelas a receber da mesma data com são um item só.
+    let mut list: Vec<UnusualIncome> = Vec::new();
+    for item in income.iter().filter(|item| item.pay_date > today) {
+        let Some(found) = mark_for(item, &declared) else {
+            continue;
+        };
+        let Some(mark) = found.unusual else {
+            continue;
+        };
+        match list
+            .iter_mut()
+            .find(|u| u.asset_id == found.asset_id && u.ex_date == found.ex_date)
+        {
+            Some(existing) => existing.income_ids.push(item.id),
+            None => list.push(UnusualIncome {
+                income_ids: vec![item.id],
+                installments: found.installments(),
+                asset_id: found.asset_id,
                 record_date: found.record_date,
                 ex_date: found.ex_date,
-                unusual: found.unusual?,
-            })
-        })
-        .collect();
-    list.sort_by_key(|u| (u.record_date, u.income_id));
+                unusual: mark,
+            }),
+        }
+    }
+    for entry in &mut list {
+        entry.income_ids.sort_unstable();
+    }
+    list.sort_by_key(|u| (u.record_date, u.asset_id));
     Ok(list)
 }
 

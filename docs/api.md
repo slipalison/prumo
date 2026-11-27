@@ -3210,7 +3210,10 @@ parâmetro desconhecido: `422`. Só os ativos da pessoa. Números fictícios:
       "income": null, "document": null, "closure": null,
       "unusual": {
         "direction": "cut",
+        "basis": "similar",
+        "kind": "reit_income",
         "per_unit": 0.6,
+        "installments": 1,
         "record_date": "2026-11-30",
         "ex_date": "2026-12-01",
         "approved_on": "2026-11-24",
@@ -3239,6 +3242,8 @@ parâmetro desconhecido: `422`. Só os ativos da pessoa. Números fictícios:
         "source": "b3_announcement",
         "unusual": {
           "direction": "cut",
+          "basis": "similar",
+          "kind": "reit_income",
           "recent": { "usual": 0.8, "change": -0.25, "payments": 12 },
           "long": { "usual": 0.79, "change": -0.2405, "payments": 59 },
           "years": 5
@@ -3281,13 +3286,20 @@ parâmetro desconhecido: `422`. Só os ativos da pessoa. Números fictícios:
   resto (`null` sem data ex: aí só vem o pagamento). `amount_per_unit` é o bruto
   por cota da época.
 - `unusual` (no evento e dentro de `income`): `direction` `increase` ou `cut`;
-  `recent` é o habitual dos 12 meses antes da data ex e `long` o de até 5 anos
-  (`null` com menos de 2 anos de histórico; `years` diz quantos anos entraram, 0
-  sem ele). `usual` é a média dos pagamentos parecidos (de metade ao dobro do
-  valor) por cota de hoje, `change` é `valor ÷ habitual − 1` e `payments` quantos
-  entraram (1 quando não houve parecido e valeu o mais próximo). No evento,
-  `per_unit` é o valor da data com por cota de hoje, bruto. Regra e limiares (1,25
-  no FII, 1,5 no resto) em [`agenda.md`](agenda.md#4-provento-fora-do-padrão).
+  `basis` diz contra o quê: `similar` (a média dos pagamentos parecidos do
+  mesmo tipo, de metade ao dobro do valor), `regular` (a mediana do tipo: o
+  pagamento ocupa o lugar do regular e ficou abaixo de todos; só corte) ou
+  `largest` (o maior pagamento do período: aumento extraordinário); `kind` é o
+  tipo comparado (`dividend`, `jcp`, `reit_income`) e `null` no aumento
+  extraordinário, que compara o total da data com. `recent` é a referência dos
+  12 meses antes da data ex e `long` a de até 5 anos, no total (`null` com menos
+  de 2 anos de histórico; `years` diz quantos anos entraram, 0 sem ele). `usual`
+  é a referência por cota de hoje, `change` é `valor ÷ referência − 1` e
+  `payments` quantos pagamentos a formaram — **nunca menos de 2** nos 12 meses
+  nem de 3 em 5 anos. No evento, `per_unit` é o valor comparado por cota de
+  hoje, bruto (o do tipo, ou o total; as parcelas somadas), e `installments` em
+  quantas parcelas a data com paga. Regra, mínimos e limiares (1,25 no FII, 1,5
+  no resto) em [`agenda.md`](agenda.md#4-provento-fora-do-padrão).
 - `document`: `category` (`material_fact`, `market_notice`,
   `shareholder_notice`, `meeting`, `results`, `management_report`), `source`
   (`cvm_ipe`, `cvm_filing` — ITR/DFP —, `fundos_net`), `title` e `subject`
@@ -3305,20 +3317,24 @@ parâmetro desconhecido: `422`. Só os ativos da pessoa. Números fictícios:
 
 ### `GET /api/v1/agenda/unusual-income`
 
-Os proventos **a receber** da pessoa (`pay_date` depois de hoje) que estão fora
-do padrão: o selo de "Próximos pagamentos" da Renda.
+As datas com **a receber** da pessoa (algum pagamento depois de hoje) que estão
+fora do padrão: o selo de "Próximos pagamentos" da Renda. **Um item por ativo e
+data ex**, por mais parcelas que a data com pague.
 
 ```json
 {
   "items": [
     {
-      "income_id": "…",
+      "income_ids": ["…", "…"],
+      "installments": 3,
       "asset_id": "…",
-      "record_date": "2026-11-30",
-      "ex_date": "2026-12-01",
-      "per_unit": 0.6,
-      "direction": "cut",
-      "recent": { "usual": 0.8, "change": -0.25, "payments": 12 },
+      "record_date": "2026-12-05",
+      "ex_date": "2026-12-07",
+      "per_unit": 1.2384,
+      "direction": "increase",
+      "basis": "largest",
+      "kind": null,
+      "recent": { "usual": 0.2, "change": 5.192, "payments": 6 },
       "long": null,
       "years": 0
     }
@@ -3326,8 +3342,10 @@ do padrão: o selo de "Próximos pagamentos" da Renda.
 }
 ```
 
-`income_id` é o `IncomeEvent` de `GET /income/summary` (`upcoming`). Lista
-vazia quando nada está fora do padrão.
+`income_ids` são os `IncomeEvent` a receber dessa data com (um por parcela, de
+`GET /income/summary`, `upcoming`); `installments` conta todas as parcelas da
+data com, inclusive as já pagas. Os outros campos são os de `unusual` acima.
+Lista vazia quando nada está fora do padrão.
 
 ## Resultados
 

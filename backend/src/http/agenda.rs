@@ -14,7 +14,7 @@ use uuid::Uuid;
 use super::dto::decimal_out;
 use super::{ApiQuery, AppState, CurrentUser};
 use crate::agenda::{self, UnusualIncome};
-use crate::domain::agenda::unusual::{Direction, Reference, Unusual};
+use crate::domain::agenda::unusual::{Basis, Direction, Reference, Unusual};
 use crate::domain::agenda::{
     valid_range, Detail, Document, DocumentCategory, DocumentSource, Event, EventKind,
     IncomeDetail, IncomeState, UnusualDetail, UnusualMark, MAX_RANGE_DAYS,
@@ -86,6 +86,12 @@ impl From<&Reference> for ReferenceDto {
 #[derive(Debug, Serialize)]
 pub struct UnusualMarkDto {
     pub direction: Direction,
+    /// `similar` (média dos parecidos do mesmo tipo), `regular` (mediana do
+    /// tipo: o pagamento ocupa o lugar do regular) ou `largest` (o maior do
+    /// período: aumento extraordinário).
+    pub basis: Basis,
+    /// O tipo comparado; `null` no aumento extraordinário (o total da data com).
+    pub kind: Option<IncomeKind>,
     /// Os 12 meses antes da data ex.
     pub recent: ReferenceDto,
     /// Até 5 anos antes; `null` com menos de 2 anos de histórico.
@@ -98,6 +104,8 @@ impl From<&UnusualMark> for UnusualMarkDto {
     fn from(m: &UnusualMark) -> Self {
         Self {
             direction: m.direction,
+            basis: m.basis,
+            kind: m.kind,
             recent: (&m.recent).into(),
             long: m.long.as_ref().map(ReferenceDto::from),
             years: m.years,
@@ -158,9 +166,14 @@ impl From<&IncomeDetail> for IncomeDto {
 #[derive(Debug, Serialize)]
 pub struct UnusualDto {
     pub direction: Direction,
-    /// O que a data com pagou por cota de hoje, bruto.
+    pub basis: Basis,
+    pub kind: Option<IncomeKind>,
+    /// O valor comparado, por cota de hoje, bruto: o do tipo, ou o total da
+    /// data com no aumento extraordinário (as parcelas somadas).
     #[serde(with = "decimal_out")]
     pub per_unit: Decimal,
+    /// Em quantas parcelas a data com paga.
+    pub installments: usize,
     #[serde(with = "iso_date")]
     pub record_date: Date,
     #[serde(with = "iso_date")]
@@ -187,7 +200,10 @@ impl From<&UnusualDetail> for UnusualDto {
     fn from(d: &UnusualDetail) -> Self {
         Self {
             direction: d.unusual.direction,
+            basis: d.unusual.basis,
+            kind: d.unusual.kind,
             per_unit: d.unusual.per_unit,
+            installments: d.installments,
             record_date: d.record_date,
             ex_date: d.ex_date,
             approved_on: d.approved_on,
@@ -334,7 +350,9 @@ pub async fn show(
 
 #[derive(Debug, Serialize)]
 pub struct UnusualIncomeDto {
-    pub income_id: Uuid,
+    /// Os proventos da Renda desta data com (um por parcela a receber).
+    pub income_ids: Vec<Uuid>,
+    pub installments: usize,
     pub asset_id: Uuid,
     #[serde(with = "iso_date")]
     pub record_date: Date,
@@ -349,7 +367,8 @@ pub struct UnusualIncomeDto {
 impl From<&UnusualIncome> for UnusualIncomeDto {
     fn from(u: &UnusualIncome) -> Self {
         Self {
-            income_id: u.income_id,
+            income_ids: u.income_ids.clone(),
+            installments: u.installments,
             asset_id: u.asset_id,
             record_date: u.record_date,
             ex_date: u.ex_date,

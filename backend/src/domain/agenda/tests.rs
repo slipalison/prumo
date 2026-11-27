@@ -72,13 +72,16 @@ fn cut() -> Unusual {
             per_unit: dec!(0.80),
         })
         .collect();
-    unusual::unusual(
-        dec!(0.60),
-        date!(2026 - 12 - 01),
-        &history,
-        unusual::FUND_RATIO,
-    )
-    .unwrap()
+    let declaration = unusual::Declaration {
+        ex_date: date!(2026 - 12 - 01),
+        by_kind: vec![(IncomeKind::ReitIncome, dec!(0.60))],
+        total: dec!(0.60),
+    };
+    let history = unusual::History {
+        by_kind: vec![(IncomeKind::ReitIncome, history.clone())],
+        totals: history,
+    };
+    unusual::unusual(&declaration, &history, unusual::FUND_RATIO).unwrap()
 }
 
 #[test]

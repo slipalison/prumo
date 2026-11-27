@@ -2,25 +2,32 @@
 //! que o ativo costuma pagar. Regra pura; o porquê de cada escolha está em
 //! `docs/agenda.md` ("Provento fora do padrão").
 //!
-//! - **O pagamento.** Tudo o que a empresa declarou com a mesma data com (JCP,
-//!   dividendo, rendimento, cada parcela), por cota **de hoje** (a mesma base
-//!   da estimativa da Renda, `income::estimate::shares_after`), bruto: o IR não
-//!   muda o que é "fora do padrão".
-//! - **O habitual.** A média dos pagamentos **parecidos** (de metade ao dobro
-//!   do valor) nos 12 meses antes da data ex e nos 5 anos antes dela. Parecido
-//!   porque muita empresa paga em duas cadências: um banco com JCP mensal e
-//!   complementos semestrais tem pagamentos de R$ 0,02 e de R$ 0,35. A média
-//!   de todos (R$ 0,065 num ano) faria todo JCP mensal parecer um corte de 72%
-//!   (o padrão das páginas públicas da B3 em 27/11/2026). Sem nenhum pagamento parecido, o habitual é
-//!   o pagamento mais próximo (na razão): o valor já está a mais do dobro dele.
-//! - **O limiar.** Fora do padrão quando o valor passa de `ratio ×` o habitual
-//!   (aumento) ou fica abaixo de `habitual ÷ ratio` (corte), **nos dois
-//!   períodos, no mesmo sentido**. Com menos de 2 anos de histórico só os 12
-//!   meses valem, como na média do habitual da Renda (`MIN_USUAL_YEARS`).
-//!   FII: 1,25 (+25% ou −20%), porque distribui quase todo o resultado e o
-//!   rendimento mês a mês varia pouco. Ação e o resto: 1,5 (+50% ou −33%), o
-//!   mesmo "acima do habitual" da Renda, porque o provento por data com segue
-//!   o lucro e o calendário da empresa.
+//! - **O pagamento.** O que a empresa declarou numa data com, por cota **de
+//!   hoje** (a base da estimativa da Renda, `income::estimate::shares_after`),
+//!   bruto, com as parcelas somadas: separado **por tipo** (dividendo, JCP,
+//!   rendimento de FII) e no total.
+//! - **Corte ou aumento de um pagamento regular** ([`Basis::Similar`]): o
+//!   valor de um tipo contra a média dos pagamentos **parecidos** do mesmo tipo
+//!   (de metade ao dobro) nos 12 meses antes da data ex, com pelo menos
+//!   [`MIN_RECENT`] parecidos. Parecido porque muita empresa paga em duas
+//!   cadências (um banco com JCP mensal de R$ 0,02 e complementos de R$ 0,35).
+//! - **Corte do pagamento regular sem parecido** ([`Basis::Regular`]): o valor
+//!   abaixo de todos os do tipo nos 12 meses só é corte se **ocupa o lugar** do
+//!   pagamento regular: o tipo tem cadência (pelo menos [`MIN_RECENT`]
+//!   pagamentos, intervalo típico de até [`MAX_CADENCE_DAYS`] dias) e o
+//!   pagamento anterior ficou a pelo menos [`SLOT_SHARE`] desse intervalo. O FII
+//!   que paga 0,30 no lugar dos 0,80 do mês é corte; o resíduo que cai três meses
+//!   depois do dividendo anual é um pagamento avulso: nada.
+//! - **Aumento extraordinário** ([`Basis::Largest`]): o total da data com passa
+//!   de `limiar ×` o **maior** pagamento dos 12 meses (com pelo menos
+//!   [`MIN_RECENT`] pagamentos neles). Pagamento sem padrão nunca vira corte.
+//! - **Os 5 anos confirmam.** Com 2 anos ou mais de histórico (a B3 e, antes
+//!   dela, o Yahoo, que não separa o tipo), o total da data com tem de dar o
+//!   mesmo veredito contra os pagamentos de até 5 anos, com pelo menos
+//!   [`MIN_LONG`] na referência.
+//! - **O limiar.** FII: 1,25 (+25% ou −20%), porque distribui quase todo o
+//!   resultado e o rendimento mês a mês varia pouco. Ação e o resto: 1,5 (+50%
+//!   ou −33%), o mesmo "acima do habitual" da Renda.
 
 use rust_decimal::Decimal;
 use time::{Date, Duration};
@@ -29,7 +36,7 @@ use crate::domain::asset_class::AssetClass;
 use crate::domain::income::estimate::{
     UnitPayment, ABOVE_USUAL_RATIO, MIN_USUAL_YEARS, USUAL_YEARS,
 };
-use crate::domain::income::TRAILING_DAYS;
+use crate::domain::income::{IncomeKind, TRAILING_DAYS};
 
 /// O limiar do FII: 1,25 × o habitual para cima, ÷ 1,25 (−20%) para baixo.
 pub const FUND_RATIO: Decimal = Decimal::from_parts(125, 0, 0, false, 2);
@@ -92,52 +99,57 @@ pub fn merged(b3: &[Payment], yahoo: &[Payment]) -> Vec<Payment> {
     list
 }
 
-/// O habitual de um período.
+/// Quantos pagamentos a referência dos 12 meses precisa (parecidos, ou do tipo
+/// para o corte do pagamento regular, ou no total para o aumento extraordinário).
+/// Um só não é padrão: o pagador anual tem um por ano e não é avaliado.
+pub const MIN_RECENT: usize = 2;
+
+/// Quantos pagamentos a referência de até 5 anos precisa.
+pub const MIN_LONG: usize = 3;
+
+/// O intervalo típico mais longo que ainda é cadência (semestral, com folga).
+pub const MAX_CADENCE_DAYS: i64 = 200;
+
+/// O pagamento ocupa o lugar do regular quando o anterior ficou a pelo menos
+/// esta fração do intervalo típico (60%: o mensal que atrasa uma semana conta).
+pub const SLOT_SHARE: Decimal = Decimal::from_parts(6, 0, 0, false, 1);
+
+/// Os tipos que formam padrão: dividendo, JCP e rendimento de FII. Amortização
+/// devolve capital, e o "outro" da B3 numa ação é a correção do valor entre a
+/// data com e o pagamento (centavos de centavo): ficam fora da comparação por
+/// tipo e entram só no total.
+pub fn judged(kind: IncomeKind) -> bool {
+    matches!(
+        kind,
+        IncomeKind::Dividend | IncomeKind::Jcp | IncomeKind::ReitIncome
+    )
+}
+
+/// Contra o que o valor foi comparado.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Basis {
+    /// A média dos pagamentos parecidos do mesmo tipo.
+    Similar,
+    /// A mediana do tipo: o pagamento ocupa o lugar do regular e ficou abaixo
+    /// de todos.
+    Regular,
+    /// O maior pagamento do período (aumento extraordinário).
+    Largest,
+}
+
+/// A referência de um período.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Reference {
-    /// A média dos pagamentos parecidos (ou o mais próximo), por cota.
+    /// O habitual por cota: a média dos parecidos, a mediana do tipo ou o maior.
     pub usual: Decimal,
     /// `valor ÷ habitual − 1`: `0,25` é 25% acima.
     pub change: Decimal,
-    /// Quantos pagamentos entraram na média (1 quando foi o mais próximo).
+    /// Quantos pagamentos formaram a referência.
     pub payments: usize,
 }
 
-/// A distância de `a` a `b` na razão (sempre ≥ 1).
-fn distance(a: Decimal, b: Decimal) -> Option<Decimal> {
-    let (high, low) = if a >= b { (a, b) } else { (b, a) };
-    high.checked_div(low)
-}
-
-/// A média dos parecidos com `value` em `window` (ou o mais próximo), sem
-/// arredondar, e quantos entraram.
-fn usual_of(value: Decimal, window: &[Payment]) -> Option<(Decimal, usize)> {
-    if value <= Decimal::ZERO || window.is_empty() {
-        return None;
-    }
-    let low = value / SIMILAR;
-    let high = value * SIMILAR;
-    let similar: Vec<Decimal> = window
-        .iter()
-        .map(|p| p.per_unit)
-        .filter(|v| *v >= low && *v <= high)
-        .collect();
-    if similar.is_empty() {
-        let nearest = window
-            .iter()
-            .map(|p| p.per_unit)
-            .filter_map(|v| distance(v, value).map(|d| (d, v)))
-            .min_by(|a, b| a.0.cmp(&b.0))?
-            .1;
-        return Some((nearest, 1));
-    }
-    let count = Decimal::from(similar.len());
-    Some((similar.iter().sum::<Decimal>() / count, similar.len()))
-}
-
-/// O habitual de `value` entre os pagamentos `window` (já recortados).
-pub fn reference(value: Decimal, window: &[Payment]) -> Option<Reference> {
-    let (usual, payments) = usual_of(value, window)?;
+fn reference(value: Decimal, usual: Decimal, payments: usize) -> Option<Reference> {
     let change = (value.checked_div(usual)? - Decimal::ONE).round_dp(4);
     Some(Reference {
         usual: usual.round_dp(8),
@@ -165,59 +177,211 @@ fn direction(value: Decimal, usual: Decimal, ratio: Decimal) -> Option<Direction
     }
 }
 
+/// O que uma data com declarou, por cota de hoje: por tipo e no total (as
+/// parcelas somadas).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Declaration {
+    pub ex_date: Date,
+    pub by_kind: Vec<(IncomeKind, Decimal)>,
+    pub total: Decimal,
+}
+
+/// O histórico de um ativo: por tipo (só a B3 diz o tipo) e no total (a B3 e,
+/// antes dela, o Yahoo, [`merged`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct History {
+    pub by_kind: Vec<(IncomeKind, Vec<Payment>)>,
+    pub totals: Vec<Payment>,
+}
+
+impl History {
+    fn of(&self, kind: IncomeKind) -> &[Payment] {
+        self.by_kind
+            .iter()
+            .find(|(k, _)| *k == kind)
+            .map_or(&[][..], |(_, list)| list.as_slice())
+    }
+}
+
 /// Um provento fora do padrão.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Unusual {
     pub direction: Direction,
-    /// O valor por cota de hoje que a data com pagou.
+    /// O valor comparado, por cota de hoje: o do tipo, ou o total no aumento
+    /// extraordinário.
     pub per_unit: Decimal,
+    /// O tipo comparado; `None` no aumento extraordinário (o total).
+    pub kind: Option<IncomeKind>,
+    pub basis: Basis,
     /// Os 12 meses antes da data ex.
     pub recent: Reference,
-    /// Até 5 anos antes da data ex; `None` com menos de 2 anos de histórico.
+    /// Até 5 anos antes da data ex, no total; `None` com menos de 2 anos.
     pub long: Option<Reference>,
     /// Quantos anos inteiros o período longo cobre (2 a 5), ou 0 sem ele.
     pub years: u32,
 }
 
-/// Os pagamentos com data ex em `[ex_date − days, ex_date)`.
+/// Os pagamentos com data ex em `[ex_date − days, ex_date)`, em ordem.
 fn window(history: &[Payment], ex_date: Date, days: i64) -> Vec<Payment> {
     let start = ex_date.saturating_sub(Duration::days(days));
-    history
+    let mut list: Vec<Payment> = history
         .iter()
         .filter(|p| p.ex_date >= start && p.ex_date < ex_date)
         .copied()
-        .collect()
+        .collect();
+    list.sort_by_key(|p| p.ex_date);
+    list
 }
 
-/// Se o pagamento de `value` por cota com data ex `ex_date` está fora do
-/// padrão de `history` (os pagamentos do ativo, por cota de hoje), com o
-/// limiar `ratio` ([`ratio_for`]).
-pub fn unusual(
+fn median(values: &mut [Decimal]) -> Option<Decimal> {
+    values.sort();
+    let n = values.len();
+    if n == 0 {
+        return None;
+    }
+    if n % 2 == 1 {
+        return values.get(n / 2).copied();
+    }
+    Some((*values.get(n / 2 - 1)? + *values.get(n / 2)?) / Decimal::TWO)
+}
+
+/// Se o pagamento com data ex `ex_date` ocupa o lugar do regular: a lista tem
+/// cadência (intervalo típico de até [`MAX_CADENCE_DAYS`]) e o anterior ficou
+/// a pelo menos [`SLOT_SHARE`] dela.
+fn regular_slot(window: &[Payment], ex_date: Date) -> bool {
+    let mut gaps: Vec<Decimal> = window
+        .windows(2)
+        .filter_map(|pair| match pair {
+            [a, b] => Some(Decimal::from((b.ex_date - a.ex_date).whole_days())),
+            _ => None,
+        })
+        .collect();
+    let (Some(typical), Some(last)) = (median(&mut gaps), window.last()) else {
+        return false;
+    };
+    let since = Decimal::from((ex_date - last.ex_date).whole_days());
+    typical > Decimal::ZERO
+        && typical <= Decimal::from(MAX_CADENCE_DAYS)
+        && since >= typical * SLOT_SHARE
+}
+
+/// O veredito de um valor contra uma janela: pelos parecidos (com pelo menos
+/// `min`), ou, abaixo de todos e no lugar do regular, pela mediana (só corte).
+fn judge(
     value: Decimal,
+    window: &[Payment],
     ex_date: Date,
-    history: &[Payment],
     ratio: Decimal,
-) -> Option<Unusual> {
-    let recent_window = window(history, ex_date, TRAILING_DAYS);
-    let (recent_usual, _) = usual_of(value, &recent_window)?;
-    let found = direction(value, recent_usual, ratio)?;
-    let recent = reference(value, &recent_window)?;
-    let first = history.iter().map(|p| p.ex_date).min()?;
-    let span = (ex_date - first).whole_days() / TRAILING_DAYS;
-    let years = u32::try_from(span).unwrap_or(0).min(USUAL_YEARS);
-    let long = if years >= MIN_USUAL_YEARS {
-        let long_window = window(history, ex_date, TRAILING_DAYS * i64::from(years));
-        let (long_usual, _) = usual_of(value, &long_window)?;
-        if direction(value, long_usual, ratio) != Some(found) {
-            return None;
+    min: usize,
+) -> Option<(Direction, Reference, Basis)> {
+    if value <= Decimal::ZERO {
+        return None;
+    }
+    let low = value / SIMILAR;
+    let high = value * SIMILAR;
+    let similar: Vec<Decimal> = window
+        .iter()
+        .map(|p| p.per_unit)
+        .filter(|v| *v >= low && *v <= high)
+        .collect();
+    if similar.len() >= min {
+        let usual = similar.iter().sum::<Decimal>() / Decimal::from(similar.len());
+        let found = direction(value, usual, ratio)?;
+        return Some((
+            found,
+            reference(value, usual, similar.len())?,
+            Basis::Similar,
+        ));
+    }
+    let below_all = window.iter().all(|p| value < p.per_unit);
+    if window.len() >= min && below_all && regular_slot(window, ex_date) {
+        let mut values: Vec<Decimal> = window.iter().map(|p| p.per_unit).collect();
+        let usual = median(&mut values)?;
+        if direction(value, usual, ratio) == Some(Direction::Cut) {
+            return Some((
+                Direction::Cut,
+                reference(value, usual, window.len())?,
+                Basis::Regular,
+            ));
         }
-        Some(reference(value, &long_window)?)
+    }
+    None
+}
+
+/// O aumento extraordinário: acima de `ratio ×` o maior da janela (com pelo
+/// menos `min` pagamentos nela).
+fn largest(value: Decimal, window: &[Payment], ratio: Decimal, min: usize) -> Option<Reference> {
+    if window.len() < min {
+        return None;
+    }
+    let top = window.iter().map(|p| p.per_unit).max()?;
+    if top > Decimal::ZERO && value >= top * ratio {
+        reference(value, top, window.len())
     } else {
         None
+    }
+}
+
+/// Quantos anos inteiros o histórico total cobre antes da data ex (até 5).
+fn years_before(history: &History, ex_date: Date) -> u32 {
+    history
+        .totals
+        .iter()
+        .map(|p| p.ex_date)
+        .min()
+        .map_or(0, |first| {
+            let span = (ex_date - first).whole_days() / TRAILING_DAYS;
+            u32::try_from(span).unwrap_or(0).min(USUAL_YEARS)
+        })
+}
+
+/// Se a data com `declaration` está fora do padrão do `history`, com o limiar
+/// `ratio` ([`ratio_for`]).
+pub fn unusual(declaration: &Declaration, history: &History, ratio: Decimal) -> Option<Unusual> {
+    let ex_date = declaration.ex_date;
+    let years = years_before(history, ex_date);
+    let long_window = (years >= MIN_USUAL_YEARS)
+        .then(|| window(&history.totals, ex_date, TRAILING_DAYS * i64::from(years)));
+
+    for (kind, value) in declaration
+        .by_kind
+        .iter()
+        .filter(|(kind, value)| judged(*kind) && *value > Decimal::ZERO)
+    {
+        let recent = window(history.of(*kind), ex_date, TRAILING_DAYS);
+        let Some((found, recent_ref, basis)) = judge(*value, &recent, ex_date, ratio, MIN_RECENT)
+        else {
+            continue;
+        };
+        let long = match &long_window {
+            None => None,
+            Some(list) => match judge(declaration.total, list, ex_date, ratio, MIN_LONG) {
+                Some((same, long_ref, _)) if same == found => Some(long_ref),
+                _ => continue,
+            },
+        };
+        return Some(Unusual {
+            direction: found,
+            per_unit: *value,
+            kind: Some(*kind),
+            basis,
+            recent: recent_ref,
+            long,
+            years: if long.is_some() { years } else { 0 },
+        });
+    }
+
+    let recent_totals = window(&history.totals, ex_date, TRAILING_DAYS);
+    let recent = largest(declaration.total, &recent_totals, ratio, MIN_RECENT)?;
+    let long = match &long_window {
+        None => None,
+        Some(list) => Some(largest(declaration.total, list, ratio, MIN_LONG)?),
     };
     Some(Unusual {
-        direction: found,
-        per_unit: value,
+        direction: Direction::Increase,
+        per_unit: declaration.total,
+        kind: None,
+        basis: Basis::Largest,
         recent,
         long,
         years: if long.is_some() { years } else { 0 },
@@ -231,8 +395,10 @@ mod tests {
     use rust_decimal_macros::dec;
     use time::macros::date;
 
-    /// Um pagamento por mês, no dia 1, de `start` até antes de `end`.
-    fn monthly(start: Date, end: Date, value: Decimal) -> Vec<Payment> {
+    const EX: Date = date!(2026 - 12 - 01);
+
+    /// Um pagamento a cada `step` dias, de `start` até antes de `end`.
+    fn every(start: Date, end: Date, step: i64, value: Decimal) -> Vec<Payment> {
         let mut out = Vec::new();
         let mut day = start;
         while day < end {
@@ -240,80 +406,263 @@ mod tests {
                 ex_date: day,
                 per_unit: value,
             });
-            let (y, m) = if day.month() == time::Month::December {
-                (day.year() + 1, time::Month::January)
-            } else {
-                (day.year(), day.month().next())
-            };
-            day = Date::from_calendar_date(y, m, 1).unwrap_or(end);
+            day = day.saturating_add(Duration::days(step));
         }
         out
     }
 
-    const EX: Date = date!(2026 - 12 - 01);
-
-    #[test]
-    fn a_monthly_fund_cut_by_a_quarter_is_out_of_pattern() {
-        let history = monthly(date!(2020 - 01 - 01), EX, dec!(0.80));
-        let found = unusual(dec!(0.60), EX, &history, FUND_RATIO).unwrap();
-        assert_eq!(found.direction, Direction::Cut);
-        assert_eq!(found.recent.usual, dec!(0.80));
-        assert_eq!(found.recent.change, dec!(-0.25));
-        assert_eq!(found.recent.payments, 12);
-        assert_eq!(found.years, 5);
-        assert_eq!(found.long.unwrap().change, dec!(-0.25));
-        // Um centavo a menos de 20% não é corte; −20% é.
-        assert!(unusual(dec!(0.65), EX, &history, FUND_RATIO).is_none());
-        assert!(unusual(dec!(0.64), EX, &history, FUND_RATIO).is_some());
-        // Na ação, o limiar é 1,5: −25% fica dentro do habitual.
-        assert!(unusual(dec!(0.60), EX, &history, STOCK_RATIO).is_none());
+    fn sorted(mut list: Vec<Payment>) -> Vec<Payment> {
+        list.sort_by_key(|p| p.ex_date);
+        list
     }
 
-    #[test]
-    fn a_bank_with_monthly_jcp_and_semiannual_complements_is_habitual() {
-        // JCP mensal de 0,018 e complementos de 0,35 em março e junho de cada ano.
-        let mut history = monthly(date!(2021 - 01 - 01), EX, dec!(0.018));
-        for year in 2021..=2026 {
-            for month in [time::Month::March, time::Month::June] {
-                history.push(Payment {
-                    ex_date: Date::from_calendar_date(year, month, 20).unwrap(),
-                    per_unit: dec!(0.35),
-                });
-            }
+    /// Um FII que paga `value` todo mês há seis anos (a B3 com o tipo nos
+    /// últimos 18 meses; o total desde o começo).
+    fn monthly_fund(value: Decimal) -> History {
+        let all = every(date!(2020 - 11 - 02), EX, 30, value);
+        let b3: Vec<Payment> = all
+            .iter()
+            .filter(|p| p.ex_date >= date!(2025 - 06 - 01))
+            .copied()
+            .collect();
+        History {
+            by_kind: vec![(IncomeKind::ReitIncome, b3)],
+            totals: all,
         }
-        history.sort_by_key(|p| p.ex_date);
-        assert!(unusual(dec!(0.0182), EX, &history, STOCK_RATIO).is_none());
-        assert!(unusual(dec!(0.36), EX, &history, STOCK_RATIO).is_none());
-        // O complemento que cai para 0,12 não tem parecido: o mais próximo é 0,35.
-        let cut = unusual(dec!(0.12), EX, &history, STOCK_RATIO).unwrap();
-        assert_eq!(cut.direction, Direction::Cut);
-        assert_eq!(cut.recent.usual, dec!(0.35));
-        assert_eq!(cut.recent.payments, 1);
-        // O JCP mensal que dobra é aumento.
-        let up = unusual(dec!(0.03), EX, &history, STOCK_RATIO).unwrap();
-        assert_eq!(up.direction, Direction::Increase);
+    }
+
+    fn one(kind: IncomeKind, value: Decimal) -> Declaration {
+        Declaration {
+            ex_date: EX,
+            by_kind: vec![(kind, value)],
+            total: value,
+        }
     }
 
     #[test]
-    fn both_periods_must_agree() {
-        // Cinco anos de 1,00 e um ano de 0,70: voltar a 1,00 não é aumento (é o
-        // habitual de 5 anos), e 0,70 não é corte nos 12 meses.
-        let mut history = monthly(date!(2020 - 01 - 01), date!(2025 - 12 - 01), dec!(1.00));
-        history.extend(monthly(date!(2025 - 12 - 01), EX, dec!(0.70)));
-        assert!(unusual(dec!(1.00), EX, &history, FUND_RATIO).is_none());
-        assert!(unusual(dec!(0.70), EX, &history, FUND_RATIO).is_none());
+    fn a_monthly_fund_cut_or_raised_is_out_of_pattern() {
+        let history = monthly_fund(dec!(0.80));
+        let cut = unusual(
+            &one(IncomeKind::ReitIncome, dec!(0.60)),
+            &history,
+            FUND_RATIO,
+        )
+        .unwrap();
+        assert_eq!(cut.direction, Direction::Cut);
+        assert_eq!(cut.basis, Basis::Similar);
+        assert_eq!(cut.kind, Some(IncomeKind::ReitIncome));
+        assert_eq!(cut.recent.usual, dec!(0.80));
+        assert_eq!(cut.recent.change, dec!(-0.25));
+        assert!(cut.recent.payments >= MIN_RECENT);
+        assert_eq!(cut.years, 5);
+        assert!(cut.long.unwrap().payments >= MIN_LONG);
+        // −18,75% fica dentro do habitual; +30% é aumento.
+        assert!(unusual(
+            &one(IncomeKind::ReitIncome, dec!(0.65)),
+            &history,
+            FUND_RATIO
+        )
+        .is_none());
+        let up = unusual(
+            &one(IncomeKind::ReitIncome, dec!(1.04)),
+            &history,
+            FUND_RATIO,
+        )
+        .unwrap();
+        assert_eq!(up.direction, Direction::Increase);
+        // Na ação, o limiar é 1,5: −25% fica dentro.
+        assert!(unusual(
+            &one(IncomeKind::ReitIncome, dec!(0.60)),
+            &history,
+            STOCK_RATIO
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn a_deep_cut_of_the_regular_payment_has_no_similar_and_still_counts() {
+        // 0,30 no lugar dos 0,80 do mês: nenhum parecido, mas é o pagamento do mês.
+        let history = monthly_fund(dec!(0.80));
+        let cut = unusual(
+            &one(IncomeKind::ReitIncome, dec!(0.30)),
+            &history,
+            FUND_RATIO,
+        )
+        .unwrap();
+        assert_eq!(cut.direction, Direction::Cut);
+        assert_eq!(cut.basis, Basis::Regular);
+        assert_eq!(cut.recent.usual, dec!(0.80));
+        assert_eq!(cut.recent.change, dec!(-0.625));
+    }
+
+    #[test]
+    fn a_small_payment_against_one_big_payment_is_not_a_cut() {
+        // Pagador anual de 1,1166 (cinco anos) e, três meses depois do último, um
+        // resíduo de 0,0046: não há padrão de 12 meses para comparar.
+        let annual = every(
+            date!(2021 - 09 - 01),
+            date!(2026 - 09 - 02),
+            365,
+            dec!(1.1166),
+        );
+        let history = History {
+            by_kind: vec![(
+                IncomeKind::Dividend,
+                annual
+                    .iter()
+                    .filter(|p| p.ex_date >= date!(2025 - 06 - 01))
+                    .copied()
+                    .collect(),
+            )],
+            totals: annual.clone(),
+        };
+        assert!(unusual(
+            &one(IncomeKind::Dividend, dec!(0.0046)),
+            &history,
+            STOCK_RATIO
+        )
+        .is_none());
+        // Semestral de 0,73 e 0,70 e um resíduo de 0,0449 vinte dias depois do
+        // último: abaixo de todos, mas fora do lugar do pagamento regular.
+        let semiannual = sorted(vec![
+            Payment {
+                ex_date: date!(2026 - 05 - 11),
+                per_unit: dec!(0.73),
+            },
+            Payment {
+                ex_date: date!(2026 - 11 - 11),
+                per_unit: dec!(0.70),
+            },
+        ]);
+        let history = History {
+            by_kind: vec![(IncomeKind::Dividend, semiannual.clone())],
+            totals: semiannual.clone(),
+        };
+        assert!(unusual(
+            &one(IncomeKind::Dividend, dec!(0.0449)),
+            &history,
+            STOCK_RATIO
+        )
+        .is_none());
+        // O mesmo valor como JCP: outro tipo, sem histórico de JCP, nada.
+        assert!(unusual(&one(IncomeKind::Jcp, dec!(0.0449)), &history, STOCK_RATIO).is_none());
+        // E nunca contra um pagamento só: o tipo com um pagamento não forma padrão.
+        let lone = History {
+            by_kind: vec![(IncomeKind::Dividend, semiannual[1..].to_vec())],
+            totals: semiannual[1..].to_vec(),
+        };
+        assert!(unusual(&one(IncomeKind::Dividend, dec!(0.20)), &lone, STOCK_RATIO).is_none());
+    }
+
+    #[test]
+    fn an_extraordinary_declaration_in_installments_is_an_increase() {
+        // JCP trimestral de 0,15 e dividendo semestral de 0,20; a data com declara
+        // 3 × 0,4128 = 1,2384 de dividendo, pago em três parcelas.
+        let jcp = every(date!(2025 - 12 - 15), EX, 91, dec!(0.15));
+        let dividend = every(date!(2026 - 02 - 20), EX, 182, dec!(0.20));
+        let totals = sorted(jcp.iter().chain(dividend.iter()).copied().collect());
+        let history = History {
+            by_kind: vec![(IncomeKind::Jcp, jcp), (IncomeKind::Dividend, dividend)],
+            totals,
+        };
+        let declaration = one(IncomeKind::Dividend, dec!(1.2384));
+        let up = unusual(&declaration, &history, STOCK_RATIO).unwrap();
+        assert_eq!(up.direction, Direction::Increase);
+        assert_eq!(up.basis, Basis::Largest);
+        assert_eq!(up.kind, None);
+        assert_eq!(up.recent.usual, dec!(0.20));
+        assert_eq!(up.per_unit, dec!(1.2384));
+        // Um pouco acima do maior não é extraordinário.
+        assert!(unusual(
+            &one(IncomeKind::Dividend, dec!(0.29)),
+            &history,
+            STOCK_RATIO
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn a_bank_with_monthly_jcp_and_semiannual_complements_stays_quiet() {
+        let mut jcp = every(date!(2025 - 12 - 01), EX, 30, dec!(0.018));
+        jcp.push(Payment {
+            ex_date: date!(2026 - 03 - 20),
+            per_unit: dec!(0.35),
+        });
+        jcp.push(Payment {
+            ex_date: date!(2026 - 06 - 20),
+            per_unit: dec!(0.36),
+        });
+        let jcp = sorted(jcp);
+        let history = History {
+            by_kind: vec![(IncomeKind::Jcp, jcp.clone())],
+            totals: jcp,
+        };
+        for value in [dec!(0.0182), dec!(0.355)] {
+            assert!(unusual(&one(IncomeKind::Jcp, value), &history, STOCK_RATIO).is_none());
+        }
+        // O complemento de 0,12 fica entre os dois padrões: avulso, nada.
+        assert!(unusual(&one(IncomeKind::Jcp, dec!(0.12)), &history, STOCK_RATIO).is_none());
+        // O JCP mensal que dobra é aumento.
+        let up = unusual(&one(IncomeKind::Jcp, dec!(0.036)), &history, STOCK_RATIO).unwrap();
+        assert_eq!(up.direction, Direction::Increase);
+        assert_eq!(up.basis, Basis::Similar);
+    }
+
+    #[test]
+    fn the_five_years_must_agree() {
+        // Cinco anos de 1,00 e um de 0,70: voltar a 1,00 não é aumento.
+        let mut all = every(date!(2020 - 11 - 02), date!(2025 - 12 - 01), 30, dec!(1.00));
+        all.extend(every(date!(2025 - 12 - 01), EX, 30, dec!(0.70)));
+        let history = History {
+            by_kind: vec![(
+                IncomeKind::ReitIncome,
+                all.iter()
+                    .filter(|p| p.ex_date >= date!(2025 - 06 - 01))
+                    .copied()
+                    .collect(),
+            )],
+            totals: all,
+        };
+        assert!(unusual(
+            &one(IncomeKind::ReitIncome, dec!(1.00)),
+            &history,
+            FUND_RATIO
+        )
+        .is_none());
+        assert!(unusual(
+            &one(IncomeKind::ReitIncome, dec!(0.70)),
+            &history,
+            FUND_RATIO
+        )
+        .is_none());
     }
 
     #[test]
     fn short_history_uses_the_twelve_months_alone() {
-        let history = monthly(date!(2026 - 03 - 01), EX, dec!(0.10));
-        let found = unusual(dec!(0.20), EX, &history, FUND_RATIO).unwrap();
-        assert_eq!(found.direction, Direction::Increase);
+        let b3 = every(date!(2026 - 03 - 02), EX, 30, dec!(0.10));
+        let history = History {
+            by_kind: vec![(IncomeKind::ReitIncome, b3.clone())],
+            totals: b3,
+        };
+        let found = unusual(
+            &one(IncomeKind::ReitIncome, dec!(0.07)),
+            &history,
+            FUND_RATIO,
+        )
+        .unwrap();
+        assert_eq!(found.direction, Direction::Cut);
         assert!(found.long.is_none());
         assert_eq!(found.years, 0);
-        // Sem nada antes da data ex: sem habitual, sem marca.
-        assert!(unusual(dec!(0.20), date!(2026 - 01 - 01), &history, FUND_RATIO).is_none());
-        assert!(unusual(dec!(0), EX, &history, FUND_RATIO).is_none());
+        // Sem nada antes da data ex, ou valor zero: nada.
+        let early = Declaration {
+            ex_date: date!(2026 - 01 - 01),
+            ..one(IncomeKind::ReitIncome, dec!(0.07))
+        };
+        assert!(unusual(&early, &history, FUND_RATIO).is_none());
+        assert!(unusual(&one(IncomeKind::ReitIncome, dec!(0)), &history, FUND_RATIO).is_none());
+        // Amortização e o "outro" não formam padrão.
+        assert!(!judged(IncomeKind::Amortization));
+        assert!(!judged(IncomeKind::Other));
     }
 
     #[test]
@@ -369,20 +718,30 @@ mod tests {
         assert_eq!(merged(&[], &yahoo), yahoo);
         assert_eq!(ratio_for(AssetClass::BrReits), FUND_RATIO);
         assert_eq!(ratio_for(AssetClass::BrStocks), STOCK_RATIO);
+        let mut even = vec![dec!(4), dec!(1), dec!(3), dec!(2)];
+        assert_eq!(median(&mut even), Some(dec!(2.5)));
+        assert_eq!(median(&mut []), None);
     }
 
     fn history_strategy() -> impl Strategy<Value = Vec<Payment>> {
         proptest::collection::vec((0i64..2200, 1i64..100_000), 1..40).prop_map(|points| {
-            let mut list: Vec<Payment> = points
-                .into_iter()
-                .map(|(back, cents)| Payment {
-                    ex_date: EX.saturating_sub(Duration::days(back + 1)),
-                    per_unit: Decimal::new(cents, 4),
-                })
-                .collect();
-            list.sort_by_key(|p| p.ex_date);
-            list
+            sorted(
+                points
+                    .into_iter()
+                    .map(|(back, cents)| Payment {
+                        ex_date: EX.saturating_sub(Duration::days(back + 1)),
+                        per_unit: Decimal::new(cents, 4),
+                    })
+                    .collect(),
+            )
         })
+    }
+
+    fn as_history(list: &[Payment]) -> History {
+        History {
+            by_kind: vec![(IncomeKind::ReitIncome, list.to_vec())],
+            totals: list.to_vec(),
+        }
     }
 
     proptest! {
@@ -399,20 +758,26 @@ mod tests {
                 .iter()
                 .map(|p| Payment { ex_date: p.ex_date, per_unit: p.per_unit * factor })
                 .collect();
-            let a = unusual(value, EX, &history, FUND_RATIO).map(|u| u.direction);
-            let b = unusual(value * factor, EX, &scaled, FUND_RATIO).map(|u| u.direction);
+            let a = unusual(&one(IncomeKind::ReitIncome, value), &as_history(&history), FUND_RATIO)
+                .map(|u| (u.direction, u.basis));
+            let b = unusual(&one(IncomeKind::ReitIncome, value * factor), &as_history(&scaled), FUND_RATIO)
+                .map(|u| (u.direction, u.basis));
             prop_assert_eq!(a, b);
         }
 
-        /// O sentido diz o sinal da mudança, e a mudança passa do limiar.
+        /// O sentido diz o sinal da mudança, que passa do limiar, e a referência
+        /// nunca é um pagamento só.
         #[test]
         fn the_direction_matches_the_change(
             history in history_strategy(),
             cents in 1i64..100_000,
         ) {
             let value = Decimal::new(cents, 4);
-            if let Some(found) = unusual(value, EX, &history, STOCK_RATIO) {
-                // A mudança é arredondada a 4 casas: a folga é de uma casa.
+            if let Some(found) = unusual(&one(IncomeKind::ReitIncome, value), &as_history(&history), STOCK_RATIO) {
+                prop_assert!(found.recent.payments >= MIN_RECENT);
+                if let Some(long) = found.long {
+                    prop_assert!(long.payments >= MIN_LONG);
+                }
                 let slack = dec!(0.0001);
                 for reference in std::iter::once(found.recent).chain(found.long) {
                     match found.direction {
@@ -425,20 +790,6 @@ mod tests {
                         }
                     }
                 }
-            }
-        }
-
-        /// O habitual nunca sai de dentro do intervalo dos pagamentos.
-        #[test]
-        fn the_usual_is_between_the_payments(
-            history in history_strategy(),
-            cents in 1i64..100_000,
-        ) {
-            let value = Decimal::new(cents, 4);
-            if let Some(found) = reference(value, &history) {
-                let min = history.iter().map(|p| p.per_unit).min().unwrap_or_default();
-                let max = history.iter().map(|p| p.per_unit).max().unwrap_or_default();
-                prop_assert!(found.usual >= min.round_dp(8) && found.usual <= max.round_dp(8));
             }
         }
     }

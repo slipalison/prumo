@@ -289,7 +289,65 @@ async fn fund_announcements(db: &Database) {
     }
     insert(days(3), dec!(0.60), Some(days(20)), Some(days(-2))).await;
     insert(days(33), dec!(0.80), None, None).await;
+    // Um resíduo avulso dez dias depois de um rendimento: abaixo de todos, mas
+    // fora do lugar do pagamento do mês. Não é corte.
+    insert(days(-20), dec!(0.004), Some(days(-5)), None).await;
     sqlx::query("insert into b3_issuer_fetches (issuer, fetched_at) values ('FUNR', now())")
+        .execute(&pool)
+        .await
+        .unwrap();
+}
+
+/// A companhia fictícia: JCP trimestral de 0,15 e dividendo semestral de 0,20
+/// nos 12 meses, e uma data com que declara 3 × 0,4128 de dividendo, pago em
+/// três parcelas anuais (um aumento extraordinário).
+async fn company_announcements(db: &Database) {
+    let pool = PgPoolOptions::new().connect(&db.url).await.unwrap();
+    let insert =
+        |label: &'static str, record: Date, rate: Decimal, pay: Date, approved: Option<Date>| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query(
+                    "insert into b3_cash_announcements
+                    (issuer, isin, label, record_date, rate, pay_date, approved_on)
+                 values ('FICT', 'BRFICTACNOR0', $1, $2, $3, $4, $5)",
+                )
+                .bind(label)
+                .bind(record)
+                .bind(rate)
+                .bind(pay)
+                .bind(approved)
+                .execute(&pool)
+                .await
+                .unwrap();
+            }
+        };
+    for back in [20, 111, 202, 293] {
+        let record = days(-back);
+        insert(
+            "JRS CAP PROPRIO",
+            record,
+            dec!(0.15),
+            record + Duration::days(10),
+            None,
+        )
+        .await;
+    }
+    for back in [60, 240] {
+        let record = days(-back);
+        insert(
+            "DIVIDENDO",
+            record,
+            dec!(0.20),
+            record + Duration::days(10),
+            None,
+        )
+        .await;
+    }
+    for pay in [days(30), days(395), days(760)] {
+        insert("DIVIDENDO", days(5), dec!(0.4128), pay, Some(days(-1))).await;
+    }
+    sqlx::query("insert into b3_issuer_fetches (issuer, fetched_at) values ('FICT', now())")
         .execute(&pool)
         .await
         .unwrap();
@@ -340,6 +398,7 @@ async fn the_agenda_reads_only_the_portfolio_and_shows_it_by_day() {
     assert_eq!(sources.hits(&ipe_route).await, 2);
 
     fund_announcements(&db).await;
+    company_announcements(&db).await;
     db.store.regenerate_income_auto(ana.user).await.unwrap();
 
     let from = days(-60);
@@ -398,12 +457,36 @@ async fn the_agenda_reads_only_the_portfolio_and_shows_it_by_day() {
     // O rendimento de 0,60 é corte (−25%) contra os 0,80 dos 12 meses: um
     // evento no dia do anúncio e a marca na data com e no pagamento.
     let unusual = of_type(&events, "unusual_income");
-    assert_eq!(unusual.len(), 1, "{unusual:?}");
-    assert_eq!(unusual[0]["date"], days(-2).to_string());
-    assert_eq!(unusual[0]["unusual"]["direction"], "cut");
-    assert_eq!(unusual[0]["unusual"]["recent"]["change"], -0.25);
-    assert_eq!(unusual[0]["unusual"]["recent"]["usual"], 0.8);
-    assert!(unusual[0]["unusual"]["long"].is_null());
+    assert_eq!(unusual.len(), 2, "{unusual:?}");
+    let fund_cut = unusual
+        .iter()
+        .find(|e| symbols(e) == ["FUNR11"])
+        .expect("corte do fundo");
+    assert_eq!(fund_cut["date"], days(-2).to_string());
+    assert_eq!(fund_cut["unusual"]["direction"], "cut");
+    assert_eq!(fund_cut["unusual"]["basis"], "similar");
+    assert_eq!(fund_cut["unusual"]["kind"], "reit_income");
+    assert_eq!(fund_cut["unusual"]["recent"]["change"], -0.25);
+    assert_eq!(fund_cut["unusual"]["recent"]["usual"], 0.8);
+    assert!(fund_cut["unusual"]["long"].is_null());
+    // O resíduo avulso não vira corte.
+    assert!(unusual
+        .iter()
+        .all(|e| e["unusual"]["record_date"] != days(-20).to_string()));
+    // O dividendo extraordinário em três parcelas: um evento, um aumento contra o
+    // maior pagamento dos 12 meses.
+    let raise = unusual
+        .iter()
+        .find(|e| symbols(e) == ["FICT3"])
+        .expect("aumento da companhia");
+    assert_eq!(raise["date"], days(-1).to_string());
+    assert_eq!(raise["unusual"]["direction"], "increase");
+    assert_eq!(raise["unusual"]["basis"], "largest");
+    assert!(raise["unusual"]["kind"].is_null());
+    assert_eq!(raise["unusual"]["installments"], 3);
+    assert_eq!(raise["unusual"]["per_unit"], 1.2384);
+    assert_eq!(raise["unusual"]["recent"]["usual"], 0.2);
+    assert_eq!(raise["unusual"]["pay_dates"].as_array().unwrap().len(), 3);
     let payments = of_type(&events, "income_payment");
     let cut_payment = payments
         .iter()
@@ -424,11 +507,15 @@ async fn the_agenda_reads_only_the_portfolio_and_shows_it_by_day() {
     assert_eq!(undated["date"], days(33).to_string());
     assert_eq!(undated["income"]["net"], 80.0);
     assert!(undated["income"]["pay_date"].is_null());
-    // Um mês normal não é marcado.
+    // Um mês normal do fundo não é marcado; a parcela do dividendo extraordinário é.
     assert!(payments
         .iter()
-        .filter(|e| e["date"] != days(20).to_string())
+        .filter(|e| symbols(e) == ["FUNR11"] && e["date"] != days(20).to_string())
         .all(|e| e["income"]["unusual"].is_null()));
+    assert!(payments
+        .iter()
+        .filter(|e| symbols(e) == ["FICT3"] && e["date"] == days(30).to_string())
+        .all(|e| e["income"]["unusual"]["direction"] == "increase"));
 
     // Os dias sem pregão do período estão lá, sem ativo.
     for closed in of_type(&events, "market_closed") {
@@ -440,10 +527,21 @@ async fn the_agenda_reads_only_the_portfolio_and_shows_it_by_day() {
     let badge = get(&ana.app.router, "/api/v1/agenda/unusual-income").await;
     assert_eq!(badge.status, StatusCode::OK, "{}", badge.text);
     let items = badge.body["items"].as_array().unwrap();
-    assert_eq!(items.len(), 1, "{items:?}");
-    assert_eq!(items[0]["asset_id"], fund);
-    assert_eq!(items[0]["direction"], "cut");
-    assert_eq!(items[0]["per_unit"], 0.6);
+    // Uma linha por data com: as três parcelas do dividendo são um item só.
+    assert_eq!(items.len(), 2, "{items:?}");
+    let cut = items.iter().find(|i| i["asset_id"] == fund).expect("corte");
+    assert_eq!(cut["direction"], "cut");
+    assert_eq!(cut["per_unit"], 0.6);
+    assert_eq!(cut["installments"], 1);
+    assert_eq!(cut["income_ids"].as_array().unwrap().len(), 1);
+    let raise = items
+        .iter()
+        .find(|i| i["asset_id"] != fund)
+        .expect("aumento");
+    assert_eq!(raise["direction"], "increase");
+    assert_eq!(raise["basis"], "largest");
+    assert_eq!(raise["installments"], 3);
+    assert_eq!(raise["income_ids"].as_array().unwrap().len(), 3);
     let upcoming = get(&ana.app.router, "/api/v1/income?status=upcoming").await;
     let ids: Vec<&Value> = upcoming
         .body
@@ -452,7 +550,11 @@ async fn the_agenda_reads_only_the_portfolio_and_shows_it_by_day() {
         .iter()
         .map(|e| &e["id"])
         .collect();
-    assert!(ids.contains(&&items[0]["income_id"]));
+    for item in items {
+        for id in item["income_ids"].as_array().unwrap() {
+            assert!(ids.contains(&id), "{id}");
+        }
+    }
 
     // Quem não tem os ativos não vê os documentos deles.
     let other = get(

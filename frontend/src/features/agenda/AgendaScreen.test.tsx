@@ -3,7 +3,7 @@ import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { MASK_BRL } from "../../lib/money";
 import { HIDE_VALUES_KEY } from "../../lib/privacy";
-import { agendaOf, failAgenda, sampleMonth, setAgenda, setUnusualIncome } from "../../test/agendaHandlers";
+import { agendaOf, failAgenda, ITSA, sampleMonth, setAgenda, setUnusualIncome } from "../../test/agendaHandlers";
 import { sampleSummary } from "../../test/incomeHandlers";
 import { renderApp } from "../../test/render";
 import { server } from "../../test/server";
@@ -15,7 +15,7 @@ async function openAgenda() {
   setAgenda((from) => sampleMonth(from));
   const rendered = renderApp("agenda");
   await screen.findByRole("heading", { name: "Agenda da carteira" });
-  await screen.findByText(/Corte de 25% no provento de MXRF11/);
+  await screen.findByText(/Corte de 25% no rendimento de MXRF11/);
   return rendered;
 }
 
@@ -127,6 +127,36 @@ describe("Agenda", () => {
     await waitFor(() => expect(asked).toContain(`${previous.year}-${String(previous.month).padStart(2, "0")}-01`));
   });
 
+  it("diz o aumento extraordinário em parcelas contra o maior pagamento dos 12 meses", async () => {
+    setAgenda((from) => [
+      {
+        date: `${from.slice(0, 8)}09`,
+        type: "unusual_income",
+        assets: [ITSA],
+        income: null,
+        document: null,
+        closure: null,
+        unusual: {
+          direction: "increase",
+          basis: "largest",
+          kind: null,
+          per_unit: 1.2384,
+          installments: 3,
+          record_date: `${from.slice(0, 8)}12`,
+          ex_date: `${from.slice(0, 8)}13`,
+          approved_on: `${from.slice(0, 8)}09`,
+          pay_dates: ["2026-12-30", "2027-12-30", "2028-12-29"],
+          recent: { usual: 0.2, change: 5.192, payments: 6 },
+          long: null,
+          years: 0,
+        },
+      },
+    ]);
+    renderApp("agenda");
+    expect(await screen.findByText("Aumento de 519% no provento de ITSA4")).toBeInTheDocument();
+    expect(screen.getByText(/R\$\s1,2384 por cota em 3 parcelas; o maior pagamento dos 12 meses foi de R\$\s0,20/)).toBeInTheDocument();
+  });
+
   it("avisa quando o mês passa do calendário de pregões cadastrado", async () => {
     server.use(
       http.get("/api/v1/agenda", ({ request }) => {
@@ -146,7 +176,7 @@ describe("Agenda", () => {
     failAgenda(false);
     setAgenda((from) => sampleMonth(from));
     await user.click(screen.getByRole("button", { name: "Tentar de novo" }));
-    expect(await screen.findByText(/Corte de 25% no provento de MXRF11/)).toBeInTheDocument();
+    expect(await screen.findByText(/Corte de 25% no rendimento de MXRF11/)).toBeInTheDocument();
   });
 
   it("com o olho fechado, nenhum valor aparece nem é lido", async () => {
@@ -174,23 +204,27 @@ describe("Renda: o selo de fora do padrão", () => {
     server.use(http.get("/api/v1/income/summary", () => HttpResponse.json(summary)));
     const next = summary.upcoming[0];
     expect(next).toBeDefined();
+    // Uma data com em três parcelas: um item com os três proventos da Renda.
     setUnusualIncome([
       {
-        income_id: next?.id ?? "",
+        income_ids: ["outra-parcela", next?.id ?? "", "mais-uma"],
+        installments: 3,
         asset_id: next?.asset_id ?? "",
         record_date: "2026-11-27",
         ex_date: "2026-11-30",
         per_unit: 1.5,
         direction: "increase",
-        recent: { usual: 1.1, change: 0.3636, payments: 12 },
+        basis: "largest",
+        kind: null,
+        recent: { usual: 1.1, change: 0.3636, payments: 6 },
         long: null,
         years: 0,
       },
     ]);
     renderApp("renda");
     const upcoming = await screen.findByRole("region", { name: "Próximos pagamentos" });
-    expect(await within(upcoming).findByText("Aumento de 36%")).toBeInTheDocument();
-    expect(within(upcoming).getByText(/do habitual, que é de R\$\s1,10 nos 12 meses/)).toBeInTheDocument();
+    expect(await within(upcoming).findByText(/Aumento de 36% · 3 parcelas/)).toBeInTheDocument();
+    expect(within(upcoming).getByText(/o maior pagamento dos 12 meses foi de R\$\s1,10/)).toBeInTheDocument();
   });
 
   it("sem nada fora do padrão, a lista fica como era", async () => {

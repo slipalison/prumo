@@ -11,17 +11,20 @@ import {
   resultsTitle,
   shortDate,
   unitText,
+  installmentsText,
+  kindPhrase,
+  referenceText,
   unusualTitle,
-  usualText,
 } from "./agendaText";
 
 /** O selo de fora do padrão na data com e no pagamento. */
-export function UnusualBadge({ mark }: { mark: UnusualMark }) {
+export function UnusualBadge({ mark, installments = 1 }: { mark: UnusualMark; installments?: number }) {
   const money = useMoney();
   return (
     <span className={cx("agenda-unusual", `agenda-unusual--${mark.direction}`)}>
       {unusualTitle(mark.direction, mark.recent.change)}
-      <span className="sr-only"> do habitual, que é de {usualText(money, mark)}</span>
+      {installments > 1 && ` · ${installments} parcelas`}
+      <span className="sr-only">: {referenceText(money, mark)}</span>
     </span>
   );
 }
@@ -61,14 +64,15 @@ function EventBody({ event }: { event: AgendaEvent }) {
     );
   }
   if (unusual) {
-    const mark = { recent: unusual.recent, long: unusual.long, years: unusual.years };
+    const mark = { basis: unusual.basis, recent: unusual.recent, long: unusual.long, years: unusual.years };
     return (
       <span className="agenda-item__text">
         <strong>
-          {unusualTitle(unusual.direction, unusual.recent.change)} no provento de {names}
+          {unusualTitle(unusual.direction, unusual.recent.change)} {kindPhrase(unusual.kind)} de {names}
         </strong>
         <span className="agenda-item__detail">
-          {unitText(money, unusual.per_unit)} por cota; habitual de {usualText(money, mark)} · data com{" "}
+          {unitText(money, unusual.per_unit)} por cota{installmentsText(unusual.installments)}; {referenceText(money, mark)} · data
+          com{" "}
           {shortDate(unusual.record_date)}
         </span>
       </span>

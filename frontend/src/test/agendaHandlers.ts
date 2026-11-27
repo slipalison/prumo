@@ -43,6 +43,8 @@ const empty = { income: null, unusual: null, document: null, closure: null };
 export function sampleMonth(from: string): AgendaEvent[] {
   const cut = {
     direction: "cut" as const,
+    basis: "similar" as const,
+    kind: "reit_income" as const,
     recent: { usual: 0.1, change: -0.25, payments: 12 },
     long: { usual: 0.098, change: -0.2347, payments: 58 },
     years: 5,
@@ -56,7 +58,10 @@ export function sampleMonth(from: string): AgendaEvent[] {
       assets: [MXRF],
       unusual: {
         direction: "cut",
+        basis: "similar",
+        kind: "reit_income",
         per_unit: 0.075,
+        installments: 1,
         record_date: day(from, 10),
         ex_date: day(from, 11),
         approved_on: day(from, 4),
