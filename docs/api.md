@@ -1727,9 +1727,10 @@ na data com de cada dividendo** — cada dividendo do histórico vezes a posiç�
 daquela data, não 12 meses de dividendo vezes a quantidade de hoje. O histórico do
 Yahoo é ajustado por desdobramento (o dividendo antigo de uma ação que dobrou
 aparece pela metade), então a quantidade da data com é levada à **base de hoje**
-multiplicando pelos desdobramentos e grupamentos posteriores à data ex
-(bonificação não entra: o provedor a trata de forma diferente de uma emissora
-para outra). Dividendo de um dia em que a pessoa não tinha cota não conta.
+multiplicando pelos desdobramentos, grupamentos e bonificações posteriores à
+data ex (o Yahoo trata a bonificação da B3 como desdobramento, `102:100`, e
+divide os dividendos de antes por ela). Dividendo de um dia em que a pessoa não
+tinha cota não conta.
 `trailing_12m` é `null` quando o livro não fecha. É o que alimenta o yield on
 cost quando ainda não há nada recebido.
 Renda fixa por valor e cripto não entram. `missing` lista os papéis sem

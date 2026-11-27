@@ -13,10 +13,15 @@
 //!   É o que serve para o provento *lançado* (o valor por cota que a pessoa
 //!   digita é o do extrato, na base da época).
 //! - [`quantity_in_provider_shares`]: as mesmas cotas na base de hoje, depois
-//!   dos desdobramentos e grupamentos que vieram depois. O histórico por cota
-//!   do Yahoo é **ajustado por desdobramento** (o dividendo antigo de uma ação
-//!   que dobrou aparece pela metade), então a estimativa precisa multiplicar
-//!   pelas cotas na mesma base, ou conta metade do que a pessoa recebeu.
+//!   dos desdobramentos, grupamentos e bonificações que vieram depois. O
+//!   histórico por cota do Yahoo é **ajustado por desdobramento** (o dividendo
+//!   antigo de uma ação que dobrou aparece pela metade), então a estimativa
+//!   precisa multiplicar pelas cotas na mesma base, ou conta metade do que a
+//!   pessoa recebeu. A bonificação o Yahoo trata como desdobramento: a de 2% da
+//!   ITSA4 em 12/2025 aparece no `events=split` como `102:100`, e todo
+//!   dividendo anterior vem dividido por 1,02 (medido em 27/11/2026 em ITSA4,
+//!   ITUB4, BBDC4, RADL3, UNIP6, SBSP3 e EGIE3: todas as bonificações dos
+//!   últimos 5 anos estão lá como desdobramento).
 //!
 //! **Saldo inicial.** O lançamento `opening` é "o que já existia antes do
 //! livro": a data dele é a do cadastro, não a da compra. Para a quantidade na
@@ -66,9 +71,9 @@ pub fn quantity_on(entries: &[Entry], date: Date) -> Result<Decimal, LedgerError
         .map_or(Decimal::ZERO, |step| step.position.quantity))
 }
 
-/// Quantas vezes a quantidade foi multiplicada por desdobramentos (e dividida
-/// por grupamentos) depois de `after`. Bonificação não entra: o provedor a
-/// trata de forma diferente de uma emissora para outra.
+/// Quantas vezes a quantidade foi multiplicada por desdobramentos e
+/// bonificações (e dividida por grupamentos) depois de `after`: os eventos que
+/// o provedor desconta do histórico por cota.
 fn split_factor_after(entries: &[Entry], after: Date) -> Result<Decimal, LedgerError> {
     let steps = replay(&normalized(entries))?;
     let mut factor = Decimal::ONE;
@@ -77,7 +82,7 @@ fn split_factor_after(entries: &[Entry], after: Date) -> Result<Decimal, LedgerE
         let now = step.position.quantity;
         if step.entry.trade_date > after && held > Decimal::ZERO {
             if let Some(ratio) = match step.entry.kind {
-                Kind::Split | Kind::ReverseSplit => now.checked_div(held),
+                Kind::Split | Kind::ReverseSplit | Kind::Bonus => now.checked_div(held),
                 _ => None,
             } {
                 factor = factor.checked_mul(ratio).unwrap_or(factor);
@@ -89,8 +94,8 @@ fn split_factor_after(entries: &[Entry], after: Date) -> Result<Decimal, LedgerE
 }
 
 /// As cotas com direito ao provento de data ex `ex_date`, na base do histórico
-/// do provedor (a de hoje): a quantidade na data com, vezes os desdobramentos
-/// posteriores à data ex.
+/// do provedor (a de hoje): a quantidade na data com, vezes os desdobramentos e
+/// as bonificações posteriores à data ex.
 pub fn quantity_in_provider_shares(
     entries: &[Entry],
     ex_date: Date,
@@ -320,6 +325,40 @@ mod tests {
         assert_eq!(
             quantity_in_provider_shares(&book, date!(2026 - 01 - 20)).unwrap(),
             dec!(80)
+        );
+    }
+
+    #[test]
+    fn bonus_after_the_ex_date_converts_to_the_providers_basis() {
+        // 100 cotas no provento de fevereiro; bonificação de 10% em março (mais
+        // 10). O Yahoo dividiu o valor antigo por 1,1: as 100 cotas da época são
+        // 110 na base dele, e 110 × (1,10 ÷ 1,1) devolve o que foi pago.
+        let book = vec![
+            entry(
+                Kind::Buy,
+                date!(2026 - 01 - 10),
+                1,
+                dec!(100),
+                Some(dec!(20)),
+            ),
+            entry(Kind::Bonus, date!(2026 - 03 - 01), 2, dec!(10), None),
+        ];
+        assert_eq!(
+            quantity_in_provider_shares(&book, date!(2026 - 02 - 15)).unwrap(),
+            dec!(110)
+        );
+        // Bonificação anterior à data ex já está na quantidade da época.
+        assert_eq!(
+            quantity_in_provider_shares(&book, date!(2026 - 03 - 15)).unwrap(),
+            dec!(110)
+        );
+        let points = [DividendPoint {
+            ex_date: date!(2026 - 02 - 15),
+            amount: dec!(1),
+        }];
+        assert_eq!(
+            trailing_income(&points, date!(2026 - 11 - 25), &book).unwrap(),
+            dec!(110)
         );
     }
 
