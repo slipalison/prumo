@@ -1976,6 +1976,7 @@ pessoa.
 {
   "id": "…",
   "target": 800.0,
+  "mode": "average",
   "achieved_at": null,
   "current_monthly": 135.0,
   "basis": "received",
@@ -1984,12 +1985,86 @@ pessoa.
 }
 ```
 
-`current_monthly` é a média mensal do **recebido** (`basis: "received"`) ou,
-enquanto não há nada recebido nos 12 meses, a estimativa da carteira
-(`basis: "estimate"`, o `estimate.monthly` líquido do resumo: os dois lados
-falam do líquido). `percent` pode passar de 100. `reached` só vale com o
-recebido: a estimativa não conquista meta. Na primeira vez que o recebido
-alcança a meta, `achieved_at` guarda o instante e fica.
+`mode` é o que a meta mede: `average` (a média por mês, o padrão) ou `floor`
+(o menor mês de 12). Ele se troca em `PATCH /objectives/{id}` (a meta de renda
+é um objetivo, [abaixo](#objetivos)); o `PUT` daqui só troca o valor e mantém
+o modo.
+
+Em `average`, `current_monthly` é a média mensal do **recebido**
+(`basis: "received"`) ou, enquanto não há nada recebido nos 12 meses, a
+estimativa da carteira (`basis: "estimate"`, o `estimate.monthly` líquido do
+resumo: os dois lados falam do líquido). Em `floor`, é o menor mês recebido
+dos 12 meses **fechados** antes do mês de hoje ou, sem nada recebido neles, a
+estimativa × o peso do pior mês do calendário da carteira
+([`projecao.md`](projecao.md#a-meta-de-renda-é-um-objetivo)). `percent` pode
+passar de 100. `reached` só vale com o recebido: a estimativa não conquista
+meta. Na primeira vez que o recebido alcança a meta, `achieved_at` guarda o
+instante e fica.
+
+### Renda projetada: `GET /api/v1/income/projection`
+
+A renda dos próximos 12 ou 24 meses em três cenários, por mês, por tipo e por
+ativo. Parte da estimativa (a mesma de `estimate.monthly` no resumo) e a leva
+para a frente: FII de papel com o CDI esperado, FII de tijolo com o IPCA
+esperado, o resto na média do que pagou. Lê só o banco (o Focus vem da busca
+diária). Método, fórmulas e limites em [`projecao.md`](projecao.md).
+
+Consulta (tudo opcional; campo desconhecido é `422`):
+
+| Parâmetro | Padrão | Aceita |
+|---|---|---|
+| `months` | `12` | `12` ou `24` |
+| `spread` | `2` | amplitude dos cenários, de 0 a 20 pontos ao ano |
+| `cdi` | o caminho do Focus | o CDI do período inteiro, de 0 a 50 (% ao ano) |
+| `ipca` | o caminho do Focus | o IPCA do período inteiro, de −10 a 50 (% ao ano) |
+
+```json
+{
+  "today": "2026-11-27",
+  "estimate_monthly": 250.0,
+  "months": [
+    { "month": "2026-12", "low": 247.7, "base": 248.1, "high": 248.5,
+      "by_group": { "paper_reits": 118.4, "brick_reits": 80.3, "br_stocks": 49.4 } }
+  ],
+  "totals": { "low": 2925.1, "base": 2958.0, "high": 2991.2 },
+  "groups": [
+    { "group": "paper_reits", "driver": "cdi", "assets": 1, "monthly_start": 120.0,
+      "totals": { "low": 1375.6, "base": 1389.5, "high": 1403.3 } }
+  ],
+  "assets": [
+    { "asset_id": "…", "symbol": "PAPL11", "display_name": "PAPL11",
+      "group": "paper_reits", "driver": "cdi", "basis": "trailing_12m", "usual_years": null,
+      "monthly_start": 120.0, "totals": { "low": 1375.6, "base": 1389.5, "high": 1403.3 } }
+  ],
+  "premises": {
+    "horizon_months": 12,
+    "scenario_spread_percent": 2.0,
+    "spread_source": "default",
+    "cdi": { "source": "focus", "now_percent": 14.9, "trailing_percent": 14.6, "end_percent": 13.4 },
+    "ipca": { "source": "focus", "annual_percent": 4.25 },
+    "focus": { "survey_date": "2026-11-19", "fetched_at": "2026-11-27T09:00:00Z" }
+  },
+  "missing": []
+}
+```
+
+(Números fictícios.)
+
+- `months`: do mês que vem em diante; `low`, `base` e `high` são o
+  pessimista, o base e o otimista do mês (líquidos, em reais); `by_group`, o
+  base de cada tipo. Cada mês tem o peso que o mesmo mês teve nos últimos 12.
+- `group`: `paper_reits` e `brick_reits` (o tipo do FII pelo balanço da CVM),
+  `other_reits` (híbrido, de fundos ou sem tipo), `br_stocks`, `foreign`.
+  `driver`: `cdi`, `ipca` ou `flat`.
+- `basis`: `trailing_12m` (os 12 meses da estimativa) ou `usual` (a média do
+  habitual, `usual_years` anos: ações e exterior que têm histórico longo).
+- `premises.cdi.source` e `premises.ipca.source`: `focus`, `informed` (veio na
+  consulta), `measured` (sem Focus: o CDI de hoje parado; o IPCA de 12 meses),
+  `fallback` (a meta de inflação de 3%) ou `missing` (sem CDI nenhum: o papel
+  fica parado). `trailing_percent` é o CDI médio dos 12 meses que passaram, a
+  base do FII de papel; `end_percent`, o CDI do último mês do período.
+  `focus` é `null` antes da primeira busca.
+- Sem ativo com estimativa, `months` vem vazio e os totais, zero.
 
 ### Proventos automáticos
 
@@ -2107,43 +2182,6 @@ antigos).
     { "date": "2026-11-20", "kind": "sale", "label": "ITSA4", "amount": 300.0 },
     { "date": "2026-11-14", "kind": "income", "label": "KNRI11", "amount": 12.0 },
     { "date": "2026-11-02", "kind": "contribution", "label": "Aporte", "amount": 100.0 }
-## Objetivos
-
-Metas com prazo: um patrimônio total (`net_worth`) ou um valor numa classe
-(`class_value`, com `asset_class`). Ficam na tabela `objectives`, a mesma da
-meta de renda mensal (`/income/goal`, acima), que **não** aparece aqui: criar
-`monthly_income` por estas rotas é `422`, e o `id` dela dá `404` em
-`PATCH`/`DELETE`. O nome **não** é `goals`: no Prumo, `goals` são as metas por
-classe (`PUT /goals`).
-
-Toda rota filtra pela pessoa: o `id` de outra pessoa é `404`.
-
-### `GET /api/v1/objectives`
-
-```json
-{
-  "defaults": { "annual_return_percent": 9.8, "return_source": "performance" },
-  "objectives": [
-    {
-      "id": "…",
-      "kind": "class_value",
-      "asset_class": "br_reits",
-      "target": 100000.0,
-      "monthly_contribution": null,
-      "expected_return": null,
-      "current": 41200.0,
-      "percent": 41.2,
-      "status": "active",
-      "achieved_at": null,
-      "created_at": "2026-11-25T12:00:00Z",
-      "assumptions": {
-        "monthly_contribution": 750.0,
-        "contribution_source": "ledger",
-        "annual_return_percent": 9.8,
-        "return_source": "performance"
-      },
-      "projection": { "state": "eta", "months": 52, "month": "2031-03" }
-    }
   ]
 }
 ```
@@ -2157,93 +2195,178 @@ Toda rota filtra pela pessoa: o `id` de outra pessoa é `404`.
   (`income` e `sale` entram, `contribution` sai).
 - Registrar o aporte com `cash_used` ([`POST /contributions`](#post-apiv1contributions))
   baixa o saldo na hora; editar ou apagar um provento ou um lançamento o refaz.
+
+## Objetivos
+
+Patrimônio total (`net_worth`), valor numa classe (`class_value`, com
+`asset_class`) e a meta de renda mensal (`monthly_income`, uma por pessoa — a
+mesma de [`/income/goal`](#meta-de-renda-apiv1incomegoal), que a tela Renda
+usa). Ficam na tabela `objectives`. O nome **não** é `goals`: no Prumo, `goals`
+são as metas por classe (`PUT /goals`).
+
+Cada objetivo ativo vem com a projeção em **três cenários** (pessimista, base,
+otimista), a meta lida de dois jeitos (em reais da época e em reais de hoje) e
+a curva projetada, sempre com as premissas que a conta usou. Método, fórmulas,
+padrões e limites em [`projecao.md`](projecao.md). É cenário, não promessa.
+
+Toda rota filtra pela pessoa: o `id` de outra pessoa é `404`.
+
+### `GET /api/v1/objectives`
+
+```json
+{
+  "defaults": {
+    "real_return_percent": 5.1, "return_source": "performance",
+    "inflation_percent": 4.25, "inflation_source": "focus", "inflation_years": [2027, 2030],
+    "reinvest_income": true, "income_growth_percent": 0.0, "income_yield_percent": 7.9,
+    "scenario_spread_percent": 2.0,
+    "focus": { "survey_date": "2026-11-19", "fetched_at": "2026-11-27T09:00:00Z" }
+  },
+  "objectives": [
+    {
+      "id": "…",
+      "kind": "class_value",
+      "asset_class": "br_reits",
+      "target": 100000.0,
+      "income_mode": null,
+      "premises": {
+        "monthly_contribution": null, "real_return": null, "inflation": null,
+        "reinvest_income": null, "income_growth": null, "income_yield": null,
+        "scenario_spread": null
+      },
+      "current": 41200.0,
+      "percent": 41.2,
+      "basis": null,
+      "status": "active",
+      "achieved_at": null,
+      "created_at": "2026-11-25T12:00:00Z",
+      "assumptions": {
+        "monthly_contribution": 750.0, "contribution_source": "ledger",
+        "real_return_percent": 5.1, "return_source": "performance",
+        "inflation_percent": 4.25, "inflation_source": "focus",
+        "reinvest_income": true, "reinvest_source": "default",
+        "income_growth_percent": 0.0, "income_growth_source": "default",
+        "income_yield_percent": 8.4, "income_yield_source": "measured",
+        "scenario_spread_percent": 2.0, "spread_source": "default",
+        "starting_value": 41200.0, "starting_income": 288.4
+      },
+      "projection": { "state": "eta", "months": 52, "month": "2031-03" },
+      "scenarios": {
+        "pessimistic": { "nominal": { "state": "eta", "months": 58, "month": "2031-09" }, "today": { "state": "eta", "months": 66, "month": "2032-05" } },
+        "base":        { "nominal": { "state": "eta", "months": 52, "month": "2031-03" }, "today": { "state": "eta", "months": 58, "month": "2031-09" } },
+        "optimistic":  { "nominal": { "state": "eta", "months": 47, "month": "2030-10" }, "today": { "state": "eta", "months": 52, "month": "2031-03" } }
+      },
+      "curve": {
+        "measure": "value",
+        "points": [
+          { "months": 0, "month": "2026-11", "low": 41200.0, "base": 41200.0, "high": 41200.0,
+            "low_today": 41200.0, "base_today": 41200.0, "high_today": 41200.0 }
+        ]
+      }
+    }
+  ]
+}
+```
+
+(Números fictícios.)
+
+- `current`: o patrimônio total (`total_value` do `GET /portfolio`), o valor da
+  classe ou, na meta de renda, a renda do mês no modo dela (a mesma de
+  `/income/goal`: o recebido, ou a estimativa com `basis: "estimate"`).
+- `percent`: de 0 a 100 (passou da meta, 100); na meta de renda pode passar de
+  100, como em Renda. `basis` só existe na meta de renda.
+- `income_mode`: só na meta de renda, `average` ou `floor`.
+- `premises`: **o que a pessoa informou** (`null` = o padrão); o que a conta
+  usou está em `assumptions`, com a fonte de cada número.
+- `projection`: o cenário base com a meta em reais da época (a data
+  principal; também em `scenarios.base.nominal`).
+- `scenarios`: a data de cada cenário nas duas leituras da meta — `nominal` (o
+  número digitado, em reais da época) e `today` (com o poder de compra de
+  hoje).
+- `curve`: o que o objetivo mede (`value`, `income_average` ou
+  `income_floor`), de hoje até um ano depois da data mais distante entre o
+  base e o pessimista (de 2 a 50 anos; 20 sem data), com até ~120 pontos; cada
+  ponto com os três cenários em reais da época (`low`, `base`, `high`) e de
+  hoje (`*_today`).
+- `defaults`: os padrões para quem não informou (o rendimento é o da carteira;
+  no objetivo de classe, o da classe) e a pesquisa do Focus que está no banco
+  (`null` antes da primeira busca).
+
 Do mais antigo para o mais novo. Cada leitura recalcula o progresso; se o valor
 chegou à meta, grava `achieved_at` (uma vez só) e o objetivo passa a
-`status: "achieved"`, com `assumptions: null` e `projection.state: "reached"`.
-**Meta atingida não volta a ser ativa** se o patrimônio cair depois; só trocar o
-valor da meta apaga a data (meta nova, conquista nova). A data é gravada por
-quem primeiro vir a meta atingida: a **tarefa diária de desempenho** apura todos
-os objetivos abertos de todas as pessoas (patrimônio, classe e a meta de renda
-mensal, que só conquista com proventos recebidos), com o lock de job e um
-`update ... where achieved_at is null`, então duas réplicas gravam uma data só e
-reexecutar não muda nada; as leituras de `GET /objectives`, do Aportar e da tela
-Renda fazem a mesma apuração na hora, sem esperar o dia seguinte. A data pode
-ter, portanto, até um dia de atraso em relação ao momento em que o valor passou
-da meta.
+`status: "achieved"`, com `assumptions`, `scenarios` e `curve` nulos e
+`projection.state: "reached"`. **Meta atingida não volta a ser ativa** se o
+valor cair depois; só trocar o valor da meta (ou o modo da meta de renda) apaga
+a data. A meta de renda só conquista com proventos **recebidos**, nunca pela
+estimativa. A data é gravada por quem primeiro vir a meta atingida: a **tarefa
+diária de desempenho** apura todos os objetivos abertos de todas as pessoas,
+com o lock de job e um `update ... where achieved_at is null`, então duas
+réplicas gravam uma data só e reexecutar não muda nada; as leituras de
+`GET /objectives`, do Aportar e da tela Renda fazem a mesma apuração na hora.
+A data pode ter, portanto, até um dia de atraso em relação ao momento em que o
+valor passou da meta.
 
-- `current`: o patrimônio total (`total_value` do `GET /portfolio`) ou o valor da
-  classe.
-- `percent`: de 0 a 100 (passou da meta, 100).
-- `monthly_contribution` e `expected_return` são **o que a pessoa informou**
-  (`null` = padrão); o que a conta usou está em `assumptions`.
-- `defaults`: a rentabilidade que vale para quem não informou a sua.
+#### As premissas (`assumptions`)
 
-#### A conta e as premissas
+| Campo | Fontes (`*_source`) |
+|---|---|
+| `monthly_contribution` (reais de hoje por mês) | `informed`; `ledger`: as compras (`buy`) do livro nos últimos 12 meses ÷ os meses desde a primeira compra (de 1 a 12), da classe no objetivo de classe |
+| `real_return_percent` (% ao ano, acima da inflação) | `informed`; `performance`: a do Desempenho (cotas, 12 meses, anualizada, com 180 dias de série pelo menos) descontado o IPCA medido no período; `cdi_net`: o CDI de hoje menos 15% de IR, descontada a inflação padrão; `fallback`: 4% |
+| `inflation_percent` | `informed`; `focus`: a média geométrica do IPCA anual do Focus dos anos depois do de hoje (`defaults.inflation_years`); `ipca_12m`: o IPCA dos últimos 12 meses publicados; `target`: a meta de 3% |
+| `reinvest_income` | `informed`; `default` (sim) |
+| `income_growth_percent` (real) | `informed`; `default` (0%) |
+| `income_yield_percent` | `informed`; `measured`: a renda estimada × 12 ÷ o valor de hoje |
+| `scenario_spread_percent` (pontos ao ano) | `informed`; `default` (2) |
 
-A data estimada é uma simulação mês a mês (`domain/objectives.rs`):
-`saldo[m] = saldo[m-1] × (1 + anual)^(1/12) + aporte`, a partir do valor de hoje.
-O primeiro mês em que o saldo chega à meta é a conclusão, contado do mês de hoje.
-**A resposta sempre traz as duas premissas**, e a tela as mostra: a data nunca
-vem sem a conta.
+`starting_value` e `starting_income` são o ponto de partida: o valor de hoje e
+a renda mensal estimada de hoje (a da Renda; da classe, no objetivo de classe).
 
-Aporte mensal (`assumptions.contribution_source`):
-
-- `informed`: o `monthly_contribution` do objetivo.
-- `ledger`: a média das **compras** (`buy`) do livro nos últimos 12 meses, em
-  reais (valor mais taxas, no câmbio do lançamento), dividida pelos meses desde
-  a primeira compra (meses de 30 dias, para cima, de 1 a 12): quem começou há
-  quatro meses é medido por quatro. Num objetivo de classe só entram as compras
-  daquela classe. Saldo inicial, bonificação e ajuste não são aporte; venda e
-  resgate não abatem.
-
-Rentabilidade anual (`assumptions.return_source`, `annual_return_percent` em %):
-
-- `informed`: o `expected_return` do objetivo (de −50 a 100).
-- `performance`: a rentabilidade da carteira em Desempenho (cotas/TWR), da
-  janela de 12 meses, anualizada; só com pelo menos 180 dias de série. É bruta
-  (antes do IR) e é da carteira inteira, também no objetivo de classe.
-- `cdi_net`: sem série suficiente, o CDI de hoje (taxa diária mais recente do
-  banco, composta por 252 dias úteis) menos 15% de IR (a menor alíquota de renda
-  fixa).
-- `fallback`: sem série nem CDI no banco, 8% ao ano fixos.
-
-`projection.state`:
+`projection.state` (e cada data de `scenarios`):
 
 | `state` | Quando | `months` / `month` |
 |---|---|---|
-| `reached` | o valor já está na meta | `null` |
+| `reached` | o mês de hoje já chega (na meta de renda, pela estimativa) | `null` |
 | `eta` | chega em até 100 anos | meses (≥ 1) e `AAAA-MM` |
-| `unreachable` | sem aporte e sem rentabilidade positiva | `null` |
-| `beyond` | chega, mas depois de 100 anos | `null` |
+| `unreachable` | a distância até a meta não diminui em 100 anos | `null` |
+| `beyond` | diminui, mas chega depois de 100 anos | `null` |
 
 ### `POST /api/v1/objectives`
 
 ```json
 { "kind": "class_value", "asset_class": "br_reits", "target": 100000,
-  "monthly_contribution": 1500, "expected_return": 9.5 }
+  "monthly_contribution": 1500, "real_return": 4.5, "inflation": 4,
+  "reinvest_income": false, "income_yield": 9, "scenario_spread": 3 }
 ```
 
-`kind` é `net_worth` ou `class_value`. `asset_class` é obrigatório no
-`class_value` e proibido no `net_worth`. `target` é maior que zero (duas casas);
-`monthly_contribution` (≥ 0) e `expected_return` (% ao ano, de −50 a 100) são
-opcionais. `201` com o objetivo, já avaliado. Erros: `422`.
+```json
+{ "kind": "monthly_income", "target": 3000, "income_mode": "floor", "income_growth": 1.5 }
+```
+
+`kind` é `net_worth`, `class_value` ou `monthly_income`. `asset_class` é
+obrigatório no `class_value` e proibido nos outros; `income_mode` só na meta de
+renda. `target` é maior que zero (duas casas). Premissas opcionais (% ao ano):
+`monthly_contribution` (≥ 0), `real_return` (−50 a 50), `inflation` (−10 a
+50), `reinvest_income` (booleano), `income_growth` (−50 a 50), `income_yield`
+(0 a 50), `scenario_spread` (0 a 20). A meta de renda já existente é `422`
+(edite a que existe). `201` com o objetivo, já avaliado. Erros: `422`.
 
 ### `PATCH /api/v1/objectives/{id}`
 
-Qualquer subconjunto de `target`, `monthly_contribution` e `expected_return`;
-`null` nos dois últimos volta ao padrão. O tipo e a classe não mudam (campo
-desconhecido é `422`): apague e crie outro. Trocar o valor de `target` apaga o
-`achieved_at`. `200` com o objetivo; `404` se não existe, é de outra pessoa ou é
-a meta de renda.
+Qualquer subconjunto de `target`, `income_mode` e das premissas; `null` numa
+premissa volta ao padrão (e em `income_mode`, à média). O tipo e a classe não
+mudam (campo desconhecido é `422`): apague e crie outro. `income_mode` fora da
+meta de renda é `422`. Trocar o valor de `target` ou o modo apaga o
+`achieved_at`. `200` com o objetivo; `404` se não existe ou é de outra pessoa.
 
 ### `DELETE /api/v1/objectives/{id}`
 
-`204`; `404` como acima.
+`204`; `404` como acima. Apagar a meta de renda aqui a apaga da Renda.
 
 ### `POST /api/v1/objectives/impact`
 
-O que um aporte faz com os objetivos **ativos**; a tela Aportar chama depois
-do plano, com o que o plano compra, somado por classe:
+O que um aporte faz com os objetivos de **valor** ativos (patrimônio e
+classe); a tela Aportar chama depois do plano, com o que o plano compra,
+somado por classe:
 
 ```json
 { "items": [{ "asset_class": "br_reits", "value": 1000 }, { "asset_class": "br_stocks", "value": 500 }] }
@@ -2264,10 +2387,12 @@ do plano, com o que o plano compra, somado por classe:
 ```
 
 `after` é `current` mais o que o aporte põe no objetivo (todos os itens no
-patrimônio; só os da classe no objetivo de classe). `projection` conta a partir
-de `after`, com as mesmas premissas de `GET /objectives`. Objetivo concluído (ou
-que já está na meta) não entra. `items` aceita até 200 itens e valor ≥ 0; sem
-itens, `after = current`. Não grava nada.
+patrimônio; só os da classe no objetivo de classe). `projection` é o cenário
+base, com a meta em reais da época, contado a partir de `after`, com as mesmas
+premissas de `GET /objectives`. Objetivo concluído (ou que já está na meta) não
+entra, nem a meta de renda (a renda que o aporte soma já está no plano,
+`income.added_monthly`). `items` aceita até 200 itens e valor ≥ 0; sem itens,
+`after = current`. Não grava nada.
 
 ## Impostos
 

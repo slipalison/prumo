@@ -695,6 +695,11 @@ e o botão **Lançar provento** à direita.
    atingida, quando foi. A explicação da base ("Média do que você recebeu…") vai
    no ⓘ. Sem nada recebido ainda, a barra usa a **estimativa** e fica listrada,
    com a etiqueta "estimativa" ao lado do número: o desenho muda, não só a cor.
+   Na meta pelo **piso** (escolhida em Ajustes › Objetivos), o número é o menor
+   mês recebido dos 12 fechados e diz "no menor mês". Sob a barra, uma linha com
+   a data do cenário base e a faixa ("Cenário base: mar/2031. Faixa: …") e o
+   link "Ver projeção e premissas" para Objetivos; se a consulta falha, a linha
+   some.
 2. **Quatro números** (`StatStrip` à direita da meta, em 2x2 na altura do painel
    da meta): recebido em 12 meses, média por mês, a receber e o **yield on
    cost** da carteira. O yield é a renda dos 12 meses sobre o que foi pago; a
@@ -776,9 +781,28 @@ e o botão **Lançar provento** à direita.
    No ⓘ do título: de onde vem cada número (B3 para ações e FIIs, Yahoo para o
    resto e de reserva, bruto) e que não é extrato. Com o olho fechado, tudo
    isso sai mascarado: líquido, bruto, média, o total marcado e o ⓘ.
-6. **Ano por mês:** tabela real (`<table>`), uma linha por ano, na largura
+6. **Renda projetada** (painel na largura inteira, componente
+   `IncomeProjectionPanel`; método em [`projecao.md`](projecao.md)): a renda
+   dos próximos 12 ou 24 meses (botões segmentados no cabeçalho) em três
+   cenários. Em cima, uma `StatStrip` com o total do base (e a média por mês),
+   o pessimista e o otimista. Embaixo, barras mensais do base com um traço do
+   pessimista ao otimista — o mesmo calendário dos últimos 12 meses (a ação que
+   paga em maio e novembro aparece em maio e novembro); o ponteiro mostra o
+   mês, a faixa e cada tipo. Depois, a tabela por tipo (FII de papel, de
+   tijolo, híbrido ou de fundos, ações, exterior), com "como anda" escrito
+   ("acompanha o CDI esperado", "reajuste pelo IPCA esperado", "a média, sem
+   crescimento"); "Por ativo" recolhido, com a base de cada um (12 meses ou
+   média de N anos). As premissas ficam **à vista** numa lista curta (o CDI de
+   hoje e o do fim do período, a base do papel, o IPCA, a amplitude e a data da
+   pesquisa do Focus), e "Trocar premissas" (recolhido) refaz a conta com o
+   CDI, o IPCA e a amplitude da pessoa, sem gravar nada ("Voltar ao Focus"
+   desfaz). Sem ativo com estimativa, uma frase diz que não há o que projetar;
+   se a consulta falha, o painel diz e a tela segue. Com o olho fechado, todo
+   valor sai mascarado (barras sem número, balão, tabelas e o resumo do leitor
+   de tela); percentuais e datas ficam.
+7. **Ano por mês:** tabela real (`<table>`), uma linha por ano, na largura
    inteira.
-7. **Proventos lançados:** painel recolhido (`FoldPanel`, `<details>`) com a
+8. **Proventos lançados:** painel recolhido (`FoldPanel`, `<details>`) com a
    contagem; aberto, a lista com apagar (confirmação na própria linha). O
    automático tem o mesmo selo, e a confirmação diz que ele não volta na
    próxima busca.
@@ -819,30 +843,52 @@ Na tela **Aportar**:
 ### 9. Ajustes › Objetivos
 
 Seção de Ajustes (`#/ajustes/objetivos`, uma linha em `SETTINGS_SECTIONS`):
-metas com prazo, de patrimônio total ou de valor numa classe. A meta de renda
-mensal continua na tela Renda (uma linha sob o título aponta para lá; o resto
-da explicação fica no ⓘ do título).
+patrimônio total, valor numa classe e a meta de renda mensal (a mesma da tela
+Renda, que também a mostra; uma linha sob o título aponta para lá). O título
+leva o resumo "Cenários com premissas à vista, não promessa" e o método no ⓘ.
+Método inteiro em [`projecao.md`](projecao.md).
 
-- **Em andamento**: um cartão por objetivo, em grade (três por linha no
-  desktop, um no celular), com o nome ("Patrimônio total",
-  "Valor em Fundos Imobiliários"), a meta, a barra de progresso
+- **Em andamento**: um cartão por objetivo, em grade (`Grid auto`, 340 px:
+  três por linha em 1440, um no celular), com o nome ("Patrimônio total",
+  "Valor em Fundos Imobiliários", "Renda mensal (média)" ou "Renda mensal
+  (todo mês)"), a meta ("R$ 3.000 por mês" na renda), a barra de progresso
   (`role="progressbar"`, com "R$ 250 mil de R$ 1 mi, 25,0%" para o leitor de
-  tela), a frase da data ("a meta chega em mar/2031 (daqui a 4 anos e 4
-  meses)") e, **sempre à vista**, as duas premissas da conta em lista: "Aporte
-  de R$ 2.400 por mês: a média das suas compras nos últimos 12 meses" e
-  "Rentabilidade de 9,80% ao ano: a da sua carteira em Desempenho". Nenhuma data
-  aparece sem a conta que a produziu. Sem aporte e sem rentabilidade positiva,
-  a frase diz que a meta não chega e pede um aporte; depois de 100 anos, diz
-  isso em vez de uma data.
+  tela; na renda, a etiqueta "estimativa" ou "recebido" ao lado do número) e:
+  - a frase do **cenário base** ("Cenário base: a meta chega em mar/2031
+    (daqui a 4 anos e 4 meses).");
+  - a **faixa** ("Faixa: mar/2030 no otimista, set/2032 no pessimista.") e a
+    leitura com o poder de compra de hoje ("Com o poder de compra de hoje (a
+    meta corrigida pela inflação): mai/2032 no base.");
+  - a **curva** (`ProjectionChart`, SVG próprio): a linha do base em dourado,
+    a faixa do pessimista ao otimista no mesmo tom transparente e a meta
+    tracejada com o rótulo "Meta"; dois botões segmentados trocam a leitura
+    ("Reais da época" / "Reais de hoje"), cada uma com a sua curva e a meta na
+    mesma altura; o ponteiro mostra o mês e os três cenários; o leitor de tela
+    tem um resumo e uma tabela de ano em ano; a legenda dá nome a cada traço;
+  - as **premissas, sempre à vista**, numa lista de definição compacta (rótulo à
+    esquerda, número à direita, "· sua" quando a pessoa informou): aporte,
+    rentabilidade real (no patrimônio e na classe), inflação, proventos
+    (reinvestidos ou retirados), crescimento dos proventos (na renda),
+    rendimento do dinheiro novo e a amplitude dos cenários. De onde vem cada
+    uma (o livro, o Desempenho menos o IPCA, o Focus com os anos e a data da
+    pesquisa, o padrão) fica no ⓘ "De onde vem cada premissa". Nenhuma data
+    aparece sem a conta que a produziu. Sem nada que leve a conta à meta, a
+    frase diz isso e pede um aporte; depois de 100 anos, diz isso em vez de uma
+    data; na renda, quando a estimativa já cobre a meta, diz que ela é marcada
+    quando o recebido chegar lá.
 - **Concluídos**: o cartão fica com a barra verde e "Concluído em 15/10/2026",
-  sem premissas (não há mais conta). A cor nunca vai sozinha: o estado e a data
-  estão escritos.
-- **Novo objetivo / Editar** (folha): tipo (patrimônio ou classe), classe, meta
-  e duas chaves, "Informar o meu aporte" e "Informar a minha rentabilidade".
-  Desligadas, a folha diz o que a conta vai usar (a média do livro; o padrão de
-  rentabilidade e de onde vem). Ligadas, abrem o campo; a rentabilidade vai de
-  −50% a 100% ao ano. Na edição o tipo e a classe são texto fixo. Remover
-  pede confirmação no próprio cartão.
+  sem premissas nem curva (não há mais conta). A cor nunca vai sozinha: o
+  estado e a data estão escritos.
+- **Novo objetivo / Editar** (folha): tipo (patrimônio, classe ou renda mensal
+  — desligada quando já existe a meta de renda), classe, "Como a renda conta"
+  (a média por mês ou todo mês, o menor mês de 12), a meta e as premissas: a
+  chave "Informar o meu aporte" (desligada, a média do livro), a chave
+  "Retirar os proventos todo mês" e os campos de taxa em grade (rentabilidade
+  acima da inflação ou crescimento dos proventos, inflação, rendimento do
+  dinheiro novo, amplitude). Campo de taxa em branco é o padrão, e cada um diz
+  qual é e de onde vem ("Padrão: 4,25%: o IPCA esperado pelo Focus…"); fora da
+  faixa, o campo explica e o botão trava. Na edição o tipo e a classe são texto
+  fixo. Remover pede confirmação no próprio cartão.
 
 Na tela **Aportar**, abaixo do resultado do plano, um painel "Seus objetivos"
 (só aparece com objetivo ativo; se a consulta falha, some e o plano segue):
@@ -850,12 +896,15 @@ Na tela **Aportar**, abaixo do resultado do plano, um painel "Seus objetivos"
 - "Com este aporte, você chega a **25,6%** da meta de R$ 1.000.000 (hoje,
   25,0%)." Se o aporte fecha a meta: "você completa a meta de R$ …".
 - "Com aportes assim, a meta chega em **fev/2031**." (com aporte informado:
-  "Com aportes de R$ 1.500 por mês, …"). A data conta a partir do valor que a
-  carteira passa a ter com o aporte.
+  "Com aportes de R$ 1.500 por mês, …"). A data é a do cenário base, com a meta
+  em reais da época, e conta a partir do valor que a carteira passa a ter com o
+  aporte. A meta de renda não entra aqui: a renda que o aporte soma já está no
+  plano.
 - Uma barra fina com o que a meta já tem (cinza) e o que o aporte soma
   (dourado), só como reforço do percentual escrito.
-- As duas premissas ficam no ⓘ de cada objetivo ("Premissas da conta: …"), e o
-  link "Trocar premissas" leva a Ajustes › Objetivos, onde se troca cada uma.
+- As duas premissas principais (aporte e rentabilidade acima da inflação)
+  ficam no ⓘ de cada objetivo ("Premissas da conta: …"), e o link "Trocar
+  premissas" leva a Ajustes › Objetivos, onde estão todas e se troca cada uma.
 - Com o olho fechado, a meta e o aporte saem como `R$ ••••`, inclusive nos
   `aria-valuetext` e nos campos da folha; ficam o percentual, o mês estimado e
   os nomes.

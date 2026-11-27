@@ -77,14 +77,24 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   último aporte. A renda "da carteira de hoje" é **estimativa** (líquida do IR
   retido na fonte, a mesma da Renda; buscada em segundo plano: nenhuma tela espera por
   ela): o que você lança, e depois o que importa da B3, vale mais.
-- **Objetivos** — metas com prazo, em Ajustes: um patrimônio total ou um valor
-  numa classe ("R$ 1 milhão", "R$ 100 mil em FIIs"). Cada uma mostra o
-  progresso e o mês estimado de conclusão, e **a conta fica sempre à vista**:
-  o aporte mensal (a média real das suas compras nos últimos 12 meses, ou o que
-  você informar) e a rentabilidade (a da sua carteira em Desempenho, o CDI de
-  hoje menos IR ou o que você informar). O Aportar diz quanto cada aporte
-  aproxima você da meta. É estimativa, não promessa. A meta de renda mensal
-  continua em Renda.
+- **Objetivos** — em Ajustes: um patrimônio total, um valor numa classe
+  ("R$ 1 milhão", "R$ 100 mil em FIIs") ou uma renda por mês ("quando a renda
+  cobre R$ 3 mil", pela média ou pelo pior mês de 12). Cada um mostra o
+  progresso e **quando chega em três cenários** (pessimista, base, otimista),
+  com a curva projetada e a faixa num gráfico, e com a meta lida de dois
+  jeitos: o número que você digitou e o mesmo número com o poder de compra de
+  hoje. **A conta fica sempre à vista e é editável**: aporte (a média real das
+  suas compras nos últimos 12 meses), rentabilidade acima da inflação (a da
+  carteira em Desempenho menos o IPCA), inflação (o IPCA esperado pelo Focus do
+  Banco Central), proventos reinvestidos ou não, crescimento e rendimento dos
+  proventos e a amplitude dos cenários. O Aportar diz quanto cada aporte
+  aproxima você da meta. É cenário, não promessa (método em
+  [`docs/projecao.md`](docs/projecao.md)).
+- **Renda projetada** — na Renda, a renda dos próximos 12 ou 24 meses em três
+  cenários, mês a mês e por tipo: FII de papel acompanha o CDI esperado (Selic
+  do Focus), FII de tijolo o reajuste pelo IPCA do Focus, ações a média do que
+  pagaram. As premissas e a data da pesquisa do Focus ficam à vista, e você
+  troca o CDI, o IPCA e a amplitude para refazer a conta.
 - **Preço ao vivo** — patrimônio e ativos mudam na tela sem recarregar, pelo
   streamer do Yahoo: EUA, câmbio e cripto em segundos; B3 com os 15 minutos
   de atraso do dado gratuito. Tudo convertido para reais.

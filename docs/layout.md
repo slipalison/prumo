@@ -416,9 +416,12 @@ pediu; a meta pedida era ~1,2. No celular o botão de cada cartão custa ~0,15 t
   **Limite por ativo** (o texto longo do limite no ⓘ). Meta ≤ 1,0 (antes 1,44).
 - **Critérios:** o parágrafo de abertura vira ⓘ; as duas listas como hoje
   (já lado a lado). Meta ≤ 1,0 em 1440 e −30% no celular.
-- **Objetivos:** cartões em `Grid cols="auto" minWidth="320px"`; as premissas
-  ficam à vista (é a regra da tela: nenhuma data sem a conta), em fonte menor e
-  uma linha cada. Meta: 3 objetivos em ≤ 1,0.
+- **Objetivos:** cartões em `Grid cols="auto" minWidth="340px"` (a curva
+  projetada precisa da largura); as premissas ficam à vista (é a regra da tela:
+  nenhuma data sem a conta), numa lista de definição compacta, rótulo e número
+  numa linha, a origem no ⓘ. Medido depois da projeção (onda 3): 1,2 tela em
+  1440 com três objetivos ativos e um concluído; sem rolagem lateral em 1440 e
+  390, claro e escuro.
 
 **Como ficou (grupo 1):** Metas, Critérios e Objetivos ficam em 1,01–1,02 tela
 nas quatro larguras largas (o piso da casca) e, no celular, 2,01 / 1,84 / 1,10
