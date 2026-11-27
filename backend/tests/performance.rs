@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use axum::http::StatusCode;
 use common::*;
+use prumo::domain::risk::history_start;
 use prumo::domain::treasury::Bond;
 use prumo::history::{HistoryError, HistoryProvider, IndexCode, Series};
 use prumo::performance::{local_date, Performance, JOB_LOCK_KEY};
@@ -220,12 +221,13 @@ async fn daily_job_is_idempotent_and_separates_flow_from_return(
     let expected = (dec!(2520) / dec!(2420)).round_dp(12);
     assert_eq!(rows[1].3, expected);
 
-    // Incremental: o primeiro pedido começa no lançamento mais antigo; a
-    // segunda rodada do dia 1 não pede nada, e a do dia 2 só o dia novo.
+    // Incremental: o primeiro pedido começa no começo da janela mais longa
+    // do risco (antes do lançamento mais antigo); a segunda rodada do dia 1
+    // não pede nada, e a do dia 2 só o dia novo.
     let requests = history.requests.lock().unwrap().clone();
     let knri_requests: Vec<_> = requests.iter().filter(|r| r.0 == "KNRI11.SA").collect();
     assert_eq!(knri_requests.len(), 2, "{knri_requests:?}");
-    assert_eq!(knri_requests[0].1, day1);
+    assert_eq!(knri_requests[0].1, history_start(day1));
     assert_eq!(knri_requests[1].1, day1 + Duration::days(1));
     let symbol = ["KNRI11.SA".to_owned()];
     assert_eq!(
@@ -248,6 +250,14 @@ async fn daily_job_is_idempotent_and_separates_flow_from_return(
         .unwrap();
     assert_eq!(cdi_from, day1 - Duration::days(10));
     assert_eq!(cdi_to, day1 + Duration::days(1));
+    // O Ibovespa é pedido desde o começo da janela mais longa do risco.
+    let ibov_from = requests
+        .iter()
+        .filter(|r| r.0 == "ibov")
+        .map(|r| r.1)
+        .min()
+        .unwrap();
+    assert_eq!(ibov_from, history_start(day1));
     assert!(db
         .store
         .index_bounds(IndexCode::Ipca)
@@ -432,8 +442,13 @@ async fn treasury_title_is_valued_by_its_daily_quote(db: &Database, dir: &tempfi
     let day1 = local_date(day1_at);
     backdate(&app.router, bond.body["id"].as_str().unwrap(), day1).await;
     job.run_daily(day1_at).await.unwrap();
-    // No dia 1 o título só precisa do preço de hoje: nada de tabela.
-    assert!(bonds.asked.lock().unwrap().is_empty());
+    // O título sem cupom entra no risco por ativo: a tabela é pedida já no
+    // dia 1, desde o começo da janela mais longa.
+    let bond_key = Bond::from_symbol(symbol).unwrap();
+    assert_eq!(
+        bonds.asked.lock().unwrap().clone(),
+        vec![(bond_key, history_start(day1))]
+    );
 
     let id = bond.body["id"].as_str().unwrap();
     let contribution = post(
@@ -466,10 +481,9 @@ async fn treasury_title_is_valued_by_its_daily_quote(db: &Database, dir: &tempfi
         asked.iter().all(|(s, _, _)| !s.starts_with("TD-")),
         "{asked:?}"
     );
-    // O histórico do título foi pedido desde o dia 1, uma vez: a fonte não
-    // tinha nada, e a marca de cobertura evita pedir de novo.
-    let bond_key = Bond::from_symbol(symbol).unwrap();
-    assert_eq!(bonds.asked.lock().unwrap().clone(), vec![(bond_key, day1)]);
+    // Uma vez só: a fonte não tinha nada, e a marca de cobertura evita pedir
+    // de novo.
+    assert_eq!(bonds.asked.lock().unwrap().len(), 1);
     job.run_daily(OffsetDateTime::now_utc()).await.unwrap();
     assert_eq!(bonds.asked.lock().unwrap().len(), 1);
     assert_eq!(snapshot_rows(db, email).await.len(), 2);

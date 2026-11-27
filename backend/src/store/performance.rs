@@ -178,23 +178,32 @@ impl Store {
 
     /// Grava fechamentos. Data que já existe não muda: o cache guarda o preço
     /// como era no dia (o Yahoo reescreve o passado num desdobramento).
-    pub async fn insert_prices(&self, symbol: &str, closes: &Series) -> Result<(), StoreError> {
+    /// Devolve, em ordem, as datas que entraram de fato: pedir de novo um
+    /// trecho já guardado não suja a série de ninguém.
+    pub async fn insert_prices(
+        &self,
+        symbol: &str,
+        closes: &Series,
+    ) -> Result<Vec<Date>, StoreError> {
         if closes.is_empty() {
-            return Ok(());
+            return Ok(Vec::new());
         }
         let dates: Vec<Date> = closes.iter().map(|(d, _)| *d).collect();
         let values: Vec<Decimal> = closes.iter().map(|(_, v)| *v).collect();
-        sqlx::query(
+        let rows: Vec<(Date,)> = sqlx::query_as(
             "insert into price_history (symbol, date, close)
              select $1, d, c from unnest($2::date[], $3::numeric[]) as t (d, c)
-             on conflict (symbol, date) do nothing",
+             on conflict (symbol, date) do nothing
+             returning date",
         )
         .bind(symbol)
         .bind(&dates)
         .bind(&values)
-        .execute(&self.pool)
+        .fetch_all(&self.pool)
         .await?;
-        Ok(())
+        let mut inserted: Vec<Date> = rows.into_iter().map(|(d,)| d).collect();
+        inserted.sort();
+        Ok(inserted)
     }
 
     /// O fechamento de cada símbolo exatamente em `date` (quem não tem, fica

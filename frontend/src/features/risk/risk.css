@@ -1,0 +1,520 @@
+/*
+ * Risco. As marcas do risco × retorno reaproveitam as cores validadas do
+ * Desempenho (carteira âmbar, Ibovespa violeta, ativos no azul do CDI), cada
+ * uma com a própria forma (bolha, losango, quadrado). A correlação é
+ * divergente: laranja-avermelhado quando os ativos andam juntos, azul quando
+ * andam em sentidos opostos, transparente (o fundo do painel) no zero. A tinta
+ * vai até 45%: o número escrito na célula mantém contraste ≥ 4,5:1 nos dois
+ * temas, e é ele, não a cor, quem diz o valor.
+ */
+:root {
+  --risk-asset: #338ced;
+  --risk-portfolio: #d28e05;
+  --risk-benchmark: #9887ef;
+  --risk-pos: #f0605d;
+  --risk-neg: #338ced;
+}
+
+[data-theme="light"] {
+  --risk-asset: #257de0;
+  --risk-portfolio: #b97800;
+  --risk-benchmark: #6a4ce2;
+  --risk-pos: #d8383a;
+  --risk-neg: #257de0;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --risk-asset: #257de0;
+    --risk-portfolio: #b97800;
+    --risk-benchmark: #6a4ce2;
+    --risk-pos: #d8383a;
+    --risk-neg: #257de0;
+  }
+}
+
+.risk__loading {
+  display: grid;
+  gap: var(--gap-stack);
+}
+
+.risk__notice {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: var(--text-md);
+}
+
+.risk__window {
+  margin: 0;
+  padding: 0 var(--space-1);
+  color: var(--text-subtle);
+  font-size: var(--text-sm);
+}
+
+.risk .stat__note {
+  display: block;
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
+
+a.risk-link {
+  text-decoration: none;
+}
+
+/* O link do Desempenho para cá, na linha de resumo do cabeçalho. */
+.risk-entry {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+}
+
+.risk-entry:hover {
+  color: var(--text);
+}
+
+/* ---------------- Risco × retorno ---------------- */
+
+.risk-key {
+  display: inline-block;
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+
+.risk-key--asset {
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--risk-asset) 55%, transparent);
+  box-shadow: inset 0 0 0 2px var(--risk-asset);
+}
+
+.risk-key--portfolio {
+  width: 11px;
+  height: 11px;
+  background: var(--risk-portfolio);
+  transform: rotate(45deg);
+}
+
+.risk-key--benchmark {
+  border-radius: 2px;
+  background: var(--risk-benchmark);
+}
+
+.bubble-chart {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: minmax(var(--bubble-height, 260px), 1fr) auto auto;
+  column-gap: var(--space-2);
+  min-width: 0;
+}
+
+@container page (min-width: 1500px) {
+  .bubble-chart {
+    --bubble-height: 320px;
+  }
+}
+
+.bubble-chart__y {
+  position: relative;
+  min-width: 44px;
+}
+
+.bubble-chart__plot {
+  position: relative;
+  min-width: 0;
+  touch-action: pan-y;
+}
+
+.bubble-chart__plot svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.bubble-chart__x {
+  position: relative;
+  grid-column: 2;
+  height: 1.4em;
+  margin-top: var(--space-1);
+}
+
+.bubble-chart__xtick {
+  position: absolute;
+  transform: translateX(-50%);
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bubble-chart__xtick:first-child {
+  transform: none;
+}
+
+.bubble-chart__axis-name {
+  margin: 0;
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
+
+.bubble-chart__axis-name--x {
+  grid-column: 2;
+  justify-self: end;
+}
+
+.bubble {
+  position: absolute;
+  z-index: 1;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  cursor: default;
+  transition: box-shadow var(--dur-fast) var(--ease-out);
+}
+
+/* O anel na cor do fundo separa as bolhas que se encostam. */
+.bubble--asset {
+  background: color-mix(in srgb, var(--risk-asset) 50%, transparent);
+  box-shadow:
+    inset 0 0 0 2px var(--risk-asset),
+    0 0 0 2px var(--surface-strong);
+}
+
+.bubble--portfolio,
+.bubble--benchmark {
+  z-index: 2;
+}
+
+/* O losango é desenhado por dentro, girado: o rótulo continua na horizontal. */
+.bubble--portfolio::after {
+  position: absolute;
+  inset: 2px;
+  border-radius: 2px;
+  background: var(--risk-portfolio);
+  box-shadow: 0 0 0 2px var(--surface-strong);
+  transform: rotate(45deg);
+  content: "";
+}
+
+.bubble--benchmark {
+  border-radius: 3px;
+  background: var(--risk-benchmark);
+  box-shadow: 0 0 0 2px var(--surface-strong);
+}
+
+.bubble--asset.is-hover {
+  z-index: 3;
+  box-shadow:
+    inset 0 0 0 2px var(--risk-asset),
+    0 0 0 2px var(--surface-strong),
+    0 0 0 4px var(--border-strong);
+}
+
+/* A área de toque passa da bolha pequena: 24 px no mínimo. */
+.bubble::before {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  content: "";
+}
+
+.bubble__label {
+  position: absolute;
+  z-index: 1;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+  text-shadow:
+    0 0 3px var(--surface-strong),
+    0 0 2px var(--surface-strong);
+  pointer-events: none;
+}
+
+.bubble__label.is-right {
+  top: 50%;
+  left: calc(100% + 4px);
+  transform: translateY(-50%);
+}
+
+.bubble__label.is-left {
+  top: 50%;
+  right: calc(100% + 4px);
+  transform: translateY(-50%);
+}
+
+.bubble__label.is-top {
+  bottom: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.bubble__label.is-bottom {
+  top: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.bubble-chart__tooltip {
+  transform: translate(14px, -50%);
+}
+
+.bubble-chart__tooltip.is-left {
+  transform: translate(calc(-100% - 14px), -50%);
+}
+
+/* ---------------- Correlação ---------------- */
+
+.corr-scale {
+  display: grid;
+  gap: 2px;
+  margin-bottom: var(--space-2);
+}
+
+.corr-scale__bar {
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--risk-neg) 45%, transparent),
+    transparent 50%,
+    color-mix(in srgb, var(--risk-pos) 45%, transparent)
+  );
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.corr-scale__labels {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
+
+/* Posicionado: o texto só para leitor de tela fica preso aqui e não alarga a página. */
+.corr__scroll {
+  position: relative;
+  overflow-x: auto;
+  border-radius: var(--r-sm);
+}
+
+.corr {
+  border-collapse: separate;
+  border-spacing: 2px;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.corr__corner {
+  min-width: 0;
+}
+
+.corr__col,
+.corr__row {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.corr__col {
+  padding: 0 2px var(--space-1);
+  text-align: center;
+}
+
+.corr__row {
+  padding-right: var(--space-2);
+  text-align: left;
+}
+
+.corr__cell {
+  min-width: 2.9em;
+  height: 32px;
+  padding: 0 3px;
+  border-radius: 4px;
+  color: var(--text);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.corr__cell.is-pos {
+  background: color-mix(in srgb, var(--risk-pos) var(--heat), transparent);
+}
+
+.corr__cell.is-neg {
+  background: color-mix(in srgb, var(--risk-neg) var(--heat), transparent);
+}
+
+.corr__cell.is-empty {
+  background: var(--surface-sunken);
+  color: var(--text-subtle);
+}
+
+.corr__cell.is-self {
+  background: var(--surface-sunken);
+  color: var(--text-subtle);
+}
+
+/* Painel estreito (iPad em pé, celular): a matriz encolhe antes de rolar de
+   lado; com muitos ativos ela ainda rola, dentro do próprio bloco. */
+@container (max-width: 520px) {
+  .corr {
+    border-spacing: 1px;
+    font-size: var(--text-xs);
+  }
+
+  .corr__cell {
+    min-width: 2.6em;
+    height: 28px;
+    padding: 0 2px;
+  }
+
+  .corr__row {
+    padding-right: var(--space-1);
+  }
+}
+
+/* Os pares de destaque: contorno, além de estarem listados em texto. */
+.corr__cell.is-top {
+  box-shadow: inset 0 0 0 2px var(--text);
+  font-weight: 700;
+}
+
+.corr-pairs {
+  margin-top: var(--space-3);
+}
+
+.corr-pairs__title {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.corr-pairs__list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding-left: 1.2em;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.corr-pairs__list li span:first-child {
+  color: var(--text);
+}
+
+.corr-pairs__list strong {
+  margin-left: var(--space-2);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.corr-pairs__words {
+  margin-left: var(--space-2);
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
+
+/* ---------------- Por ativo ---------------- */
+
+.risk-asset,
+.risk-dd {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.risk-asset__note,
+.risk-dd__dates {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
+
+.risk-asset__note {
+  max-width: 46ch;
+  white-space: normal;
+}
+
+.risk-dd__dates {
+  white-space: nowrap;
+}
+
+.risk-ref {
+  font-weight: 650;
+}
+
+.risk-row--reference {
+  background: var(--surface-sunken);
+}
+
+.risk-row--muted {
+  color: var(--text-muted);
+}
+
+.risk-share {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.risk-share__bar {
+  display: inline-block;
+  width: 48px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: var(--surface-sunken);
+}
+
+.risk-share__bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--risk-asset);
+}
+
+/* Estreita (celular): cada ativo vira um bloco de três colunas (peso,
+   volatilidade, retorno), com o nome da coluna em cima do número; embaixo, a
+   queda com as datas e a parte do risco. */
+@container (max-width: 560px) {
+  .risk-table.data-table--stack tbody tr {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-2) var(--space-3);
+  }
+
+  .risk-table.data-table--stack tbody td {
+    text-align: left;
+  }
+
+  .risk-table.data-table--stack td[data-label]::before {
+    display: block;
+    content: attr(data-label);
+  }
+
+  .risk-table.data-table--stack td[data-label="Queda máxima"] {
+    grid-column: span 2;
+  }
+
+  .risk-table .risk-share {
+    justify-content: flex-start;
+  }
+
+  .risk-table .risk-dd__dates {
+    white-space: normal;
+  }
+}

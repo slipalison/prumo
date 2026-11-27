@@ -18,6 +18,8 @@ import { cx } from "../../lib/cx";
 import { formatPercent } from "../../lib/format";
 import type { Money } from "../../lib/money";
 import { useMoney } from "../../lib/privacy";
+import { parseSection, useHash } from "../../lib/route";
+import { RISK_SECTION, RiskLink, RiskScreen } from "../risk/RiskScreen";
 import { LineChart, type ChartSeries } from "./LineChart";
 import "./performance.css";
 import { formatDay, formatSignedPercent, MONTH_NAMES, MONTHS, spansYears, trend, versusText } from "./performanceFormat";
@@ -39,6 +41,10 @@ const LINE: Record<"portfolio" | BenchmarkCode, { label: string; color: string; 
 };
 
 export function PerformanceScreen() {
+  return parseSection(useHash()) === RISK_SECTION ? <RiskScreen /> : <PerformanceOverview />;
+}
+
+function PerformanceOverview() {
   const [period, setPeriod] = useState<PerformancePeriod>("12m");
   const worth = useNetWorth(period);
   const perf = usePerformance(period);
@@ -49,6 +55,7 @@ export function PerformanceScreen() {
         title="Você está ganhando do CDI?"
         info="Rentabilidade pelo método de cotas: o aporte não conta como ganho, só o que o preço e os proventos fizeram."
         infoLabel="Sobre a tela Desempenho"
+        summary={<RiskLink />}
         actions={
           <div className="chips" role="group" aria-label="Período">
             {PERIODS.map((p) => (

@@ -46,7 +46,10 @@ do período; série que começa depois abre em 0% no próprio começo). Período
 ativo que desdobrou, o comparador guarda os eventos do Yahoo (`price_splits`) e
 divide o preço de antes pelo fator. Cada símbolo é conferido no máximo uma vez
 por dia (`price_split_checks`), numa só chamada que também completa o preço.
-`HistoryProvider::closes_and_splits` tem implementação padrão sem eventos.
+`HistoryProvider::closes_and_splits` tem implementação padrão sem eventos. A
+sincronia de preços do Desempenho também grava os eventos e a conferência de
+todo ativo com livro, todo dia ([`risco.md`](risco.md)): o ativo da carteira
+já chega conferido.
 
 ## Limites
 

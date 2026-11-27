@@ -202,8 +202,12 @@ Nenhum pede chave nem contato; o cliente HTTP é o do app, que se identifica de
 forma genérica.
 
 **Só o que a carteira usa, só o que falta.** Para cada símbolo com livro, de
-qualquer carteira, o histórico começa no lançamento mais antigo dele (e o do
-câmbio, no mais antigo dos ativos naquela moeda). A sincronia pede à fonte:
+qualquer carteira, o histórico começa no lançamento mais antigo dele **ou** no
+começo da janela mais longa do risco (5 anos e 10 dias atrás,
+`domain::risk::history_start`), o que vier antes — a tela de risco mede a
+volatilidade do ativo, não só a do período em que a pessoa o tem
+([`risco.md`](risco.md)). O do câmbio começa no mais antigo dos ativos naquela
+moeda. A sincronia pede à fonte:
 
 - **para trás**, o que falta antes do que já foi pedido. `price_coverage`
   guarda até onde a fonte já foi consultada, para o símbolo que não tem dado
@@ -211,13 +215,21 @@ câmbio, no mais antigo dos ativos naquela moeda). A sincronia pede à fonte:
   a cada rodada;
 - **para a frente**, o que vem depois do último dia guardado.
 
+Os desdobramentos que vêm no mesmo pedido vão para `price_splits` (migração
+0030, a tabela do comparador), com a conferência em `price_split_checks`: o
+risco e o comparador medem retorno no pé de hoje com eles. Símbolo sem a
+conferência desde o começo do histórico é pedido uma vez de ponta a ponta. Só
+a data que **entrou** de fato em `price_history` suja a série de quem tem o
+ativo (pedir de novo um trecho já guardado não refaz nada).
+
 Ativo de preço manual não é pedido (o manual vence a cotação).
 
 **Tesouro Direto:** o histórico do título sai do mesmo CSV da cotação do dia
 (uns 15 MB, de 2004 até a última divulgação), lido em fluxo, linha a linha
 (`treasury/history.rs`): só as linhas dos títulos que alguma carteira tem, a
-partir do primeiro lançamento de cada um, vão para `price_history` — o resto
-passa e é esquecido. O arquivo é baixado **só quando falta dia de antes** do
+partir do primeiro lançamento de cada um (o título sem cupom, desde o começo
+da janela longa do risco, como os outros ativos), vão para `price_history` — o
+resto passa e é esquecido. O arquivo é baixado **só quando falta dia de antes** do
 que já está guardado (um download para todos os títulos que faltam). Para a
 frente, a sincronia diária do Tesouro (a que grava a cotação em `quotes`)
 grava também o preço do dia de cada título que alguma carteira tem: a série
@@ -230,7 +242,8 @@ responde `[{"data":"18/11/2026","valor":"0.050788"}]`. Série diária aceita no
 máximo 10 anos por pedido (`406` acima disso): o cliente pagina em janelas de
 3.600 dias. Janela sem dado publicado (o IPCA do mês corrente) responde `404`,
 e o cliente trata como lista vazia. Os índices se estendem para trás sozinhos
-quando a série passa a começar mais cedo.
+quando a série passa a começar mais cedo; o Ibovespa começa, no mínimo, no
+começo da janela longa do risco.
 
 **Yahoo `chart`** com `period1`/`period2`, `interval=1d` e `events=split`: a
 data do pregão vem do `timestamp` no fuso da bolsa (`meta.gmtoffset`). O pregão

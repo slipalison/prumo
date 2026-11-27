@@ -21,6 +21,7 @@ pub mod panel;
 pub mod performance;
 pub mod profit;
 pub mod retro;
+pub mod risk;
 pub mod scoring;
 pub mod sector;
 pub mod tax;

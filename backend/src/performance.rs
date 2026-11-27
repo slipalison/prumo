@@ -26,6 +26,7 @@ use crate::domain::performance::{
     self as rules, Accrued, Period, QuotaPoint, Versus, Window, YearRow,
 };
 use crate::domain::retro::{self, AssetHistory, Series, Start};
+use crate::domain::risk;
 use crate::domain::treasury::Bond;
 use crate::history::{HistoryError, HistoryProvider, IndexCode};
 use crate::quotes::fx_symbol;
@@ -154,7 +155,7 @@ impl Performance {
         let today = local_date(now);
         let mut report = JobReport {
             ran: true,
-            prices: self.sync_prices(today).await?,
+            prices: self.sync_prices(now).await?,
             ..JobReport::default()
         };
         for user in self.store.snapshot_users().await? {
@@ -237,7 +238,7 @@ impl Performance {
             ran: true,
             // O preço antigo que chegar agora marca quem o tem; a lista de
             // sujos é lida depois, já com essas marcas.
-            prices: self.sync_prices(today).await?,
+            prices: self.sync_prices(now).await?,
             ..RebuildReport::default()
         };
         for dirty in self.store.dirty_series(now - REBUILD_SETTLE).await? {
@@ -279,22 +280,35 @@ impl Performance {
     }
 
     /// O histórico de preço de cada ativo com livro, desde o lançamento mais
-    /// antigo dele, e o do câmbio da moeda dele. Para cada símbolo baixa só o
-    /// que falta: para trás, antes do que já foi pedido; para a frente, depois
-    /// do último dia guardado. Preço que chega para um dia que já passou marca
-    /// como suja, dali em diante, a série de quem tem o ativo. Devolve quantos
-    /// dias entraram.
-    async fn sync_prices(&self, today: Date) -> Result<usize, StoreError> {
+    /// antigo dele ou desde o começo da janela mais longa do risco
+    /// (`domain::risk::history_start`), o que vier antes, e o do câmbio da
+    /// moeda dele. Para cada símbolo baixa só o que falta: para trás, antes do
+    /// que já foi pedido; para a frente, depois do último dia guardado. Preço
+    /// que chega para um dia que já passou marca como suja, dali em diante, a
+    /// série de quem tem o ativo. Devolve quantos dias entraram.
+    async fn sync_prices(&self, now: OffsetDateTime) -> Result<usize, StoreError> {
+        let today = local_date(now);
+        let risk_from = risk::history_start(today);
         let mut needs: BTreeMap<String, Need> = BTreeMap::new();
         for held in self.store.held_symbols().await? {
             if held.manual_price {
                 continue;
             }
             if let Some(symbol) = held.market.quote_symbol(&held.symbol) {
+                // O título que paga no caminho fica fora do risco por ativo
+                // (`risk::pays_before_maturity`): não precisa do histórico longo.
+                let pays = held.market == Market::Treasury
+                    && Bond::from_symbol(&symbol)
+                        .is_some_and(|b| risk::pays_before_maturity(b.kind));
+                let from = if pays {
+                    held.first_trade
+                } else {
+                    held.first_trade.min(risk_from)
+                };
                 needs
                     .entry(symbol)
                     .or_default()
-                    .add(held.first_trade, held.market, held.user);
+                    .add(from, held.market, held.user);
             }
         }
         let listed: Vec<String> = needs.keys().cloned().collect();
@@ -337,9 +351,7 @@ impl Performance {
                 }
                 continue;
             }
-            stored += self
-                .sync_symbol(&symbol, from, &need.holders, today)
-                .await?;
+            stored += self.sync_symbol(&symbol, from, &need.holders, now).await?;
         }
         stored += self.sync_bonds(bonds, today).await?;
         Ok(stored)
@@ -350,8 +362,9 @@ impl Performance {
         symbol: &str,
         from: Date,
         holders: &BTreeSet<Uuid>,
-        today: Date,
+        now: OffsetDateTime,
     ) -> Result<usize, StoreError> {
+        let today = local_date(now);
         let covered = self.store.price_covered_from(symbol).await?;
         let last = self.store.last_price_date(symbol).await?;
         // (de, até, para trás): o pedido para trás marca até onde a fonte já
@@ -367,23 +380,47 @@ impl Performance {
                 ranges.push((next.max(from), today, false));
             }
         }
+        // Os desdobramentos vêm no mesmo pedido, de `start` até hoje, e vão
+        // para `price_splits` (migração 0030, a mesma do comparador): o risco
+        // mede o retorno no pé de hoje com eles. Sem a lista conferida desde
+        // `from` (símbolo guardado antes dela), um pedido só, de `from` a hoje,
+        // confere tudo; os fechamentos que já estavam guardados não mudam
+        // (`docs/risco.md`).
+        if self
+            .store
+            .split_check(symbol)
+            .await?
+            .is_none_or(|(checked_from, _)| checked_from > from)
+        {
+            ranges = vec![(from, today, true)];
+        }
         let holders: Vec<Uuid> = holders.iter().copied().collect();
         let mut stored = 0;
         for (start, end, backward) in ranges.into_iter().filter(|(s, e, _)| s <= e) {
-            match self.history.closes(symbol, start, end).await {
-                Ok(closes) => {
-                    stored += closes.len();
-                    self.store.insert_prices(symbol, &closes).await?;
+            match self.history.closes_and_splits(symbol, start, end).await {
+                Ok((closes, splits)) => {
+                    // Os eventos antes dos preços: se a gravação parar no meio,
+                    // o próximo pedido começa antes do último preço guardado. O
+                    // pedido vai até hoje, então a lista de `start` em diante é
+                    // a da fonte, inteira.
+                    self.store
+                        .save_price_splits(symbol, start, &splits, now)
+                        .await?;
+                    let inserted = self.store.insert_prices(symbol, &closes).await?;
+                    stored += inserted.len();
                     if backward {
                         self.store.set_price_coverage(symbol, start).await?;
                     }
-                    if let Some((first, _)) = closes.first().filter(|(d, _)| *d < today) {
+                    if let Some(first) = inserted.first().filter(|d| **d < today) {
                         self.store.mark_dirty(&holders, *first).await?;
                     }
                 }
                 Err(HistoryError::NotFound) if backward => {
                     // A fonte não conhece o símbolo: não adianta pedir de novo.
                     self.store.set_price_coverage(symbol, start).await?;
+                    self.store
+                        .save_price_splits(symbol, start, &[], now)
+                        .await?;
                 }
                 Err(error) => {
                     tracing::warn!(symbol = %symbol, error = %error, "fechamentos nao baixados");
@@ -414,12 +451,12 @@ impl Performance {
         let mut stored = 0;
         for (bond, need) in bonds {
             let series: Series = history.get(&bond).cloned().unwrap_or_default();
-            stored += series.len();
-            self.store.insert_prices(&need.symbol, &series).await?;
+            let inserted = self.store.insert_prices(&need.symbol, &series).await?;
+            stored += inserted.len();
             self.store
                 .set_price_coverage(&need.symbol, need.from)
                 .await?;
-            if let Some((first, _)) = series.first().filter(|(d, _)| *d < today) {
+            if let Some(first) = inserted.first().filter(|d| **d < today) {
                 let holders: Vec<Uuid> = need.holders.into_iter().collect();
                 self.store.mark_dirty(&holders, *first).await?;
             }
@@ -428,7 +465,9 @@ impl Performance {
     }
 
     /// Baixa o que falta de cada índice, desde um pouco antes da primeira
-    /// foto. Sem nenhuma foto, não baixa nada.
+    /// foto; o Ibovespa, também desde o começo da janela mais longa do risco
+    /// (a volatilidade e a queda dele ficam ao lado das da carteira, e as
+    /// datas dele são os pregões). Sem nenhuma foto, não baixa nada.
     async fn sync_indexes(&self, today: Date) -> Result<usize, StoreError> {
         let Some(first) = self.store.first_snapshot_date().await? else {
             return Ok(0);
@@ -438,6 +477,8 @@ impl Performance {
         for code in IndexCode::ALL {
             let start = if code.monthly() {
                 start.replace_day(1).unwrap_or(start)
+            } else if code == IndexCode::Ibov {
+                start.min(risk::history_start(today))
             } else {
                 start
             };

@@ -24,6 +24,7 @@ pub mod live;
 pub mod objectives;
 pub mod performance;
 pub mod quotes;
+pub mod risk;
 pub mod sectors;
 pub mod service;
 pub mod store;

@@ -278,8 +278,9 @@ async fn hand_case_matches_the_document(
     let report = job.run_pending(later()).await.unwrap();
     assert!(report.ran);
     assert_eq!((report.users, report.failed), (1, 0), "{report:?}");
-    // 5 de KNRI11 e 4 de WEGE3, desde o primeiro lançamento de cada um.
-    assert_eq!(report.prices, 9, "{report:?}");
+    // 6 de KNRI11 e 4 de WEGE3: tudo o que a fonte tem desde o começo da
+    // janela mais longa do risco (antes do primeiro lançamento, D0 entra).
+    assert_eq!(report.prices, 10, "{report:?}");
 
     let series = rows(&db.store, user).await;
     assert_eq!(series.first().map(|r| r.0), Some(D1));
@@ -497,7 +498,8 @@ async fn one_replica_and_settling(db: &Database, job: &Performance, user: Uuid) 
 }
 
 /// O título do Tesouro: o histórico sai do CSV, uma vez, só do título da
-/// carteira e só desde o primeiro lançamento dele.
+/// carteira e desde o começo da janela mais longa do risco (o título sem cupom
+/// entra no risco por ativo), não só desde o primeiro lançamento dele.
 async fn treasury_history_is_downloaded_once(
     db: &Database,
     dir: &tempfile_dir::Dir,
@@ -531,7 +533,11 @@ async fn treasury_history_is_downloaded_once(
     assert_eq!(on(&series, D3).market_value, dec!(2510));
     assert_eq!(on(&series, D5).market_value, dec!(2530));
     let td = [IPCA_2035.to_owned()];
-    assert!(db.store.closes_on(&td, D1).await.unwrap().is_empty());
+    // Dia de antes da compra: guardado para o risco, sem mexer na série.
+    assert_eq!(
+        db.store.closes_on(&td, D1).await.unwrap()[IPCA_2035],
+        dec!(2490)
+    );
     assert_eq!(
         db.store.closes_on(&td, D2).await.unwrap()[IPCA_2035],
         dec!(2500)

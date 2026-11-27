@@ -1160,6 +1160,75 @@ casas.
   em % (só com CDI positivo). `full_window`: a série cobre o período inteiro.
 - `years[].months`: janeiro a dezembro; `null` onde não há série.
 
+### `GET /api/v1/risk?window=12m`
+
+Risco da carteira e de cada ativo na janela: volatilidade anualizada, retorno,
+queda máxima (com as datas), correlação entre os ativos e a parte de cada um no
+risco da carteira de hoje. Método, fórmulas e limites em
+[`risco.md`](risco.md). Lê só o banco (a sincronia em segundo plano enche o
+histórico). Percentuais de 0 a 100 com 2 casas; correlação de −1 a 1 com 3.
+
+`window`: `6m`, `12m` (padrão), `24m`, `36m` ou `60m`; outro valor é `422`.
+
+```json
+{
+  "window": "12m",
+  "from": "2025-11-26",
+  "to": "2026-11-26",
+  "trading_days": 249,
+  "limits": { "min_returns": 20, "min_common": 60, "trading_days_per_year": 252.0 },
+  "rebuilding_since": null,
+  "portfolio": {
+    "from": "2025-11-26", "to": "2026-11-26", "full_window": true, "returns": 249,
+    "volatility_percent": 8.42, "return_percent": 11.37,
+    "drawdown": { "depth_percent": -6.85, "peak": "2026-03-04", "trough": "2026-04-08", "recovered": "2026-05-21" }
+  },
+  "benchmark": { "code": "ibov", "label": "Ibovespa", "...": "o mesmo formato de portfolio" },
+  "model": { "volatility_percent": 5.61, "days": 249, "covered_weight_percent": 29.26 },
+  "assets": [
+    { "asset_id": "…", "label": "Tesouro IPCA+ 2035", "asset_class": "fixed_income", "weight_percent": 70.74,
+      "status": "no_series", "metrics": null, "risk_share_percent": null, "in_correlation": false },
+    { "asset_id": "…", "label": "ITSA4", "asset_class": "br_stocks", "weight_percent": 23.31,
+      "status": "ok", "metrics": { "...": "o mesmo formato de portfolio" },
+      "risk_share_percent": 61.2, "in_correlation": true }
+  ],
+  "correlation": {
+    "asset_ids": ["…", "…"],
+    "values": [[1.0, 0.31], [0.31, 1.0]],
+    "top_pairs": [{ "a": "…", "b": "…", "value": 0.31, "days": 249 }]
+  }
+}
+```
+
+- `from`/`to`: o fechamento de base (o último pregão em ou antes de hoje menos
+  a janela) e o último pregão guardado; `trading_days`, os pregões entre eles.
+  `null` sem pregão nenhum guardado.
+- `portfolio`: pela cota (método de cotas). `null` sem série. `benchmark`: o
+  Ibovespa, `null` sem dado.
+- Métricas (`portfolio`, `benchmark`, `assets[].metrics`): `from`/`to` são a
+  primeira e a última data com valor na janela; `full_window` diz se a série
+  já tinha valor no fechamento de base; `returns`, quantos retornos diários
+  entraram. Com menos de `limits.min_returns`, `volatility_percent`,
+  `return_percent` e `drawdown` vêm `null`. `drawdown: null` com `return_percent`
+  preenchido é "sem queda na janela"; `recovered: null` é "ainda não
+  recuperou".
+- `assets[]`: os ativos com quantidade, do maior peso para o menor.
+  `weight_percent` é o peso na carteira inteira hoje. `status`: `ok`, `short`
+  (menos de `min_returns` retornos), `no_series` (renda fixa por valor, preço
+  manual) ou `pays_along_the_way` (título do Tesouro que paga juros ou renda no
+  caminho). O ativo é medido em reais, no pé de hoje (desdobramentos
+  desfeitos) e com os proventos por cota dentro.
+- `risk_share_percent`: a parte do risco da carteira de hoje que vem do ativo
+  (somam 100; pode ser negativa); `null` fora da conta (sem série, histórico
+  curto, menos de `min_common` retornos ou série mais curta que a janela).
+- `model`: a carteira de hoje medida na janela (pesos de hoje), com os pregões
+  em comum que entraram e o peso coberto pela conta. `null` sem ativo na conta
+  ou com menos de `min_common` pregões em comum.
+- `correlation`: a matriz dos ativos com `in_correlation: true` (pelo menos
+  `min_common` retornos), na ordem de `asset_ids`; `values[i][j]` é `null` no
+  par com menos de `min_common` pregões em comum. `top_pairs`: os 5 maiores
+  valores fora da diagonal, do maior para o menor.
+
 ### `POST /api/v1/imports/b3/preview`
 
 Lê as planilhas `.xlsx` que a Área do Investidor da B3 exporta, confronta com

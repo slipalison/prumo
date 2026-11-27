@@ -131,6 +131,13 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   negociação, com desdobramentos e o Tesouro Direto. Lançamento antigo editado
   ou apagado refaz a série dali em diante, em segundo plano. Detalhes em
   [`docs/desempenho.md`](docs/desempenho.md).
+- **Risco** — em Desempenho › Risco: a volatilidade da carteira e de cada ativo
+  contra o Ibovespa (6 meses a 5 anos), a queda máxima com as datas de pico,
+  fundo e recuperação, a correlação entre os ativos (mapa de calor com os
+  números, e os pares que mais andam juntos) e o risco × retorno, com a parte
+  de cada ativo na oscilação da carteira de hoje. Em reais, com os proventos e
+  os desdobramentos. Só informação: retrato do passado, sem recomendação.
+  Fórmulas e limites em [`docs/risco.md`](docs/risco.md).
 - **Impostos** — em Ajustes: o isentômetro do mês (vendas de ações contra os
   R$ 20 mil), o DARF de cada mês (6015 e 4600) com vencimento e a marca de
   pago, e a declaração do ano para copiar (Bens e Direitos pelo custo em 31/12,
@@ -168,6 +175,7 @@ Documentos:
 - [`docs/fundamentos.md`](docs/fundamentos.md) — fundamentos da CVM: fontes, contas, fórmulas, limites e o contrato
 - [`docs/desempenho.md`](docs/desempenho.md) — rentabilidade por cotas, índices e fontes
 - [`docs/comparador.md`](docs/comparador.md) — comparar até 5 ativos: indicadores lado a lado e rentabilidade comparada
+- [`docs/risco.md`](docs/risco.md) — volatilidade, queda máxima, correlação e parte do risco: fórmulas, séries e limites
 - [`deploy/README.md`](deploy/README.md) — como o app chega ao cluster
 
 ## Rodar na máquina

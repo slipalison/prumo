@@ -583,6 +583,61 @@ Responde "estou ganhando do CDI?". Método e limites em
   para a Carteira e para a importação da B3; com uma foto só, "A série começa em DD/MM/AAAA" e nenhum
   número inventado.
 
+### 6.1 Desempenho › Risco (`#/desempenho/risco`)
+
+Responde "quanto a carteira e cada ativo oscilaram, qual foi a maior queda e
+quanto os ativos andam juntos". Método em [`risco.md`](risco.md). Entrada: um
+link na linha de resumo do cabeçalho do Desempenho ("Risco: volatilidade, queda
+máxima e correlação →"); a volta é o chip "← Rentabilidade". Quem integra
+transforma os links das subrotas numa subnavegação.
+
+- **Cabeçalho**: "Risco da carteira", sobrancelha "Desempenho", o ⓘ diz que é
+  retrato do passado, com proventos e em reais, não previsão nem
+  recomendação; à direita, os chips da janela (6 meses · **12 meses** · 2 anos ·
+  3 anos · 5 anos). Embaixo, uma linha: "12 meses: de 26/11/2025 a 26/11/2026,
+  249 pregões".
+- **Faixa de quatro números** (`StatStrip`): **Volatilidade da carteira** ("8,4%
+  ao ano", com "Ibovespa 17,9% ao ano" embaixo), **Queda máxima** (assinada, com
+  "de 04/03/2026 a 08/04/2026; recuperou em 21/05/2026" ou "ainda não
+  recuperou"), **Retorno em 12 meses** (com o do Ibovespa) e **Com os pesos de
+  hoje** (a volatilidade da carteira de hoje na janela e quanto dela está na
+  conta). Série curta ou mais nova que a janela: "histórico curto: N pregões"
+  e "a série começa em DD/MM/AAAA" escritos no detalhe, nunca número inventado.
+- **Dois painéis lado a lado** (`Grid cols={2}`):
+  - **Risco × retorno**: bolhas (x = volatilidade ao ano, y = retorno na
+    janela, área = peso). Ativos em azul (o do CDI no Desempenho), a carteira
+    num losango âmbar e o Ibovespa num quadrado violeta — a forma é a segunda
+    pista, além da cor, e a legenda diz as três. Os nomes vão ao lado das
+    marcas sem encostar em outra marca nem em outro nome (a carteira e o
+    Ibovespa sempre; o ativo que não cabe mostra o nome e os números no
+    ponteiro). O desenho é `role="img"` com um resumo; a tabela por ativo tem
+    todos os números.
+  - **Correlação entre os ativos**: a matriz é uma `<table>` de verdade, com o
+    número escrito em cada célula (duas casas, sinal escrito) e a cor por trás:
+    laranja-avermelhado quando andam juntos, azul quando andam em sentidos
+    opostos, mais forte quanto mais perto de ±1 (no máximo 45% de tinta, para o
+    número manter contraste de texto nos dois temas). Uma régua (−1 sentidos
+    opostos · 0 sem relação · 1 juntos) explica a cor. Os 5 pares que mais andam
+    juntos levam contorno na matriz e estão listados embaixo, em texto ("HGLG11
+    e BTLG11 0,71 andam juntos fortemente"). Painel estreito: a matriz encolhe a
+    letra antes de rolar de lado; com muitos ativos, rola dentro do painel.
+- **Por ativo** (`DataTable`, largura inteira): a carteira e o Ibovespa de
+  referência no topo (fundo afundado), depois cada ativo do maior peso para o
+  menor: peso, volatilidade, retorno, queda máxima (com "04/03/26 a 08/04/26 ·
+  recuperou em 21/05/26" numa linha menor; o `title` diz pico e fundo por
+  extenso) e a parte do risco (número + barrinha). O ativo sem número diz por
+  quê na própria linha (sem preço de mercado, paga juros no caminho, histórico
+  curto, histórico mais curto que a janela). No celular, cada ativo vira um
+  bloco de três colunas com o nome da coluna em cima do número.
+- **Olho fechado**: a tela não tem valor em reais (pesos, volatilidades e
+  correlações são percentuais e números puros e ficam à vista, como na
+  Carteira); o teste confere que nada que se vê ou se ouve traz "R$".
+- **Medido** (demonstração, 7 ativos com série): 1440×900 1,68 tela,
+  1920×1080 1,40, iPad 1024×1366 1,12, celular 390×844 4,25 (o Desempenho segue
+  em 1,02 com o link); sem rolagem
+  lateral da página em nenhuma largura nem tema; só a matriz rola de lado por
+  dentro no celular (+72 px), como a tabela mês a mês.
+
 ### 7. Ajustes › Importar da B3
 
 - Duas colunas: "Suas planilhas" e, ao lado, o passo a passo em quatro itens

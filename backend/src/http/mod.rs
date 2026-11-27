@@ -21,6 +21,7 @@ mod panel;
 mod performance;
 mod price_references;
 mod profit;
+mod risk;
 pub(crate) mod tax;
 mod treasury;
 mod yoc;
@@ -355,6 +356,7 @@ pub fn public_router(state: AppState, static_dir: &str) -> Router {
         .route("/quotes/refresh", post(handlers::refresh_quotes))
         .route("/history/net-worth", get(performance::net_worth))
         .route("/performance", get(performance::performance))
+        .route("/risk", get(risk::risk))
         .route(
             "/settings/allocation",
             get(allocation::settings).put(allocation::save_settings),

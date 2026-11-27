@@ -59,6 +59,7 @@ const SCREENS = [
   { id: "carteira", path: "carteira" },
   { id: "renda", path: "renda" },
   { id: "desempenho", path: "desempenho" },
+  { id: "desempenho-risco", path: "desempenho/risco" },
   { id: "analise", path: "analise" },
   { id: "ajustes-metas", path: "ajustes/metas" },
   { id: "ajustes-criterios", path: "ajustes/criterios" },
