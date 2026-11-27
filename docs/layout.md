@@ -545,9 +545,11 @@ O que mudou:
   "Patrimônio no tempo" (a ponte do período em `StatStrip inset`), e uma
   segunda linha `Grid cols="aside-main"` com **Por classe** e **Ano a ano** (o
   antigo "Mês a mês"). Medido no modo de demonstração (12 meses; Tudo +
-  Acumulado + IFIX; 5 anos + IPCA), temas claro e escuro: 1440×900 1,33–1,47
-  tela, iPad 1024×1366 1,24, celular 390×844 3,28–3,35 (antes 1,02 / 1,01 /
-  1,86: são dois painéis novos). Nenhuma rolagem lateral de página; no desktop
+  Acumulado + IFIX; 5 anos + IPCA), temas claro e escuro: 1920×1080 1,16
+  tela, 1440×900 1,35–1,47, iPad 1024×1366 1,24, celular 390×844 3,33–3,35
+  (antes 1,01 / 1,02 / 1,01 / 1,86: são dois painéis novos). Os gráficos foram
+  conferidos em 1920 com a revelação por recorte (`a38adde`): linha inteira e
+  tracejado visível. Nenhuma rolagem lateral de página; no desktop
   e no iPad nenhum bloco rola de lado (o acumulado tem uma casa decimal para a
   tabela caber em 1024); no celular só a tabela do ano a ano rola por dentro,
   como a de antes. Nenhum texto passa da borda do painel.
