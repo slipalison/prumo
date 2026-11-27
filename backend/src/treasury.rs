@@ -554,15 +554,17 @@ impl TreasurySync {
         Ok(report)
     }
 
-    /// Baixa só se a última gravação é velha (ou não existe). `None` quando a
-    /// tabela estava em dia e nada foi feito.
+    /// Baixa só se a última gravação é velha (ou não existe), ou se ainda não
+    /// há juro real de referência guardado (o primeiro deploy com ele, ou uma
+    /// tabela que veio sem IPCA+): sem ele, o alvo do FII de tijolo esperaria
+    /// até 20 horas. `None` quando a tabela estava em dia e nada foi feito.
     pub async fn sync_if_stale(
         &self,
         now: OffsetDateTime,
         max_age: Duration,
     ) -> Result<Option<SyncReport>, SyncError> {
         if let Some(last) = self.store.last_treasury_fetch().await? {
-            if now - last < max_age {
+            if now - last < max_age && self.store.real_rate().await?.is_some() {
                 return Ok(None);
             }
         }

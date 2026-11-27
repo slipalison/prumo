@@ -141,6 +141,24 @@ async fn treasury_bonds_from_the_table_to_the_plan() {
         .unwrap()
         .expect("velha: baixa");
     assert_eq!((again.bonds, again.pruned), (12, 0));
+    // Sem o juro real guardado (o primeiro deploy com ele), a tabela em dia é
+    // baixada de novo, em vez de o alvo do FII de tijolo esperar o prazo.
+    let pool = sqlx::PgPool::connect(&db.url).await.unwrap();
+    sqlx::query("delete from treasury_real_rate")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let refetched = sync
+        .sync_if_stale(NOW + MAX_AGE + Duration::from_secs(7200), MAX_AGE)
+        .await
+        .unwrap()
+        .expect("sem juro real: baixa");
+    assert_eq!(refetched.real_rate.map(|r| r.percent), Some(dec!(7.77)));
+    assert!(sync
+        .sync_if_stale(NOW + MAX_AGE + Duration::from_secs(7300), MAX_AGE)
+        .await
+        .unwrap()
+        .is_none());
 
     search_suggests_the_titles(&app).await;
     a_title_is_registered_priced_and_validated(&app, &quotes).await;

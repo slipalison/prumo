@@ -91,6 +91,9 @@ mesmo arquivo, na mesma leitura em fluxo:
 - Grava a taxa, o título e a data-base em **`treasury_real_rate`** (migração
   `0025`, uma linha só, compartilhada como `quotes`). Tabela sem nenhum IPCA+ com
   taxa não apaga a de ontem.
+- Sem juro real guardado (o primeiro deploy com ele), a conferência de hora em
+  hora baixa a tabela mesmo que ela esteja em dia, em vez de esperar as 20 horas
+  do `MAX_AGE`: o alvo do FII de tijolo não fica um dia sem taxa.
 - A tela mostra "juro real 7,60% em 26/11/2026 (Tesouro IPCA+ com Juros
   Semestrais 2037)".
 
