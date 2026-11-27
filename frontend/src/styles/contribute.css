@@ -5,9 +5,10 @@
 
 /* ================= Aportar ================= */
 
-/* Antes do primeiro cálculo o campo fica sozinho e centrado; com o resultado
-   (ou o aporte recém-registrado) ele vai para a coluna da esquerda e o
-   resultado ocupa o resto (docs/layout.md, 7.1). */
+/* O campo fica na coluna da esquerda e a carteira (hoje, ou antes e depois do
+   aporte) ao lado dele, na linha de cima; o plano e o resto vêm embaixo, na
+   largura inteira (docs/layout.md, 7.1). Só sem carteira para mostrar o campo
+   fica sozinho e centrado. */
 .contribute__layout.is-solo {
   grid-template-columns: minmax(0, 640px);
   justify-content: center;
@@ -87,8 +88,12 @@
 }
 
 .has-result .ask .money-field--hero .money-field__input {
-  min-height: 60px;
+  min-height: 54px;
   font-size: calc(2.3rem * var(--money-fit, 1));
+}
+
+.has-result .ask__submit {
+  min-height: 46px;
 }
 
 .has-result .quick {
@@ -96,7 +101,7 @@
 }
 
 .has-result .quick .chip {
-  min-height: 40px;
+  min-height: 38px;
   padding: 0 var(--space-3);
   font-size: var(--text-md);
 }
@@ -147,8 +152,26 @@
 }
 
 .plan-top {
+  grid-column: 1 / -1;
   position: relative;
   min-width: 0;
+}
+
+/* Uma coluna só (celular, iPad em pé): o que a pessoa veio ver, o que comprar,
+   vem logo depois do campo; a carteira antes e depois desce para depois do
+   plano. (A ordem no DOM é a da linha de cima no desktop.) */
+@container page (max-width: 999px) {
+  .plan-region > .plan-balance {
+    order: 2;
+  }
+
+  .plan-region > .plan-top {
+    order: 1;
+  }
+
+  .plan-region > .plan-below-wrap {
+    order: 3;
+  }
 }
 
 .plan-below-wrap {
@@ -160,6 +183,34 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+/* A manchete à esquerda; à direita o que está marcado e o atalho para marcar o
+   resto. Quebra para a linha de baixo quando não cabe (celular). */
+.plan__headline-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 var(--space-4);
+}
+
+.plan__marks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0 var(--space-4);
+}
+
+.plan__marks-status {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-md);
+}
+
+.plan__marks .link-btn {
+  min-height: 32px;
 }
 
 .plan__subtitle .count-up {
@@ -273,6 +324,58 @@
   white-space: nowrap;
 }
 
+/* "Comprei" e a compra marcada. O estado é dito em texto ("Comprado: …", e
+   "Plano: …" quando difere); a faixa de cor só reforça. */
+.plan-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.plan-card__buy {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-md);
+}
+
+.plan-card__actions .link-btn {
+  min-height: 36px;
+}
+
+.plan-card.is-marked {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--success) 50%, transparent);
+}
+
+.plan-card.is-marked.is-different {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold) 70%, transparent);
+}
+
+.plan-card__done {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 4px;
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.plan-card__done svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--success);
+}
+
+.plan-card__differs {
+  color: var(--gold-text);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 .plan-card__income {
   color: var(--text-muted);
   font-size: var(--text-xs);
@@ -356,17 +459,10 @@
   color: var(--text-muted);
 }
 
-/* Abaixo do resultado: avisos, carteira depois do aporte e objetivos, lado a
-   lado. As colunas que não têm o que mostrar somem (um aporte sem avisos nem
-   objetivos deixa a carteira ocupar a largura). */
+/* Abaixo do plano: os avisos e os objetivos, lado a lado. A coluna que não tem
+   o que mostrar some (um aporte sem avisos deixa os objetivos com a largura). */
 .plan-below {
   grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
-}
-
-@container page (min-width: 1000px) {
-  .plan-below:has(.plan-notices):has(.plan-balance):has(.plan-objectives) {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1fr);
-  }
 }
 
 .plan-balance .donut__number--sm {
@@ -432,6 +528,15 @@
   list-style: none;
 }
 
+/* Painel largo (a carteira ao lado do campo): as barras em duas colunas. */
+@container (min-width: 620px) {
+  .plan-balance .plan__bars {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3) var(--space-5);
+  }
+}
+
 .plan__bar {
   display: flex;
   flex-direction: column;
@@ -458,7 +563,7 @@
   white-space: nowrap;
 }
 
-/* "Já comprei": no canto do cabeçalho do resultado, no desktop; no celular e
+/* "Registrar N comprados": no canto do cabeçalho do resultado, no desktop; no celular e
    no iPad em pé (< 960 px), uma doca flutuante no rodapé, e a página ganha o
    espaço dela (botão de 52 px + 10 px de respiro em cima e embaixo) para a
    última barra nunca ficar atrás. */
@@ -472,6 +577,10 @@
   min-height: 40px;
   padding: 0 var(--space-5);
   font-size: var(--text-lg);
+}
+
+.plan__actions .btn:disabled {
+  opacity: 0.55;
 }
 
 @media (max-width: 959px) {
@@ -520,23 +629,60 @@
 
 .contribution-form__row {
   display: grid;
-  grid-template-columns: minmax(90px, 0.6fr) 1fr;
-  align-items: end;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
   gap: var(--space-3);
   padding: var(--space-3);
   border-radius: var(--r-md);
   background: var(--surface-sunken);
 }
 
-.contribution-form__id {
-  display: flex;
-  flex-direction: column;
-  padding-bottom: var(--space-3);
+.contribution-form__text strong {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
 }
 
-.contribution-form__id strong {
+.contribution-form__value {
+  color: var(--gold-text);
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+
+/* "Comprei": a pergunta de um ativo (quantidade e preço pagos). */
+.bought-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.bought-form__id {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bought-form__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.bought-form__text strong {
   font-family: var(--font-display);
   font-size: 1.15rem;
+}
+
+.bought-form__total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-weight: 600;
+}
+
+.bought-form__total strong {
+  color: var(--gold-text);
+  font-family: var(--font-display);
+  font-size: 1.4rem;
 }
 
 .contribution-form__total {
@@ -810,13 +956,25 @@
   }
 }
 
-/* Os cartões preenchem a linha (sem trilho vazio quando há menos ativos que colunas). */
+/* Os cartões vão numa linha, até onde couberem, e quebram para a seguinte; com
+   poucos ativos eles não esticam pela largura inteira do painel. */
 .plan__items.grid {
-  grid-template-columns: repeat(auto-fit, minmax(min(var(--grid-min, 180px), 100%), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(var(--grid-min, 200px), 100%), 1fr));
 }
 
 @container (max-width: 560px) {
   .plan__items.grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Painel estreito: "Editar" e "Desfazer" lado a lado dentro do cartão de duas por linha. */
+@container (max-width: 560px) {
+  .plan-card__actions {
+    gap: 0 var(--space-1);
+  }
+
+  .plan-card__actions .link-btn {
+    padding: 0 2px;
   }
 }

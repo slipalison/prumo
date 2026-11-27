@@ -5,6 +5,7 @@ import type { Cash } from "../../api/cashTypes";
 import { MASK_BRL } from "../../lib/money";
 import { HIDE_VALUES_KEY } from "../../lib/privacy";
 import { emptyCash, sampleCash } from "../../test/incomeHandlers";
+import { openRegistration } from "../../test/purchase";
 import { renderApp } from "../../test/render";
 import { getDb, server } from "../../test/server";
 
@@ -21,6 +22,18 @@ async function openCalculator() {
   const rendered = renderApp("aportar");
   const input = await screen.findByRole("textbox", { name: "Quanto você vai aportar?" });
   return { ...rendered, input };
+}
+
+/** R$ 6.000 com o caixa de R$ 812 incluído e o plano na tela. */
+async function calculateWithCash() {
+  server.use(cash(sampleCash()));
+  const rendered = await openCalculator();
+  const offer = await screen.findByRole("group", { name: GROUP });
+  await rendered.user.type(rendered.input, "600000");
+  await rendered.user.click(within(offer).getByRole("button", { name: "Incluir" }));
+  await rendered.user.click(screen.getByRole("button", { name: /Calcular/ }));
+  await screen.findByRole("region", { name: "Resultado do aporte" });
+  return rendered;
 }
 
 describe("Aportar: o caixa", () => {
@@ -124,16 +137,47 @@ describe("Aportar: o caixa", () => {
     await user.click(within(offer).getByRole("button", { name: "Incluir" }));
     await user.click(screen.getByRole("button", { name: /Calcular/ }));
     await screen.findByRole("region", { name: "Resultado do aporte" });
-    await user.click(screen.getByRole("button", { name: /Já comprei/ }));
-    const sheet = await screen.findByRole("dialog");
+    const sheet = await openRegistration(user);
     expect(sheet).toHaveTextContent(/R\$\s812,00 deste aporte saem do caixa/);
     await user.click(within(sheet).getByRole("button", { name: /Registrar aporte/ }));
     await screen.findByText("Aporte registrado. A carteira já está atualizada.");
 
-    expect(sent?.amount).toBe(6812);
+    // O aporte é o que foi marcado (o plano investe 5.947,92 dos 6.812), e o caixa cobre 812 dele.
+    expect(sent?.amount).toBe(5947.92);
     expect(sent?.cash_used).toBe(812);
     // O saldo é buscado de novo e a oferta some (o caixa foi gasto).
     await waitFor(() => expect(screen.queryByRole("group", { name: GROUP })).not.toBeInTheDocument());
+  });
+
+  it("aporte parcial: o caixa cobre o que couber do marcado, nunca mais que o registrado", async () => {
+    const { user, input } = await calculateWithCash();
+    // Só BTLG11 (8 × R$ 94,55 = R$ 756,40): menos que o caixa incluído (R$ 812,00).
+    await user.click(screen.getByRole("button", { name: "Comprei BTLG11" }));
+    await user.click(await screen.findByRole("button", { name: "Marcar como comprado" }));
+    await user.click(screen.getByRole("button", { name: "Registrar 1 comprado" }));
+    const sheet = await screen.findByRole("dialog", { name: "Registrar aporte" });
+    expect(sheet).toHaveTextContent(/R\$\s756,40 deste aporte saem do caixa/);
+    await user.click(within(sheet).getByRole("button", { name: "Registrar aporte" }));
+    await screen.findByText("Aporte registrado. A carteira já está atualizada.");
+    expect(input).toBeInTheDocument();
+    const sent = getDb().requests.filter((r) => r.path === "/api/v1/contributions" && r.method === "POST").at(-1)?.body;
+    // cash_used nunca passa do amount, e o resto do caixa fica no saldo.
+    expect(sent).toEqual({ amount: 756.4, cash_used: 756.4, items: [{ asset_id: "a-btlg", quantity: 8, unit_price: 94.55 }] });
+  });
+
+  it("aporte parcial maior que o caixa: o caixa gasta o que tem e o resto é dinheiro de fora", async () => {
+    const { user } = await calculateWithCash();
+    // ITSA4 (R$ 2.721,60) e BTLG11 (R$ 756,40): R$ 3.478,00 para um caixa de R$ 812,00.
+    for (const name of ["Comprei ITSA4", "Comprei BTLG11"]) {
+      await user.click(screen.getByRole("button", { name }));
+      await user.click(await screen.findByRole("button", { name: "Marcar como comprado" }));
+    }
+    await user.click(screen.getByRole("button", { name: "Registrar 2 comprados" }));
+    const sheet = await screen.findByRole("dialog", { name: "Registrar aporte" });
+    await user.click(within(sheet).getByRole("button", { name: "Registrar aporte" }));
+    await screen.findByText("Aporte registrado. A carteira já está atualizada.");
+    const sent = getDb().requests.filter((r) => r.path === "/api/v1/contributions" && r.method === "POST").at(-1)?.body;
+    expect(sent).toMatchObject({ amount: 3478, cash_used: 812 });
   });
 
   it("aporte sem o caixa não manda `cash_used`: é dinheiro de fora", async () => {
@@ -143,8 +187,7 @@ describe("Aportar: o caixa", () => {
     await user.type(input, "600000");
     await user.click(screen.getByRole("button", { name: /Calcular/ }));
     await screen.findByRole("region", { name: "Resultado do aporte" });
-    await user.click(screen.getByRole("button", { name: /Já comprei/ }));
-    const sheet = await screen.findByRole("dialog");
+    const sheet = await openRegistration(user);
     expect(sheet).not.toHaveTextContent(/saem do caixa/);
     await user.click(within(sheet).getByRole("button", { name: /Registrar aporte/ }));
     await screen.findByText("Aporte registrado. A carteira já está atualizada.");

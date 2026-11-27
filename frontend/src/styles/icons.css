@@ -92,12 +92,6 @@
   min-width: 0;
 }
 
-.contribution-form__id {
-  flex-direction: row;
-  align-items: center;
-  gap: 10px;
-}
-
 .contribution-form__text {
   display: flex;
   flex-direction: column;

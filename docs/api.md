@@ -577,13 +577,20 @@ Registra o que a pessoa comprou de fato — normalmente o plano, editado ou não
 { "amount": 6000, "cash_used": 812.5, "items": [{ "asset_id": "…", "quantity": 5, "unit_price": 94.55 }] }
 ```
 
+O `amount` e os `items` não precisam ser os do plano: o Aportar grava **só o que a
+pessoa marcou como comprado**, com a quantidade e o preço pagos, e `amount` é a
+soma desses itens (um ativo que ficou de fora simplesmente não vai em `items`).
+Nenhuma mudança no contrato foi preciso para isso.
+
 `cash_used` (opcional, padrão `0`) é a parte do aporte que veio do **caixa**
 ([`GET /cash`](#caixa)): o saldo baixa por esse valor. O resto do `amount` é
 dinheiro de fora e não toca o caixa. `cash_used` não pode passar do `amount`
 nem do saldo na hora do registro (`422`, com o saldo na mensagem); a conferência
 é na mesma transação que grava o aporte, sob um lock por pessoa, então dois
 aportes ao mesmo tempo não gastam o mesmo dinheiro. O valor é arredondado a
-centavos.
+centavos. O Aportar manda o menor entre o caixa incluído no valor digitado e o
+`amount` registrado: o caixa é gasto primeiro, e num aporte parcial nunca passa do
+que foi registrado.
 
 Cada item vira uma compra (`buy`, `source: "plan"`, com `contribution_id`) no
 livro do ativo, datada hoje, com o preço do item — nas classes por valor, a

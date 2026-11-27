@@ -82,6 +82,18 @@ export function unitLine(item: PlanItem, money: Money): string {
   return `${money.quantity(item.quantity, unit === "fraction")} ${plural(item.quantity, nounOf(item.asset_class, item.listed_on_b3, item.treasury))} × ${money.brl(item.unit_price)}`;
 }
 
+/**
+ * O que foi comprado de um ativo do plano, na mesma frase do plano: "7 cotas ×
+ * R$ 54,36", ou, nas classes por valor, "R$ 500,00 aplicados". `quantity` e
+ * `unit_price` são os da compra, não os do plano.
+ */
+export function purchaseLine(item: PlanItem, bought: { quantity: number; unit_price: number }, money: Money): string {
+  if (unitOf(item.asset_class, item.listed_on_b3, item.treasury) === "value") {
+    return `${money.brl(Math.round(bought.quantity * bought.unit_price * 100) / 100)} aplicados`;
+  }
+  return unitLine({ ...item, ...bought }, money);
+}
+
 type Side = "above" | "below" | "equal";
 
 /** De que lado da referência o preço de hoje está, no centavo. */

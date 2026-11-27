@@ -50,7 +50,7 @@ async function calculatePlan(page) {
   await input.click();
   await input.pressSequentially("600000");
   await page.getByRole("button", { name: /Calcular/ }).click();
-  await page.getByRole("button", { name: /Já comprei/ }).waitFor();
+  await page.getByRole("button", { name: /Comprei todos como sugerido/ }).waitFor();
 }
 
 const SCREENS = [
@@ -95,7 +95,8 @@ const SHEETS = [
     path: "aportar",
     open: async (page) => {
       await calculatePlan(page);
-      await page.getByRole("button", { name: /Já comprei/ }).click();
+      await page.getByRole("button", { name: /Comprei todos como sugerido/ }).click();
+      await page.getByRole("button", { name: /Registrar \d+ comprados/ }).click();
     },
   },
   { id: "folha-provento", path: "renda", open: (page) => page.getByRole("button", { name: /Lançar provento/ }).first().click() },

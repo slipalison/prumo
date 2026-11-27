@@ -3,6 +3,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it, vi } from "vitest";
 import { samplePlan } from "../../test/fixtures";
+import { openRegistration } from "../../test/purchase";
 import { renderApp } from "../../test/render";
 import { getDb, resetDb, server } from "../../test/server";
 
@@ -55,34 +56,39 @@ describe("Aportar", () => {
     );
   });
 
-  it("registra o aporte com as quantidades ajustadas e comemora", async () => {
+  it("registra o aporte com a quantidade ajustada de um cartão e comemora", async () => {
     vi.mocked(confetti).mockClear();
     const { user, input } = await openCalculator();
     await user.type(input, "600000");
     await user.click(screen.getByRole("button", { name: /Calcular/ }));
-    await user.click(await screen.findByRole("button", { name: /Já comprei/ }));
+    await user.click(await screen.findByRole("button", { name: "Comprei todos como sugerido" }));
 
+    // A corretora executou uma cota a menos de TRXF11: corrige no cartão.
+    await user.click(screen.getByRole("button", { name: "Editar a compra de TRXF11" }));
+    const ask = await screen.findByRole("dialog", { name: "Comprei TRXF11" });
+    await user.click(within(ask).getByRole("button", { name: "Diminuir cotas" }));
+    await user.click(within(ask).getByRole("button", { name: "Salvar" }));
+
+    await user.click(screen.getByRole("button", { name: "Registrar 4 comprados" }));
     const dialog = await screen.findByRole("dialog", { name: "Registrar aporte" });
-    const trxf = within(dialog).getAllByRole("listitem")[2] as HTMLElement;
-    await user.click(within(trxf).getByRole("button", { name: "Diminuir cotas" }));
     await user.click(within(dialog).getByRole("button", { name: "Registrar aporte" }));
 
     expect(await screen.findByRole("heading", { name: "Aporte registrado!" })).toBeInTheDocument();
-    const body = getDb().requests.find((r) => r.path === "/api/v1/contributions" && r.method === "POST")?.body as {
-      amount: number;
-      items: Array<{ asset_id: string; quantity: number; unit_price: number }>;
-    };
-    expect(body.amount).toBe(6000);
-    expect(body.items).toEqual([
-      { asset_id: "a-itsa", quantity: 243, unit_price: 11.2 },
-      { asset_id: "a-btlg", quantity: 8, unit_price: 94.55 },
-      { asset_id: "a-trxf", quantity: 16, unit_price: 53.81 },
-      { asset_id: "a-btc", quantity: 0.0045, unit_price: 345588.05 },
-    ]);
+    const body = getDb().requests.find((r) => r.path === "/api/v1/contributions" && r.method === "POST")?.body;
+    // O aporte é a soma do que foi marcado: 2.721,60 + 756,40 + 16 × 53,81 + 1.555,15.
+    expect(body).toEqual({
+      amount: 5894.11,
+      items: [
+        { asset_id: "a-itsa", quantity: 243, unit_price: 11.2 },
+        { asset_id: "a-btlg", quantity: 8, unit_price: 94.55 },
+        { asset_id: "a-trxf", quantity: 16, unit_price: 53.81 },
+        { asset_id: "a-btc", quantity: 0.0045, unit_price: 345588.05 },
+      ],
+    });
     expect(getDb().assets.find((a) => a.id === "a-trxf")?.quantity).toBe(36);
     expect(confetti).toHaveBeenCalled();
     expect(await screen.findByText(/Aporte registrado\. A carteira já está atualizada\./)).toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: /Último: R\$\s6\.000,00/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Último: R\$\s5\.894,11/ })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("textbox", { name: "Quanto você vai aportar?" })).toHaveFocus(), {
       timeout: 3000,
     });
@@ -129,15 +135,18 @@ describe("Aportar", () => {
     expect(within(result).queryByText(/TD-IPCA/)).toBeNull();
     expect(within(result).getByText(/0,39 títulos × R\$\s2\.500,95/)).toBeInTheDocument();
 
-    await user.click(await screen.findByRole("button", { name: /Já comprei/ }));
-    const dialog = await screen.findByRole("dialog", { name: "Registrar aporte" });
-    expect(within(dialog).getByText("Tesouro IPCA+ 2035")).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Comprei Tesouro IPCA+ 2035" }));
+    const ask = await screen.findByRole("dialog", { name: "Comprei Tesouro IPCA+ 2035" });
     // Fração: o campo aceita vírgula e não tem − e +.
-    expect(within(dialog).queryByRole("button", { name: /Diminuir/ })).toBeNull();
-    const quantity = within(dialog).getByLabelText("Quantidade");
+    expect(within(ask).queryByRole("button", { name: /Diminuir/ })).toBeNull();
+    const quantity = within(ask).getByLabelText("Quantidade");
     expect(quantity).toHaveValue("0,39");
     await user.clear(quantity);
     await user.type(quantity, "0,3");
+    await user.click(within(ask).getByRole("button", { name: "Marcar como comprado" }));
+    await user.click(await screen.findByRole("button", { name: "Registrar 1 comprado" }));
+    const dialog = await screen.findByRole("dialog", { name: "Registrar aporte" });
+    expect(within(dialog).getByText("Tesouro IPCA+ 2035")).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Registrar aporte" }));
     expect(await screen.findByRole("heading", { name: "Aporte registrado!" })).toBeInTheDocument();
     const body = getDb().requests.find((r) => r.path === "/api/v1/contributions" && r.method === "POST")?.body as {
@@ -156,8 +165,7 @@ describe("Aportar", () => {
     const { user, input } = await openCalculator();
     await user.type(input, "600000");
     await user.click(screen.getByRole("button", { name: /Calcular/ }));
-    await user.click(await screen.findByRole("button", { name: /Já comprei/ }));
-    const dialog = await screen.findByRole("dialog", { name: "Registrar aporte" });
+    const dialog = await openRegistration(user);
     await user.click(within(dialog).getByRole("button", { name: "Registrar aporte" }));
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("Não encontrei esse item");
   });
@@ -192,7 +200,8 @@ describe("Aportar", () => {
     expect(within(result).getByRole("heading", { name: "Defina suas metas primeiro" })).toBeInTheDocument();
     expect(within(result).getByText(/R\$\s6\.000,00 ficaram sem destino/)).toBeInTheDocument();
     expect(within(result).getByRole("link", { name: /Ir para Metas/ })).toHaveAttribute("href", "#/ajustes/metas");
-    expect(within(result).queryByRole("button", { name: /Já comprei/ })).toBeNull();
+    expect(within(result).queryByRole("button", { name: /Registrar .*comprados?/ })).toBeNull();
+    expect(within(result).queryByRole("button", { name: /Comprei/ })).toBeNull();
   });
 
   it("nada a comprar: explica e mostra os outros avisos", async () => {
@@ -513,5 +522,206 @@ describe("primeiro uso", () => {
     await user.click(within(dialog).getByRole("button", { name: "Continuar" }));
     expect(await within(dialog).findByRole("combobox", { name: "Ticker ou nome" })).toBeInTheDocument();
     expect(getDb().requests.some((r) => r.method === "PUT")).toBe(false);
+  });
+});
+
+describe("Comprei, por ativo", () => {
+  async function calculated(amount = "600000") {
+    const rendered = await openCalculator();
+    await rendered.user.type(rendered.input, amount);
+    await rendered.user.click(screen.getByRole("button", { name: /Calcular/ }));
+    const result = await screen.findByRole("region", { name: "Resultado do aporte" });
+    return { ...rendered, result };
+  }
+
+  const cardOf = (result: HTMLElement, symbol: string) =>
+    within(result).getByText(symbol, { selector: ".plan-card__symbol" }).closest("li") as HTMLElement;
+
+  const contributions = () => getDb().requests.filter((r) => r.path === "/api/v1/contributions" && r.method === "POST");
+
+  /** Marca BTLG11 com outra quantidade (7) e outro preço (R$ 90,00). */
+  async function markBtlg(user: Awaited<ReturnType<typeof calculated>>["user"]) {
+    await user.click(screen.getByRole("button", { name: "Comprei BTLG11" }));
+    const ask = await screen.findByRole("dialog", { name: "Comprei BTLG11" });
+    // Vem com a sugestão do plano: 8 cotas a R$ 94,55.
+    expect(within(ask).getByRole("textbox", { name: "Cotas" })).toHaveValue("8");
+    expect(within(ask).getByRole<HTMLInputElement>("textbox", { name: "Preço pago" }).value).toMatch(/^R\$\s94,55$/);
+    await user.click(within(ask).getByRole("button", { name: "Diminuir cotas" }));
+    const price = within(ask).getByRole("textbox", { name: "Preço pago" });
+    await user.clear(price);
+    await user.type(price, "9000");
+    expect(within(ask).getByText("Total").parentElement).toHaveTextContent(/R\$\s630,00/);
+    await user.click(within(ask).getByRole("button", { name: "Marcar como comprado" }));
+  }
+
+  it("cada cartão tem o próprio Comprei, com o nome do ativo, e nada vem marcado", async () => {
+    const { result } = await calculated();
+    for (const symbol of ["ITSA4", "BTLG11", "TRXF11", "BTC"]) {
+      expect(within(result).getByRole("button", { name: `Comprei ${symbol}` })).toBeEnabled();
+    }
+    expect(within(result).queryByText(/Comprado:/)).toBeNull();
+    // Sem nenhum marcado, registrar fica desligado.
+    expect(within(result).getByRole("button", { name: "Registrar comprados" })).toBeDisabled();
+  });
+
+  it("marcar um: o cartão diz o que foi comprado e o que o plano sugeria", async () => {
+    const { user, result } = await calculated();
+    await markBtlg(user);
+
+    const card = cardOf(result, "BTLG11");
+    expect(card).toHaveTextContent(/Comprado: 7 cotas × R\$\s90,00/);
+    // A diferença do plano fica à vista, em texto.
+    expect(card).toHaveTextContent(/Plano: 8 cotas × R\$\s94,55/);
+    expect(card).toHaveClass("is-marked", "is-different");
+    expect(within(card).queryByRole("button", { name: "Comprei BTLG11" })).toBeNull();
+    // O foco vai para o botão que nasceu no lugar do que foi usado.
+    expect(within(card).getByRole("button", { name: "Editar a compra de BTLG11" })).toHaveFocus();
+
+    expect(within(result).getByRole("button", { name: "Registrar 1 comprado" })).toBeEnabled();
+    expect(within(result).getByText(/1 de 4 marcados · 3 ficam de fora deste registro/)).toBeInTheDocument();
+    // Os outros seguem como estavam.
+    expect(within(cardOf(result, "ITSA4")).getByRole("button", { name: "Comprei ITSA4" })).toBeInTheDocument();
+  });
+
+  it("a compra igual à do plano não acusa diferença", async () => {
+    const { user, result } = await calculated();
+    await user.click(screen.getByRole("button", { name: "Comprei ITSA4" }));
+    const ask = await screen.findByRole("dialog", { name: "Comprei ITSA4" });
+    await user.click(within(ask).getByRole("button", { name: "Marcar como comprado" }));
+    const card = cardOf(result, "ITSA4");
+    expect(card).toHaveTextContent(/Comprado: 243 ações × R\$\s11,20/);
+    expect(card).not.toHaveTextContent(/Plano:/);
+    expect(card).not.toHaveClass("is-different");
+  });
+
+  it("editar reabre com o que foi marcado, e desfazer devolve o Comprei", async () => {
+    const { user, result } = await calculated();
+    await markBtlg(user);
+
+    await user.click(screen.getByRole("button", { name: "Editar a compra de BTLG11" }));
+    const ask = await screen.findByRole("dialog", { name: "Comprei BTLG11" });
+    expect(within(ask).getByRole("textbox", { name: "Cotas" })).toHaveValue("7");
+    expect(within(ask).getByRole<HTMLInputElement>("textbox", { name: "Preço pago" }).value).toMatch(/^R\$\s90,00$/);
+    await user.click(within(ask).getByRole("button", { name: "Aumentar cotas" }));
+    await user.click(within(ask).getByRole("button", { name: "Salvar" }));
+    expect(cardOf(result, "BTLG11")).toHaveTextContent(/Comprado: 8 cotas × R\$\s90,00/);
+
+    await user.click(screen.getByRole("button", { name: "Desfazer a compra de BTLG11" }));
+    const card = cardOf(result, "BTLG11");
+    expect(within(card).getByRole("button", { name: "Comprei BTLG11" })).toHaveFocus();
+    expect(card).not.toHaveTextContent(/Comprado:/);
+    expect(within(result).getByRole("button", { name: "Registrar comprados" })).toBeDisabled();
+  });
+
+  it("fechar a pergunta sem confirmar não marca nada", async () => {
+    const { user, result } = await calculated();
+    await user.click(screen.getByRole("button", { name: "Comprei BTC" }));
+    const ask = await screen.findByRole("dialog", { name: "Comprei BTC" });
+    // Cripto aceita fração: sem − e +.
+    expect(within(ask).queryByRole("button", { name: /Diminuir/ })).toBeNull();
+    expect(within(ask).getByRole("textbox", { name: "Quantidade" })).toHaveValue("0,0045");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(within(result).queryByText(/Comprado:/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Comprei BTC" })).toHaveFocus();
+  });
+
+  it("quantidade zerada não deixa marcar", async () => {
+    const { user } = await calculated();
+    await user.click(screen.getByRole("button", { name: "Comprei ITSA4" }));
+    const ask = await screen.findByRole("dialog", { name: "Comprei ITSA4" });
+    const quantity = within(ask).getByRole("textbox", { name: "Ações" });
+    await user.clear(quantity);
+    await user.type(quantity, "0");
+    expect(within(ask).getByRole("button", { name: "Marcar como comprado" })).toBeDisabled();
+  });
+
+  it("Comprei todos como sugerido marca todos; com algum marcado, só completa os outros", async () => {
+    const { user, result } = await calculated();
+    await markBtlg(user);
+    // Já há um marcado, com a quantidade da pessoa: o atalho só completa os outros.
+    await user.click(within(result).getByRole("button", { name: "Marcar os demais como sugerido" }));
+    expect(cardOf(result, "BTLG11")).toHaveTextContent(/Comprado: 7 cotas × R\$\s90,00/);
+    expect(cardOf(result, "ITSA4")).toHaveTextContent(/Comprado: 243 ações × R\$\s11,20/);
+    expect(within(result).getByRole("button", { name: "Registrar 4 comprados" })).toBeEnabled();
+    expect(within(result).getByText("4 de 4 marcados")).toBeInTheDocument();
+    expect(within(result).queryByRole("button", { name: /como sugerido/ })).toBeNull();
+  });
+
+  it("registra só os marcados, com o corpo exato, e os de fora não entram", async () => {
+    vi.mocked(confetti).mockClear();
+    const itsaBefore = getDb().assets.find((a) => a.id === "a-itsa")?.quantity;
+    const { user, result } = await calculated();
+    await markBtlg(user);
+    await user.click(screen.getByRole("button", { name: "Comprei BTC" }));
+    await user.click(await screen.findByRole("button", { name: "Marcar como comprado" }));
+
+    await user.click(within(result).getByRole("button", { name: "Registrar 2 comprados" }));
+    const dialog = await screen.findByRole("dialog", { name: "Registrar aporte" });
+    // A conferência lista só os dois, com o total, e diz quantos ficaram de fora.
+    expect(within(dialog).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(dialog).getByText("BTLG11")).toBeInTheDocument();
+    expect(within(dialog).getByText("BTC")).toBeInTheDocument();
+    expect(within(dialog).queryByText("ITSA4")).toBeNull();
+    expect(within(dialog).getByText("Total").parentElement).toHaveTextContent(/R\$\s2\.185,15/);
+    expect(dialog).toHaveTextContent(/2 ativos ficaram de fora deste registro/);
+    await user.click(within(dialog).getByRole("button", { name: "Registrar aporte" }));
+
+    expect(await screen.findByRole("heading", { name: "Aporte registrado!" })).toBeInTheDocument();
+    expect(contributions()).toHaveLength(1);
+    expect(contributions()[0]?.body).toEqual({
+      amount: 2185.15,
+      items: [
+        { asset_id: "a-btlg", quantity: 7, unit_price: 90 },
+        { asset_id: "a-btc", quantity: 0.0045, unit_price: 345588.05 },
+      ],
+    });
+    expect(getDb().assets.find((a) => a.id === "a-itsa")?.quantity).toBe(itsaBefore);
+    expect(confetti).toHaveBeenCalled();
+    expect(await screen.findByText(/Aporte registrado\. A carteira já está atualizada\./)).toBeInTheDocument();
+  });
+
+  it("recalcular o plano limpa as marcas", async () => {
+    const { user, result } = await calculated();
+    await markBtlg(user);
+    expect(within(result).getByRole("button", { name: "Registrar 1 comprado" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: /R\$\s500$/ }));
+    await waitFor(() => expect(getDb().requests.filter((r) => r.path === "/api/v1/plans")).toHaveLength(2));
+    const again = await screen.findByRole("region", { name: "Resultado do aporte" });
+    expect(await within(again).findByRole("button", { name: "Registrar comprados" })).toBeDisabled();
+    expect(within(again).queryByText(/Comprado:/)).toBeNull();
+    expect(within(again).getByRole("button", { name: "Comprei BTLG11" })).toBeInTheDocument();
+  });
+
+  it("mudar o valor descarta o plano e as marcas junto", async () => {
+    const { user, input } = await calculated();
+    await markBtlg(user);
+    await user.type(input, "1");
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Resultado do aporte" })).toBeNull(), { timeout: 3000 });
+    await user.click(screen.getByRole("button", { name: /Calcular/ }));
+    const again = await screen.findByRole("region", { name: "Resultado do aporte" });
+    expect(within(again).queryByText(/Comprado:/)).toBeNull();
+  });
+});
+
+describe("A carteira ao lado do campo", () => {
+  it("antes do cálculo mostra a carteira de hoje, sem alternância", async () => {
+    await openCalculator();
+    expect(await screen.findByRole("heading", { name: "A carteira hoje" })).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Comparar" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Resultado do aporte" })).toBeNull();
+  });
+
+  it("com o plano, o painel alterna antes e depois e vem antes do que comprar", async () => {
+    const { user, input } = await openCalculator();
+    await user.type(input, "600000");
+    await user.click(screen.getByRole("button", { name: /Calcular/ }));
+    const result = await screen.findByRole("region", { name: "Resultado do aporte" });
+    expect(within(result).getByRole("group", { name: "Comparar" })).toBeInTheDocument();
+    const headings = within(result)
+      .getAllByRole("heading")
+      .map((h) => h.textContent ?? "");
+    expect(headings.findIndex((t) => /A carteira/.test(t))).toBeLessThan(headings.findIndex((t) => /Compre 4/.test(t)));
   });
 });

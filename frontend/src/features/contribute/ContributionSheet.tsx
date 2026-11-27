@@ -1,31 +1,34 @@
-import { useId, useRef, useState } from "react";
+import { useRef } from "react";
 import { errorMessage } from "../../api/client";
 import { useContribute } from "../../api/queries";
-import type { Contribution, Plan, PlanItem } from "../../api/types";
+import type { Contribution, Plan } from "../../api/types";
 import { AssetIcon } from "../../components/AssetIcon";
 import { MagneticButton } from "../../components/MagneticButton";
-import { MoneyInput } from "../../components/MoneyInput";
-import { QuantityInput } from "../../components/QuantityInput";
 import { Sheet } from "../../components/Sheet";
-import { nounOf, unitOf } from "../../lib/assetClasses";
 import { celebrate, originFrom } from "../../lib/celebrate";
+import { plural } from "../../lib/format";
 import { useMoney } from "../../lib/privacy";
 import { assetName } from "../../lib/rating";
+import { purchaseLine } from "../../lib/planText";
+import { contributionBody, markValue, markedItems, type Marks } from "./marks";
 
 type ContributionSheetProps = {
   open: boolean;
   plan: Plan;
-  /** Quanto do aporte veio do caixa; baixa do saldo ao registrar. */
-  cashUsed: number;
+  /** O que a pessoa marcou como comprado; só isso é registrado. */
+  marks: Marks;
+  /** Quanto do valor digitado era caixa; o aporte baixa dele o que couber (`cashUsedFor`). */
+  cashIncluded: number;
   onClose: () => void;
   onRegistered: (contribution: Contribution) => void;
 };
 
 /**
- * "Já comprei": confirma o que foi comprado de fato. Vem preenchido com o
- * plano; se a corretora executou diferente, ajusta aqui antes de registrar.
+ * "Registrar N comprados": a última conferência antes de gravar. Lista só os
+ * ativos marcados, com o que foi comprado e o total; quem ficou de fora não
+ * entra. A quantidade e o preço se corrigem nos cartões (Editar), não aqui.
  */
-export function ContributionSheet({ open, plan, cashUsed, onClose, onRegistered }: ContributionSheetProps) {
+export function ContributionSheet({ open, plan, marks, cashIncluded, onClose, onRegistered }: ContributionSheetProps) {
   return (
     <Sheet
       open={open}
@@ -33,72 +36,45 @@ export function ContributionSheet({ open, plan, cashUsed, onClose, onRegistered 
       title="Registrar aporte"
       description="Confira o que você comprou. As quantidades entram na carteira."
     >
-      {open && <ContributionForm plan={plan} cashUsed={cashUsed} onRegistered={onRegistered} />}
+      {open && <ContributionForm plan={plan} marks={marks} cashIncluded={cashIncluded} onRegistered={onRegistered} />}
     </Sheet>
   );
 }
 
-function ContributionForm({ plan, cashUsed, onRegistered }: { plan: Plan; cashUsed: number; onRegistered: (c: Contribution) => void }) {
-  const baseId = useId();
+type FormProps = Pick<ContributionSheetProps, "plan" | "marks" | "cashIncluded" | "onRegistered">;
+
+function ContributionForm({ plan, marks, cashIncluded, onRegistered }: FormProps) {
   const money = useMoney();
-  const [quantities, setQuantities] = useState<Record<string, number>>(() =>
-    Object.fromEntries(plan.items.map((item) => [item.asset_id, item.quantity])),
-  );
   const contribute = useContribute();
   const buttonRef = useRef<HTMLDivElement>(null);
 
-  const valueOf = (item: PlanItem) => (quantities[item.asset_id] ?? 0) * item.unit_price;
-  const total = plan.items.reduce((acc, item) => acc + valueOf(item), 0);
-  const chosen = plan.items.filter((item) => (quantities[item.asset_id] ?? 0) > 0);
+  const body = contributionBody(plan, marks, cashIncluded);
+  const chosen = markedItems(plan, marks);
+  const left = plan.items.length - chosen.length;
 
   const register = () => {
-    contribute.mutate(
-      {
-        amount: plan.amount,
-        ...(cashUsed > 0 ? { cash_used: cashUsed } : {}),
-        items: chosen.map((item) => ({
-          asset_id: item.asset_id,
-          quantity: quantities[item.asset_id] ?? 0,
-          unit_price: item.unit_price,
-        })),
+    contribute.mutate(body, {
+      onSuccess: (contribution) => {
+        celebrate(originFrom(buttonRef.current));
+        onRegistered(contribution);
       },
-      {
-        onSuccess: (contribution) => {
-          celebrate(originFrom(buttonRef.current));
-          onRegistered(contribution);
-        },
-      },
-    );
+    });
   };
 
   return (
     <div className="contribution-form">
       <ul className="contribution-form__list">
-        {plan.items.map((item, index) => {
-          const unit = unitOf(item.asset_class, item.listed_on_b3, item.treasury);
-          const noun = nounOf(item.asset_class, item.listed_on_b3, item.treasury);
-          const id = `${baseId}-${index}`;
-          const set = (value: number) => setQuantities((current) => ({ ...current, [item.asset_id]: value }));
+        {chosen.map((item) => {
+          const mark = marks[item.asset_id];
+          if (!mark) return null;
           return (
             <li key={item.asset_id} className="contribution-form__row">
-              <div className="contribution-form__id">
-                <AssetIcon symbol={item.symbol} name={item.display_name} assetClass={item.asset_class} treasury={item.treasury} />
-                <span className="contribution-form__text">
-                  <strong>{assetName(item)}</strong>
-                  <span className="field__hint">{money.brl(valueOf(item))}</span>
-                </span>
-              </div>
-              {unit === "value" ? (
-                <MoneyInput id={id} label="Valor aplicado" value={quantities[item.asset_id] ?? 0} onChange={set} />
-              ) : (
-                <QuantityInput
-                  id={id}
-                  label={unit === "fraction" ? "Quantidade" : noun[1].replace(/^./, (c) => c.toUpperCase())}
-                  value={quantities[item.asset_id] ?? 0}
-                  onChange={set}
-                  fractional={unit === "fraction"}
-                />
-              )}
+              <AssetIcon symbol={item.symbol} name={item.display_name} assetClass={item.asset_class} treasury={item.treasury} />
+              <span className="contribution-form__text">
+                <strong>{assetName(item)}</strong>
+                <span className="field__hint">{purchaseLine(item, mark, money)}</span>
+              </span>
+              <strong className="contribution-form__value">{money.brl(markValue(mark))}</strong>
             </li>
           );
         })}
@@ -106,9 +82,14 @@ function ContributionForm({ plan, cashUsed, onRegistered }: { plan: Plan; cashUs
 
       <div className="contribution-form__total">
         <span>Total</span>
-        <strong>{money.brl(total)}</strong>
+        <strong>{money.brl(body.amount)}</strong>
       </div>
-      {cashUsed > 0 && <p className="field__hint">{money.brl(cashUsed)} deste aporte saem do caixa.</p>}
+      {(body.cash_used ?? 0) > 0 && <p className="field__hint">{money.brl(body.cash_used ?? 0)} deste aporte saem do caixa.</p>}
+      {left > 0 && (
+        <p className="field__hint">
+          {left} {plural(left, ["ativo ficou", "ativos ficaram"])} de fora deste registro.
+        </p>
+      )}
 
       {contribute.isError && (
         <p className="form-error" role="alert">

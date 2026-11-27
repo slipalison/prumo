@@ -338,6 +338,76 @@ toggletip.
 - Premissas dos objetivos no plano: ⓘ por objetivo; a frase da data passou a dizer
   "No ritmo das premissas" (valia "da conta abaixo", e abaixo deixou de haver conta).
 
+**Revisão do Aportar (frente aporte-comprei).** A pessoa pediu outra ordem e um
+"Comprei" por ativo; este desenho **substitui** o da caixa acima.
+
+```
+┌ Aportar ────────────────────────────────────────────────────────────────┐
+│┌ Quanto você vai aportar? ┐ ┌ A carteira depois do aporte  [Antes|Depois]┐│
+││ R$ 6.000,00              │ │ rosca   Ações Nac.  ▬▬▬│▬   Fundos Imob. ▬││
+││ + R$ 812 em caixa Incluir│ │         Ações Int.  ▬▬▬│▬   Cripto      ▬││
+││ [500][1.000][2.000][5mil]│ │         Renda Fixa  ▬▬▬│▬                 ││
+││ [Calcular]               │ └─────────────────────────────────────────────┘│
+│└──────────────────────────┘                                                │
+│┌ Compre 4 ativos ──────────────────────────────── [Registrar 4 comprados] ┐│
+││ com R$ 5.947,92 · troco de R$ 52,08        4 de 4 marcados · [atalho]    ││
+││┌ITSA4────┐┌BTLG11───┐┌TRXF11───┐┌BTC──────┐   (quebra quando não cabe)    ││
+│││R$ 56,00 ││R$ 756,40││R$ 914,77││R$1.555  │                               ││
+│││✓ Comprado││✓ Comprado││...                                              ││
+│││Plano: 243││[Editar][Desfazer]                                            ││
+││└─────────┘└─────────┘└─────────┘└─────────┘                               ││
+│└───────────────────────────────────────────────────────────────────────────┘│
+│┌ Avisos (2) ──────────────────┐ ┌ Seus objetivos ────────────────────────┐ │
+```
+
+- **Linha de cima:** `Grid cols="aside-main"` com o campo (1/3) e a carteira
+  (2/3), de altura igual. A carteira é um painel só, `BalancePanel`, que serve
+  aos dois estados.
+- **Antes do cálculo:** o painel mostra a carteira **de hoje** (barras com a
+  meta, rosca, sem Antes/Depois). Decisão: em vez de um espaço vazio ou de
+  centralizar o campo, mostrar o ponto de partida mantém o campo no mesmo lugar e
+  tamanho quando o plano chega (nada pula), custa zero clique e responde ao que
+  a pessoa se pergunta enquanto decide o valor. Sem nenhuma classe com meta ou
+  valor, o campo volta a ficar centrado e sozinho.
+- **Com o plano:** o mesmo painel vira Antes/Depois (nasce no "antes" e
+  escorrega para o "depois" em 400 ms). Painel ≥ 620 px: as barras em duas colunas.
+- **Embaixo, na largura inteira:** "Compre N ativos", os cartões em
+  `Grid cols="auto" minWidth="200px"` com `auto-fill` (uma linha até onde couber;
+  poucos ativos não esticam), depois Avisos e Objetivos lado a lado.
+- **Uma coluna só** (< 1000 px de conteúdo): o DOM segue a ordem do desktop
+  (campo, carteira, plano, avisos), e o CSS (`order`) põe o plano logo depois do
+  campo e a carteira depois do plano, para o celular mostrar o que comprar sem
+  rolar o gráfico antes.
+- **"Comprei" por ativo:** botão em cada cartão → folha pequena (`BoughtSheet`,
+  quantidade + preço) → cartão marcado ("✓ Comprado: …", "Plano: …" se
+  diferente) com Editar/Desfazer. "Registrar N comprados" no canto do painel (flutua
+  no rodapé abaixo de 960 px) → conferência (`ContributionSheet`) → um
+  `POST /contributions` só com os marcados. Detalhes em docs/design.md, Aportar.
+- **Folha:** `Sheet` guarda quem tinha o foco ao abrir num efeito de layout, antes
+  dos efeitos do conteúdo; um campo com `focusOnMount` dentro da folha rodava antes
+  e se passava por "quem abriu", e o foco não voltava ao botão ao fechar.
+- **Defeito do "R$ 0,00" dourado:** o campo do valor ganha foco na abertura e
+  `MoneyInput` selecionava o texto inteiro, para o próximo dígito substituir o
+  valor; o `::selection` do app é o dourado cheio (`base.css`), então o zero
+  aparecia como um bloco de seleção. Correção: com o valor zerado não há o que
+  substituir, o cursor vai para o fim (o dígito entra como centavo, igual) e
+  nada é selecionado; com valor, a seleção segue (o próximo dígito começa um
+  valor novo), mas no campo de dinheiro ela é um véu dourado de 28% com o texto
+  na cor própria (`.money-field__input::selection`), nos dois temas.
+
+**Medido (demonstração, plano de R$ 6.000 com o caixa incluído, 4 ativos):**
+
+| Aportar | 1440×900 | 1920×1080 | iPad 1366×1024 | iPad 1024×1366 | Celular 390×844 |
+|---|---|---|---|---|---|
+| Vazio (carteira de hoje ao lado) | 1,02 | 1,01 | 1,02 | 1,01 | 1,03 |
+| Com plano | 1,23 | 1,01 | 1,10 | 1,01 | 2,64 |
+| Com os 4 marcados | 1,25 | 1,02 | 1,12 | 1,01 | 2,62 |
+
+O desktop passou de 1,02 (desenho do grupo 1) para 1,23 porque os cartões agora
+têm o botão e ocupam a largura inteira, embaixo da carteira, como a pessoa
+pediu; a meta pedida era ~1,2. No celular o botão de cada cartão custa ~0,15 tela
+(2,48 → 2,64). Nenhuma rolagem lateral em nenhuma largura.
+
 ### 7.2 Ajustes › Metas, Critérios e Objetivos (grupo 1)
 
 - **Metas:** perfis prontos numa linha de botões segmentados (a descrição de

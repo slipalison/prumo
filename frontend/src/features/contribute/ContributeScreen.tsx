@@ -25,7 +25,9 @@ import { PlanObjectives } from "../objectives/PlanObjectives";
 import { Onboarding } from "../onboarding/Onboarding";
 import { AddAssetSheet } from "../portfolio/AddAssetSheet";
 import { RateAssetSheet, type RatingTarget } from "../portfolio/RateAssetSheet";
+import { BalancePanel, type BalanceClass } from "./BalancePanel";
 import { ContributionSheet } from "./ContributionSheet";
+import { suggested, type Marks } from "./marks";
 import { PlanResult } from "./PlanResult";
 
 const QUICK_AMOUNTS = [500, 1000, 2000, 5000];
@@ -82,6 +84,9 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
   // Quanto do valor digitado é caixa (o que o aporte registrado vai baixar).
   const [cashIncluded, setCashIncluded] = useState(0);
   const [plan, setPlan] = useState<Plan | null>(null);
+  // O que a pessoa marcou como comprado no plano na tela, por ativo. Plano novo
+  // (ou nenhum) começa sem marca: marca de um plano não vale para outro.
+  const [marks, setMarks] = useState<Marks>({});
   const [confirming, setConfirming] = useState(false);
   const [registered, setRegistered] = useState(false);
   const [rating, setRating] = useState<RatingTarget>(null);
@@ -96,11 +101,16 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
   const quick = lastAmount && !QUICK_AMOUNTS.includes(lastAmount) ? [...QUICK_AMOUNTS, lastAmount] : QUICK_AMOUNTS;
   const noGoals = sumTargets(targetsFromClasses(portfolio.classes)) === 0;
 
+  const replacePlan = (next: Plan | null) => {
+    setPlan(next);
+    setMarks({});
+  };
+
   const calculate = (value: number = amount) => {
     if (value <= 0 || planMutation.isPending) return;
     setRegistered(false);
     planMutation.mutate(value, {
-      onSuccess: setPlan,
+      onSuccess: replacePlan,
       onError: (error) => toast({ tone: "error", message: errorMessage(error) }),
     });
   };
@@ -111,7 +121,7 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
   const changeAmount = (value: number, included: number = cashIncluded) => {
     setAmount(value);
     setCashIncluded(value >= included ? included : 0);
-    if (plan) setPlan(null);
+    if (plan) replacePlan(null);
   };
 
   const submit = (event: FormEvent) => {
@@ -127,9 +137,20 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
   }, [registered, inputId]);
 
   const plumbState = planMutation.isPending ? "swinging" : registered ? "success" : plan ? "settled" : "idle";
-  // Com resultado (ou o aporte recém-registrado), o campo vai para a coluna da
-  // esquerda e o resultado ocupa o resto; antes disso o campo fica centrado.
-  const sideBySide = plan !== null || registered;
+  // A carteira de hoje, para o espaço ao lado do campo antes do primeiro cálculo
+  // (o mesmo painel que depois mostra antes e depois do aporte).
+  const today: BalanceClass[] = portfolio.classes.map((c) => ({
+    asset_class: c.asset_class,
+    target_percent: c.target_percent,
+    percent_before: c.current_percent,
+    percent_after: c.current_percent,
+    allocated: 0,
+  }));
+  const hasToday = today.some((c) => c.target_percent > 0 || c.percent_before > 0);
+  // O campo fica na coluna da esquerda e a carteira (hoje, ou antes e depois) ao
+  // lado dele, desde antes do cálculo: o campo não muda de lugar nem de tamanho
+  // quando o plano chega. Sem carteira para mostrar, o campo fica centrado.
+  const sideBySide = plan !== null || registered || hasToday;
   const assetActions = {
     onRateAsset: (asset: Asset) => setRating({ asset, intro: ratingIntro(asset) }),
     onEditAsset: (asset: Asset) => setRating({ asset }),
@@ -138,13 +159,13 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
 
   return (
     <Page className="contribute">
-      <Grid cols="aside-main" alignStart className={cx("contribute__layout", sideBySide ? "has-result" : "is-solo")}>
+      <Grid cols="aside-main" className={cx("contribute__layout", sideBySide ? "has-result" : "is-solo")}>
         <GlassCard as="section" className="ask" aria-labelledby={titleId}>
           <form className="ask__form" onSubmit={submit}>
             <div className="ask__head">
               <Plumb
                 state={plumbState}
-                size={sideBySide ? 40 : 58}
+                size={sideBySide ? 34 : 58}
                 label={planMutation.isPending ? "Equilibrando a carteira" : "Prumo"}
               />
               <h1 id={titleId} className="ask__title">
@@ -210,11 +231,26 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
             </motion.div>
           )}
           {plan && !registered && (
-            <PlanResult key="plan" plan={plan} assets={portfolio.assets} onConfirm={() => setConfirming(true)} {...assetActions}>
+            <PlanResult
+              key="plan"
+              plan={plan}
+              assets={portfolio.assets}
+              marks={marks}
+              onMark={(item, mark) => setMarks((current) => ({ ...current, [item.asset_id]: mark }))}
+              onUnmark={(item) => setMarks((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== item.asset_id)))}
+              onMarkAll={() =>
+                setMarks((current) => Object.fromEntries(plan.items.map((item) => [item.asset_id, current[item.asset_id] ?? suggested(item)])))
+              }
+              onConfirm={() => setConfirming(true)}
+              {...assetActions}
+            >
               <PlanObjectives plan={plan} />
             </PlanResult>
           )}
         </AnimatePresence>
+        {!plan && !registered && hasToday && (
+          <BalancePanel classes={today} totalBefore={portfolio.total_value} totalAfter={portfolio.total_value} mode="today" />
+        )}
       </Grid>
 
       <RateAssetSheet
@@ -244,12 +280,13 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
         <ContributionSheet
           open={confirming}
           plan={plan}
-          cashUsed={Math.min(cashIncluded, plan.amount)}
+          marks={marks}
+          cashIncluded={cashIncluded}
           onClose={() => setConfirming(false)}
           onRegistered={() => {
             setConfirming(false);
             setRegistered(true);
-            setPlan(null);
+            replacePlan(null);
             setAmount(0);
             setCashIncluded(0);
             // O aporte baixou o caixa que usou: o saldo e a renda se refazem.

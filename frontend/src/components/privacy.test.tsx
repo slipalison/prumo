@@ -6,6 +6,7 @@ import { MASK_QUANTITY } from "../lib/money";
 import { HIDE_VALUES_KEY } from "../lib/privacy";
 import { FakeEventSource } from "../test/eventSource";
 import { samplePlan, toPortfolio, TREASURY_AT } from "../test/fixtures";
+import { openRegistration } from "../test/purchase";
 import { renderApp } from "../test/render";
 import { getDb, server } from "../test/server";
 
@@ -182,22 +183,31 @@ describe("Ocultar valores", () => {
     expect(getDb().requests.filter((r) => r.path === "/api/v1/plans").at(-1)?.body).toEqual({ amount: 2500 });
   });
 
-  it("a folha de registrar o aporte: valores e quantidades mascarados, editáveis com o foco", async () => {
+  it("a conferência do registro e a folha Comprei: valores e quantidades mascarados, editáveis com o foco", async () => {
     const { user } = renderApp("aportar");
     const input = await screen.findByRole("textbox", { name: "Quanto você vai aportar?" });
     await user.type(input, "600000");
     await user.click(screen.getByRole("button", { name: /Calcular/ }));
     await screen.findByRole("region", { name: "Resultado do aporte" });
     await user.click(eye());
-    await user.click(await screen.findByRole("button", { name: /Já comprei/ }));
-    const dialog = await screen.findByRole("dialog", { name: "Registrar aporte" });
+    // O cartão marcado: "Comprado: ..." também sai mascarado.
+    await user.click(screen.getByRole("button", { name: "Comprei ITSA4" }));
+    const ask = await screen.findByRole("dialog", { name: "Comprei ITSA4" });
+    expectNoMoney(ask);
+    const quantity = within(ask).getByRole("textbox", { name: "Ações" });
+    expect(quantity).toHaveValue("••");
+    expect(within(ask).getByRole("textbox", { name: "Preço pago" })).toHaveValue(MASK);
+    expect(within(ask).getByText("Total").parentElement).toHaveTextContent(MASK);
+    await user.click(quantity);
+    expect((quantity as HTMLInputElement).value).toMatch(/^\d+$/);
+    await user.click(within(ask).getByRole("button", { name: "Marcar como comprado" }));
+    const card = screen.getByText("ITSA4").closest("li") as HTMLElement;
+    expect(card).toHaveTextContent(`Comprado: ${MASK_QUANTITY} ações × ${MASK}`);
+    expectNoMoney();
+
+    const dialog = await openRegistration(user);
     expectNoMoney(dialog);
     expect(within(dialog).getByText("Total").parentElement).toHaveTextContent(MASK);
-    const first = within(dialog).getAllByRole("textbox")[0];
-    if (!first) throw new Error("folha sem campo de quantidade");
-    expect(first).toHaveValue("••");
-    await user.click(first);
-    expect((first as HTMLInputElement).value).toMatch(/^\d+$/);
   });
 
   it("o atalho do último aporte não entrega o valor", async () => {
@@ -358,9 +368,8 @@ describe("Ocultar valores", () => {
     expect(within(result).getByText(/Sem cotação agora: Tesouro IPCA\+ 2035/)).toBeInTheDocument();
     expectNoMoney();
 
-    await user.click(await screen.findByRole("button", { name: /Já comprei/ }));
-    const dialog = await screen.findByRole("dialog", { name: "Registrar aporte" });
-    expect(within(dialog).getByText("Tesouro IPCA+ 2035")).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Comprei Tesouro IPCA+ 2035" }));
+    const dialog = await screen.findByRole("dialog", { name: "Comprei Tesouro IPCA+ 2035" });
     expectNoMoney(dialog);
     expect(within(dialog).getByRole("textbox", { name: "Quantidade" })).toHaveValue(MASK_QUANTITY);
   });

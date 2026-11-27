@@ -67,7 +67,7 @@ describe("Aportar: as referências do ativo sem teto", () => {
     const itsa = within(result).getByText("ITSA4").closest("li") as HTMLElement;
     expect(within(itsa).getByRole("note")).toBe(notes[0]);
     // O plano segue o mesmo: o aviso não vira bloqueio nem esconde o botão.
-    expect(within(result).getByRole("button", { name: /Já comprei/ })).toBeEnabled();
+    expect(within(result).getByRole("button", { name: "Comprei ITSA4" })).toBeEnabled();
   });
 
   it("o toque no chip abre a explicação, e Esc ou tocar fora fecha", async () => {

@@ -160,25 +160,34 @@ estão em [layout.md](layout.md).
      mais novos, cada um com o sinal escrito. Um ⓘ na linha do caixa ("Como o
      caixa entra no aporte") diz desde que dia a conta vale e lembra que, para
      aportar dinheiro de fora, basta digitar o valor total: só o que se incluiu
-     do caixa sai dele. Ao registrar ("Já comprei"), a
-     folha avisa "R$ X deste aporte saem do caixa" e o saldo baixa.
+     do caixa sai dele. Ao registrar, a folha avisa "R$ X deste aporte saem do
+     caixa" e o saldo baixa. Com o aporte parcial (só parte do plano
+     registrada) o caixa é gasto primeiro e nunca passa do registrado: `cash_used`
+     = o menor entre o caixa incluído e a soma dos marcados.
 3. Chips rápidos: R$ 500 · R$ 1.000 · R$ 2.000 · R$ 5.000 · último aporte.
 4. Botão **Calcular** (Enter também calcula).
-5. Resultado, sem trocar de tela (docs/layout.md, 7.1). No desktop (a partir
-   de 1000 px de conteúdo) o campo vai para a coluna da esquerda, compacto
-   (prumo e pergunta na mesma linha), e o resultado ocupa o resto; antes do
-   primeiro cálculo o campo fica sozinho e centrado. A região "Resultado do
-   aporte" reúne tudo o que segue:
-   - Painel "Compre **5 ativos**" com o "Já comprei" no canto (no celular e no
-     iPad em pé ele flutua no rodapé): "com **R$ 5.999,97** · troco de …", a
-     frase da renda com o selo "estimativa" e os cartões.
-   - Cartões lado a lado (uma fileira no desktop, dois por linha no celular):
-     classe, ticker em destaque, nome, valor, "**12 cotas** × R$ 53,81" e a
-     renda do cartão.
-   - Abaixo, três painéis lado a lado: **Avisos (N)**, **A carteira depois do
-     aporte** (rosca e barras por classe com o pedaço dourado; um ⓘ explica o
-     traço da meta e o dourado; a rosca some em painel estreito, as barras já
-     dizem tudo) e **Seus objetivos**.
+5. A **linha de cima** (docs/layout.md, 7.1): no desktop (a partir de 1000 px
+   de conteúdo) o campo fica na coluna da esquerda, compacto (prumo e pergunta
+   na mesma linha), e ao lado dele **A carteira** (rosca e barras por classe,
+   um ⓘ explica o traço da meta). **Antes do cálculo** o painel mostra a
+   carteira **de hoje** (sem "depois", sem alternância): o campo já nasce no
+   lugar e no tamanho em que vai ficar, em vez de pular da página inteira para
+   a coluna quando o plano chega, e a pessoa vê o ponto de partida enquanto
+   decide quanto aportar. **Com o plano** o mesmo painel vira **A carteira
+   depois do aporte** (Antes/Depois; o pedaço dourado é o que o aporte soma).
+   Sem carteira para mostrar, o campo fica sozinho e centrado. Em uma coluna só
+   (celular, iPad em pé) o painel desce para depois do que comprar: a ordem no
+   DOM é a do desktop, e o `order` do CSS só troca a ordem visual.
+6. Resultado, sem trocar de tela. A região "Resultado do aporte" reúne o que
+   segue, abaixo do campo e da carteira:
+   - Painel **"Compre 5 ativos"**, na largura inteira, com "com **R$ 5.999,97**
+     · troco de …", a frase da renda com o selo "estimativa" e, no canto, o
+     botão **"Registrar N comprados"** (no celular e no iPad em pé ele flutua
+     no rodapé; desligado enquanto nada está marcado).
+   - **Cartões** numa linha, até onde couberem (mínimo de 200 px), quebrando
+     para a seguinte; dois por linha no celular: classe, ticker em destaque,
+     nome, valor, "**12 cotas** × R$ 53,81" e a renda do cartão.
+   - Abaixo, dois painéis lado a lado: **Avisos (N)** e **Seus objetivos**.
    - Avisos em linguagem simples ("Ações Internacionais está abaixo da meta,
      mas você não tem nenhum ativo lá — R$ 37.800 ficaram sem destino"), cada
      um com a ação que resolve. "XPTO3 está a R$ 32,50, acima do seu teto de
@@ -201,9 +210,36 @@ estão em [layout.md](layout.md).
      fechado, os R$ saem mascarados (chip, nome acessível e explicação) e o
      veredito continua. Ativo com teto, ou sem nenhuma das duas referências, não
      tem o bloco.
-   - Botão **"Já comprei"** → registra o aporte (com chance de ajustar
-     quantidades antes) → confete.
-6. Carteira vazia: o prumo balançando e um convite de um toque para montar a
+   - **"Comprei", por ativo.** A pessoa pode não comprar um ativo, ou comprar
+     outra quantidade, então a compra é marcada cartão a cartão:
+     - Cada cartão tem o botão **"Comprei"** (nome acessível "Comprei NVDA").
+       Ele abre uma folha pequena "Comprei NVDA" com a **quantidade** e o
+       **preço pago**, preenchidos com os do plano e editáveis, e o total. A
+       unidade é a do ativo (`QuantityInput`/`MoneyInput`): inteiro em
+       ação/FII/ETF, fração em cripto e título do Tesouro, valor aplicado em
+       renda fixa por valor. Uma folha, e não um balão, porque o campo numérico
+       sobe o teclado no celular e a folha prende o foco e fecha com Esc; o
+       cartão corta o que passa da borda, e um balão não cabe nele.
+     - Marcado, o cartão diz em texto **"✓ Comprado: 7 cotas × R$ 54,36"**
+       (borda verde) e, quando a quantidade ou o preço diferem do plano, **"Plano:
+       8 cotas × R$ 53,81"** (borda dourada); trocam o botão por **Editar** e
+       **Desfazer** (com o ativo no nome acessível). O estado nunca é só cor.
+       O foco vai para o botão que nasceu no lugar do usado.
+     - Atalho **"Comprei todos como sugerido"** (marca todos com o plano); com
+       algum marcado vira "Marcar os demais como sugerido" e só completa os que
+       faltam, sem desfazer o que a pessoa ajustou. Uma linha diz "2 de 4
+       marcados · 2 ficam de fora deste registro", sem julgamento.
+     - **"Registrar N comprados"** abre a conferência "Registrar aporte": a lista
+       só dos marcados, o total, "R$ X deste aporte saem do caixa" e quantos
+       ficaram de fora. Registra **um** aporte (`POST /contributions`): `amount` =
+       a soma dos marcados, `items` com a quantidade e o preço informados e
+       `cash_used` pela regra do caixa acima. Depois, o mesmo confete, a mesma
+       mensagem e o mesmo refresh de antes.
+     - **Recalcular** (valor novo, chip, nota nova, ativo novo) limpa as marcas:
+       elas valem para o plano em que foram feitas. Com o olho fechado, todo R$ e
+       toda quantidade saem mascarados, e a folha "Comprei" não abre já com o
+       foco no campo (para não revelar a quantidade sozinha).
+7. Carteira vazia: o prumo balançando e um convite de um toque para montar a
    carteira (assistente de três passos: perfil → metas, primeiro ativo, pronto).
 
 ### 2. Carteira
