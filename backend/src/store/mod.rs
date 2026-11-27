@@ -46,12 +46,11 @@ pub use cash::{CashReport, RECENT_SHOWN};
 mod income;
 mod income_auto;
 mod objectives;
+mod projection;
 
-pub use income::{
-    CachedDividends, IncomeEvent, IncomeFields, IncomeFilter, NewIncomeEvent, Objective,
-};
+pub use income::{CachedDividends, IncomeEvent, IncomeFields, IncomeFilter, NewIncomeEvent};
 pub use income_auto::{AutoOutcome, B3IncomeSource, IncomeAutoState};
-pub use objectives::{NewObjective, ObjectiveChanges};
+pub use objectives::{NewObjective, Objective, ObjectiveChanges, ObjectivePremises};
 
 /// Padrão do teto do pool por réplica (ver `Config::database_max_connections`).
 pub const DEFAULT_MAX_CONNECTIONS: u32 = 4;

@@ -14,6 +14,7 @@ pub mod config;
 pub mod dividends;
 pub mod domain;
 pub mod error;
+pub mod focus;
 pub mod fundamentals;
 pub mod history;
 pub mod http;
@@ -23,6 +24,7 @@ pub mod income_auto;
 pub mod live;
 pub mod objectives;
 pub mod performance;
+pub mod projection;
 pub mod quotes;
 pub mod risk;
 pub mod sectors;
@@ -184,6 +186,12 @@ pub async fn run(config: Config) -> Result<(), StartError> {
             Arc::clone(&live),
         ))
         .spawn(treasury::CHECK_EVERY, treasury::MAX_AGE);
+        // O Focus do Banco Central para a projeção: uma busca por dia.
+        Arc::new(focus::FocusSync::new(
+            store.clone(),
+            Arc::new(focus::OlindaFocus::new(http.clone())),
+        ))
+        .spawn(focus::CHECK_EVERY);
         if config.quotes_stream {
             live.spawn(LIVE_FLUSH_EVERY, LIVE_TRACK_EVERY);
             tokio::spawn(YahooStreamer::default().run(live.symbols(), live.ticks()));

@@ -1,28 +1,17 @@
-//! Objetivos com prazo: quanto falta, a conta do aporte médio e a data
-//! estimada de conclusão. Regra pura, sem banco nem relógio: quem chama passa
-//! a data de hoje.
+//! Objetivos com prazo: quanto falta, a média de aporte do livro e as
+//! premissas padrão da projeção. Regra pura, sem banco nem relógio: quem chama
+//! passa a data de hoje.
 //!
-//! A projeção é uma simulação mês a mês. Cada mês o saldo rende à taxa mensal
-//! equivalente à rentabilidade anual da premissa e recebe o aporte mensal:
-//!
-//! ```text
-//! saldo[m] = saldo[m - 1] × (1 + anual)^(1/12) + aporte
-//! ```
-//!
-//! O primeiro mês `m` em que `saldo >= meta` é a conclusão; a data é o mês de
-//! hoje mais `m` meses. Simulação no lugar da fórmula fechada porque o caso
-//! sem aporte, sem rendimento ou com rendimento negativo cai fora da fórmula
-//! (logaritmo de número não positivo) e porque assim o teto de prazo é uma
-//! condição simples do laço. A conta é em ponto flutuante: a data é em meses
-//! inteiros e a premissa é uma estimativa, não um saldo contábil.
+//! A conta da data estimada (mês a mês, em reais de hoje, em três cenários)
+//! está em `domain::projection::goal`; o método, em `docs/projecao.md`. Aqui
+//! ficam o que ela usa: o estado da data ([`Eta`]), o rótulo do mês, o
+//! progresso e de onde vem cada premissa padrão.
 
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use time::{Date, Month};
 
-use super::asset_class::AssetClass;
-use super::income::ObjectiveKind;
 use super::performance::months_before;
 
 /// O prazo máximo que a projeção procura: 100 anos. Passou disso, a data não
@@ -36,10 +25,11 @@ pub const CONTRIBUTION_WINDOW_MONTHS: u32 = 12;
 /// Com menos que isso a rentabilidade anualizada é ruído.
 pub const MIN_RETURN_WINDOW_DAYS: i64 = 180;
 
-/// Padrão sem Desempenho nem CDI: 8% ao ano, bruto. Só aparece quando o banco
-/// não tem série da carteira de seis meses nem CDI; a tela o rotula como
-/// "padrão do Prumo" e a pessoa pode trocar.
-pub const FALLBACK_ANNUAL_RETURN: Decimal = Decimal::from_parts(8, 0, 0, false, 2);
+/// Padrão sem Desempenho nem CDI: 4% ao ano **acima da inflação**. Só aparece
+/// quando o banco não tem série da carteira de seis meses nem CDI; a tela o
+/// rotula como "padrão do Prumo" e a pessoa pode trocar. É uma convenção, não
+/// uma previsão.
+pub const FALLBACK_REAL_RETURN: Decimal = Decimal::from_parts(4, 0, 0, false, 2);
 
 /// IR sobre renda fixa de longo prazo (mais de 720 dias): a menor alíquota da
 /// tabela regressiva. O padrão da premissa desconta este valor do CDI.
@@ -47,54 +37,6 @@ pub const CDI_TAX: Decimal = Decimal::from_parts(15, 0, 0, false, 2);
 
 /// Dias úteis do ano na capitalização do CDI.
 const BUSINESS_DAYS_PER_YEAR: f64 = 252.0;
-
-/// O tipo do objetivo que esta área calcula. A meta de renda mensal tem as
-/// regras próprias de `domain::income`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Target {
-    /// Patrimônio total.
-    NetWorth,
-    /// Valor numa classe.
-    ClassValue,
-}
-
-impl Target {
-    /// O que o objetivo mede, dado o patrimônio e o valor por classe.
-    pub fn current(
-        self,
-        asset_class: Option<AssetClass>,
-        net_worth: Decimal,
-        by_class: impl Fn(AssetClass) -> Decimal,
-    ) -> Decimal {
-        match (self, asset_class) {
-            (Target::ClassValue, Some(class)) => by_class(class),
-            _ => net_worth,
-        }
-    }
-}
-
-impl From<Target> for ObjectiveKind {
-    fn from(target: Target) -> Self {
-        match target {
-            Target::NetWorth => ObjectiveKind::NetWorth,
-            Target::ClassValue => ObjectiveKind::ClassValue,
-        }
-    }
-}
-
-impl TryFrom<ObjectiveKind> for Target {
-    type Error = ();
-
-    /// A meta de renda mensal não é deste módulo.
-    fn try_from(kind: ObjectiveKind) -> Result<Self, ()> {
-        match kind {
-            ObjectiveKind::NetWorth => Ok(Target::NetWorth),
-            ObjectiveKind::ClassValue => Ok(Target::ClassValue),
-            ObjectiveKind::MonthlyIncome => Err(()),
-        }
-    }
-}
 
 /// Atingido: o valor chegou à meta.
 pub fn is_reached(current: Decimal, target: Decimal) -> bool {
@@ -118,7 +60,8 @@ pub enum Eta {
     Reached,
     /// A meta chega daqui a tantos meses (pelo menos 1).
     In(u32),
-    /// Sem aporte e sem rendimento positivo, o valor nunca chega.
+    /// Nada faz a conta andar em direção à meta (sem aporte, sem rendimento,
+    /// sem crescimento): nunca chega.
     Unreachable,
     /// Chega, mas depois de [`MAX_MONTHS`].
     Beyond,
@@ -126,36 +69,6 @@ pub enum Eta {
 
 fn to_f64(value: Decimal) -> f64 {
     value.to_f64().unwrap_or(0.0)
-}
-
-/// Quantos meses faltam para `current` chegar a `target`, aportando
-/// `monthly_contribution` por mês e rendendo `annual_return` ao ano (fração:
-/// 0,10 = 10%). Aporte negativo vale zero.
-pub fn months_to_reach(
-    current: Decimal,
-    target: Decimal,
-    monthly_contribution: Decimal,
-    annual_return: Decimal,
-) -> Eta {
-    if is_reached(current, target) {
-        return Eta::Reached;
-    }
-    let contribution = to_f64(monthly_contribution).max(0.0);
-    let annual = to_f64(annual_return);
-    if contribution <= 0.0 && annual <= 0.0 {
-        return Eta::Unreachable;
-    }
-    // Um ano que perde mais de 100% não existe: no limite, o saldo zera.
-    let factor = (1.0 + annual).max(0.0).powf(1.0 / 12.0);
-    let goal = to_f64(target);
-    let mut balance = to_f64(current).max(0.0);
-    for month in 1..=MAX_MONTHS {
-        balance = balance * factor + contribution;
-        if balance >= goal {
-            return Eta::In(month);
-        }
-    }
-    Eta::Beyond
 }
 
 /// O ano e o mês `months` meses depois de `today` (mês de calendário).
@@ -202,17 +115,19 @@ pub fn average_monthly_contribution(
     (total / Decimal::from(months)).round_dp(2)
 }
 
-/// De onde veio a rentabilidade usada.
+/// De onde veio a rentabilidade real usada.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReturnSource {
     /// A pessoa informou no objetivo.
     Informed,
-    /// A rentabilidade da carteira na tela Desempenho, anualizada.
+    /// A rentabilidade da carteira na tela Desempenho, anualizada e
+    /// descontado o IPCA do mesmo período.
     Performance,
-    /// O CDI de hoje menos o IR de renda fixa de longo prazo.
+    /// O CDI de hoje menos o IR de renda fixa de longo prazo, descontada a
+    /// inflação esperada.
     CdiNet,
-    /// O padrão fixo do Prumo ([`FALLBACK_ANNUAL_RETURN`]).
+    /// O padrão fixo do Prumo ([`FALLBACK_REAL_RETURN`]).
     Fallback,
 }
 
@@ -239,9 +154,9 @@ pub fn annualize(ret: Decimal, days: i64) -> Option<Decimal> {
     Decimal::from_f64(annual).map(|d| d.round_dp(6))
 }
 
-/// O CDI de hoje, líquido do IR: `daily_percent` é a taxa de um dia útil em
-/// %, como o Banco Central publica.
-pub fn cdi_net_annual(daily_percent: Decimal) -> Option<Decimal> {
+/// O CDI de hoje ao ano, bruto: `daily_percent` é a taxa de um dia útil em %,
+/// como o Banco Central publica, composta por 252 dias úteis.
+pub fn cdi_annual(daily_percent: Decimal) -> Option<Decimal> {
     let daily = to_f64(daily_percent) / 100.0;
     if daily <= -1.0 {
         return None;
@@ -250,7 +165,22 @@ pub fn cdi_net_annual(daily_percent: Decimal) -> Option<Decimal> {
     if !gross.is_finite() {
         return None;
     }
-    Decimal::from_f64(gross).map(|g| (g * (Decimal::ONE - CDI_TAX)).round_dp(6))
+    Decimal::from_f64(gross).map(|g| g.round_dp(6))
+}
+
+/// O CDI de hoje, líquido do IR de renda fixa de longo prazo ([`CDI_TAX`]).
+pub fn cdi_net_annual(daily_percent: Decimal) -> Option<Decimal> {
+    cdi_annual(daily_percent).map(|gross| (gross * (Decimal::ONE - CDI_TAX)).round_dp(6))
+}
+
+/// Uma taxa nominal descontada a inflação (frações): `(1 + n) / (1 + i) − 1`.
+/// `None` com inflação de −100% ou menos.
+pub fn deflate(nominal: Decimal, inflation: Decimal) -> Option<Decimal> {
+    let base = Decimal::ONE + inflation;
+    if base <= Decimal::ZERO {
+        return None;
+    }
+    Some(((Decimal::ONE + nominal) / base - Decimal::ONE).round_dp(6))
 }
 
 #[cfg(test)]
@@ -262,83 +192,11 @@ mod tests {
     use time::Duration;
 
     #[test]
-    fn already_there_is_reached() {
-        assert_eq!(
-            months_to_reach(dec!(100), dec!(100), dec!(0), dec!(0)),
-            Eta::Reached
-        );
-        assert_eq!(
-            months_to_reach(dec!(150), dec!(100), dec!(0), dec!(-0.5)),
-            Eta::Reached
-        );
-    }
-
-    #[test]
-    fn contribution_without_return_is_a_division() {
-        // 1.000 faltando 4.000 a 500 por mês: 8 meses.
-        assert_eq!(
-            months_to_reach(dec!(1000), dec!(5000), dec!(500), dec!(0)),
-            Eta::In(8)
-        );
-        // 1.000 + 7 x 500 = 4.500 < 4.600: precisa do oitavo.
-        assert_eq!(
-            months_to_reach(dec!(1000), dec!(4600), dec!(500), dec!(0)),
-            Eta::In(8)
-        );
-    }
-
-    #[test]
-    fn return_alone_compounds() {
-        // 12% ao ano, sem aporte: dobra em ~6,1 anos (ln 2 / ln 1,12).
-        assert_eq!(
-            months_to_reach(dec!(1000), dec!(2000), dec!(0), dec!(0.12)),
-            Eta::In(74)
-        );
-    }
-
-    #[test]
-    fn nothing_coming_in_never_gets_there() {
-        assert_eq!(
-            months_to_reach(dec!(1000), dec!(2000), dec!(0), dec!(0)),
-            Eta::Unreachable
-        );
-        assert_eq!(
-            months_to_reach(dec!(1000), dec!(2000), dec!(0), dec!(-0.05)),
-            Eta::Unreachable
-        );
-        assert_eq!(
-            months_to_reach(dec!(1000), dec!(2000), dec!(-10), dec!(0)),
-            Eta::Unreachable
-        );
-    }
-
-    #[test]
-    fn a_loss_with_contributions_still_gets_there() {
-        match months_to_reach(dec!(0), dec!(10000), dec!(1000), dec!(-0.2)) {
-            Eta::In(months) => assert!(months > 10),
-            other => panic!("esperava uma data, veio {other:?}"),
-        }
-    }
-
-    #[test]
-    fn too_far_is_beyond() {
-        assert_eq!(
-            months_to_reach(dec!(0), dec!(1000000000), dec!(1), dec!(0)),
-            Eta::Beyond
-        );
-    }
-
-    #[test]
-    fn a_year_that_loses_everything_keeps_only_the_last_contribution() {
-        // Rende -100%: o saldo de cada mês é só o aporte que acabou de entrar.
-        assert_eq!(
-            months_to_reach(dec!(100), dec!(400), dec!(500), dec!(-1)),
-            Eta::In(1)
-        );
-        assert_eq!(
-            months_to_reach(dec!(100), dec!(600), dec!(500), dec!(-1)),
-            Eta::Beyond
-        );
+    fn reached_needs_a_positive_target() {
+        assert!(is_reached(dec!(100), dec!(100)));
+        assert!(is_reached(dec!(150), dec!(100)));
+        assert!(!is_reached(dec!(99.99), dec!(100)));
+        assert!(!is_reached(dec!(10), dec!(0)));
     }
 
     #[test]
@@ -418,112 +276,38 @@ mod tests {
     }
 
     #[test]
-    fn cdi_net_of_tax() {
+    fn cdi_gross_and_net_of_tax() {
         // 0,0551% ao dia útil: (1,000551)^252 - 1 ≈ 14,9%; líquido de 15% ≈ 12,7%.
+        let gross = cdi_annual(dec!(0.0551)).unwrap();
+        assert!(gross > dec!(0.148) && gross < dec!(0.15), "{gross}");
         let net = cdi_net_annual(dec!(0.0551)).unwrap();
         assert!(net > dec!(0.12) && net < dec!(0.13), "{net}");
+        assert_eq!(net, (gross * dec!(0.85)).round_dp(6));
         assert_eq!(cdi_net_annual(dec!(-100)), None);
+        assert_eq!(cdi_annual(dec!(-100)), None);
     }
 
     #[test]
-    fn the_current_value_depends_on_the_kind() {
-        let by_class = |class: AssetClass| {
-            if class == AssetClass::BrReits {
-                dec!(300)
-            } else {
-                dec!(0)
-            }
-        };
+    fn deflating_divides_the_growth_factors() {
+        assert_eq!(deflate(dec!(0.1025), dec!(0.05)), Some(dec!(0.05)));
+        assert_eq!(deflate(dec!(0.03), dec!(0.03)), Some(dec!(0)));
+        assert_eq!(deflate(dec!(0.1), dec!(-1)), None);
         assert_eq!(
-            Target::NetWorth.current(None, dec!(1000), by_class),
-            dec!(1000)
+            deflate(dec!(-0.05), dec!(0.05)).map(|r| r < dec!(0)),
+            Some(true)
         );
-        assert_eq!(
-            Target::ClassValue.current(Some(AssetClass::BrReits), dec!(1000), by_class),
-            dec!(300)
-        );
-    }
-
-    #[test]
-    fn monthly_income_is_not_a_target() {
-        assert_eq!(Target::try_from(ObjectiveKind::MonthlyIncome), Err(()));
-        assert_eq!(
-            Target::try_from(ObjectiveKind::NetWorth),
-            Ok(Target::NetWorth)
-        );
-        assert_eq!(
-            ObjectiveKind::from(Target::ClassValue),
-            ObjectiveKind::ClassValue
-        );
-    }
-
-    fn money() -> impl Strategy<Value = Decimal> {
-        (0i64..200_000_000).prop_map(|cents| Decimal::new(cents, 2))
-    }
-
-    fn goal() -> impl Strategy<Value = Decimal> {
-        (1i64..500_000_000).prop_map(|cents| Decimal::new(cents, 2))
-    }
-
-    /// De -30% a +60% ao ano, em passos de 0,1 ponto.
-    fn rate() -> impl Strategy<Value = Decimal> {
-        (-300i64..=600).prop_map(|steps| Decimal::new(steps, 3))
     }
 
     proptest! {
         #[test]
-        fn a_bigger_contribution_never_delays(
-            current in money(),
-            target in goal(),
-            low in money(),
-            extra in money(),
-            annual in rate(),
-        ) {
-            let slow = months_to_reach(current, target, low, annual);
-            let fast = months_to_reach(current, target, low + extra, annual);
-            prop_assert!(rank(fast) <= rank(slow), "{:?} depois de {:?}", fast, slow);
-        }
-
-        #[test]
-        fn a_bigger_return_never_delays(
-            current in money(),
-            target in goal(),
-            contribution in money(),
-            low in rate(),
-            extra in 0i64..=300,
-        ) {
-            // Passos de 0,1 ponto no mínimo: a diferença de uma ulp na
-            // potência não vira um mês.
-            let high = low + Decimal::new(extra, 3);
-            let slow = months_to_reach(current, target, contribution, low);
-            let fast = months_to_reach(current, target, contribution, high);
-            prop_assert!(rank(fast) <= rank(slow), "{:?} depois de {:?}", fast, slow);
-        }
-
-        #[test]
         fn a_goal_already_met_is_reached(
-            target in goal(),
-            extra in money(),
-            contribution in money(),
-            annual in rate(),
+            target in 1i64..500_000_000,
+            extra in 0i64..200_000_000,
         ) {
-            let current = target + extra;
+            let target = Decimal::new(target, 2);
+            let current = target + Decimal::new(extra, 2);
             prop_assert!(is_reached(current, target));
-            prop_assert_eq!(months_to_reach(current, target, contribution, annual), Eta::Reached);
             prop_assert_eq!(percent_done(current, target), Decimal::ONE_HUNDRED);
-        }
-
-        #[test]
-        fn a_bigger_balance_never_delays(
-            low in money(),
-            extra in money(),
-            target in goal(),
-            contribution in money(),
-            annual in rate(),
-        ) {
-            let slow = months_to_reach(low, target, contribution, annual);
-            let fast = months_to_reach(low + extra, target, contribution, annual);
-            prop_assert!(rank(fast) <= rank(slow), "{:?} depois de {:?}", fast, slow);
         }
 
         #[test]
@@ -544,16 +328,15 @@ mod tests {
             let month: u8 = month.parse().unwrap();
             prop_assert!((1..=12).contains(&month));
         }
-    }
 
-    /// Da mais cedo para a mais tarde: chegou, daqui a N meses, depois do
-    /// teto, nunca.
-    fn rank(eta: Eta) -> (u8, u32) {
-        match eta {
-            Eta::Reached => (0, 0),
-            Eta::In(months) => (1, months),
-            Eta::Beyond => (2, 0),
-            Eta::Unreachable => (3, 0),
+        /// Descontar e voltar a pôr a inflação devolve a taxa nominal.
+        #[test]
+        fn deflate_inverts_the_inflation(nominal in -500i64..=1000, inflation in -50i64..=300) {
+            let n = Decimal::new(nominal, 3);
+            let i = Decimal::new(inflation, 3);
+            let real = deflate(n, i).unwrap();
+            let back = (Decimal::ONE + real) * (Decimal::ONE + i) - Decimal::ONE;
+            prop_assert!((back - n).abs() < dec!(0.00001), "{} contra {}", back, n);
         }
     }
 }

@@ -33,7 +33,8 @@ use crate::domain::asset_class::{AssetClass, Market};
 use crate::domain::entitlement::trailing_income;
 use crate::domain::income::estimate::{
     asset_estimate, b3_trailing_income, b3_unit_payments, b3_window_start,
-    foreign_withholding_rate, pick_source, yahoo_unit_payments, AssetEstimate, EstimateSource,
+    foreign_withholding_rate, in_window, pick_source, yahoo_unit_payments, AssetEstimate,
+    EstimateSource, UnitPayment,
 };
 use crate::domain::income::DividendPoint;
 use crate::quotes::fx_symbol;
@@ -68,6 +69,9 @@ pub struct AssetIncome {
     /// ação da B3, bruto (ele não separa o JCP). `None` quando a estimativa foi
     /// pedida sem o livro, ou o livro não fecha.
     pub trailing_12m: Option<Decimal>,
+    /// Os pagamentos por cota que entraram nos 12 meses, da fonte escolhida:
+    /// a projeção de renda (`domain::projection`) tira deles o calendário.
+    pub payments: Vec<UnitPayment>,
 }
 
 /// A estimativa da carteira inteira.
@@ -315,6 +319,10 @@ impl IncomeService {
                     asset_id: payer.asset_id,
                     estimate,
                     trailing_12m,
+                    payments: payments
+                        .into_iter()
+                        .filter(|p| in_window(p.ex_date, today))
+                        .collect(),
                 },
             );
         }

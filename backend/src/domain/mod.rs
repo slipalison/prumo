@@ -20,6 +20,7 @@ pub mod objectives;
 pub mod panel;
 pub mod performance;
 pub mod profit;
+pub mod projection;
 pub mod retro;
 pub mod risk;
 pub mod scoring;

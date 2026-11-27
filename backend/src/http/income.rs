@@ -17,12 +17,15 @@ use crate::domain::asset_class::{Market, UnitKind};
 use crate::domain::entitlement::{quantity_on, record_date};
 use crate::domain::income::estimate::{EstimateSource, UsualEstimate};
 use crate::domain::income::{
-    amounts, goal_progress, monthly_estimate, summarize, today_in_brazil, AmountsError, Entry,
-    GoalProgress, IncomeKind, IncomeSource, IncomeStatus, IncomeSummary, ProgressBasis,
+    amounts, monthly_estimate, summarize, today_in_brazil, AmountsError, Entry, GoalProgress,
+    IncomeKind, IncomeSource, IncomeStatus, IncomeSummary, ProgressBasis,
 };
+use crate::domain::projection::goal::IncomeMode;
+use crate::domain::projection::progress::{Estimated, Received};
 use crate::domain::yoc::asset_yield;
 use crate::error::{ApiError, ApiResult};
 use crate::income::PortfolioIncome;
+use crate::objectives::{estimated_income, income_progress, needs_estimate, received_income};
 use crate::service;
 use crate::store::{
     Asset, IncomeEvent, IncomeFields, IncomeFilter, NewIncomeEvent, Objective, StoreError,
@@ -296,10 +299,12 @@ pub struct GoalDto {
     pub id: Uuid,
     #[serde(with = "decimal_out")]
     pub target: Decimal,
+    /// `average` (a média por mês) ou `floor` (o menor mês de 12).
+    pub mode: IncomeMode,
     #[serde(with = "time::serde::rfc3339::option")]
     pub achieved_at: Option<OffsetDateTime>,
-    /// A renda mensal contra a meta: a média do recebido ou, sem nada
-    /// recebido, a estimativa (`basis` diz qual).
+    /// A renda mensal contra a meta, no modo dela: do recebido ou, sem nada
+    /// recebido, da estimativa (`basis` diz qual).
     #[serde(with = "decimal_out")]
     pub current_monthly: Decimal,
     pub basis: ProgressBasis,
@@ -470,6 +475,7 @@ fn goal_dto(objective: &Objective, progress: &GoalProgress) -> GoalDto {
     GoalDto {
         id: objective.id,
         target: objective.target,
+        mode: objective.income_mode.unwrap_or_default(),
         achieved_at: objective.achieved_at,
         current_monthly: progress.current_monthly,
         basis: progress.basis,
@@ -478,17 +484,17 @@ fn goal_dto(objective: &Objective, progress: &GoalProgress) -> GoalDto {
     }
 }
 
-/// O progresso da meta. Quando o recebido já alcança a meta pela primeira vez,
-/// a data fica registrada.
+/// O progresso da meta, no modo dela. Quando o recebido já alcança a meta pela
+/// primeira vez, a data fica registrada.
 async fn goal_with_progress(
     state: &AppState,
     user: Uuid,
     objective: Objective,
-    received_average: Decimal,
-    estimated: Decimal,
+    received: Received,
+    estimated: Estimated,
     now: OffsetDateTime,
 ) -> ApiResult<GoalDto> {
-    let progress = goal_progress(objective.target, received_average, estimated);
+    let progress = income_progress(&objective, received, estimated);
     let mut objective = objective;
     if progress.reached && objective.achieved_at.is_none() {
         objective.achieved_at = state
@@ -510,25 +516,20 @@ async fn summary_of(
 }
 
 /// A meta com o progresso, para as rotas que não calculam o resumo inteiro: a
-/// estimativa só é buscada quando o livro ainda não tem nada recebido.
+/// estimativa só é buscada quando o livro ainda não tem nada recebido na
+/// janela do modo da meta.
 async fn goal_for(state: &AppState, user: Uuid, objective: Objective) -> ApiResult<GoalDto> {
     let (today, now) = today_and_now();
-    let (summary, _) = summary_of(state, user, today).await?;
-    let estimated = if summary.monthly_average > Decimal::ZERO {
-        Decimal::ZERO
-    } else {
+    let ledger = state.store.income_ledger(user).await?;
+    let entries: Vec<Entry> = ledger.iter().map(IncomeEvent::entry).collect();
+    let received = received_income(&entries, today);
+    let estimated = if needs_estimate(&objective, received) {
         let view = service::portfolio(&state.store, user).await?;
-        state.income.estimate(&view, today).await.monthly_total
+        estimated_income(&state.income.estimate(&view, today).await)
+    } else {
+        Estimated::default()
     };
-    goal_with_progress(
-        state,
-        user,
-        objective,
-        summary.monthly_average,
-        estimated,
-        now,
-    )
-    .await
+    goal_with_progress(state, user, objective, received, estimated, now).await
 }
 
 /// As cotas que davam direito ao provento: a posição do livro na data com. Em
@@ -723,17 +724,20 @@ pub async fn summary(
     let yields = YieldReport::build(&view, &summary, &estimate);
 
     let goal = match state.store.income_goal(user.id).await? {
-        Some(objective) => Some(
-            goal_with_progress(
-                &state,
-                user.id,
-                objective,
-                summary.monthly_average,
-                estimate.monthly_total,
-                now,
+        Some(objective) => {
+            let entries: Vec<Entry> = ledger.iter().map(IncomeEvent::entry).collect();
+            Some(
+                goal_with_progress(
+                    &state,
+                    user.id,
+                    objective,
+                    received_income(&entries, today),
+                    estimated_income(&estimate),
+                    now,
+                )
+                .await?,
             )
-            .await?,
-        ),
+        }
         None => None,
     };
 

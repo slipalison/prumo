@@ -1,6 +1,7 @@
-//! Objetivos com prazo (patrimônio e valor numa classe), rota por rota, contra
-//! um Postgres de verdade: CRUD, dono, `achieved_at`, a média de aporte do
-//! livro, a premissa de rentabilidade e o efeito de um aporte.
+//! Objetivos (patrimônio, valor numa classe e a meta de renda mensal), rota
+//! por rota, contra um Postgres de verdade: CRUD, dono, `achieved_at`, a média
+//! de aporte do livro, as premissas da projeção, os cenários e o efeito de um
+//! aporte.
 //!
 //! Um contêiner para o arquivo inteiro; cada cenário tem a própria pessoa, e
 //! como tudo é filtrado pelo dono, um cenário não enxerga o dado do outro.
@@ -12,15 +13,14 @@ use async_trait::async_trait;
 use axum::http::StatusCode;
 use common::*;
 use prumo::domain::asset_class::AssetClass;
-use prumo::domain::income::today_in_brazil;
-use prumo::domain::objectives::Target;
+use prumo::domain::income::{today_in_brazil, ObjectiveKind};
 use prumo::domain::performance::Quota;
 use prumo::history::IndexCode;
 use prumo::history::{HistoryError, HistoryProvider, Series};
 use prumo::objectives::{record_achieved, record_achieved_for};
 use prumo::performance::Performance;
-use prumo::store::NewObjective;
 use prumo::store::Snapshot;
+use prumo::store::{NewObjective, ObjectivePremises};
 use rust_decimal_macros::dec;
 use serde_json::{json, Value};
 use time::macros::format_description;
@@ -86,7 +86,8 @@ async fn objectives_contract() {
     let dir = tempfile_dir::Dir::new();
 
     crud_validation_and_owner(&db, &dir).await;
-    income_goal_stays_out(&db, &dir).await;
+    income_goal_is_an_objective_too(&db, &dir).await;
+    scenarios_and_curve(&db, &dir).await;
     achieved_is_recorded_once_and_kept(&db, &dir).await;
     contribution_comes_from_the_ledger(&db, &dir).await;
     return_premise_comes_from_the_best_source(&db, &dir).await;
@@ -101,7 +102,8 @@ async fn crud_validation_and_owner(db: &Database, dir: &tempfile_dir::Dir) {
     let created = post(
         &me.router,
         "/api/v1/objectives",
-        json!({ "kind": "net_worth", "target": 1000000, "monthly_contribution": 2500, "expected_return": 9.5 }),
+        json!({ "kind": "net_worth", "target": 1000000, "monthly_contribution": 2500, "real_return": 4.5,
+                "inflation": 3.5, "reinvest_income": false, "income_growth": 1, "income_yield": 8, "scenario_spread": 3 }),
     )
     .await;
     assert_eq!(created.status, StatusCode::CREATED, "{}", created.text);
@@ -109,16 +111,26 @@ async fn crud_validation_and_owner(db: &Database, dir: &tempfile_dir::Dir) {
     assert_eq!(created.body["kind"], "net_worth");
     assert_eq!(created.body["asset_class"], Value::Null);
     assert_eq!(created.body["target"], 1000000.0);
-    assert_eq!(created.body["monthly_contribution"], 2500.0);
-    assert_eq!(created.body["expected_return"], 9.5);
+    assert_eq!(created.body["premises"]["monthly_contribution"], 2500.0);
+    assert_eq!(created.body["premises"]["real_return"], 4.5);
+    assert_eq!(created.body["premises"]["reinvest_income"], false);
+    assert_eq!(created.body["income_mode"], Value::Null);
+    assert_eq!(created.body["basis"], Value::Null);
     assert_eq!(created.body["status"], "active");
     assert_eq!(created.body["achieved_at"], Value::Null);
-    assert_eq!(
-        created.body["assumptions"]["contribution_source"],
-        "informed"
-    );
-    assert_eq!(created.body["assumptions"]["return_source"], "informed");
-    assert_eq!(created.body["assumptions"]["annual_return_percent"], 9.5);
+    let assumptions = &created.body["assumptions"];
+    assert_eq!(assumptions["contribution_source"], "informed");
+    assert_eq!(assumptions["return_source"], "informed");
+    assert_eq!(assumptions["real_return_percent"], 4.5);
+    assert_eq!(assumptions["inflation_percent"], 3.5);
+    assert_eq!(assumptions["inflation_source"], "informed");
+    assert_eq!(assumptions["reinvest_income"], false);
+    assert_eq!(assumptions["reinvest_source"], "informed");
+    assert_eq!(assumptions["income_growth_percent"], 1.0);
+    assert_eq!(assumptions["income_yield_percent"], 8.0);
+    assert_eq!(assumptions["income_yield_source"], "informed");
+    assert_eq!(assumptions["scenario_spread_percent"], 3.0);
+    assert_eq!(assumptions["spread_source"], "informed");
 
     let by_class = post(
         &me.router,
@@ -129,11 +141,23 @@ async fn crud_validation_and_owner(db: &Database, dir: &tempfile_dir::Dir) {
     assert_eq!(by_class.status, StatusCode::CREATED, "{}", by_class.text);
     let class_id = by_class.body["id"].as_str().unwrap().to_owned();
     assert_eq!(by_class.body["asset_class"], "br_reits");
-    assert_eq!(by_class.body["monthly_contribution"], Value::Null);
     assert_eq!(
-        by_class.body["assumptions"]["contribution_source"],
-        "ledger"
+        by_class.body["premises"]["monthly_contribution"],
+        Value::Null
     );
+    let defaults = &by_class.body["assumptions"];
+    assert_eq!(defaults["contribution_source"], "ledger");
+    // Sem nada no banco: a inflação é a meta (3%), a rentabilidade o padrão do
+    // Prumo (4% real), reinveste, sem crescimento, amplitude de 2 pontos.
+    assert_eq!(defaults["inflation_source"], "target");
+    assert_eq!(defaults["inflation_percent"], 3.0);
+    assert_eq!(defaults["return_source"], "fallback");
+    assert_eq!(defaults["real_return_percent"], 4.0);
+    assert_eq!(defaults["reinvest_income"], true);
+    assert_eq!(defaults["reinvest_source"], "default");
+    assert_eq!(defaults["income_growth_percent"], 0.0);
+    assert_eq!(defaults["scenario_spread_percent"], 2.0);
+    assert_eq!(defaults["income_yield_source"], "measured");
 
     // Validação.
     for (name, body) in [
@@ -146,8 +170,32 @@ async fn crud_validation_and_owner(db: &Database, dir: &tempfile_dir::Dir) {
             json!({ "kind": "net_worth", "asset_class": "crypto", "target": 10 }),
         ),
         (
-            "meta de renda mora em Renda",
-            json!({ "kind": "monthly_income", "target": 10 }),
+            "meta de renda com classe",
+            json!({ "kind": "monthly_income", "asset_class": "br_reits", "target": 10 }),
+        ),
+        (
+            "modo de renda fora da meta de renda",
+            json!({ "kind": "net_worth", "target": 10, "income_mode": "floor" }),
+        ),
+        (
+            "modo desconhecido",
+            json!({ "kind": "monthly_income", "target": 10, "income_mode": "max" }),
+        ),
+        (
+            "inflacao alta demais",
+            json!({ "kind": "net_worth", "target": 10, "inflation": 51 }),
+        ),
+        (
+            "rendimento negativo",
+            json!({ "kind": "net_worth", "target": 10, "income_yield": -1 }),
+        ),
+        (
+            "amplitude alta demais",
+            json!({ "kind": "net_worth", "target": 10, "scenario_spread": 21 }),
+        ),
+        (
+            "reinvestir sem ser booleano",
+            json!({ "kind": "net_worth", "target": 10, "reinvest_income": "sim" }),
         ),
         ("meta zero", json!({ "kind": "net_worth", "target": 0 })),
         (
@@ -160,11 +208,15 @@ async fn crud_validation_and_owner(db: &Database, dir: &tempfile_dir::Dir) {
         ),
         (
             "rentabilidade alta demais",
-            json!({ "kind": "net_worth", "target": 10, "expected_return": 101 }),
+            json!({ "kind": "net_worth", "target": 10, "real_return": 51 }),
         ),
         (
             "rentabilidade baixa demais",
-            json!({ "kind": "net_worth", "target": 10, "expected_return": -51 }),
+            json!({ "kind": "net_worth", "target": 10, "real_return": -51 }),
+        ),
+        (
+            "a premissa nominal antiga",
+            json!({ "kind": "net_worth", "target": 10, "expected_return": 5 }),
         ),
         (
             "tipo desconhecido",
@@ -189,20 +241,29 @@ async fn crud_validation_and_owner(db: &Database, dir: &tempfile_dir::Dir) {
         .map(|o| o["id"].as_str().unwrap())
         .collect();
     assert_eq!(ids, [id.as_str(), class_id.as_str()]);
-    assert!(list.body["defaults"]["annual_return_percent"].is_number());
+    let defaults = &list.body["defaults"];
+    assert_eq!(defaults["real_return_percent"], 4.0);
+    assert_eq!(defaults["inflation_source"], "target");
+    assert_eq!(defaults["reinvest_income"], true);
+    assert_eq!(defaults["scenario_spread_percent"], 2.0);
+    assert_eq!(defaults["focus"], Value::Null);
 
     // Troca parcial: a meta, o aporte (e limpa a rentabilidade com null).
     let patched = patch(
         &me.router,
         &format!("/api/v1/objectives/{id}"),
-        json!({ "target": 2000000, "monthly_contribution": 3000, "expected_return": null }),
+        json!({ "target": 2000000, "monthly_contribution": 3000, "real_return": null, "reinvest_income": null }),
     )
     .await;
     assert_eq!(patched.status, StatusCode::OK, "{}", patched.text);
     assert_eq!(patched.body["target"], 2000000.0);
-    assert_eq!(patched.body["monthly_contribution"], 3000.0);
-    assert_eq!(patched.body["expected_return"], Value::Null);
+    assert_eq!(patched.body["premises"]["monthly_contribution"], 3000.0);
+    assert_eq!(patched.body["premises"]["real_return"], Value::Null);
+    assert_eq!(patched.body["premises"]["reinvest_income"], Value::Null);
+    // O que não veio no corpo fica.
+    assert_eq!(patched.body["premises"]["inflation"], 3.5);
     assert_ne!(patched.body["assumptions"]["return_source"], "informed");
+    assert_eq!(patched.body["assumptions"]["reinvest_income"], true);
 
     // Só o aporte: a rentabilidade e a meta ficam.
     let again = patch(
@@ -212,7 +273,7 @@ async fn crud_validation_and_owner(db: &Database, dir: &tempfile_dir::Dir) {
     )
     .await;
     assert_eq!(again.body["target"], 2000000.0);
-    assert_eq!(again.body["monthly_contribution"], Value::Null);
+    assert_eq!(again.body["premises"]["monthly_contribution"], Value::Null);
     assert_eq!(again.body["assumptions"]["contribution_source"], "ledger");
 
     // O tipo e a classe não mudam.
@@ -220,7 +281,9 @@ async fn crud_validation_and_owner(db: &Database, dir: &tempfile_dir::Dir) {
         json!({ "kind": "class_value" }),
         json!({ "asset_class": "crypto" }),
         json!({ "target": 0 }),
-        json!({ "expected_return": 500 }),
+        json!({ "real_return": 500 }),
+        json!({ "income_mode": "floor" }),
+        json!({ "expected_return": 5 }),
     ] {
         let reply = patch(&me.router, &format!("/api/v1/objectives/{id}"), body).await;
         assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -269,24 +332,135 @@ async fn crud_validation_and_owner(db: &Database, dir: &tempfile_dir::Dir) {
     );
 }
 
-async fn income_goal_stays_out(db: &Database, dir: &tempfile_dir::Dir) {
+async fn income_goal_is_an_objective_too(db: &Database, dir: &tempfile_dir::Dir) {
     let me = person(db, "obj-renda@prumo.test", dir);
     let goal = put(&me.router, "/api/v1/income/goal", json!({ "target": 3000 })).await;
     assert_eq!(goal.status, StatusCode::OK, "{}", goal.text);
+    assert_eq!(goal.body["mode"], "average");
     let goal_id = goal.body["id"].as_str().unwrap().to_owned();
 
-    // A meta de renda continua onde estava: não entra na lista e não se
-    // mexe nela por aqui.
+    // A meta de renda aparece com as outras, com o modo e a base do número.
     let list = get(&me.router, "/api/v1/objectives").await;
-    assert_eq!(list.body["objectives"], json!([]));
-    let uri = format!("/api/v1/objectives/{goal_id}");
+    let found = objective(&list.body, &goal_id);
+    assert_eq!(found["kind"], "monthly_income");
+    assert_eq!(found["income_mode"], "average");
+    assert_eq!(found["basis"], "estimate");
+    assert_eq!(found["status"], "active");
+    assert_eq!(found["curve"]["measure"], "income_average");
+
+    // Uma por pessoa.
+    let second = post(
+        &me.router,
+        "/api/v1/objectives",
+        json!({ "kind": "monthly_income", "target": 10 }),
+    )
+    .await;
     assert_eq!(
-        patch(&me.router, &uri, json!({ "target": 1 })).await.status,
-        StatusCode::NOT_FOUND
+        second.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{}",
+        second.text
     );
-    assert_eq!(delete(&me.router, &uri).await.status, StatusCode::NOT_FOUND);
-    let still = get(&me.router, "/api/v1/income/goal").await;
-    assert_eq!(still.body["target"], 3000.0);
+
+    // O piso troca pelo objetivo e a Renda vê o mesmo.
+    let uri = format!("/api/v1/objectives/{goal_id}");
+    let floor = patch(
+        &me.router,
+        &uri,
+        json!({ "income_mode": "floor", "income_growth": 2 }),
+    )
+    .await;
+    assert_eq!(floor.status, StatusCode::OK, "{}", floor.text);
+    assert_eq!(floor.body["income_mode"], "floor");
+    assert_eq!(floor.body["curve"]["measure"], "income_floor");
+    assert_eq!(floor.body["assumptions"]["income_growth_percent"], 2.0);
+    let renda = get(&me.router, "/api/v1/income/goal").await;
+    assert_eq!(renda.body["mode"], "floor");
+    assert_eq!(renda.body["target"], 3000.0);
+    // `null` volta à média.
+    let back = patch(&me.router, &uri, json!({ "income_mode": null })).await;
+    assert_eq!(back.body["income_mode"], "average");
+
+    // Apagar por aqui apaga a da Renda.
+    assert_eq!(
+        delete(&me.router, &uri).await.status,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        get(&me.router, "/api/v1/income/goal").await.body,
+        Value::Null
+    );
+
+    // Criada por aqui, aparece na Renda.
+    let created = post(
+        &me.router,
+        "/api/v1/objectives",
+        json!({ "kind": "monthly_income", "target": 500, "income_mode": "floor" }),
+    )
+    .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.text);
+    let renda = get(&me.router, "/api/v1/income/goal").await;
+    assert_eq!(renda.body["id"], created.body["id"]);
+    assert_eq!(renda.body["mode"], "floor");
+    // Trocar a meta pela Renda mantém o modo.
+    let same = put(&me.router, "/api/v1/income/goal", json!({ "target": 600 })).await;
+    assert_eq!(same.body["mode"], "floor");
+}
+
+/// Uma carteira com valor, aporte e premissas fechadas: as datas dos três
+/// cenários, a meta em reais de hoje e a curva.
+async fn scenarios_and_curve(db: &Database, dir: &tempfile_dir::Dir) {
+    let me = person(db, "obj-cenarios@prumo.test", dir);
+    add_asset(
+        &me,
+        json!({ "asset_class": "br_reits", "symbol": "KNRI11", "quantity": 10 }),
+    )
+    .await;
+    let worth = net_worth(&me).await;
+    let created = post(
+        &me.router,
+        "/api/v1/objectives",
+        json!({ "kind": "net_worth", "target": worth + 120000.0, "monthly_contribution": 1000,
+                "real_return": 5, "inflation": 4, "scenario_spread": 2 }),
+    )
+    .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.text);
+    let scenarios = &created.body["scenarios"];
+    let months = |scenario: &str, basis: &str| {
+        scenarios[scenario][basis]["months"]
+            .as_u64()
+            .unwrap_or_else(|| panic!("{scenario} {basis}: {scenarios}"))
+    };
+    // O otimista chega antes do base, que chega antes do pessimista.
+    assert!(months("optimistic", "nominal") <= months("base", "nominal"));
+    assert!(months("base", "nominal") <= months("pessimistic", "nominal"));
+    // Em reais de hoje a meta fica mais longe.
+    assert!(months("base", "today") > months("base", "nominal"));
+    // A data principal é a do base, em reais da época.
+    assert_eq!(created.body["projection"], scenarios["base"]["nominal"]);
+    // Sem rendimento nem crescimento: a conta fechada do base em reais de hoje.
+    let real_monthly = 1.05f64.powf(1.0 / 12.0) - 1.0;
+    let mut value = worth;
+    let mut expected = 0;
+    while value < worth + 120000.0 {
+        value = value * (1.0 + real_monthly) + 1000.0;
+        expected += 1;
+    }
+    assert_eq!(months("base", "today"), expected);
+
+    let curve = &created.body["curve"];
+    assert_eq!(curve["measure"], "value");
+    let points = curve["points"].as_array().unwrap();
+    assert_eq!(points[0]["months"], 0);
+    assert_eq!(points[0]["base"].as_f64().unwrap(), worth);
+    let last = points.last().unwrap();
+    assert!(last["months"].as_u64().unwrap() >= months("pessimistic", "nominal"));
+    for point in points {
+        let n = |k: &str| point[k].as_f64().unwrap();
+        assert!(n("low") <= n("base") && n("base") <= n("high"));
+        assert!(n("low_today") <= n("base_today") && n("base_today") <= n("high_today"));
+        assert!(n("base_today") <= n("base") + 0.01);
+    }
 }
 
 async fn achieved_is_recorded_once_and_kept(db: &Database, dir: &tempfile_dir::Dir) {
@@ -394,7 +568,7 @@ async fn contribution_comes_from_the_ledger(db: &Database, dir: &tempfile_dir::D
     let reits = post(
         &me.router,
         "/api/v1/objectives",
-        json!({ "kind": "class_value", "asset_class": "br_reits", "target": worth + 2250.0, "expected_return": 0 }),
+        json!({ "kind": "class_value", "asset_class": "br_reits", "target": worth + 2250.0, "real_return": 0, "inflation": 0 }),
     )
     .await;
     assert_eq!(reits.status, StatusCode::CREATED, "{}", reits.text);
@@ -413,7 +587,7 @@ async fn contribution_comes_from_the_ledger(db: &Database, dir: &tempfile_dir::D
     let total = post(
         &me.router,
         "/api/v1/objectives",
-        json!({ "kind": "net_worth", "target": worth + 7500.0, "expected_return": 0 }),
+        json!({ "kind": "net_worth", "target": worth + 7500.0, "real_return": 0, "inflation": 0 }),
     )
     .await;
     assert_eq!(total.body["assumptions"]["monthly_contribution"], 750.0);
@@ -423,7 +597,7 @@ async fn contribution_comes_from_the_ledger(db: &Database, dir: &tempfile_dir::D
     let crypto = post(
         &me.router,
         "/api/v1/objectives",
-        json!({ "kind": "class_value", "asset_class": "crypto", "target": 5000, "expected_return": 0 }),
+        json!({ "kind": "class_value", "asset_class": "crypto", "target": 5000, "real_return": 0, "inflation": 0 }),
     )
     .await;
     assert_eq!(crypto.body["assumptions"]["monthly_contribution"], 0.0);
@@ -448,7 +622,7 @@ async fn contribution_comes_from_the_ledger(db: &Database, dir: &tempfile_dir::D
     let faster = patch(
         &me.router,
         &format!("/api/v1/objectives/{}", reits.body["id"].as_str().unwrap()),
-        json!({ "monthly_contribution": null, "expected_return": 12 }),
+        json!({ "monthly_contribution": null, "real_return": 12 }),
     )
     .await;
     assert!(faster.body["projection"]["months"].as_u64().unwrap() <= 3);
@@ -459,9 +633,11 @@ async fn return_premise_comes_from_the_best_source(db: &Database, dir: &tempfile
     let me = person(db, "obj-premissa@prumo.test", dir);
     let first = get(&me.router, "/api/v1/objectives").await;
     assert_eq!(first.body["defaults"]["return_source"], "fallback");
-    assert_eq!(first.body["defaults"]["annual_return_percent"], 8.0);
+    assert_eq!(first.body["defaults"]["real_return_percent"], 4.0);
+    // Sem Focus nem IPCA, a inflação padrão é a meta de 3%.
+    let inflation = 1.03f64;
 
-    // Com o CDI de hoje: o CDI líquido do IR (15%).
+    // Com o CDI de hoje: o CDI líquido do IR (15%), descontada a inflação.
     let day = today() - Duration::days(2);
     db.store
         .upsert_index(IndexCode::Cdi, &vec![(day, dec!(0.0551))])
@@ -469,17 +645,18 @@ async fn return_premise_comes_from_the_best_source(db: &Database, dir: &tempfile
         .unwrap();
     let cdi = get(&me.router, "/api/v1/objectives").await;
     assert_eq!(cdi.body["defaults"]["return_source"], "cdi_net");
-    let percent = cdi.body["defaults"]["annual_return_percent"]
+    let percent = cdi.body["defaults"]["real_return_percent"]
         .as_f64()
         .unwrap();
     let gross = (1.0f64 + 0.0551 / 100.0).powf(252.0) - 1.0;
+    let expected = ((1.0 + gross * 0.85) / inflation - 1.0) * 100.0;
     assert!(
-        (percent - gross * 0.85 * 100.0).abs() < 0.02,
-        "{percent} contra {}",
-        gross * 85.0
+        (percent - expected).abs() < 0.02,
+        "{percent} contra {expected}"
     );
 
-    // Com seis meses de série da carteira: a rentabilidade dela, anualizada.
+    // Com seis meses de série da carteira: a rentabilidade dela, anualizada e
+    // descontada a inflação (sem IPCA no banco, a padrão).
     let id = db.store.ensure_user(&me.email).await.unwrap();
     let start = today() - Duration::days(400);
     let end = today() - Duration::days(1);
@@ -509,10 +686,11 @@ async fn return_premise_comes_from_the_best_source(db: &Database, dir: &tempfile
     )
     .await;
     assert_eq!(measured.body["assumptions"]["return_source"], "performance");
-    let percent = measured.body["assumptions"]["annual_return_percent"]
+    let percent = measured.body["assumptions"]["real_return_percent"]
         .as_f64()
         .unwrap();
-    let expected = (1.12f64.powf(365.0 / 399.0) - 1.0) * 100.0;
+    let nominal = 1.12f64.powf(365.0 / 399.0) - 1.0;
+    let expected = ((1.0 + nominal) / inflation - 1.0) * 100.0;
     assert!(
         (percent - expected).abs() < 0.02,
         "{percent} contra {expected}"
@@ -525,11 +703,11 @@ async fn return_premise_comes_from_the_best_source(db: &Database, dir: &tempfile
             "/api/v1/objectives/{}",
             measured.body["id"].as_str().unwrap()
         ),
-        json!({ "expected_return": 6.25 }),
+        json!({ "real_return": 6.25 }),
     )
     .await;
     assert_eq!(informed.body["assumptions"]["return_source"], "informed");
-    assert_eq!(informed.body["assumptions"]["annual_return_percent"], 6.25);
+    assert_eq!(informed.body["assumptions"]["real_return_percent"], 6.25);
 }
 
 async fn impact_of_a_contribution(db: &Database, dir: &tempfile_dir::Dir) {
@@ -545,19 +723,19 @@ async fn impact_of_a_contribution(db: &Database, dir: &tempfile_dir::Dir) {
     let total = post(
         &me.router,
         "/api/v1/objectives",
-        json!({ "kind": "net_worth", "target": worth + 4000.0, "monthly_contribution": 1000, "expected_return": 0 }),
+        json!({ "kind": "net_worth", "target": worth + 4000.0, "monthly_contribution": 1000, "real_return": 0, "inflation": 0 }),
     )
     .await;
     let reits = post(
         &me.router,
         "/api/v1/objectives",
-        json!({ "kind": "class_value", "asset_class": "br_reits", "target": worth + 3000.0, "monthly_contribution": 1000, "expected_return": 0 }),
+        json!({ "kind": "class_value", "asset_class": "br_reits", "target": worth + 3000.0, "monthly_contribution": 1000, "real_return": 0, "inflation": 0 }),
     )
     .await;
     let stocks = post(
         &me.router,
         "/api/v1/objectives",
-        json!({ "kind": "class_value", "asset_class": "br_stocks", "target": 10000, "monthly_contribution": 1000, "expected_return": 0 }),
+        json!({ "kind": "class_value", "asset_class": "br_stocks", "target": 10000, "monthly_contribution": 1000, "real_return": 0, "inflation": 0 }),
     )
     .await;
     let done = post(
@@ -679,13 +857,17 @@ impl HistoryProvider for NoHistory {
     }
 }
 
-fn new_objective(kind: Target, asset_class: Option<AssetClass>, target: u32) -> NewObjective {
+fn new_objective(
+    kind: ObjectiveKind,
+    asset_class: Option<AssetClass>,
+    target: u32,
+) -> NewObjective {
     NewObjective {
-        target_kind: kind,
+        kind,
         asset_class,
         target: target.into(),
-        monthly_contribution: None,
-        expected_return: None,
+        premises: ObjectivePremises::default(),
+        income_mode: None,
     }
 }
 
@@ -714,14 +896,14 @@ async fn background_job_records_every_kind(db: &Database, dir: &tempfile_dir::Di
     // Criados direto no banco: nenhuma rota os avalia.
     let reached_total = db
         .store
-        .insert_objective(user, &new_objective(Target::NetWorth, None, 100))
+        .insert_objective(user, &new_objective(ObjectiveKind::NetWorth, None, 100))
         .await
         .unwrap();
     let reached_class = db
         .store
         .insert_objective(
             user,
-            &new_objective(Target::ClassValue, Some(AssetClass::BrReits), 100),
+            &new_objective(ObjectiveKind::ClassValue, Some(AssetClass::BrReits), 100),
         )
         .await
         .unwrap();
@@ -729,7 +911,7 @@ async fn background_job_records_every_kind(db: &Database, dir: &tempfile_dir::Di
         .store
         .insert_objective(
             user,
-            &new_objective(Target::ClassValue, Some(AssetClass::Crypto), 5000),
+            &new_objective(ObjectiveKind::ClassValue, Some(AssetClass::Crypto), 5000),
         )
         .await
         .unwrap();
@@ -737,7 +919,7 @@ async fn background_job_records_every_kind(db: &Database, dir: &tempfile_dir::Di
         .store
         .insert_objective(
             db.store.ensure_user(&other.email).await.unwrap(),
-            &new_objective(Target::NetWorth, None, 1_000_000_000),
+            &new_objective(ObjectiveKind::NetWorth, None, 1_000_000_000),
         )
         .await
         .unwrap();
@@ -794,7 +976,7 @@ async fn background_job_records_every_kind(db: &Database, dir: &tempfile_dir::Di
     // A tarefa diária faz a apuração sozinha, com o lock de job.
     let later = db
         .store
-        .insert_objective(user, &new_objective(Target::NetWorth, None, 200))
+        .insert_objective(user, &new_objective(ObjectiveKind::NetWorth, None, 200))
         .await
         .unwrap();
     let job = Performance::new(db.store.clone(), std::sync::Arc::new(NoHistory));

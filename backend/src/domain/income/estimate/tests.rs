@@ -39,6 +39,7 @@ fn stock(label: &str, record: Date, factor: Decimal) -> StockAnnouncement {
 fn point(ex_date: Date, amount: Decimal) -> UnitPayment {
     UnitPayment {
         ex_date,
+        pay_date: None,
         gross: amount,
         net: amount,
     }

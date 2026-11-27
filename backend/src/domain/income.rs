@@ -114,8 +114,9 @@ impl IncomeSource {
     }
 }
 
-/// O tipo de objetivo da pessoa (tabela `objectives`). Esta frente só usa
-/// `MonthlyIncome`, a meta de renda mensal; os outros esperam quem os mostrar.
+/// O tipo de objetivo da pessoa (tabela `objectives`): patrimônio, a meta de
+/// renda mensal (uma por pessoa) e valor numa classe. A projeção de cada um
+/// está em `domain::projection::goal`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ObjectiveKind {

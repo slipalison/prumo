@@ -3,14 +3,21 @@
 //! de desempenho chama [`record_achieved`] já com o lock de job, e o `update`
 //! só vale onde `achieved_at is null`, então duas réplicas (ou a tela, que faz
 //! a mesma apuração ao ler) nunca gravam duas datas.
+//!
+//! Aqui também mora o progresso da meta de renda nos dois modos (média e
+//! piso), que a tela Renda e a de Objetivos leem igual.
 
 use rust_decimal::Decimal;
-use time::OffsetDateTime;
+use time::{Date, OffsetDateTime};
 use uuid::Uuid;
 
 use crate::domain::asset_class::AssetClass;
-use crate::domain::income::{goal_progress, summarize, today_in_brazil, ObjectiveKind};
+use crate::domain::income::{summarize, today_in_brazil, Entry, GoalProgress, ObjectiveKind};
 use crate::domain::objectives::is_reached;
+use crate::domain::projection::goal::IncomeMode;
+use crate::domain::projection::progress::{progress, received_floor, Estimated, Received};
+use crate::income::PortfolioIncome;
+use crate::projection::portfolio_shape;
 use crate::service::{self, PortfolioView};
 use crate::store::{IncomeEvent, Objective, Store, StoreError};
 
@@ -24,11 +31,50 @@ pub fn current_value(view: &PortfolioView, objective: &Objective) -> Option<Deci
     }
 }
 
-fn class_value(view: &PortfolioView, class: AssetClass) -> Decimal {
+/// O valor de uma classe na carteira de agora.
+pub fn class_value(view: &PortfolioView, class: AssetClass) -> Decimal {
     view.classes
         .iter()
         .find(|c| c.asset_class == class)
         .map_or(Decimal::ZERO, |c| c.current_value)
+}
+
+/// O recebido, como a meta de renda lê: a média dos 12 meses e o piso dos
+/// 12 fechados.
+pub fn received_income(entries: &[Entry], today: Date) -> Received {
+    Received {
+        average: summarize(entries, today).monthly_average,
+        floor: received_floor(entries, today),
+    }
+}
+
+/// A estimativa, como a meta de renda lê: a da Renda e o piso pelo
+/// calendário da carteira.
+pub fn estimated_income(income: &PortfolioIncome) -> Estimated {
+    Estimated::of(income.monthly_total, &portfolio_shape(income))
+}
+
+/// O progresso da meta de renda no modo dela.
+pub fn income_progress(
+    objective: &Objective,
+    received: Received,
+    estimated: Estimated,
+) -> GoalProgress {
+    progress(
+        objective.income_mode.unwrap_or_default(),
+        objective.target,
+        received,
+        estimated,
+    )
+}
+
+/// Se a meta de renda precisa da estimativa: só quando nada foi recebido na
+/// janela que o modo dela olha.
+pub fn needs_estimate(objective: &Objective, received: Received) -> bool {
+    match objective.income_mode.unwrap_or_default() {
+        IncomeMode::Average => received.average <= Decimal::ZERO,
+        IncomeMode::Floor => received.floor.is_none(),
+    }
 }
 
 /// Grava a data de conquista dos objetivos abertos da pessoa que já chegaram à
@@ -49,19 +95,19 @@ pub async fn record_achieved_for(
     } else {
         None
     };
-    let received_average = if open.iter().any(|o| o.kind == ObjectiveKind::MonthlyIncome) {
+    let received = if open.iter().any(|o| o.kind == ObjectiveKind::MonthlyIncome) {
         let ledger = store.income_ledger(user).await?;
         let entries: Vec<_> = ledger.iter().map(IncomeEvent::entry).collect();
-        Some(summarize(&entries, today_in_brazil(now)).monthly_average)
+        Some(received_income(&entries, today_in_brazil(now)))
     } else {
         None
     };
 
     let mut recorded = 0;
     for objective in open {
-        let reached = match (objective.kind, &view, received_average) {
-            (ObjectiveKind::MonthlyIncome, _, Some(average)) => {
-                goal_progress(objective.target, average, Decimal::ZERO).reached
+        let reached = match (objective.kind, &view, received) {
+            (ObjectiveKind::MonthlyIncome, _, Some(received)) => {
+                income_progress(&objective, received, Estimated::default()).reached
             }
             (_, Some(view), _) => current_value(view, &objective)
                 .is_some_and(|current| is_reached(current, objective.target)),

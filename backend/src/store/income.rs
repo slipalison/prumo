@@ -1,4 +1,6 @@
-//! Proventos, objetivos e o cache do histórico de dividendos por cota.
+//! Proventos, a meta de renda mensal das rotas de `/income/goal` (o tipo
+//! `Objective` mora em `store/objectives.rs`) e o cache do histórico de
+//! dividendos por cota.
 //! Tudo o que é da pessoa filtra pelo dono; o cache de dividendos é
 //! compartilhado, como `quotes`.
 
@@ -9,12 +11,10 @@ use sqlx::FromRow;
 use time::{Date, OffsetDateTime};
 use uuid::Uuid;
 
+use super::objectives::{objective_columns, Objective, ObjectiveRow};
 use super::{decode_error, is_unique_violation, Store, StoreError};
 use crate::dividends::{DividendEvent, DividendHistory};
-use crate::domain::asset_class::AssetClass;
-use crate::domain::income::{
-    status, Entry, IncomeAmounts, IncomeKind, IncomeSource, IncomeStatus, ObjectiveKind,
-};
+use crate::domain::income::{status, Entry, IncomeAmounts, IncomeKind, IncomeSource, IncomeStatus};
 
 /// Um provento gravado.
 #[derive(Debug, Clone, PartialEq)]
@@ -149,58 +149,6 @@ impl TryFrom<IncomeRow> for IncomeEvent {
             net: row.net,
             source: IncomeSource::parse(&row.source).ok_or_else(|| decode_error(&row.source))?,
             external_ref: row.external_ref,
-        })
-    }
-}
-
-/// Um objetivo da pessoa.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Objective {
-    pub id: Uuid,
-    pub kind: ObjectiveKind,
-    pub asset_class: Option<AssetClass>,
-    pub target: Decimal,
-    pub monthly_contribution: Option<Decimal>,
-    /// Premissa de rentabilidade, em % ao ano; `None` = a do Desempenho ou o padrão.
-    pub expected_return: Option<Decimal>,
-    pub achieved_at: Option<OffsetDateTime>,
-    pub created_at: OffsetDateTime,
-}
-
-#[derive(FromRow)]
-pub(super) struct ObjectiveRow {
-    id: Uuid,
-    kind: String,
-    asset_class: Option<String>,
-    target: Decimal,
-    monthly_contribution: Option<Decimal>,
-    expected_return: Option<Decimal>,
-    achieved_at: Option<OffsetDateTime>,
-    created_at: OffsetDateTime,
-}
-
-macro_rules! objective_columns {
-    () => {
-        "id, kind, asset_class, target, monthly_contribution, expected_return, achieved_at, created_at"
-    };
-}
-
-impl TryFrom<ObjectiveRow> for Objective {
-    type Error = sqlx::Error;
-
-    fn try_from(row: ObjectiveRow) -> Result<Self, Self::Error> {
-        Ok(Objective {
-            id: row.id,
-            kind: ObjectiveKind::parse(&row.kind).ok_or_else(|| decode_error(&row.kind))?,
-            asset_class: row
-                .asset_class
-                .map(|c| AssetClass::parse(&c).ok_or_else(|| decode_error(&c)))
-                .transpose()?,
-            target: row.target.normalize(),
-            monthly_contribution: row.monthly_contribution.map(|c| c.normalize()),
-            expected_return: row.expected_return.map(|r| r.normalize()),
-            achieved_at: row.achieved_at,
-            created_at: row.created_at,
         })
     }
 }

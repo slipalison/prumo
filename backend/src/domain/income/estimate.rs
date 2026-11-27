@@ -106,6 +106,8 @@ impl GrossNet {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UnitPayment {
     pub ex_date: Date,
+    /// A data de pagamento, quando a fonte diz (a B3 diz; o Yahoo não).
+    pub pay_date: Option<Date>,
     pub gross: Decimal,
     pub net: Decimal,
 }
@@ -168,6 +170,7 @@ pub fn b3_unit_payments(
             let net = gross * (Decimal::ONE - withholding_rate(kind, c.pay_date, today));
             Some(UnitPayment {
                 ex_date: ex_date_after(c.record_date),
+                pay_date: c.pay_date,
                 gross,
                 net,
             })
@@ -190,6 +193,7 @@ pub fn yahoo_unit_payments(
             let gross = p.amount * rate;
             UnitPayment {
                 ex_date: p.ex_date,
+                pay_date: None,
                 gross,
                 net: gross * (Decimal::ONE - withholding),
             }

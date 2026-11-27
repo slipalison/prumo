@@ -21,6 +21,7 @@ mod panel;
 mod performance;
 mod price_references;
 mod profit;
+mod projection;
 mod risk;
 pub(crate) mod tax;
 mod treasury;
@@ -325,6 +326,7 @@ pub fn public_router(state: AppState, static_dir: &str) -> Router {
         .route("/income/summary", get(income::summary))
         .route("/income/entitlement", get(income::entitlement))
         .route("/income/yield-on-cost", get(yoc::show))
+        .route("/income/projection", get(projection::income_projection))
         .route("/income/auto", get(income_auto::get).put(income_auto::save))
         .route("/cash", get(cash::show))
         .route("/fundamentals", get(fundamentals::list))
