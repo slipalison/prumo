@@ -495,10 +495,14 @@ medidas estão em [layout.md](layout.md) § 7.5):
   "Mais subiram" e "Mais caíram" (até 3), o ícone, o nome e a variação **com
   sinal** (+18,40%, −12,80%); como cada medida é tirada fica no ⓘ.
 - **Referências de preço** (`ReferencesCard`): o aviso fixo (`role="note"`)
-  "Referência pública, não é recomendação" em uma linha; as fórmulas (com o
+  "Referência pública, não é recomendação: não diz se o ativo está barato, caro
+  ou se vale comprar", em uma linha, na própria linha do título (entre o ⓘ e o
+  link; quebra para baixo quando a largura não comporta); as fórmulas (com o
   rendimento-alvo, o juro real e o CDI de hoje, com data e título) no ⓘ do
   título e "Mudar o rendimento-alvo e os prêmios" à direita. Duas **tabelas
-  compactas**, com a legenda à vista:
+  compactas** (linhas de 44 px, com o "Teto ▾" dentro), o grupo no cabeçalho da
+  primeira coluna ("Ações", "FIIs"; a legenda da tabela fica para o leitor de
+  tela):
   - **Ações**: Ativo, **Bazin** (a média de dividendos no ⓘ da célula),
     **Graham**, **Pelas duas** (o menor, ou o que existir), **Seu teto**, **Hoje**
     e "Teto ▾".

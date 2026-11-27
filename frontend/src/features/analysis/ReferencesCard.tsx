@@ -84,10 +84,11 @@ function CeilingCell({ ceiling, label }: { ceiling: Ceiling | null; label: strin
   );
 }
 
-function assetColumn(): DataColumn<Item> {
+/** A primeira coluna, com o nome do grupo no cabeçalho ("Ações", "FIIs"): a legenda da tabela fica para o leitor de tela. */
+function assetColumn(group: string): DataColumn<Item> {
   return {
     key: "asset",
-    label: "Ativo",
+    label: group,
     rowHeader: true,
     cell: (item) => (
       <span className="reference__asset">
@@ -141,7 +142,7 @@ function stockColumns(references: References, money: Money, onChoose: (item: Ite
   const tip = (item: StockReference, method: "bazin" | "graham" | "combined") =>
     methodTip(item, method, references.market, references.bazin_yield, money);
   return [
-    assetColumn(),
+    assetColumn("Ações"),
     { key: "bazin", label: "Bazin", align: "end", cell: (item) => <RefCell found={item.bazin} name={`Bazin de ${item.label}`} tip={tip(item, "bazin")} /> },
     { key: "graham", label: "Graham", align: "end", cell: (item) => <RefCell found={item.graham} name={`Graham de ${item.label}`} tip={null} /> },
     {
@@ -163,7 +164,7 @@ function fundColumns(references: References, money: Money, onChoose: (item: Item
   const tip = (item: FundReference, method: "nav" | "fund_yield") =>
     methodTip(item, method, references.market, references.bazin_yield, money);
   return [
-    assetColumn(),
+    assetColumn("FIIs"),
     {
       key: "type",
       label: "Tipo",
@@ -272,15 +273,18 @@ export function ReferencesCard({ references }: { references: References }) {
       infoLabel="Como as referências são calculadas"
       info={<Formulas references={references} />}
       actions={
-        <a className="link-btn" href="#/ajustes/analise">
-          Mudar o rendimento-alvo e os prêmios
-        </a>
+        <>
+          {/* O aviso fica à vista, em uma linha, na linha do título: a tabela
+              começa logo abaixo (docs/layout.md § 7.6). */}
+          <p className="references__disclaimer" role="note">
+            Referência pública, não é recomendação: não diz se o ativo está barato, caro ou se vale comprar.
+          </p>
+          <a className="link-btn" href="#/ajustes/analise">
+            Mudar o rendimento-alvo e os prêmios
+          </a>
+        </>
       }
     >
-      <p className="references__disclaimer" role="note">
-        Referência pública, não é recomendação: fórmulas abertas que não dizem se um ativo está barato, caro ou se vale
-        comprar.
-      </p>
 
       {empty ? (
         <p className="references__empty">
@@ -291,7 +295,6 @@ export function ReferencesCard({ references }: { references: References }) {
           {references.stocks.length > 0 && (
             <DataTable
               caption="Ações"
-              showCaption
               className="references__table"
               cozy
               columns={stockColumns(references, money, choose)}
@@ -302,7 +305,6 @@ export function ReferencesCard({ references }: { references: References }) {
           {references.funds.length > 0 && (
             <DataTable
               caption="FIIs"
-              showCaption
               className="references__table references__table--funds"
               cozy
               columns={fundColumns(references, money, choose)}

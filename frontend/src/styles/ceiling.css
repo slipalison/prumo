@@ -184,18 +184,14 @@
   }
 }
 
-.references__table + .references__table {
-  margin-top: var(--space-2);
-}
-
-.references__table caption {
-  padding: var(--space-2) var(--pad-panel) var(--space-1);
-  color: var(--text-subtle);
-  font-size: var(--text-xs);
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-align: left;
-  text-transform: uppercase;
+/* Linha de 44 px mesmo com o "Teto ▾" (36 px): o recheio vertical da célula
+   cai para um passo, em vez de a linha crescer para 53 px. Só na tabela de
+   verdade: empilhada (celular), a célula não tem recheio. */
+@container (min-width: 561px) {
+  .references__table tbody td,
+  .references__table tbody th {
+    padding-block: var(--space-1);
+  }
 }
 
 /* Ajustes › Análise: as taxas de hoje embaixo dos prêmios. */

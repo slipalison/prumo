@@ -827,11 +827,15 @@ O que mudou, e onde o desenho foi outro:
 
 ### 7.6 Teto por escolha e referências de FII (frente teto-fii)
 
-**Análise › Referências de preço** virou duas `DataTable` no mesmo painel, com a
-legenda à vista: **Ações** (Ativo, Bazin, Graham, Pelas duas, Seu teto, Hoje,
-Teto ▾) e **FIIs** (Ativo, Tipo, VP, Rendimento, Pelas duas, Seu teto, Hoje,
-Teto ▾). O botão longo "Usar R$ X como meu teto" deu lugar ao "Teto ▾" compacto
-(36 px; 44 px com toque), que abre uma folha pequena com a escolha. No celular
+**Análise › Referências de preço** virou duas `DataTable` no mesmo painel:
+**Ações** (Bazin, Graham, Pelas duas, Seu teto, Hoje, Teto ▾) e **FIIs** (Tipo,
+VP, Rendimento, Pelas duas, Seu teto, Hoje, Teto ▾), com o nome do grupo no
+cabeçalho da primeira coluna (a legenda fica só para o leitor de tela). O botão
+longo "Usar R$ X como meu teto" deu lugar ao "Teto ▾" compacto (36 px; 44 px com
+toque), que abre uma folha pequena com a escolha. Para a tela não crescer além
+do que entrou, a linha fica em 44 px (o recheio vertical da célula cai para um
+passo em vez de a linha ir a 53 px) e o aviso "Referência pública" sobe para a
+linha do título. No celular
 cada ativo é um cartão empilhado, e o "Teto ▾" fecha a última linha à direita
 (antes ocupava uma linha só para ele).
 
@@ -854,18 +858,21 @@ mostrar um FII de cada tipo: a tabela de FIIs tem 6 linhas.
 
 | Tela | 1440×900 | 1920×1080 | iPad 1366×1024 | iPad 1024×1366 | Celular 390×844 |
 |---|---|---|---|---|---|
-| Análise (antes 2,76 / 2,25 / 2,50 / 2,27 / 6,40) | 3,17 | 2,59 | 2,86 | 2,54 | 7,28 |
+| Análise (antes 2,76 / 2,25 / 2,50 / 2,27 / 6,40) | 2,97 | 2,43 | 2,69 | 2,46 | 7,22 |
 | Ajustes › Análise (antes 1,61 / 1,24 / 1,47 / 1,30 / 4,49) | 1,69 | 1,33 | 1,58 | 1,45 | 4,79 |
 | Folha do ativo, ação (antes 1,00 / 1,00 / 1,00 / 1,00 / 1,71) | 1,00 | 1,00 | 1,00 | 1,00 | 1,71 |
 | Folha do ativo, FII (antes 1,17 / 1,13 / 1,13 / 1,14 / 2,04) | 1,17 | 1,13 | 1,13 | 1,15 | 2,04 |
 | Folha do teto, ação (ITSA4) | 1,00 | 1,00 | 1,00 | 1,00 | 1,00 |
 | Folha do teto, FII (KNRI11) | 1,00 | 1,00 | 1,00 | 1,00 | 1,00 |
 
-- A Análise cresce pelo que entrou: a segunda tabela, com uma linha por FII (a
-  carteira da demonstração tem uma ação e seis FIIs nas referências; antes, só os
-  ativos com Bazin ou Graham apareciam). Fica acima da meta de 3,0 em 1440×900
-  por 0,17 tela (~150 px, umas três linhas de FII); a altura acompanha quantos
-  FIIs a carteira tem.
+- A Análise cresce pelo que entrou: a segunda tabela, com uma linha de 45 px
+  por FII (a carteira da demonstração tem uma ação e seis FIIs nas referências;
+  antes, só os ativos com Bazin ou Graham apareciam), e os links "Comparar
+  ativos" e "Resultados trimestrais" que entraram no cabeçalho. Na primeira medida dava 3,17 em 1440×900; com a
+  linha de 44 px, o aviso na linha do título e o grupo no cabeçalho da primeira
+  coluna (sem a linha da legenda), fica em 2,97, dentro da meta de 3,0. Lado a
+  lado as duas tabelas não cabem em 1440 (oito colunas na de FIIs). A altura
+  acompanha quantos FIIs a carteira tem.
 - A folha do ativo não cresceu: fechada, a escolha do teto ocupa a mesma linha
   da chave antiga; aberta, soma ~230 px.
 - Rolagem lateral: nenhuma nova (as que aparecem no celular são as pílulas de
