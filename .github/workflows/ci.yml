@@ -51,10 +51,14 @@ jobs:
       sonar_organizacao: slipalison
       sonar_modo: generico
       sonar_linguagem: rust
+      # O `cargo llvm-cov` não cria a pasta do `--output-path`: sem o `mkdir`
+      # ele falha com "failed to create file `backend/resultados/lcov.info`" e
+      # a análise nunca chega a rodar.
       sonar_comando_testes: >-
         curl --proto '=https' --tlsv1.2 -fsSL
         https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.9.1/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz
         | tar xzf - -C "$HOME/.cargo/bin" &&
+        mkdir -p backend/resultados &&
         cargo llvm-cov --all-features --manifest-path backend/Cargo.toml
         --lcov --output-path backend/resultados/lcov.info &&
         npm ci --ignore-scripts --prefix frontend &&
