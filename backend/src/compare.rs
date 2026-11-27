@@ -818,9 +818,11 @@ pub async fn curves(
     }
     for code in &request.benchmarks {
         let rows = store.index_series(*code, fetch_from, today).await?;
+        // Índice de nível (pontos) já é a curva; o de taxa vira nível. Sem
+        // `_`: índice novo precisa dizer qual dos dois é.
         let levels = match code {
-            IndexCode::Ibov => rows,
-            _ => rules::rate_levels(&rows),
+            IndexCode::Ibov | IndexCode::Ifix => rows,
+            IndexCode::Cdi | IndexCode::Selic | IndexCode::Ipca => rules::rate_levels(&rows),
         };
         let reason = levels.is_empty().then_some("no_index_data");
         inputs.push(Input {

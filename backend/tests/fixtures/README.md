@@ -34,3 +34,18 @@ Para regravar, baixe de novo e ajuste os números esperados nos testes.
 - Sem token a brapi responde 401 com
   `{"error":true,"message":"Token de autenticação não fornecido","code":"MISSING_TOKEN"}`
   (medido em 26/11/2026).
+
+# Amostras do IFIX (estatísticas históricas da B3)
+
+Respostas reais de
+`GET https://sistemaswebb3-listados.b3.com.br/indexStatisticsProxy/IndexCall/GetPortfolioDay/<base64>`,
+com `{"index":"IFIX","language":"pt-br","year":"<ano>"}` em base64, gravadas
+em **27/11/2026** às 14h de Brasília (sem login nem chave; é a tabela da página
+"Estatísticas históricas" do IFIX). Dado público de índice, nenhum de carteira.
+
+- `b3_ifix_2025.json`: o ano inteiro, 250 pregões.
+- `b3_ifix_2026.json`: até 26/11/2026; o pregão de 27/11, ainda aberto, não
+  aparece.
+- `b3_ifix_2010.json`: o primeiro ano, só com a base de 1.000 pontos em
+  30/12/2010.
+- `b3_ifix_empty.json`: um ano antes do índice existir (1999).

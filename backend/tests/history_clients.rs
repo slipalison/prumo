@@ -1,9 +1,11 @@
-//! Os clientes do BCB (SGS) e do `chart` do Yahoo contra respostas gravadas
-//! com `curl` em 25/11/2026 (`tests/fixtures/history/`). `yahoo_aapl_split.json`
-//! é `AAPL` de 26/08 a 04/09/2020 com `events=split`: o desdobro de 4 para 1 em
-//! 31/08/2020, com os fechamentos de antes já divididos por 4.
+//! Os clientes do BCB (SGS), do `chart` do Yahoo e das estatísticas de índice
+//! da B3 contra respostas gravadas com `curl` (`tests/fixtures/history/`; ver
+//! o README de lá). `yahoo_aapl_split.json` é `AAPL` de 26/08 a 04/09/2020 com
+//! `events=split`: o desdobro de 4 para 1 em 31/08/2020, com os fechamentos de
+//! antes já divididos por 4.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+use prumo::history::b3::{self, B3Indexes};
 use prumo::history::bcb::BcbClient;
 use prumo::history::yahoo::YahooHistory;
 use prumo::history::{HistoryError, HistoryProvider, IndexCode, PublicHistory};
@@ -20,6 +22,10 @@ const BVSP: &str = include_str!("fixtures/history/yahoo_bvsp.json");
 const KNRI11: &str = include_str!("fixtures/history/yahoo_knri11.json");
 const UNKNOWN: &str = include_str!("fixtures/history/yahoo_404.json");
 const AAPL_SPLIT: &str = include_str!("fixtures/history/yahoo_aapl_split.json");
+const IFIX_2010: &str = include_str!("fixtures/history/b3_ifix_2010.json");
+const IFIX_2025: &str = include_str!("fixtures/history/b3_ifix_2025.json");
+const IFIX_2026: &str = include_str!("fixtures/history/b3_ifix_2026.json");
+const IFIX_EMPTY: &str = include_str!("fixtures/history/b3_ifix_empty.json");
 
 fn json(status: u16, body: &str) -> ResponseTemplate {
     ResponseTemplate::new(status).set_body_raw(body.as_bytes().to_vec(), "application/json")
@@ -306,4 +312,127 @@ async fn public_history_routes_each_index() {
     assert_eq!(ibov.last(), Some(&(date!(2026 - 11 - 24), dec!(164090))));
     let knri = provider.closes("KNRI11.SA", from, to).await.unwrap();
     assert_eq!(knri.len(), 5);
+}
+
+fn ifix_path(year: i32) -> String {
+    format!(
+        "/indexStatisticsProxy/IndexCall/GetPortfolioDay/{}",
+        b3::query(b3::IFIX, year)
+    )
+}
+
+async fn ifix_server() -> MockServer {
+    let server = MockServer::start().await;
+    for (year, body) in [(2010, IFIX_2010), (2025, IFIX_2025), (2026, IFIX_2026)] {
+        Mock::given(method("GET"))
+            .and(path(ifix_path(year)))
+            .respond_with(json(200, body))
+            .mount(&server)
+            .await;
+    }
+    server
+}
+
+/// O IFIX das estatísticas da B3: um pedido por ano, os fechamentos em texto
+/// brasileiro viram número, e a janela corta o que pediu.
+#[tokio::test]
+async fn b3_reads_ifix_closes_year_by_year() {
+    let server = ifix_server().await;
+    let b3 = B3Indexes::with_base(reqwest::Client::new(), &server.uri())
+        .with_pause(std::time::Duration::ZERO);
+    let turn = b3
+        .levels(b3::IFIX, date!(2025 - 12 - 26), date!(2026 - 01 - 05))
+        .await
+        .unwrap();
+    // 26, 29 e 30/12 (31/12 sem pregão), 02 e 05/01.
+    assert_eq!(
+        turn,
+        vec![
+            (date!(2025 - 12 - 26), dec!(3775.56)),
+            (date!(2025 - 12 - 29), dec!(3772.30)),
+            (date!(2025 - 12 - 30), dec!(3775.31)),
+            (date!(2026 - 01 - 02), dec!(3778.89)),
+            (date!(2026 - 01 - 05), dec!(3782.93)),
+        ]
+    );
+    let year = b3
+        .levels(b3::IFIX, date!(2025 - 01 - 01), date!(2025 - 12 - 31))
+        .await
+        .unwrap();
+    assert_eq!(year.len(), 250);
+    // O pregão de hoje (27/11/2026, às 14h) ainda não estava na tabela.
+    let november = b3
+        .levels(b3::IFIX, date!(2026 - 11 - 20), date!(2026 - 11 - 27))
+        .await
+        .unwrap();
+    assert_eq!(
+        november.last(),
+        Some(&(date!(2026 - 11 - 26), dec!(3578.98)))
+    );
+    assert_eq!(november.len(), 4);
+}
+
+/// Antes de 2010 o IFIX não existe: o ano nem é pedido. Ano sem dado é lista
+/// vazia; resposta que não é a tabela é erro, e a tarefa segue sem o índice.
+#[tokio::test]
+async fn b3_skips_years_before_the_index_and_reports_failures() {
+    let server = ifix_server().await;
+    Mock::given(method("GET"))
+        .and(path(ifix_path(2009)))
+        .respond_with(json(200, IFIX_EMPTY))
+        .expect(0)
+        .mount(&server)
+        .await;
+    let b3 = B3Indexes::with_base(reqwest::Client::new(), &server.uri())
+        .with_pause(std::time::Duration::ZERO);
+    let start = b3
+        .levels(b3::IFIX, date!(2009 - 06 - 01), date!(2010 - 12 - 31))
+        .await
+        .unwrap();
+    assert_eq!(start, vec![(date!(2010 - 12 - 30), dec!(1000))]);
+
+    let broken = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(ifix_path(2026)))
+        .respond_with(ResponseTemplate::new(503))
+        .mount(&broken)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(ifix_path(2025)))
+        .respond_with(ResponseTemplate::new(200).set_body_string("<html>manutencao</html>"))
+        .mount(&broken)
+        .await;
+    let b3 = B3Indexes::with_base(reqwest::Client::new(), &broken.uri())
+        .with_pause(std::time::Duration::ZERO);
+    let d = date!(2026 - 11 - 25);
+    assert!(matches!(
+        b3.levels(b3::IFIX, d, d).await,
+        Err(HistoryError::Unavailable(_))
+    ));
+    assert!(matches!(
+        b3.levels(b3::IFIX, date!(2025 - 03 - 01), date!(2025 - 03 - 31))
+            .await,
+        Err(HistoryError::Unavailable(_))
+    ));
+}
+
+/// O provedor público pede o IFIX à B3, com o resto das séries.
+#[tokio::test]
+async fn public_history_asks_the_b3_for_ifix() {
+    let server = ifix_server().await;
+    let provider = PublicHistory::with_bases(reqwest::Client::new(), &server.uri(), &server.uri())
+        .with_b3(
+            B3Indexes::with_base(reqwest::Client::new(), &server.uri())
+                .with_pause(std::time::Duration::ZERO),
+        );
+    let ifix = provider
+        .index(
+            IndexCode::Ifix,
+            date!(2026 - 11 - 23),
+            date!(2026 - 11 - 26),
+        )
+        .await
+        .unwrap();
+    assert_eq!(ifix.first(), Some(&(date!(2026 - 11 - 23), dec!(3440.08))));
+    assert_eq!(ifix.len(), 4);
 }

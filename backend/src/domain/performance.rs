@@ -201,6 +201,10 @@ pub enum Period {
     YearToDate,
     /// Doze meses até hoje.
     TwelveMonths,
+    /// Dois anos até hoje.
+    TwoYears,
+    /// Cinco anos até hoje.
+    FiveYears,
     /// Desde a primeira cota.
     All,
 }
@@ -211,6 +215,8 @@ impl Period {
             "month" => Some(Period::Month),
             "ytd" => Some(Period::YearToDate),
             "12m" => Some(Period::TwelveMonths),
+            "2y" => Some(Period::TwoYears),
+            "5y" => Some(Period::FiveYears),
             "all" => Some(Period::All),
             _ => None,
         }
@@ -221,6 +227,8 @@ impl Period {
             Period::Month => "month",
             Period::YearToDate => "ytd",
             Period::TwelveMonths => "12m",
+            Period::TwoYears => "2y",
+            Period::FiveYears => "5y",
             Period::All => "all",
         }
     }
@@ -233,6 +241,8 @@ impl Period {
                 Date::from_calendar_date(today.year() - 1, Month::December, 31).unwrap_or(first)
             }
             Period::TwelveMonths => months_before(today, 12),
+            Period::TwoYears => months_before(today, 24),
+            Period::FiveYears => months_before(today, 60),
             Period::All => first,
         }
     }
@@ -354,23 +364,31 @@ pub fn versus(portfolio: Decimal, benchmark: Decimal) -> Versus {
     }
 }
 
-/// Um ano da tabela mês × ano.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct YearRow {
+/// Um mês da série: a rentabilidade do mês e a acumulada desde o começo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MonthCell {
     pub year: i32,
-    /// Janeiro a dezembro; `None` onde não há série.
-    pub months: [Option<Decimal>; 12],
-    /// O ano composto (só os meses com série).
-    pub total: Decimal,
-    /// Janela do ano: da base ao último fechamento.
+    pub month: Month,
+    /// O fechamento de base: o último do mês anterior, ou a primeira cota no
+    /// mês em que a série começa.
     pub from: Date,
+    /// O último fechamento do mês.
     pub to: Date,
+    /// Fração.
+    pub ret: Decimal,
+    /// Desde a primeira cota da série até `to`, fração.
+    pub accumulated: Decimal,
 }
 
-/// A tabela mês × ano. Cada mês mede do último fechamento do mês anterior (ou
-/// da primeira cota, no mês em que a série começa) ao último fechamento do mês.
-pub fn monthly_table(points: &[QuotaPoint]) -> Vec<YearRow> {
-    let mut rows: Vec<YearRow> = Vec::new();
+/// Os meses da série, em ordem. Cada mês mede do último fechamento do mês
+/// anterior (ou da primeira cota, no mês em que a série começa) ao último
+/// fechamento do mês; mês com um fechamento só (o primeiro dia da série) não
+/// tem o que medir e fica de fora.
+pub fn monthly_cells(points: &[QuotaPoint]) -> Vec<MonthCell> {
+    let Some(origin) = points.first() else {
+        return Vec::new();
+    };
+    let mut cells = Vec::new();
     let mut base: Option<&QuotaPoint> = None;
     let mut index = 0;
     while index < points.len() {
@@ -386,28 +404,62 @@ pub fn monthly_table(points: &[QuotaPoint]) -> Vec<YearRow> {
         }
         let start = base.unwrap_or(first);
         if last.date > start.date {
-            let ret = ratio(last.value, start.value);
-            let row = match rows.last_mut() {
-                Some(row) if row.year == year => row,
-                _ => {
-                    rows.push(YearRow {
-                        year,
-                        months: [None; 12],
-                        total: Decimal::ZERO,
-                        from: start.date,
-                        to: last.date,
-                    });
-                    let at = rows.len() - 1;
-                    &mut rows[at]
-                }
-            };
-            row.months[usize::from(u8::from(month)) - 1] = Some(ret);
-            row.total = (Decimal::ONE + row.total) * (Decimal::ONE + ret) - Decimal::ONE;
-            row.to = last.date;
+            cells.push(MonthCell {
+                year,
+                month,
+                from: start.date,
+                to: last.date,
+                ret: ratio(last.value, start.value),
+                accumulated: ratio(last.value, origin.value),
+            });
         }
         base = Some(last);
     }
+    cells
+}
+
+/// Um ano da tabela mês × ano.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct YearRow {
+    pub year: i32,
+    /// Janeiro a dezembro; `None` onde não há série.
+    pub months: [Option<Decimal>; 12],
+    /// O ano composto (só os meses com série).
+    pub total: Decimal,
+    /// Janela do ano: da base ao último fechamento.
+    pub from: Date,
+    pub to: Date,
+}
+
+/// A tabela mês × ano: os [`monthly_cells`] agrupados por ano, e o ano é a
+/// composição dos meses.
+pub fn monthly_table(points: &[QuotaPoint]) -> Vec<YearRow> {
+    let mut rows: Vec<YearRow> = Vec::new();
+    for cell in monthly_cells(points) {
+        let row = match rows.last_mut() {
+            Some(row) if row.year == cell.year => row,
+            _ => {
+                rows.push(YearRow {
+                    year: cell.year,
+                    months: [None; 12],
+                    total: Decimal::ZERO,
+                    from: cell.from,
+                    to: cell.to,
+                });
+                let at = rows.len() - 1;
+                &mut rows[at]
+            }
+        };
+        row.months[month_index(cell.month)] = Some(cell.ret);
+        row.total = (Decimal::ONE + row.total) * (Decimal::ONE + cell.ret) - Decimal::ONE;
+        row.to = cell.to;
+    }
     rows
+}
+
+/// Janeiro = 0.
+pub fn month_index(month: Month) -> usize {
+    usize::from(u8::from(month)) - 1
 }
 
 /// Fração → percentual (0 a 100), com `dp` casas.
@@ -583,10 +635,12 @@ mod tests {
             months_before(date!(2026 - 01 - 15), 13),
             date!(2024 - 12 - 15)
         );
-        for p in ["month", "ytd", "12m", "all"] {
+        assert_eq!(Period::TwoYears.start(today, first), date!(2024 - 03 - 31));
+        assert_eq!(Period::FiveYears.start(today, first), date!(2021 - 03 - 31));
+        for p in ["month", "ytd", "12m", "2y", "5y", "all"] {
             assert_eq!(Period::parse(p).map(Period::as_str), Some(p));
         }
-        assert!(Period::parse("5y").is_none());
+        assert!(Period::parse("10y").is_none());
     }
 
     /// CDI de 0,050788% ao dia, como o BCB publicou em novembro de 2026.
@@ -683,6 +737,20 @@ mod tests {
         );
         // Um ponto só não faz mês.
         assert!(monthly_table(&series[..1]).is_empty());
+        assert!(monthly_cells(&[]).is_empty());
+
+        // As células levam a janela de cada mês e o acumulado desde o começo.
+        let cells = monthly_cells(&series);
+        assert_eq!(cells.len(), 3);
+        assert_eq!(
+            (cells[0].from, cells[0].to, cells[0].accumulated),
+            (date!(2025 - 12 - 15), date!(2025 - 12 - 31), dec!(0.01))
+        );
+        assert_eq!(cells[1].from, date!(2025 - 12 - 31));
+        assert_eq!(cells[1].accumulated, dec!(0.0302));
+        assert_eq!(cells[2].month, Month::March);
+        assert_eq!(cells[2].from, date!(2026 - 01 - 30));
+        assert_eq!(cells[2].accumulated, dec!(0.927180) - Decimal::ONE);
     }
 
     #[test]

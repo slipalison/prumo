@@ -164,6 +164,15 @@ async fn daily_job_is_idempotent_and_separates_flow_from_return(
             .map(|n| (day1 + Duration::days(1) - Duration::days(n), dec!(0.050788)))
             .collect(),
     );
+    // O IFIX, em pontos: +1% do dia 1 para o dia 2.
+    history.indexes.lock().unwrap().insert(
+        IndexCode::Ifix,
+        vec![
+            (day1 - Duration::days(3), dec!(3480)),
+            (day1, dec!(3500)),
+            (day1 + Duration::days(1), dec!(3535)),
+        ],
+    );
     let job = Performance::new(db.store.clone(), history.clone());
     backdate(&app.router, knri.body["id"].as_str().unwrap(), day1).await;
     backdate(&app.router, cdb.body["id"].as_str().unwrap(), day1).await;
@@ -264,6 +273,12 @@ async fn daily_job_is_idempotent_and_separates_flow_from_return(
         .await
         .unwrap()
         .is_none());
+    // O IFIX anda com os outros índices e cabe na tabela (migração 0027).
+    assert!(requests.iter().any(|r| r.0 == "ifix"), "{requests:?}");
+    assert_eq!(
+        db.store.index_bounds(IndexCode::Ifix).await.unwrap(),
+        Some((day1 - Duration::days(3), day1 + Duration::days(1)))
+    );
 
     // A tela: patrimônio (aplicado × ganho) e a rentabilidade contra o CDI.
     let worth = get(&app.router, "/api/v1/history/net-worth?period=all").await;
@@ -277,6 +292,23 @@ async fn daily_job_is_idempotent_and_separates_flow_from_return(
     assert_eq!(points[1]["partial"], false);
     assert_eq!(worth.body["starts_on"], Value::String(day1.to_string()));
     assert_eq!(worth.body["rebuilding_since"], Value::Null);
+    // Patrimônio × aportado: desde o começo, tudo é aporte ou mercado.
+    let bridge = &worth.body["summary"];
+    assert_eq!(bridge["from"], Value::Null);
+    assert_eq!(bridge["start_value"], 0.0);
+    assert_eq!(bridge["contributions"], 3160.0);
+    assert_eq!(bridge["market"], 100.0);
+    assert_eq!(bridge["income"], 0.0);
+    assert_eq!(bridge["end_value"], 3260.0);
+    assert_eq!(
+        (bridge["invested"].clone(), bridge["gain"].clone()),
+        (json!(3160.0), json!(100.0))
+    );
+    // Série mais nova que o período: a janela também começa do zero.
+    let month = get(&app.router, "/api/v1/history/net-worth?period=2y").await;
+    assert_eq!(month.status, StatusCode::OK, "{}", month.text);
+    assert_eq!(month.body["period"], "2y");
+    assert_eq!(month.body["summary"]["from"], Value::Null);
 
     let perf = get(
         &app.router,
@@ -301,6 +333,62 @@ async fn daily_job_is_idempotent_and_separates_flow_from_return(
     let years = perf.body["years"].as_array().unwrap();
     assert!(!years.is_empty());
     assert_eq!(years[0]["months"].as_array().unwrap().len(), 12);
+    // Ano a ano: um mês medido (dia 1 → dia 2, caia ou não na virada do mês),
+    // o acumulado é a série inteira e o CDI fica abaixo.
+    let last_year = years.last().unwrap();
+    let accumulated = last_year["accumulated_percent"].as_f64().unwrap();
+    assert!((accumulated - 4.1322).abs() < 0.0001, "{accumulated}");
+    assert_eq!(last_year["accumulated"].as_array().unwrap().len(), 12);
+    let cdi_year = &last_year["benchmarks"]["cdi"];
+    assert!(cdi_year["return_percent"].as_f64().unwrap() > 0.0);
+    assert_eq!(cdi_year["months"].as_array().unwrap().len(), 12);
+    assert_eq!(
+        last_year["benchmarks"]["ipca"]["return_percent"],
+        Value::Null
+    );
+    let summary = &perf.body["months_summary"];
+    assert_eq!(
+        (summary["positive"].clone(), summary["negative"].clone()),
+        (json!(1), json!(0))
+    );
+    assert_eq!(summary["best"], summary["worst"]);
+    assert!((summary["best"]["return_percent"].as_f64().unwrap() - 4.1322).abs() < 0.0001);
+    assert_eq!(
+        summary["versus"][0],
+        json!({ "code": "cdi", "label": "CDI", "above": 1, "compared": 1 })
+    );
+    assert_eq!(summary["versus"][1]["compared"], 0);
+
+    // Por classe: cada uma pelo método de cotas, sem o aporte no meio.
+    let classes = get(&app.router, "/api/v1/performance/classes?period=all").await;
+    assert_eq!(classes.status, StatusCode::OK, "{}", classes.text);
+    assert_eq!(
+        classes.body["window"]["from"],
+        Value::String(day1.to_string())
+    );
+    let rows = classes.body["classes"].as_array().unwrap();
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    // FIIs: (2.250 − 740) / 1.420 = +6,338%; peso 2.250 / 3.260.
+    assert_eq!(rows[0]["asset_class"], "br_reits");
+    assert_eq!(rows[0]["market_value"], 2250.0);
+    assert_eq!(rows[0]["return_percent"], 6.338);
+    assert_eq!(rows[0]["weight_percent"], 69.0184);
+    assert_eq!(rows[0]["full_window"], true);
+    assert_eq!(rows[0]["benchmark"]["code"], "ifix");
+    assert_eq!(rows[0]["benchmark"]["return_percent"], 1.0);
+    // Renda Fixa: o CDB rendeu 10 sobre 1.000 (o ajuste é rendimento).
+    assert_eq!(rows[1]["asset_class"], "fixed_income");
+    assert_eq!(rows[1]["return_percent"], 1.0);
+    assert_eq!(rows[1]["weight_percent"], 30.9816);
+    assert_eq!(rows[1]["benchmark"]["code"], "cdi");
+    assert!(rows[1]["benchmark"]["return_percent"].as_f64().unwrap() > 0.0);
+    let ifix = get(
+        &app.router,
+        "/api/v1/performance?period=all&benchmarks=ifix",
+    )
+    .await;
+    assert_eq!(ifix.body["benchmarks"][0]["return_percent"], 1.0);
+    assert_eq!(ifix.body["benchmarks"][0]["label"], "IFIX");
     let curve = perf.body["points"].as_array().unwrap();
     assert_eq!(curve.len(), 2);
     assert_eq!(curve[0]["portfolio"], 0.0);
@@ -388,6 +476,12 @@ async fn each_person_sees_only_their_own_series(db: &Database, dir: &tempfile_di
     assert_eq!(worth.body["points"], json!([]));
     let perf = get(&other.router, "/api/v1/performance?period=all").await;
     assert_eq!(perf.body["years"], json!([]));
+    assert_eq!(perf.body["months_summary"]["best"], Value::Null);
+    assert_eq!(worth.body["summary"], Value::Null);
+    let classes = get(&other.router, "/api/v1/performance/classes?period=all").await;
+    assert_eq!(classes.status, StatusCode::OK, "{}", classes.text);
+    assert_eq!(classes.body["window"], Value::Null);
+    assert_eq!(classes.body["classes"], json!([]));
 }
 
 async fn rejects_unknown_period_and_index(db: &Database, dir: &tempfile_dir::Dir) {
@@ -397,11 +491,18 @@ async fn rejects_unknown_period_and_index(db: &Database, dir: &tempfile_dir::Dir
         FakeQuotes::with_market(),
         &dir.path(),
     );
-    let bad_period = get(&app.router, "/api/v1/performance?period=5y").await;
+    let bad_period = get(&app.router, "/api/v1/performance?period=10y").await;
     assert_eq!(bad_period.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(bad_period.body["code"], "validation_failed");
-    let bad_index = get(&app.router, "/api/v1/performance?benchmarks=cdi,ifix").await;
+    let bad_index = get(&app.router, "/api/v1/performance?benchmarks=cdi,ivvb11").await;
     assert_eq!(bad_index.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let bad_classes = get(&app.router, "/api/v1/performance/classes?period=semana").await;
+    assert_eq!(bad_classes.status, StatusCode::UNPROCESSABLE_ENTITY);
+    for period in ["2y", "5y"] {
+        let ok = get(&app.router, &format!("/api/v1/performance?period={period}")).await;
+        assert_eq!(ok.status, StatusCode::OK, "{}", ok.text);
+        assert_eq!(ok.body["period"], period);
+    }
     let bad_worth = get(&app.router, "/api/v1/history/net-worth?period=semana").await;
     assert_eq!(bad_worth.status, StatusCode::UNPROCESSABLE_ENTITY);
 }

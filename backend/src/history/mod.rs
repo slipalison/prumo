@@ -1,11 +1,12 @@
 //! Séries históricas de fontes públicas: os índices de referência (CDI, Selic
-//! e IPCA do Banco Central; Ibovespa do Yahoo) e o fechamento diário dos ativos
-//! (Yahoo `chart`).
+//! e IPCA do Banco Central; Ibovespa do Yahoo; IFIX das estatísticas da B3) e
+//! o fechamento diário dos ativos (Yahoo `chart`).
 //!
 //! Fica atrás de [`HistoryProvider`], separado do [`crate::quotes::QuoteProvider`]
 //! (que cota o preço de agora): os testes trocam a rede por um falso, e a troca
 //! de fonte não toca o resto.
 
+pub mod b3;
 pub mod bcb;
 pub mod yahoo;
 
@@ -24,14 +25,29 @@ pub enum IndexCode {
     Ipca,
     /// Ibovespa, fechamento em pontos (Yahoo `^BVSP`).
     Ibov,
+    /// IFIX, o índice dos fundos imobiliários da B3, fechamento em pontos
+    /// (estatísticas históricas da B3).
+    Ifix,
+}
+
+/// De onde vem cada índice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IndexSource {
+    /// Série do SGS do Banco Central.
+    Sgs(u32),
+    /// Símbolo do `chart` do Yahoo.
+    Yahoo(&'static str),
+    /// Estatísticas históricas da B3.
+    B3(b3::B3Index),
 }
 
 impl IndexCode {
-    pub const ALL: [IndexCode; 4] = [
+    pub const ALL: [IndexCode; 5] = [
         IndexCode::Cdi,
         IndexCode::Selic,
         IndexCode::Ipca,
         IndexCode::Ibov,
+        IndexCode::Ifix,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -40,6 +56,7 @@ impl IndexCode {
             IndexCode::Selic => "selic",
             IndexCode::Ipca => "ipca",
             IndexCode::Ibov => "ibov",
+            IndexCode::Ifix => "ifix",
         }
     }
 
@@ -54,16 +71,17 @@ impl IndexCode {
             IndexCode::Selic => "Selic",
             IndexCode::Ipca => "IPCA",
             IndexCode::Ibov => "Ibovespa",
+            IndexCode::Ifix => "IFIX",
         }
     }
 
-    /// Código da série no SGS do Banco Central (`None` = vem do Yahoo).
-    pub fn sgs(self) -> Option<u32> {
+    pub fn source(self) -> IndexSource {
         match self {
-            IndexCode::Cdi => Some(12),
-            IndexCode::Selic => Some(11),
-            IndexCode::Ipca => Some(433),
-            IndexCode::Ibov => None,
+            IndexCode::Cdi => IndexSource::Sgs(12),
+            IndexCode::Selic => IndexSource::Sgs(11),
+            IndexCode::Ipca => IndexSource::Sgs(433),
+            IndexCode::Ibov => IndexSource::Yahoo(IBOV_SYMBOL),
+            IndexCode::Ifix => IndexSource::B3(b3::IFIX),
         }
     }
 
@@ -110,34 +128,46 @@ pub trait HistoryProvider: Send + Sync {
     }
 }
 
-/// As fontes públicas de verdade: o SGS do Banco Central e o `chart` do Yahoo.
+/// As fontes públicas de verdade: o SGS do Banco Central, o `chart` do Yahoo
+/// e as estatísticas históricas da B3.
 pub struct PublicHistory {
     bcb: bcb::BcbClient,
     yahoo: yahoo::YahooHistory,
+    b3: b3::B3Indexes,
 }
 
 impl PublicHistory {
     pub fn new(http: reqwest::Client) -> Self {
         Self {
             bcb: bcb::BcbClient::new(http.clone()),
-            yahoo: yahoo::YahooHistory::new(http),
+            yahoo: yahoo::YahooHistory::new(http.clone()),
+            b3: b3::B3Indexes::new(http),
         }
     }
 
     pub fn with_bases(http: reqwest::Client, bcb_base: &str, yahoo_base: &str) -> Self {
         Self {
             bcb: bcb::BcbClient::with_base(http.clone(), bcb_base),
-            yahoo: yahoo::YahooHistory::with_base(http, yahoo_base),
+            yahoo: yahoo::YahooHistory::with_base(http.clone(), yahoo_base),
+            b3: b3::B3Indexes::new(http),
         }
+    }
+
+    /// Troca o cliente das estatísticas da B3 (o teste aponta para o servidor
+    /// falso e não espera entre os anos).
+    pub fn with_b3(mut self, b3: b3::B3Indexes) -> Self {
+        self.b3 = b3;
+        self
     }
 }
 
 #[async_trait]
 impl HistoryProvider for PublicHistory {
     async fn index(&self, code: IndexCode, from: Date, to: Date) -> Result<Series, HistoryError> {
-        match code.sgs() {
-            Some(series) => self.bcb.series(series, from, to).await,
-            None => self.yahoo.closes(IBOV_SYMBOL, from, to).await,
+        match code.source() {
+            IndexSource::Sgs(series) => self.bcb.series(series, from, to).await,
+            IndexSource::Yahoo(symbol) => self.yahoo.closes(symbol, from, to).await,
+            IndexSource::B3(index) => self.b3.levels(index, from, to).await,
         }
     }
 
@@ -181,11 +211,13 @@ mod tests {
             assert_eq!(IndexCode::parse(code.as_str()), Some(code));
             assert!(!code.label().is_empty());
         }
-        assert_eq!(IndexCode::parse("ifix"), None);
-        assert_eq!(IndexCode::Cdi.sgs(), Some(12));
-        assert_eq!(IndexCode::Selic.sgs(), Some(11));
-        assert_eq!(IndexCode::Ipca.sgs(), Some(433));
-        assert_eq!(IndexCode::Ibov.sgs(), None);
+        assert_eq!(IndexCode::parse("ifix"), Some(IndexCode::Ifix));
+        assert_eq!(IndexCode::parse("ivvb11"), None);
+        assert_eq!(IndexCode::Cdi.source(), IndexSource::Sgs(12));
+        assert_eq!(IndexCode::Selic.source(), IndexSource::Sgs(11));
+        assert_eq!(IndexCode::Ipca.source(), IndexSource::Sgs(433));
+        assert_eq!(IndexCode::Ibov.source(), IndexSource::Yahoo(IBOV_SYMBOL));
+        assert_eq!(IndexCode::Ifix.source(), IndexSource::B3(b3::IFIX));
         assert!(IndexCode::Ipca.monthly());
         assert!(!IndexCode::Cdi.monthly());
     }

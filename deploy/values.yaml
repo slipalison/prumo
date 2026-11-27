@@ -96,8 +96,9 @@ egress:
   # Central, uma vez por dia
   - host: olinda.bcb.gov.br
     port: 443
-  # setor das acoes, proventos automaticos e, nos fundamentos, o codigo CVM e
-  # o numero de acoes de cada emissor: paginas publicas da B3
+  # setor das acoes, proventos automaticos, nos fundamentos o codigo CVM e o
+  # numero de acoes de cada emissor, e no desempenho o IFIX (estatisticas
+  # historicas do indice): paginas publicas da B3
   - host: sistemaswebb3-listados.b3.com.br
     port: 443
   # setor e tipo dos FIIs e fundamentos (DFP, ITR, cadastro, informes de FII):

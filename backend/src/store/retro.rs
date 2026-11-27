@@ -151,18 +151,39 @@ impl Store {
         Ok(date)
     }
 
-    /// Proventos líquidos recebidos por dia de pagamento, de `from` a `to`. A
-    /// estimativa não é dinheiro recebido e fica de fora; a amortização que já
-    /// está no livro (mesmo ativo, mesma data) também, para não contar duas
-    /// vezes o mesmo dinheiro.
+    /// Proventos líquidos recebidos por dia de pagamento, de `from` a `to`, a
+    /// soma de [`Store::received_income_by_asset`] em cada dia.
     pub async fn received_income(
         &self,
         user: Uuid,
         from: Date,
         to: Date,
     ) -> Result<Series, StoreError> {
-        let rows: Vec<(Date, Decimal)> = sqlx::query_as(
-            "select e.pay_date, sum(e.net)
+        let mut days: std::collections::BTreeMap<Date, Decimal> = std::collections::BTreeMap::new();
+        for series in self
+            .received_income_by_asset(user, from, to)
+            .await?
+            .into_values()
+        {
+            for (date, value) in series {
+                *days.entry(date).or_default() += value;
+            }
+        }
+        Ok(days.into_iter().collect())
+    }
+
+    /// Proventos líquidos recebidos de cada ativo por dia de pagamento, de
+    /// `from` a `to`. A estimativa não é dinheiro recebido e fica de fora; a
+    /// amortização que já está no livro (mesmo ativo, mesma data) também, para
+    /// não contar duas vezes o mesmo dinheiro. Ativo removido não entra.
+    pub async fn received_income_by_asset(
+        &self,
+        user: Uuid,
+        from: Date,
+        to: Date,
+    ) -> Result<HashMap<Uuid, Series>, StoreError> {
+        let rows: Vec<(Uuid, Date, Decimal)> = sqlx::query_as(
+            "select e.asset_id, e.pay_date, sum(e.net)
                from income_events e
                join assets a on a.id = e.asset_id and a.user_id = e.user_id
               where e.user_id = $1
@@ -172,15 +193,19 @@ impl Store {
                     select 1 from transactions t
                      where t.asset_id = e.asset_id and t.kind = 'amortization'
                        and t.trade_date = e.pay_date))
-              group by e.pay_date
-              order by e.pay_date",
+              group by e.asset_id, e.pay_date
+              order by e.asset_id, e.pay_date",
         )
         .bind(user)
         .bind(from)
         .bind(to)
         .fetch_all(&self.pool)
         .await?;
-        Ok(rows)
+        let mut out: HashMap<Uuid, Series> = HashMap::new();
+        for (asset, date, value) in rows {
+            out.entry(asset).or_default().push((date, value));
+        }
+        Ok(out)
     }
 
     /// Os fechamentos guardados de cada símbolo de `from` a `to`, mais o

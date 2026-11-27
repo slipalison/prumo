@@ -3,6 +3,7 @@
 //! quando o livro muda no passado, e o que as telas de patrimônio e
 //! rentabilidade leem. A regra está em [`crate::domain::performance`] e
 //! [`crate::domain::retro`]; o método e os limites, em `docs/desempenho.md`.
+//! A rentabilidade por classe fica em [`classes`].
 //!
 //! Com duas réplicas, as duas agendam a tarefa diária no mesmo horário e as
 //! duas olham as marcas de "sujo" a cada [`REBUILD_EVERY`]. Quem roda é quem
@@ -21,9 +22,11 @@ use time::macros::offset;
 use time::{Date, Duration, OffsetDateTime, Time, UtcOffset};
 use uuid::Uuid;
 
-use crate::domain::asset_class::{Market, UnitKind};
+use crate::domain::asset_class::{AssetClass, Market, UnitKind};
+use crate::domain::monthly_stats::{self, Beat, MonthStats};
+use crate::domain::net_worth::{self, Bridge, FlowPoint};
 use crate::domain::performance::{
-    self as rules, Accrued, Period, QuotaPoint, Versus, Window, YearRow,
+    self as rules, Accrued, MonthCell, Period, QuotaPoint, Versus, Window, YearRow,
 };
 use crate::domain::retro::{self, AssetHistory, Series, Start};
 use crate::domain::risk;
@@ -33,6 +36,8 @@ use crate::quotes::fx_symbol;
 use crate::service::{self, AssetView, PriceSource};
 use crate::store::{DirtySeries, Snapshot, Store, StoreError};
 use crate::treasury::history::{DisabledTreasuryHistory, TreasuryHistory};
+
+pub mod classes;
 
 /// Número do advisory lock da tarefa diária e da reconstrução ("PRUMO" +
 /// migração 0006).
@@ -597,21 +602,16 @@ pub(crate) fn price_currency(view: &AssetView) -> String {
     }
 }
 
-/// Os dias de `from` a `to` da série da pessoa, calculados e não gravados.
-/// `previous` é a foto do dia anterior a `from` (sem ela, `from` abre a série).
-/// No dia de hoje, o ativo sem fechamento vale pelo preço que a tela mostra
-/// (cotação do momento ou preço manual).
-async fn compute_days(
+/// O livro e os preços de cada ativo da pessoa de `from` a `to`, como a série
+/// os vê, com a classe de cada um. No dia de hoje, o ativo sem fechamento vale
+/// pelo preço que a tela mostra (cotação do momento ou preço manual).
+pub(crate) async fn asset_histories(
     store: &Store,
     user: Uuid,
     from: Date,
     to: Date,
-    previous: Option<&Snapshot>,
     now: OffsetDateTime,
-) -> Result<Vec<Snapshot>, StoreError> {
-    if from > to {
-        return Ok(Vec::new());
-    }
+) -> Result<Vec<(AssetClass, AssetHistory)>, StoreError> {
     let today = local_date(now);
     let view = service::portfolio(store, user).await?;
     let mut entries = store.ledger_entries(user).await?;
@@ -628,9 +628,8 @@ async fn compute_days(
     let symbols: Vec<String> = symbols.into_iter().collect();
     let closes = store.price_series(&symbols, from, to).await?;
     let stored = store.snapshot_prices(user, from, to).await?;
-    let income = store.received_income(user, from, to).await?;
     let empty = Series::new();
-    let assets: Vec<AssetHistory> = view
+    Ok(view
         .assets
         .iter()
         .filter_map(|a| {
@@ -649,15 +648,39 @@ async fn compute_days(
                     prices.push((today, live));
                 }
             }
-            Some(AssetHistory {
-                asset_id: a.asset.id,
-                by_value,
-                entries,
-                prices,
-                fallback_price: if by_value { None } else { a.asset.manual_price },
-            })
+            Some((
+                a.asset.asset_class,
+                AssetHistory {
+                    asset_id: a.asset.id,
+                    by_value,
+                    entries,
+                    prices,
+                    fallback_price: if by_value { None } else { a.asset.manual_price },
+                },
+            ))
         })
+        .collect())
+}
+
+/// Os dias de `from` a `to` da série da pessoa, calculados e não gravados.
+/// `previous` é a foto do dia anterior a `from` (sem ela, `from` abre a série).
+async fn compute_days(
+    store: &Store,
+    user: Uuid,
+    from: Date,
+    to: Date,
+    previous: Option<&Snapshot>,
+    now: OffsetDateTime,
+) -> Result<Vec<Snapshot>, StoreError> {
+    if from > to {
+        return Ok(Vec::new());
+    }
+    let assets: Vec<AssetHistory> = asset_histories(store, user, from, to, now)
+        .await?
+        .into_iter()
+        .map(|(_, history)| history)
         .collect();
+    let income = store.received_income(user, from, to).await?;
     let start = previous.map(|p| Start {
         quota: p.quota,
         positions: &p.positions,
@@ -832,7 +855,24 @@ pub fn net_worth(points: &[SeriesPoint], period: Period, today: Date) -> Vec<Net
     out
 }
 
-fn window(points: &[SeriesPoint], period: Period, today: Date) -> Option<Window> {
+/// De onde veio a variação do patrimônio no período: aportes, mercado e
+/// proventos (`domain::net_worth`). A base é o fechamento de base do período.
+pub fn net_worth_bridge(points: &[SeriesPoint], period: Period, today: Date) -> Option<Bridge> {
+    let base = window(points, period, today)?.from;
+    let flows: Vec<FlowPoint> = points
+        .iter()
+        .filter(|p| p.date <= today)
+        .map(|p| FlowPoint {
+            date: p.date,
+            market_value: p.market_value,
+            net_flow: p.net_flow,
+            income: p.income,
+        })
+        .collect();
+    net_worth::bridge(&flows, base)
+}
+
+pub(crate) fn window(points: &[SeriesPoint], period: Period, today: Date) -> Option<Window> {
     let first = points.first()?;
     rules::period_return(
         &quota_points(points),
@@ -870,7 +910,7 @@ pub fn accrue(code: IndexCode, values: &[(Date, Decimal)], from: Date, to: Date)
     match code {
         IndexCode::Cdi | IndexCode::Selic => rules::daily_rate_accrued(values, from, to),
         IndexCode::Ipca => rules::monthly_rate_accrued(values, from, to),
-        IndexCode::Ibov => rules::level_accrued(values, from, to),
+        IndexCode::Ibov | IndexCode::Ifix => rules::level_accrued(values, from, to),
     }
 }
 
@@ -900,6 +940,44 @@ pub struct Card {
     pub full: bool,
 }
 
+/// Um índice num mês (ou num ano) da tabela: na janela dele e acumulado desde
+/// o começo da série até o fim dele.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MonthIndex {
+    pub code: IndexCode,
+    pub month: Accrued,
+    pub accumulated: Accrued,
+}
+
+/// Um mês da tabela, com os índices pedidos nas mesmas janelas.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MonthReport {
+    pub cell: MonthCell,
+    pub benchmarks: Vec<MonthIndex>,
+}
+
+/// Um ano da tabela: os meses, o ano composto, o acumulado desde o começo
+/// até o fim do ano, e os índices pedidos no ano e acumulados.
+#[derive(Debug, Clone, PartialEq)]
+pub struct YearReport {
+    pub row: YearRow,
+    /// O CDI na janela do ano (o campo de sempre do contrato).
+    pub cdi: Accrued,
+    /// Desde a primeira cota até o fim do ano, fração.
+    pub accumulated: Decimal,
+    pub months: Vec<MonthReport>,
+    /// Cada índice pedido no ano e acumulado até o fim dele.
+    pub benchmarks: Vec<MonthIndex>,
+}
+
+/// O resumo dos meses: melhor, pior, contagens e em quantos meses a carteira
+/// ficou acima de cada índice pedido.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MonthsSummary {
+    pub stats: MonthStats,
+    pub versus: Vec<(IndexCode, Beat)>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct PerformanceReport {
     pub period: Period,
@@ -909,8 +987,8 @@ pub struct PerformanceReport {
     pub curve: Vec<CurvePoint>,
     pub twelve_months: Option<Card>,
     pub since_start: Option<Card>,
-    /// Cada ano com o CDI da mesma janela.
-    pub years: Vec<(YearRow, Accrued)>,
+    pub years: Vec<YearReport>,
+    pub months: MonthsSummary,
 }
 
 fn card(points: &[QuotaPoint], from: Date, today: Date, cdi: &[(Date, Decimal)]) -> Option<Card> {
@@ -989,13 +1067,7 @@ pub fn performance(
         )
     });
     let since_start = starts_on.and_then(|first| card(&quotas, first, today, cdi));
-    let years = rules::monthly_table(&quotas)
-        .into_iter()
-        .map(|row| {
-            let accrued = rules::daily_rate_accrued(cdi, row.from, row.to);
-            (row, accrued)
-        })
-        .collect();
+    let (years, months) = year_reports(&quotas, codes, indexes);
     PerformanceReport {
         period,
         starts_on,
@@ -1005,7 +1077,85 @@ pub fn performance(
         twelve_months,
         since_start,
         years,
+        months,
     }
+}
+
+/// A tabela mês × ano com os índices nas mesmas janelas, e o resumo dos
+/// meses. O acumulado conta da primeira cota.
+fn year_reports(
+    quotas: &[QuotaPoint],
+    codes: &[IndexCode],
+    indexes: &Indexes,
+) -> (Vec<YearReport>, MonthsSummary) {
+    let empty = Vec::new();
+    let values = |code: IndexCode| indexes.get(&code).unwrap_or(&empty);
+    let Some(origin) = quotas.first().copied() else {
+        return (
+            Vec::new(),
+            MonthsSummary {
+                stats: MonthStats::default(),
+                versus: Vec::new(),
+            },
+        );
+    };
+    let index_at = |from: Date, to: Date| -> Vec<MonthIndex> {
+        codes
+            .iter()
+            .map(|code| MonthIndex {
+                code: *code,
+                month: accrue(*code, values(*code), from, to),
+                accumulated: accrue(*code, values(*code), origin.date, to),
+            })
+            .collect()
+    };
+    let cells = rules::monthly_cells(quotas);
+    let months: Vec<MonthReport> = cells
+        .iter()
+        .map(|cell| MonthReport {
+            cell: *cell,
+            benchmarks: index_at(cell.from, cell.to),
+        })
+        .collect();
+    let cdi = values(IndexCode::Cdi);
+    let years = rules::monthly_table(quotas)
+        .into_iter()
+        .map(|row| {
+            let year: Vec<MonthReport> = months
+                .iter()
+                .filter(|m| m.cell.year == row.year)
+                .cloned()
+                .collect();
+            YearReport {
+                cdi: rules::daily_rate_accrued(cdi, row.from, row.to),
+                accumulated: year.last().map_or(Decimal::ZERO, |m| m.cell.accumulated),
+                months: year,
+                benchmarks: index_at(row.from, row.to),
+                row,
+            }
+        })
+        .collect();
+    let versus = codes
+        .iter()
+        .enumerate()
+        .map(|(i, code)| {
+            let index: Vec<Option<Decimal>> = months
+                .iter()
+                .map(|m| {
+                    let accrued = m.benchmarks[i].month;
+                    accrued.as_of.map(|_| accrued.ret)
+                })
+                .collect();
+            (*code, monthly_stats::months_above(&cells, &index))
+        })
+        .collect();
+    (
+        years,
+        MonthsSummary {
+            stats: monthly_stats::month_stats(&cells),
+            versus,
+        },
+    )
 }
 
 #[cfg(test)]
@@ -1013,6 +1163,7 @@ mod tests {
     use super::*;
     use rust_decimal_macros::dec;
     use time::macros::{date, datetime, time};
+    use time::Month;
 
     #[test]
     fn schedule_follows_brasilia_time() {
@@ -1111,5 +1262,105 @@ mod tests {
             date!(2026 - 11 - 25),
         );
         assert!(empty.window.is_none() && empty.curve.is_empty() && empty.since_start.is_none());
+        assert!(empty.years.is_empty() && empty.months.stats.best.is_none());
+    }
+
+    /// Ano a ano: cada mês contra o índice na mesma janela, o acumulado desde
+    /// o começo e em quantos meses a carteira ficou acima.
+    #[test]
+    fn year_by_year_compares_each_month_with_the_indexes() {
+        let points = [
+            point(date!(2026 - 10 - 30), dec!(1000), dec!(1000), dec!(1)),
+            point(date!(2026 - 10 - 31), dec!(1010), dec!(0), dec!(1.01)),
+            point(date!(2026 - 11 - 15), dec!(1000), dec!(0), dec!(1)),
+            point(date!(2026 - 11 - 30), dec!(1030), dec!(0), dec!(1.03)),
+        ];
+        let indexes: Indexes = [(
+            IndexCode::Ifix,
+            vec![
+                (date!(2026 - 10 - 30), dec!(3000)),
+                (date!(2026 - 10 - 31), dec!(3030)),
+                (date!(2026 - 11 - 30), dec!(3060.3)),
+            ],
+        )]
+        .into_iter()
+        .collect();
+        let codes = [IndexCode::Ifix, IndexCode::Ipca];
+        let report = performance(
+            &points,
+            Period::All,
+            &codes,
+            &indexes,
+            date!(2026 - 11 - 30),
+        );
+        assert_eq!(report.years.len(), 1);
+        let year = &report.years[0];
+        assert_eq!(year.months.len(), 2);
+        assert_eq!(year.accumulated, dec!(0.03));
+        let (october, november) = (&year.months[0], &year.months[1]);
+        assert_eq!(october.cell.ret, dec!(0.01));
+        assert_eq!(october.benchmarks[0].month.ret, dec!(0.01));
+        assert_eq!(november.cell.from, date!(2026 - 10 - 31));
+        assert_eq!(
+            november.benchmarks[0].month.ret,
+            dec!(3060.3) / dec!(3030) - Decimal::ONE
+        );
+        assert_eq!(
+            november.benchmarks[0].accumulated.ret,
+            dec!(3060.3) / dec!(3000) - Decimal::ONE
+        );
+        // Sem IPCA publicado: nada a comparar.
+        assert_eq!(november.benchmarks[1].month.as_of, None);
+        assert_eq!(
+            year.benchmarks[0].month.ret,
+            dec!(3060.3) / dec!(3000) - Decimal::ONE
+        );
+        let stats = report.months.stats;
+        assert_eq!((stats.positive, stats.negative), (2, 0));
+        assert_eq!(stats.best.map(|b| b.month), Some(Month::November));
+        assert_eq!(stats.worst.map(|w| w.month), Some(Month::October));
+        // Outubro empatou com o IFIX (1% contra 1%): só novembro fica acima.
+        assert_eq!(
+            report.months.versus,
+            vec![
+                (
+                    IndexCode::Ifix,
+                    Beat {
+                        above: 1,
+                        compared: 2
+                    }
+                ),
+                (
+                    IndexCode::Ipca,
+                    Beat {
+                        above: 0,
+                        compared: 0
+                    }
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn net_worth_bridge_follows_the_period() {
+        let points = [
+            point(date!(2025 - 10 - 30), dec!(1000), dec!(1000), dec!(1)),
+            point(date!(2026 - 10 - 31), dec!(1200), dec!(100), dec!(1.09)),
+            point(date!(2026 - 11 - 25), dec!(1300), dec!(50), dec!(1.135)),
+        ];
+        let today = date!(2026 - 11 - 25);
+        // O mês mede do fechamento de 31/10: o aporte de 50 e +50 do mercado.
+        let month = net_worth_bridge(&points, Period::Month, today).unwrap();
+        assert_eq!(month.from, Some(date!(2026 - 10 - 31)));
+        assert_eq!(
+            (month.start_value, month.contributions, month.market),
+            (dec!(1200), dec!(50), dec!(50))
+        );
+        assert_eq!((month.invested, month.gain), (dec!(1150), dec!(150)));
+        // Cinco anos: a série é mais nova, começa do zero.
+        let five = net_worth_bridge(&points, Period::FiveYears, today).unwrap();
+        assert_eq!(five.from, None);
+        assert_eq!((five.contributions, five.market), (dec!(1150), dec!(150)));
+        assert!(net_worth_bridge(&[], Period::All, today).is_none());
     }
 }
