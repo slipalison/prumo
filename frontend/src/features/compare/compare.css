@@ -180,3 +180,16 @@
   gap: var(--space-2);
   justify-items: start;
 }
+
+/* Por que o indicador de empresa não se aplica (holding, banco, seguradora):
+   uma linha por ativo, embaixo do bloco das empresas. */
+.compare-table__notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}

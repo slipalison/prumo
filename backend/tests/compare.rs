@@ -481,6 +481,7 @@ async fn comparator_end_to_end() {
 
     rejects_what_cannot_be_compared(&db, &dir).await;
     side_by_side_table_with_neutral_marks(&db, &dir).await;
+    a_holding_indicator_does_not_apply_and_gets_no_mark(&db, &dir).await;
     returns_undo_splits_reinvest_dividends_and_align_the_start(&db, &dir).await;
     each_person_has_their_own_portfolio(&db, &dir).await;
 }
@@ -693,6 +694,85 @@ async fn side_by_side_table_with_neutral_marks(db: &Database, dir: &tempfile_dir
     assert!(has_row(&only, "price_to_earnings"));
     assert!(!has_row(&only, "vacancy"));
     assert!(!has_row(&only, "nav_per_share"));
+}
+
+/// Uma holding de participações (setor "Emp. Adm. Part." no cadastro e a
+/// equivalência patrimonial maior que o lucro) ao lado de uma indústria: a
+/// margem e a dívida sobre EBITDA dela vêm como "não se aplica" (`holding`),
+/// com a mesma regra dos fundamentos, e o destaque da linha não a considera.
+async fn a_holding_indicator_does_not_apply_and_gets_no_mark(
+    db: &Database,
+    dir: &tempfile_dir::Dir,
+) {
+    let v = Validators::default();
+    let scanned: BTreeSet<i32> = [91001, 91002, 91003].into_iter().collect();
+    for year in 2021..=2025 {
+        let mut holding = dfp(
+            91003,
+            "HOLDING SA",
+            year,
+            Year {
+                revenue: 100,
+                profit: 300,
+                equity: 2000,
+                debt: 100,
+                cash: 50,
+            },
+        );
+        holding.lines.push(flow(
+            Statement::Income,
+            year,
+            "3.04.06",
+            "Resultado de Equivalência Patrimonial",
+            360,
+        ));
+        db.store
+            .save_company_filings(&format!("annual:{year}"), &[holding], &v, &scanned, NOW)
+            .await
+            .unwrap();
+    }
+    let mut holding = registration(91003, "HOLDING SA");
+    holding.sector = Some("Emp. Adm. Part. - Sem Setor Principal".to_owned());
+    db.store
+        .save_registry("registry", &[holding], &v, NOW)
+        .await
+        .unwrap();
+    db.store
+        .save_issuer_code(
+            "HOLD",
+            &IssuerInfo {
+                cvm_code: Some(91003),
+                total_shares: Some(dec!(100)),
+            },
+            NOW,
+        )
+        .await
+        .unwrap();
+    let env = env(db, "holding@prumo.test", dir);
+    let body = table(
+        &env.router,
+        "HOLD3:br_stocks,FORT3:br_stocks,FRAC3:br_stocks",
+    )
+    .await;
+    for id in [
+        "net_margin",
+        "ebitda_margin",
+        "net_debt_to_ebitda",
+        "revenue_cagr",
+    ] {
+        let held = cell(&body, id, 0);
+        assert!(held["value"].is_null(), "{id}: {held}");
+        assert_eq!(held["reason"], "holding", "{id}");
+        assert!(held["mark"].is_null(), "{id}");
+    }
+    // A margem EBITDA da holding (EBIT de 450 sobre receita de 100) passaria
+    // de 500% e seria o "maior da linha"; fora dela, o destaque é entre as duas.
+    let ebitda = marks(&body, "ebitda_margin");
+    assert!(ebitda[0].is_null());
+    assert_eq!(ebitda.iter().filter(|m| !m.is_null()).count(), 1);
+    // O que vale para holding continua com número e entra no destaque.
+    assert!(cell(&body, "roe", 0)["value"].is_number());
+    assert!(cell(&body, "net_debt_to_equity", 0)["value"].is_number());
 }
 
 async fn returns_undo_splits_reinvest_dividends_and_align_the_start(

@@ -15,8 +15,16 @@ patrimonial por cota), o tipo do fundo pelo balanço e o setor da B3.
   da linha), dita na dica da tela. Marca só entre ativos do mesmo tipo (empresa
   com empresa, fundo com fundo) e só com 2+ valores. Não há ranking, nota nem
   palavra de juízo; o marcador diz "maior" ou "menor" em texto.
-- **"—" com o motivo.** Indicador que não existe: `not_applicable` (tipo errado),
-  gap da CVM, `no_price_history`, `short_history`, `no_dividend_history`...
+- **"—" com o motivo.** Indicador que não existe: gap da CVM,
+  `no_price_history`, `short_history`, `no_dividend_history`...
+- **"Não se aplica", escrito.** Linha de fundo para empresa (`not_applicable`) e
+  o indicador que enganaria em banco, seguradora (`financial_template`) e
+  holding de participações (`holding`): a margem EBITDA de uma holding passaria
+  de 200% e viraria o "maior da linha". A regra é a mesma dos fundamentos, da
+  Análise e dos resultados (`CompanyMetrics::holding` e o plano de contas,
+  [resultados.md](resultados.md#não-se-aplica-holding-banco-e-seguradora)): a
+  célula vem sem número, então fica fora do destaque, e embaixo do bloco das
+  empresas uma linha por ativo diz por quê.
 - **Ativo fora da carteira.** Preço histórico e proventos vêm do Yahoo na hora e
   ficam no cache (`price_history`, `dividend_history`). Fundamentos só se já
   estiverem no banco; senão `not_tracked`. Nunca dispara a CVM.

@@ -54,6 +54,9 @@ export type CompareReason =
   | "no_quote"
   | "no_rental_property"
   | "no_quarterly_report"
+  /** Dos fundamentos: holding de participações (margem e dívida ÷ EBITDA não se aplicam). */
+  | "holding"
+  | "implausible"
   | "not_listed_on_b3"
   | "exchange_traded_product"
   | "no_cvm_code"

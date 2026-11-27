@@ -15,6 +15,7 @@ import { cx } from "../../lib/cx";
 import { formatPercent } from "../../lib/format";
 import type { Money } from "../../lib/money";
 import { useMoney } from "../../lib/privacy";
+import { FINANCIAL_TEMPLATE_TEXT, NOT_APPLICABLE_TEXT } from "../fundamentals/fundamentalsText";
 import { DIRECTION_TEXT, REASON_TEXT, ROW_TEXT } from "./compareText";
 
 const GROUP_TITLE: Record<CompareGroup, string> = {
@@ -45,9 +46,26 @@ function formatValue(row: CompareRow, value: number, asset: CompareAsset, money:
   }
 }
 
-/** "—" com o motivo para quem passa o mouse e para o leitor de tela. */
+/** Motivos de "não se aplica": o tipo de ativo errado e, nas empresas, banco, seguradora e holding. */
+const NOT_APPLICABLE: ReadonlySet<CompareReason> = new Set(["not_applicable", "financial_template", "holding"]);
+
+/**
+ * "—" com o motivo para quem passa o mouse e para o leitor de tela; o que não
+ * se aplica diz "não se aplica" escrito (a mesma regra da folha do ativo e dos
+ * resultados), e fica fora do destaque, que só olha número.
+ */
 function Missing({ reason }: { reason: CompareReason | null }) {
   const text = reason ? REASON_TEXT[reason] : "Sem número.";
+  if (reason && NOT_APPLICABLE.has(reason)) {
+    return (
+      <span className="not-applicable">
+        <span aria-hidden="true" title={text}>
+          não se aplica
+        </span>
+        <span className="sr-only">{text}</span>
+      </span>
+    );
+  }
   return (
     <>
       <span aria-hidden="true" title={text}>
@@ -105,12 +123,39 @@ function columnsOf(table: Table, money: Money): Array<DataColumn<CompareRow>> {
   ];
 }
 
+/**
+ * Por que o indicador de empresa não se aplica a cada ativo que tem o caso:
+ * holding (o lucro vem das participadas) ou instituição financeira. Sai dos
+ * motivos das células, que vêm da mesma regra dos fundamentos.
+ */
+function notApplicableNotes(table: Table, rows: CompareRow[]): Array<{ symbol: string; text: string }> {
+  return table.assets.flatMap((asset, index) => {
+    const reasons = new Set(rows.map((row) => row.cells[index]?.reason));
+    if (reasons.has("holding")) return [{ symbol: asset.symbol, text: NOT_APPLICABLE_TEXT.holding }];
+    if (reasons.has("financial_template")) return [{ symbol: asset.symbol, text: FINANCIAL_TEMPLATE_TEXT }];
+    return [];
+  });
+}
+
 type CompareTableProps = {
   table: Table | undefined;
   pending: boolean;
   error: unknown;
   onRetry: () => void;
 };
+
+function NotApplicableNotes({ notes }: { notes: Array<{ symbol: string; text: string }> }) {
+  if (notes.length === 0) return null;
+  return (
+    <ul className="compare-table__notes">
+      {notes.map((note) => (
+        <li key={note.symbol}>
+          <strong>{note.symbol}:</strong> <span>{note.text}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 /**
  * A tabela lado a lado: uma coluna por ativo, uma linha por indicador, em
@@ -146,6 +191,7 @@ export function CompareTable({ table, pending, error, onRetry }: CompareTablePro
             rowKey={(row) => row.id}
             className="compare-table__table"
           />
+          {group === "company" && <NotApplicableNotes notes={notApplicableNotes(table, rows)} />}
         </section>
       ))}
     </div>

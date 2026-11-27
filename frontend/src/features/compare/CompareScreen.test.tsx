@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { HIDE_VALUES_KEY } from "../../lib/privacy";
+import { FINANCIAL_TEMPLATE_TEXT, GAP_TEXT, NOT_APPLICABLE_TEXT } from "../fundamentals/fundamentalsText";
 import { compareRequests, failCompare, sampleTable, setCompareReturns, setCompareTable, sampleReturns } from "../../test/compareHandlers";
 import { renderApp } from "../../test/render";
 import { readSelection, selectionHash, tokenFor } from "./selection";
@@ -83,6 +84,36 @@ describe("tela Comparar ativos", () => {
     // A dica diz para onde o destaque olha.
     await user.click(screen.getByRole("button", { name: "Sobre P/VP" }));
     expect(screen.getByText(/O destaque marca o menor valor da linha\./)).toBeInTheDocument();
+  });
+
+  it("holding e banco: o indicador que enganaria diz \"não se aplica\", com o porquê, e fica fora do destaque", async () => {
+    const base = sampleTable(["ITSA4", "BBAS3:br_stocks", "VALE3:br_stocks"]);
+    const cell = (value: number | null, reason: "holding" | "financial_template" | null = null, mark: "max" | null = null) => ({
+      value,
+      text: null,
+      reason,
+      mark,
+    });
+    setCompareTable({
+      ...base,
+      rows: [
+        // A margem EBITDA de 241,91% da holding não vira o "maior da linha": só a VALE3 tem número.
+        { id: "ebitda_margin", group: "company", unit: "percent", direction: "higher", cells: [cell(null, "holding"), cell(null, "financial_template"), cell(31.5)] },
+        { id: "roe", group: "company", unit: "percent", direction: "higher", cells: [cell(18, null, "max"), cell(15), cell(12)] },
+      ],
+    });
+    await openCompare("ITSA4,BBAS3:br_stocks,VALE3:br_stocks");
+    const companies = within(await screen.findByRole("region", { name: "Empresas" }));
+    const margin = companies.getByRole("rowheader", { name: /Margem EBITDA/ }).closest("tr") as HTMLElement;
+    const [holding, bank, other] = [...margin.querySelectorAll("td")];
+    expect(holding).toHaveTextContent("não se aplica");
+    expect(within(holding as HTMLElement).getByText(GAP_TEXT.holding)).toHaveClass("sr-only");
+    expect(bank).toHaveTextContent("não se aplica");
+    expect(other).toHaveTextContent("31,50%");
+    expect(margin.querySelector(".compare-mark")).toBeNull();
+    // O porquê, embaixo do bloco das empresas.
+    expect(companies.getByText(NOT_APPLICABLE_TEXT.holding).closest("li")).toHaveTextContent("ITSA4");
+    expect(companies.getByText(FINANCIAL_TEMPLATE_TEXT).closest("li")).toHaveTextContent("BBAS3");
   });
 
   it("soma da carteira, tira, e a escolha fica no endereço", async () => {
