@@ -14,16 +14,43 @@
 // `medidas.json` e `medidas.md` na pasta das capturas, mais um PNG de página
 // inteira por tela, folha e largura. Também aponta rolagem lateral: da página,
 // da folha e de qualquer tabela ou bloco que rola de lado por dentro.
+//
+// A pasta das capturas (padrão: `layout-shots` na pasta de onde se roda) só é
+// aceita dentro de uma destas: a `layout-shots` de onde se roda, a
+// `layout-shots` ao lado do repositório (onde ficam as capturas "antes" e
+// "depois", docs/layout.md § 9) ou o próprio `frontend/`. Fora delas, o script
+// para antes de criar ou escrever qualquer arquivo.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const DEFAULT_OUT = "layout-shots";
+const FRONTEND_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+/** Se `target` é a própria `root` ou fica dentro dela (no Windows o `relative` já ignora a caixa). */
+function isInside(root, target) {
+  const rel = relative(root, target);
+  return rel === "" || (!isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`));
+}
+
+/** A pasta das capturas pedida na linha de comando; fora das permitidas, encerra com a lista delas. */
+function outputDir(requested) {
+  const out = resolve(requested ?? DEFAULT_OUT);
+  const allowed = [resolve(DEFAULT_OUT), resolve(FRONTEND_DIR, "..", "..", DEFAULT_OUT), FRONTEND_DIR];
+  if (allowed.some((root) => isInside(root, out))) return out;
+  console.error(`Pasta das capturas recusada: ${out}`);
+  console.error(["Use uma pasta dentro de:", ...allowed.map((root) => `  ${root}`)].join("\n"));
+  process.exit(1);
+}
+
+const OUT = outputDir(process.argv[2]);
 
 // O Playwright vem da pasta de onde se roda, não do repositório.
 const { chromium } = createRequire(join(process.cwd(), "noop.js"))("playwright");
 
 const BASE = process.env.MEASURE_URL ?? "http://localhost:5180";
-const OUT = resolve(process.argv[2] ?? "layout-shots");
 mkdirSync(OUT, { recursive: true });
 
 const ALL_VIEWPORTS = [
@@ -131,8 +158,10 @@ function measurePage() {
   const nav = document.querySelector("nav.nav")?.getBoundingClientRect();
   const titles = [...document.querySelectorAll("main h1, main h2, main h3")]
     .filter((el) => el.getClientRects().length > 0)
-    .map((el) => ({ text: el.textContent.trim().replace(/\s+/g, " ").slice(0, 60), top: Math.round(el.getBoundingClientRect().top + window.scrollY) }));
+    .map((el) => ({ text: el.textContent.trim().replaceAll(/\s+/g, " ").slice(0, 60), top: Math.round(el.getBoundingClientRect().top + window.scrollY) }));
   const root = document.documentElement;
+  // O trilho só conta quando não toma a largura inteira (no celular ele é a barra de baixo).
+  const navWidth = nav && nav.width < vw ? nav.width : 0;
   return {
     viewport: `${vw}x${vh}`,
     height,
@@ -140,8 +169,8 @@ function measurePage() {
     innerScroll: window.innerScrollers(),
     screens: Math.round((height / vh) * 100) / 100,
     mainWidth: box ? Math.round(box.width) : null,
-    navWidth: nav && nav.width < vw ? Math.round(nav.width) : 0,
-    unusedWidth: box ? Math.round(vw - box.width - (nav && nav.width < vw ? nav.width : 0)) : null,
+    navWidth: Math.round(navWidth),
+    unusedWidth: box ? Math.round(vw - box.width - navWidth) : null,
     aboveFold: titles.filter((t) => t.top < vh).map((t) => t.text),
     belowFold: titles.filter((t) => t.top >= vh).map((t) => `${t.text} @${t.top}`),
   };
@@ -167,69 +196,113 @@ function measureSheet() {
 }
 
 const results = { screens: {}, sheets: {} };
-const browser = await chromium.launch();
 
-for (const viewport of VIEWPORTS) {
+/** Guarda a medida de uma tela (ou folha) numa largura. */
+function record(byId, id, viewportName, data) {
+  byId[id] ??= {};
+  byId[id][viewportName] = data;
+}
+
+/** Abre a tela do zero (recarregando), faz o preparo dela, mede e tira a captura de página inteira. */
+async function captureScreen(page, viewport, screen) {
+  await page.goto(`${BASE}/#/${screen.path}`);
+  await page.reload();
+  await settle(page);
+  if (screen.setup) {
+    await screen.setup(page);
+    await settle(page);
+  }
+  const data = await page.evaluate(measurePage);
+  record(results.screens, screen.id, viewport.name, data);
+  await page.screenshot({ path: join(OUT, `${screen.id}--${viewport.name}.png`), fullPage: true });
+  const side = data.hscroll || data.innerScroll.length ? `  ROLAGEM LATERAL: página +${data.hscroll}px ${data.innerScroll.join(", ")}` : "";
+  console.log(`${viewport.name} ${screen.id}: ${data.height}px = ${data.screens} telas${side}`);
+}
+
+/** Abre a tela da folha, abre a folha, mede e tira a captura; no fim, fecha a folha. */
+async function captureSheet(page, viewport, sheet) {
+  await page.goto(`${BASE}/#/${sheet.path}`);
+  await page.reload();
+  await settle(page);
+  try {
+    await sheet.open(page);
+    await page.locator('[role="dialog"]').waitFor();
+    await settle(page);
+    const data = await page.evaluate(measureSheet);
+    record(results.sheets, sheet.id, viewport.name, data);
+    // A folha rola por dentro: a captura mostra a primeira "tela" dela.
+    await page.screenshot({ path: join(OUT, `${sheet.id}--${viewport.name}.png`) });
+    const side = data?.hscroll || data?.innerScroll.length ? `  ROLAGEM LATERAL: folha +${data.hscroll}px ${data.innerScroll.join(", ")}` : "";
+    console.log(`${viewport.name} ${sheet.id}: ${data?.contentHeight}px em ${data?.dialogHeight}px = ${data?.screens}${side}`);
+  } catch (error) {
+    console.error(`${viewport.name} ${sheet.id}: não abriu (${error.message.split("\n")[0]})`);
+  }
+  await page.keyboard.press("Escape");
+}
+
+/** Mede todas as telas e folhas numa largura, numa página só. */
+async function captureViewport(browser, viewport) {
   const context = await browser.newContext({
     viewport: { width: viewport.width, height: viewport.height },
     // `MEASURE_REDUCED_MOTION=1`: sem animação, para comparar capturas pixel a pixel.
     reducedMotion: process.env.MEASURE_REDUCED_MOTION === "1" ? "reduce" : "no-preference",
   });
-  await context.addInitScript(`window.innerScrollers = ${innerScrollers}`);
-  await context.addInitScript((theme) => window.localStorage.setItem("prumo.theme", theme), THEME);
+  // Os dois scripts de início não dependem um do outro; ambos valem antes de a página abrir.
+  await Promise.all([
+    context.addInitScript(`window.innerScrollers = ${innerScrollers}`),
+    context.addInitScript((theme) => window.localStorage.setItem("prumo.theme", theme), THEME),
+  ]);
   const page = await context.newPage();
   page.on("pageerror", (error) => console.error(`[${viewport.name}] erro na página:`, error.message));
 
   for (const screen of SCREENS) {
-    await page.goto(`${BASE}/#/${screen.path}`);
-    await page.reload();
-    await settle(page);
-    if (screen.setup) {
-      await screen.setup(page);
-      await settle(page);
-    }
-    const data = await page.evaluate(measurePage);
-    (results.screens[screen.id] ??= {})[viewport.name] = data;
-    await page.screenshot({ path: join(OUT, `${screen.id}--${viewport.name}.png`), fullPage: true });
-    const side = data.hscroll || data.innerScroll.length ? `  ROLAGEM LATERAL: página +${data.hscroll}px ${data.innerScroll.join(", ")}` : "";
-    console.log(`${viewport.name} ${screen.id}: ${data.height}px = ${data.screens} telas${side}`);
+    await captureScreen(page, viewport, screen); // NOSONAR: uma página só; cada tela navega, recarrega e mede nela, uma depois da outra.
   }
-
   for (const sheet of SHEETS) {
-    await page.goto(`${BASE}/#/${sheet.path}`);
-    await page.reload();
-    await settle(page);
-    try {
-      await sheet.open(page);
-      await page.locator('[role="dialog"]').waitFor();
-      await settle(page);
-      const data = await page.evaluate(measureSheet);
-      (results.sheets[sheet.id] ??= {})[viewport.name] = data;
-      // A folha rola por dentro: a captura mostra a primeira "tela" dela.
-      await page.screenshot({ path: join(OUT, `${sheet.id}--${viewport.name}.png`) });
-      const side = data?.hscroll || data?.innerScroll.length ? `  ROLAGEM LATERAL: folha +${data.hscroll}px ${data.innerScroll.join(", ")}` : "";
-      console.log(`${viewport.name} ${sheet.id}: ${data?.contentHeight}px em ${data?.dialogHeight}px = ${data?.screens}${side}`);
-    } catch (error) {
-      console.error(`${viewport.name} ${sheet.id}: não abriu (${error.message.split("\n")[0]})`);
-    }
-    await page.keyboard.press("Escape");
+    await captureSheet(page, viewport, sheet); // NOSONAR: mesma página; a folha anterior fecha antes de a próxima abrir.
   }
   await context.close();
+}
+
+const browser = await chromium.launch();
+for (const viewport of VIEWPORTS) {
+  await captureViewport(browser, viewport); // NOSONAR: uma largura por vez; em paralelo as abas disputam a CPU, a espera de 1,2 s deixa de assentar as animações e a medida varia.
 }
 await browser.close();
 
 writeFileSync(join(OUT, "medidas.json"), JSON.stringify(results, null, 2));
 
-const lines = ["# Medidas", "", "## Telas (altura da página ÷ altura da janela)", ""];
 const names = VIEWPORTS.map((v) => v.name);
-lines.push(`| Tela | ${names.join(" | ")} |`, `|---|${names.map(() => "---").join("|")}|`);
-for (const [id, byViewport] of Object.entries(results.screens)) {
-  lines.push(`| ${id} | ${names.map((n) => (byViewport[n] ? `${byViewport[n].screens} (${byViewport[n].height}px)` : "—")).join(" | ")} |`);
+
+/** Cabeçalho de tabela Markdown: o rótulo e uma coluna por largura. */
+function tableHeader(label) {
+  const rule = names.map(() => "---").join("|");
+  return [`| ${label} | ${names.join(" | ")} |`, `|---|${rule}|`];
 }
-lines.push("", "## Folhas (conteúdo ÷ altura da folha)", "");
-lines.push(`| Folha | ${names.join(" | ")} |`, `|---|${names.map(() => "---").join("|")}|`);
+
+/** Uma linha da tabela: quantas telas por largura, com a altura (`heightKey`) em px. */
+function tableRow(id, byViewport, heightKey) {
+  const cells = names.map((n) => {
+    const data = byViewport[n];
+    return data ? `${data.screens} (${data[heightKey]}px)` : "—";
+  });
+  return `| ${id} | ${cells.join(" | ")} |`;
+}
+
+/** O que rola de lado numa medida: a própria página (ou folha) e os blocos de dentro. */
+function sideScrollLine(kind, id, name, data) {
+  const where = kind === "sheets" ? "folha" : "página";
+  const own = data.hscroll ? `${where} +${data.hscroll}px` : "";
+  return `- ${id} em ${name}: ${[own, ...data.innerScroll].filter(Boolean).join(", ")}`;
+}
+
+const lines = ["# Medidas", "", "## Telas (altura da página ÷ altura da janela)", "", ...tableHeader("Tela")];
+for (const [id, byViewport] of Object.entries(results.screens)) {
+  lines.push(tableRow(id, byViewport, "height"));
+}
+lines.push("", "## Folhas (conteúdo ÷ altura da folha)", "", ...tableHeader("Folha"));
 for (const [id, byViewport] of Object.entries(results.sheets)) {
-  lines.push(`| ${id} | ${names.map((n) => (byViewport[n] ? `${byViewport[n].screens} (${byViewport[n].contentHeight}px)` : "—")).join(" | ")} |`);
+  lines.push(tableRow(id, byViewport, "contentHeight"));
 }
 lines.push("", "## Rolagem lateral (nenhuma é o esperado)", "");
 const scrolls = [];
@@ -237,8 +310,7 @@ for (const kind of ["screens", "sheets"]) {
   for (const [id, byViewport] of Object.entries(results[kind])) {
     for (const [name, data] of Object.entries(byViewport)) {
       if (data && (data.hscroll || data.innerScroll.length)) {
-        const own = data.hscroll ? `${kind === "sheets" ? "folha" : "página"} +${data.hscroll}px` : "";
-        scrolls.push(`- ${id} em ${name}: ${[own, ...data.innerScroll].filter(Boolean).join(", ")}`);
+        scrolls.push(sideScrollLine(kind, id, name, data));
       }
     }
   }
