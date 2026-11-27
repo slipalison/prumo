@@ -93,9 +93,9 @@ function demoNetWorth(period: PerformancePeriod): NetWorth {
   return { period, starts_on: "2024-11-25", rebuilding_since: null, points, summary };
 }
 
-/** Um índice da tabela ano a ano, a partir dos meses (fictícios). */
-function demoYearIndex(months: Array<number | null>, asOf: string): YearIndex {
-  let factor = 1;
+/** Um índice da tabela ano a ano, a partir dos meses (fictícios); o acumulado vem desde o começo da série. */
+function demoYearIndex(months: Array<number | null>, asOf: string, before: number | null): YearIndex {
+  let factor = 1 + (before ?? 0) / 100;
   const accumulated = months.map((m) => {
     if (m === null) return null;
     factor *= 1 + m / 100;
@@ -117,8 +117,9 @@ function demoYear(
   months: Array<number | null>,
   cdi: number | null,
   indexes: Partial<Record<BenchmarkCode, Array<number | null>>>,
-  before: number,
+  previous: PerformanceYear | null,
 ): PerformanceYear {
+  const before = previous?.accumulated_percent ?? 0;
   let factor = 1 + before / 100;
   const accumulated = months.map((m) => {
     if (m === null) return null;
@@ -138,7 +139,11 @@ function demoYear(
       Object.entries(indexes).map(([code, values]) => [
         code,
         // O IPCA de um mês sai no mês seguinte; os outros, no dia útil seguinte.
-        demoYearIndex(values, year !== 2026 ? asOf : code === "ipca" ? "2026-10-31" : "2026-11-24"),
+        demoYearIndex(
+          values,
+          year !== 2026 ? asOf : code === "ipca" ? "2026-10-31" : "2026-11-24",
+          previous?.benchmarks[code as BenchmarkCode]?.accumulated_percent ?? null,
+        ),
       ]),
     ),
   };
@@ -165,19 +170,19 @@ function demoPerformance(period: PerformancePeriod): Performance {
     ipca: [n, n, n, n, n, n, n, n, n, n, 0.12, 0.52],
     ibov: [n, n, n, n, n, n, n, n, n, n, -1.1, -4.3],
     ifix: [n, n, n, n, n, n, n, n, n, n, -0.4, -0.7],
-  }, 0);
+  }, null);
   const y2025 = demoYear(2025, [0.8, 0.5, -0.9, 1.6, 0.4, 0.9, -0.3, 1.2, 0.6, 0.2, 1.4, 0.9], 12.8, {
     cdi: [1.01, 0.99, 0.96, 1.06, 1.14, 1.1, 1.28, 1.16, 1.22, 1.28, 1.05, 1.22],
     ipca: [0.16, 1.31, 0.56, 0.43, 0.26, 0.24, 0.26, -0.11, 0.48, 0.09, 0.18, 0.33],
     ibov: [4.86, -2.64, 6.08, 3.69, 1.45, 1.33, -4.17, 6.28, 3.4, 2.26, 6.37, 1.29],
     ifix: [-3.07, 3.34, 6.14, 3.01, 1.44, 0.63, -1.36, 1.15, 3.25, 0.12, 1.86, 1.8],
-  }, y2024.accumulated_percent);
+  }, y2024);
   const y2026 = demoYear(2026, [1.2, -0.4, 0.9, 1.4, -1.1, 0.6, 1.8, 0.3, -0.2, 1.1, 0.7, n], 12.1, {
     cdi: [1.16, 0.99, 1.08, 1.05, 1.12, 1.09, 1.18, 1.1, 1.06, 1.14, 0.95, n],
     ipca: [0.33, 0.7, 0.41, 0.38, 0.29, 0.21, 0.19, 0.1, 0.25, 0.3, n, n],
     ibov: [1.4, 1.7, -0.8, 2.2, -1.5, 0.9, 2.4, -0.6, 1.1, 0.4, -2.7, n],
     ifix: [1.1, 0.5, 0.9, -0.4, 0.6, 1.3, -0.9, 0.2, 0.8, 0.5, -1.9, n],
-  }, y2025.accumulated_percent);
+  }, y2025);
   const years: PerformanceYear[] = [y2024, y2025, y2026];
   const versus = (from: string, full: boolean) => ({
     from,
