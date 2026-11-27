@@ -1,7 +1,7 @@
 import { useId, useState, type FormEvent, type InputHTMLAttributes, type Ref } from "react";
 import { errorMessage } from "../../api/client";
 import { useCreateTransaction, useUpdateTransaction } from "../../api/ledger";
-import type { Transaction, TransactionKind, UpdateTransactionRequest } from "../../api/ledgerTypes";
+import type { CreateTransactionRequest, Transaction, TransactionKind } from "../../api/ledgerTypes";
 import type { Asset } from "../../api/types";
 import { MagneticButton } from "../../components/MagneticButton";
 import { useToast } from "../../components/toastContext";
@@ -11,23 +11,78 @@ import { MASK_BRL, MASK_QUANTITY } from "../../lib/money";
 import { useMoney } from "../../lib/privacy";
 import { useFocusOnMount } from "../../lib/useFocusOnMount";
 import { numberText } from "./format";
-import { kindLabel, kindsFor, PRICE_RULE, priceLabel, quantityHint, takesFees, todayIso } from "./kinds";
+import { kindLabel, kindsFor, PRICE_RULE, priceLabel, quantityHint, takesFees, todayIso, type PriceRule } from "./kinds";
 
 type TransactionFormProps = {
   asset: Asset;
   /** Com ele, edita; sem ele, cria. */
-  initial?: Transaction | undefined;
+  initial?: Transaction;
   /** Abre com o foco no preço — o "informe o preço médio". */
   focusPrice?: boolean;
   onDone: () => void;
 };
+
+/** O que a pessoa digitou, como texto, e o que o tipo e o ativo pedem dele. */
+type Draft = {
+  kind: TransactionKind;
+  date: string;
+  quantity: string;
+  price: string;
+  fees: string;
+  currency: string;
+  fx: string;
+  costKnown: boolean;
+  valueBased: boolean;
+  rule: PriceRule;
+  showFees: boolean;
+  showCurrency: boolean;
+};
+
+type Built = { body: Omit<CreateTransactionRequest, "asset_id"> } | { problem: string };
+
+/** O preço unitário que vai ao servidor, ou o problema que impede salvar. */
+function unitPriceOf(draft: Draft): { price: number | null } | { problem: string } {
+  // Renda fixa por valor: o preço é 1 (o servidor preenche); no saldo
+  // inicial, 1 quer dizer "esse saldo é o que apliquei".
+  if (draft.valueBased) return { price: draft.kind === "opening" && draft.costKnown ? 1 : null };
+  if (draft.rule === "forbidden") return { price: null };
+  const price = parseDecimal(draft.price);
+  if (price === null && draft.rule === "required") return { problem: "Informe o preço." };
+  return { price };
+}
+
+/** O lançamento pronto para o servidor, ou o primeiro problema: quantidade, preço, câmbio. */
+function buildTransaction(draft: Draft): Built {
+  const quantity = parseDecimal(draft.quantity);
+  if (quantity === null || quantity === 0 || (draft.kind !== "adjustment" && quantity < 0)) {
+    return { problem: draft.valueBased ? "Informe o valor." : "Informe a quantidade." };
+  }
+  const unitPrice = unitPriceOf(draft);
+  if ("problem" in unitPrice) return unitPrice;
+  const currency = draft.showCurrency ? draft.currency : "BRL";
+  const rate = currency === "BRL" ? null : parseDecimal(draft.fx);
+  if (currency !== "BRL" && unitPrice.price !== null && rate === null) {
+    return { problem: `Informe o câmbio: quantos reais valia 1 ${currency} no dia.` };
+  }
+  return {
+    body: {
+      kind: draft.kind,
+      trade_date: draft.date,
+      quantity,
+      unit_price: unitPrice.price,
+      fees: draft.showFees ? (parseDecimal(draft.fees) ?? 0) : 0,
+      currency,
+      fx_rate: rate,
+    },
+  };
+}
 
 /**
  * Um lançamento: tipo, data, quantidade e, conforme o tipo, preço, taxa e
  * câmbio. O servidor refaz a posição ao salvar e recusa o que deixaria a
  * quantidade negativa em alguma data.
  */
-export function TransactionForm({ asset, initial, focusPrice = false, onDone }: TransactionFormProps) {
+export function TransactionForm({ asset, initial, focusPrice = false, onDone }: Readonly<TransactionFormProps>) {
   const ids = {
     kind: useId(),
     date: useId(),
@@ -72,38 +127,25 @@ export function TransactionForm({ asset, initial, focusPrice = false, onDone }: 
     event.preventDefault();
     if (pending) return;
     setProblem(null);
-    const q = parseDecimal(quantity);
-    if (q === null || q === 0 || (kind !== "adjustment" && q < 0)) {
-      setProblem(valueBased ? "Informe o valor." : "Informe a quantidade.");
-      return;
-    }
-    let unitPrice: number | null = null;
-    if (valueBased) {
-      // Renda fixa por valor: o preço é 1 (o servidor preenche); no saldo
-      // inicial, 1 quer dizer "esse saldo é o que apliquei".
-      unitPrice = kind === "opening" && costKnown ? 1 : null;
-    } else if (rule !== "forbidden") {
-      unitPrice = parseDecimal(price);
-      if (unitPrice === null && rule === "required") {
-        setProblem("Informe o preço.");
-        return;
-      }
-    }
-    const chosenCurrency = showCurrency ? currency : "BRL";
-    const rate = chosenCurrency === "BRL" ? null : parseDecimal(fx);
-    if (chosenCurrency !== "BRL" && unitPrice !== null && rate === null) {
-      setProblem(`Informe o câmbio: quantos reais valia 1 ${chosenCurrency} no dia.`);
-      return;
-    }
-    const body: UpdateTransactionRequest = {
+    const built = buildTransaction({
       kind,
-      trade_date: date,
-      quantity: q,
-      unit_price: unitPrice,
-      fees: showFees ? (parseDecimal(fees) ?? 0) : 0,
-      currency: chosenCurrency,
-      fx_rate: rate,
-    };
+      date,
+      quantity,
+      price,
+      fees,
+      currency,
+      fx,
+      costKnown,
+      valueBased,
+      rule,
+      showFees,
+      showCurrency,
+    });
+    if ("problem" in built) {
+      setProblem(built.problem);
+      return;
+    }
+    const { body } = built;
     const done = () => {
       toast({ tone: "success", message: initial ? "Lançamento atualizado." : "Lançamento salvo." });
       onDone();
@@ -111,7 +153,7 @@ export function TransactionForm({ asset, initial, focusPrice = false, onDone }: 
     if (initial) {
       update.mutate({ id: initial.id, body }, { onSuccess: done });
     } else {
-      create.mutate({ asset_id: asset.id, ...body, kind, trade_date: date, quantity: q }, { onSuccess: done });
+      create.mutate({ asset_id: asset.id, ...body }, { onSuccess: done });
     }
   };
 
@@ -200,7 +242,7 @@ export function TransactionForm({ asset, initial, focusPrice = false, onDone }: 
       {valueBased && kind === "opening" && (
         <div className="switch-row">
           <label htmlFor={ids.costKnown} className="switch-row__label">
-            Esse saldo é o que você aplicou
+            Esse saldo é o que você aplicou{" "}
             <span className="field__hint">Sem isso, o custo fica desconhecido e a rentabilidade não aparece.</span>
           </label>
           <input
@@ -243,7 +285,7 @@ type MaskedInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "o
  * a máscara (é o que o leitor de tela lê também), como o `MoneyInput`; no
  * foco, o número para editar.
  */
-function MaskedInput({ value, onChange, mask, ref, ...rest }: MaskedInputProps) {
+function MaskedInput({ value, onChange, mask, ref, ...rest }: Readonly<MaskedInputProps>) {
   const money = useMoney();
   const [focused, setFocused] = useState(false);
   const masked = money.hidden && !focused && mask !== null && value !== "";

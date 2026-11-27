@@ -25,6 +25,30 @@ function inCurrency(money: Money, value: number, currency: string): string {
   return `${currency} ${value.toLocaleString("pt-BR", { maximumFractionDigits: 8 })}`;
 }
 
+/** Renda fixa por valor: o aplicado (saldo inicial, compra, resgate) ou o que entrou e saiu, com sinal. */
+function valueDetail(t: Transaction, delta: number, money: Money): string {
+  const amount =
+    t.kind === "opening" || t.kind === "buy" || t.kind === "redemption" ? money.brl(t.quantity) : signedBRL(money, delta);
+  return t.kind === "opening" && t.unit_price === null ? `${amount} · custo desconhecido` : amount;
+}
+
+/** A quantidade com o nome da unidade: "10 cotas", "0,5 BTC". */
+function unitsText(t: Transaction, asset: Asset, unit: UnitKind, money: Money): string {
+  const fractional = unit === "fraction";
+  const noun =
+    fractional && !asset.treasury
+      ? (asset.symbol ?? "")
+      : plural(Math.abs(t.quantity), nounOf(asset.asset_class, asset.listed_on_b3, asset.treasury));
+  return `${money.quantity(Math.abs(t.quantity), fractional)} ${noun}`.trim();
+}
+
+/** Ajuste, desdobramento e grupamento: a quantidade com o sentido; com o olho fechado, sem ele. */
+function shiftText(units: string, delta: number, hidden: boolean): string {
+  if (hidden) return units;
+  const sign = delta > 0 ? "+" : "−";
+  return `${sign}${units}`;
+}
+
 /**
  * O que a linha mostra depois do tipo: quantidade, preço, taxa. Quantidade e
  * dinheiro passam pelos formatadores da tela (`useMoney`): com o olho fechado,
@@ -32,20 +56,11 @@ function inCurrency(money: Money, value: number, currency: string): string {
  */
 function detail(t: Transaction, asset: Asset, unit: UnitKind, money: Money): string {
   const delta = quantityDelta(t);
-  if (unit === "value") {
-    const amount =
-      t.kind === "opening" || t.kind === "buy" || t.kind === "redemption" ? money.brl(t.quantity) : signedBRL(money, delta);
-    return t.kind === "opening" && t.unit_price === null ? `${amount} · custo desconhecido` : amount;
-  }
-  const fractional = unit === "fraction";
-  const noun =
-    fractional && !asset.treasury
-      ? (asset.symbol ?? "")
-      : plural(Math.abs(t.quantity), nounOf(asset.asset_class, asset.listed_on_b3, asset.treasury));
-  const units = `${money.quantity(Math.abs(t.quantity), fractional)} ${noun}`.trim();
+  if (unit === "value") return valueDetail(t, delta, money);
+  const units = unitsText(t, asset, unit, money);
   const parts: string[] = [];
   if (t.kind === "adjustment" || t.kind === "split" || t.kind === "reverse_split") {
-    parts.push(money.hidden ? units : `${delta > 0 ? "+" : "−"}${units}`);
+    parts.push(shiftText(units, delta, money.hidden));
   } else if (t.unit_price === null) {
     parts.push(t.kind === "opening" ? `${units} · custo desconhecido` : units);
   } else {
@@ -65,7 +80,7 @@ const SOURCE_TAG: Partial<Record<Transaction["source"], string>> = {
 type TransactionsSectionProps = { asset: Asset };
 
 /** A parte "Lançamentos" da folha do ativo: a posição e o livro dela. */
-export function TransactionsSection({ asset }: TransactionsSectionProps) {
+export function TransactionsSection({ asset }: Readonly<TransactionsSectionProps>) {
   const headingId = useId();
   const list = useTransactions(asset.id);
   const yields = useYieldOnCost();
@@ -178,7 +193,7 @@ export function TransactionsSection({ asset }: TransactionsSectionProps) {
 
       {list.isPending && <Skeleton height={48} radius={14} />}
       {list.isError && <p className="field__hint">Não consegui carregar os lançamentos agora.</p>}
-      {list.data && list.data.length === 0 && (
+      {list.data?.length === 0 && (
         <p className="field__hint">Nenhum lançamento ainda.</p>
       )}
       {list.data && list.data.length > 0 && (
@@ -204,14 +219,14 @@ export function TransactionsSection({ asset }: TransactionsSectionProps) {
                 </div>
                 <span className="ledger-row__date">{date}</span>
                 {confirming === t.id ? (
-                  <div className="ledger-row__confirm" role="group" aria-label={`Apagar ${label} de ${date}`}>
+                  <fieldset className="ledger-row__confirm" aria-label={`Apagar ${label} de ${date}`}>
                     <MagneticButton variant="danger" magnetic={false} loading={remove.isPending} onClick={() => confirmRemove(t.id)}>
                       Apagar
                     </MagneticButton>
                     <MagneticButton variant="ghost" magnetic={false} onClick={() => setConfirming(null)}>
                       Cancelar
                     </MagneticButton>
-                  </div>
+                  </fieldset>
                 ) : (
                   <div className="ledger-row__actions">
                     <button
