@@ -170,6 +170,33 @@ const BASE: Record<Group, Record<Group, number>> = {
 const wiggle = (i: number, j: number) => Math.sin(i * 12.9898 + j * 78.233) * 0.15;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+/** O peso do ativo `i` na carteira grande: o CDB (34) e o título (35) pesam mais. */
+function largeWeight(i: number): number {
+  if (i === 34) return 12;
+  if (i === 35) return 6;
+  return 1 + ((i * 7) % 5) * 0.6;
+}
+
+/** Quanto o tipo pesa no risco além do peso na carteira: título pouco, cripto muito. */
+function riskFactor(group: Group): number {
+  if (group === "bond") return 0.2;
+  return group === "crypto" ? 3 : 1;
+}
+
+/** A volatilidade fictícia do ativo `i`, na faixa do tipo dele. */
+function largeVolatility(group: Group, i: number): number {
+  switch (group) {
+    case "crypto":
+      return 52 + i;
+    case "bond":
+      return 4 + i / 10;
+    case "fii":
+      return 10 + (i % 6);
+    default:
+      return 18 + (i % 9);
+  }
+}
+
 /**
  * Uma carteira FICTÍCIA grande (36 ativos) para medir o desenho com muitos
  * ativos: a demonstração usa esta. O CDB não tem série; o título com juros
@@ -177,16 +204,15 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  */
 export function largeRisk(window: RiskWindow = "12m"): Risk {
   const base = sampleRisk(window);
-  const weightOf = (i: number) => (i === 34 ? 12 : i === 35 ? 6 : 1 + ((i * 7) % 5) * 0.6);
-  const total = LARGE.reduce((sum, _, i) => sum + weightOf(i), 0);
-  const shares = LARGE.map(([, , group], i) => (i < 34 ? weightOf(i) * (group === "bond" ? 0.2 : group === "crypto" ? 3 : 1) : 0));
+  const total = LARGE.reduce((sum, _, i) => sum + largeWeight(i), 0);
+  const shares = LARGE.map(([, , group], i) => (i < 34 ? largeWeight(i) * riskFactor(group) : 0));
   const shareTotal = shares.reduce((a, b) => a + b, 0);
   const assets: AssetRisk[] = LARGE.map(([label, assetClass, group], i) => {
     const id = `l-${i}`;
-    const weight = round2((weightOf(i) / total) * 100);
+    const weight = round2((largeWeight(i) / total) * 100);
     if (i === 34) return asset(id, label, assetClass, weight, { status: "no_series", metrics: null, risk_share_percent: null });
     if (i === 35) return asset(id, label, assetClass, weight, { status: "pays_along_the_way", metrics: null, risk_share_percent: null });
-    const volatility = group === "crypto" ? 52 + i : group === "bond" ? 4 + i / 10 : group === "fii" ? 10 + (i % 6) : 18 + (i % 9);
+    const volatility = largeVolatility(group, i);
     const ret = round2(((i * 37) % 41) - 12 + (group === "crypto" ? 15 : 0));
     return {
       ...asset(id, label, assetClass, weight, {

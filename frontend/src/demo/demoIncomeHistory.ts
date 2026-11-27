@@ -18,32 +18,47 @@ const SEGMENTS: Record<"br_reits" | "br_stocks", string[]> = {
 const round2 = (value: number) => Math.round(value * 100) / 100;
 const day = (year: number, month: number, d: number) => `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 
-function incomes(): FakeIncome[] {
+type DemoAsset = NonNullable<FakeIncome["asset"]>;
+
+/** O pagador fictício na posição `index`: FII ou ação, com o segmento dele. */
+function demoAsset(code: string, index: number): DemoAsset {
+  const asset_class: AssetClass = code.endsWith("11") ? "br_reits" : "br_stocks";
+  const segments = SEGMENTS[asset_class];
+  // Uma ação sem classificação pública, para o "sem segmento".
+  const segment = index === 7 ? null : (segments[index % segments.length] ?? null);
+  return { id: `a-demo-${index}`, label: code, asset_class, segment };
+}
+
+/** O que sobra do JCP depois do IR retido no ano do pagamento. */
+const jcpNetShare = (year: number) => (year >= 2026 ? 0.825 : 0.85);
+
+/** Os pagamentos de um pagador fictício, de maio de 2024 até janeiro de 2027. */
+function paymentsOf(code: string, index: number): FakeIncome[] {
+  const asset = demoAsset(code, index);
+  const stock = asset.asset_class === "br_stocks";
+  const jcp = code.endsWith("4");
+  const monthly = 70 - index * 4;
   const list: FakeIncome[] = [];
-  DEMO_CODES.slice(0, 14).forEach((code, index) => {
-    const asset_class: AssetClass = code.endsWith("11") ? "br_reits" : "br_stocks";
-    const segments = SEGMENTS[asset_class];
-    // Uma ação sem classificação pública, para o "sem segmento".
-    const segment = index === 7 ? null : (segments[index % segments.length] ?? null);
-    const asset = { id: `a-demo-${index}`, label: code, asset_class, segment };
-    const jcp = code.endsWith("4");
-    const monthly = 70 - index * 4;
-    for (let n = 0; n < 32; n += 1) {
-      const month0 = 4 + n; // de maio de 2024 a dezembro de 2026
-      const year = 2024 + Math.floor(month0 / 12);
-      const month = (month0 % 12) + 1;
-      if (asset_class === "br_stocks" && month % 3 !== index % 3) continue;
-      // Um pouco de sazonalidade e de crescimento, para o mapa ter o que mostrar.
-      const season = 1 + 0.25 * Math.sin((month + index) / 2);
-      const grow = 1 + n * 0.012;
-      const gross = round2((asset_class === "br_stocks" ? monthly * 2.6 : monthly) * season * grow);
-      const net = jcp ? round2(gross * (year >= 2026 ? 0.825 : 0.85)) : gross;
-      const pay = day(year, month, 10 + (index % 15));
-      const record = month === 1 ? day(year - 1, 12, 29) : day(year, month - 1, 27);
-      if (pay > "2027-01-31") continue;
-      list.push({ pay, record, gross, net, asset });
-    }
-  });
+  for (let n = 0; n < 32; n += 1) {
+    const month0 = 4 + n; // de maio de 2024 a dezembro de 2026
+    const year = 2024 + Math.floor(month0 / 12);
+    const month = (month0 % 12) + 1;
+    if (stock && month % 3 !== index % 3) continue;
+    // Um pouco de sazonalidade e de crescimento, para o mapa ter o que mostrar.
+    const season = 1 + 0.25 * Math.sin((month + index) / 2);
+    const grow = 1 + n * 0.012;
+    const gross = round2((stock ? monthly * 2.6 : monthly) * season * grow);
+    const net = jcp ? round2(gross * jcpNetShare(year)) : gross;
+    const pay = day(year, month, 10 + (index % 15));
+    const record = month === 1 ? day(year - 1, 12, 29) : day(year, month - 1, 27);
+    if (pay > "2027-01-31") continue;
+    list.push({ pay, record, gross, net, asset });
+  }
+  return list;
+}
+
+function incomes(): FakeIncome[] {
+  const list = DEMO_CODES.slice(0, 14).flatMap((code, index) => paymentsOf(code, index));
   // Um FII vendido e apagado da carteira em 2025: o histórico continua com ele.
   for (let month = 1; month <= 8; month += 1) {
     list.push({ pay: day(2025, month, 15), record: day(2025, month, 1), gross: 38, net: 38, asset: null, label: "VELH11" });

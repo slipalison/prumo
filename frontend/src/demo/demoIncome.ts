@@ -1,4 +1,4 @@
-import type { IncomeEvent, IncomePayer, IncomeSummary } from "../api/incomeTypes";
+import type { IncomeEvent, IncomeKind, IncomePayer, IncomeSummary } from "../api/incomeTypes";
 import { estimateAsset, estimateOf, knownYield, sampleEvent, sampleSummary, unknownCostYield } from "../test/incomeHandlers";
 
 /*
@@ -40,6 +40,12 @@ function payers(): IncomePayer[] {
 
 const UPCOMING_DAYS = ["2026-11-28", "2026-11-30", "2026-12-01", "2026-12-05", "2026-12-10", "2026-12-12", "2026-12-15", "2026-12-18", "2026-12-21", "2026-12-23", "2026-12-30", "2027-01-04", "2027-01-27", "2027-03-10"] as const;
 
+/** O tipo do provento a receber: FII rende; dos outros, um em cada três paga JCP. */
+function upcomingKind(label: string, index: number): IncomeKind {
+  if (label.endsWith("11")) return "reit_income";
+  return index % 3 === 0 ? "jcp" : "dividend";
+}
+
 function upcoming(): IncomeEvent[] {
   return UPCOMING_DAYS.map((pay_date, index) => {
     const label = CODES[(index * 2) % 8] ?? "ALFA3";
@@ -49,7 +55,7 @@ function upcoming(): IncomeEvent[] {
       asset_id: `a-demo-${CODES.indexOf(label)}`,
       symbol: label,
       display_name: label,
-      kind: label.endsWith("11") ? "reit_income" : index % 3 === 0 ? "jcp" : "dividend",
+      kind: upcomingKind(label, index),
       pay_date,
       gross: net,
       net,
@@ -89,7 +95,8 @@ export function demoIncomeSummary(): IncomeSummary {
     const gross = reit || index % 3 !== 0 ? monthly : round2(monthly / 0.9);
     const yahoo = index >= 26;
     const above = [1, 4, 9].includes(index);
-    const usualMonthly = round2(above ? monthly / 1.8 : monthly * (index % 2 === 0 ? 0.95 : 1.1));
+    const usualFactor = index % 2 === 0 ? 0.95 : 1.1;
+    const usualMonthly = round2(above ? monthly / 1.8 : monthly * usualFactor);
     return estimateAsset({
       asset_id: `a-demo-${index}`,
       symbol,

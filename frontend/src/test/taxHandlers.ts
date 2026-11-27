@@ -4,6 +4,7 @@ import type {
   CarryforwardRequest,
   Darf,
   DarfCode,
+  ExemptionId,
   Instrument,
   Irpf,
   LateCharge,
@@ -277,6 +278,19 @@ export function sampleIrpf(year: number): Irpf {
 const SOURCE = "Lei de exemplo, art. 1";
 const sourced = <T,>(value: T) => ({ value, source: SOURCE });
 
+/** O grupo de apuração do instrumento: ação, ETF e BDR vão juntos no comum (ou no de day trade); cripto fica fora. */
+function poolOf(instrument: Instrument, stockPool: "common" | "day_trade"): Pool | null {
+  if (instrument === "crypto") return null;
+  if (instrument === "stock" || instrument === "etf" || instrument === "bdr") return stockPool;
+  return instrument;
+}
+
+/** A isenção que vale para o instrumento: a das vendas de ação, a das de cripto ou nenhuma. */
+function exemptionOf(instrument: Instrument): ExemptionId | null {
+  if (instrument === "stock") return "stock_sales";
+  return instrument === "crypto" ? "crypto_sales" : null;
+}
+
 /** A tabela de regras do ano, com os números do servidor de verdade. */
 export function sampleRules(year: number): TaxRules {
   const pool = (p: Pool) => ({ pool: p, rate: sourced(RATES[p]) });
@@ -287,9 +301,9 @@ export function sampleRules(year: number): TaxRules {
     instruments: INSTRUMENTS.map((instrument) => ({
       instrument,
       regime: instrument === "crypto" ? "capital_gain" : "exchange_net_gain",
-      common_pool: instrument === "crypto" ? null : instrument === "stock" || instrument === "etf" || instrument === "bdr" ? "common" : instrument,
-      day_trade_pool: instrument === "crypto" ? null : instrument === "stock" || instrument === "etf" || instrument === "bdr" ? "day_trade" : instrument,
-      exemption: instrument === "stock" ? "stock_sales" : instrument === "crypto" ? "crypto_sales" : null,
+      common_pool: poolOf(instrument, "common"),
+      day_trade_pool: poolOf(instrument, "day_trade"),
+      exemption: exemptionOf(instrument),
       source: SOURCE,
     })),
     pools: POOLS.map(pool),

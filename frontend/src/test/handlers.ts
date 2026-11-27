@@ -126,54 +126,81 @@ async function record(request: Request) {
 
 const isValueClass = (c: AssetClass) => c === "fixed_income" || c === "intl_fixed_income";
 
+/** Ordem crescente da data do negócio (`AAAA-MM-DD` compara como texto). */
+function byTradeDate(a: Transaction, b: Transaction): number {
+  if (a.trade_date === b.trade_date) return 0;
+  return a.trade_date < b.trade_date ? -1 : 1;
+}
+
+type Position = { quantity: number; cost: number | null; realized: number | null };
+
+/** Abertura, compra e bonificação somam cotas e custo; abertura sem preço deixa o custo desconhecido. */
+function addShares(position: Position, t: Transaction, gross: number, fx: number): Position {
+  const quantity = position.quantity + t.quantity;
+  if (position.cost === null || (t.kind === "opening" && t.unit_price === null)) return { ...position, quantity, cost: null };
+  return { ...position, quantity, cost: position.cost + gross + t.fees * fx };
+}
+
+/** O custo que fica depois de tirar `removed`: zero sem cotas, desconhecido se já era. */
+function remainingCost(left: number, cost: number | null, removed: number | null): number | null {
+  if (left === 0) return 0;
+  return cost === null || removed === null ? null : cost - removed;
+}
+
+/** Venda e resgate saem pelo custo médio; `null` se passam da posição. */
+function removeShares(position: Position, t: Transaction, gross: number, fx: number): Position | null {
+  const { quantity, cost, realized } = position;
+  if (t.quantity > quantity) return null;
+  const removed: number | null = cost === null ? null : (cost * t.quantity) / quantity;
+  const left = quantity - t.quantity;
+  return {
+    quantity: left,
+    cost: remainingCost(left, cost, removed),
+    realized: realized === null || removed === null ? null : realized + gross - t.fees * fx - removed,
+  };
+}
+
+/** Um lançamento aplicado à posição; `null` se a posição ficaria negativa. */
+function applyTransaction(position: Position, t: Transaction): Position | null {
+  const { quantity, cost } = position;
+  const fx = t.fx_rate ?? 1;
+  const gross = t.quantity * (t.unit_price ?? 0) * fx;
+  switch (t.kind) {
+    case "opening":
+    case "buy":
+    case "bonus":
+      return addShares(position, t, gross, fx);
+    case "split":
+      return { ...position, quantity: quantity + t.quantity };
+    case "reverse_split":
+      return t.quantity >= quantity ? null : { ...position, quantity: quantity - t.quantity };
+    case "sell":
+    case "redemption":
+      return removeShares(position, t, gross, fx);
+    case "amortization":
+      if (t.quantity > quantity) return null;
+      return { ...position, cost: cost === null ? null : Math.max(0, cost - gross) };
+    case "adjustment": {
+      if (quantity + t.quantity < 0) return null;
+      const next = quantity + t.quantity;
+      return { ...position, quantity: next, cost: next === 0 ? 0 : cost };
+    }
+  }
+}
+
 /**
  * O livro de um ativo, refeito como o servidor faz (docs/api.md § Lançamentos):
  * custo médio, venda pelo custo médio, eventos que preservam o custo. Devolve
  * `null` se alguma data ficaria com posição negativa.
  */
-function replay(list: Transaction[]): { quantity: number; cost: number | null; realized: number | null } | null {
-  const sorted = [...list].sort((a, b) => (a.trade_date === b.trade_date ? 0 : a.trade_date < b.trade_date ? -1 : 1));
-  let quantity = 0;
-  let cost: number | null = 0;
-  let realized: number | null = 0;
-  for (const t of sorted) {
-    const fx = t.fx_rate ?? 1;
-    const gross = t.quantity * (t.unit_price ?? 0) * fx;
-    switch (t.kind) {
-      case "opening":
-      case "buy":
-      case "bonus":
-        quantity += t.quantity;
-        cost = cost === null || (t.kind === "opening" && t.unit_price === null) ? null : cost + gross + t.fees * fx;
-        break;
-      case "split":
-        quantity += t.quantity;
-        break;
-      case "reverse_split":
-        if (t.quantity >= quantity) return null;
-        quantity -= t.quantity;
-        break;
-      case "sell":
-      case "redemption": {
-        if (t.quantity > quantity) return null;
-        const removed: number | null = cost === null ? null : (cost * t.quantity) / quantity;
-        realized = realized === null || removed === null ? null : realized + gross - t.fees * fx - removed;
-        quantity -= t.quantity;
-        cost = quantity === 0 ? 0 : cost === null || removed === null ? null : cost - removed;
-        break;
-      }
-      case "amortization":
-        if (t.quantity > quantity) return null;
-        cost = cost === null ? null : Math.max(0, cost - gross);
-        break;
-      case "adjustment":
-        if (quantity + t.quantity < 0) return null;
-        quantity += t.quantity;
-        if (quantity === 0) cost = 0;
-        break;
-    }
+function replay(list: Transaction[]): Position | null {
+  let position: Position = { quantity: 0, cost: 0, realized: 0 };
+  for (const t of [...list].sort(byTradeDate)) {
+    const next = applyTransaction(position, t);
+    if (next === null) return null;
+    position = next;
   }
-  return { quantity, cost, realized };
+  return position;
 }
 
 /** Grava o livro do ativo se ele fecha; senão, nada muda e responde 422. */
@@ -190,6 +217,20 @@ function commitLedger(assetId: string, next: Transaction[]) {
   return null;
 }
 const isNativeB3 = (c: AssetClass) => c === "br_stocks" || c === "br_reits";
+
+/** A cotação do ativo novo: a do título do Tesouro; renda fixa por valor vale 1; o resto, 100. */
+function initialQuote(bond: { price: number } | undefined, valueBased: boolean): number {
+  if (bond) return bond.price;
+  return valueBased ? 1 : 100;
+}
+
+/** Marca e desmarca as respostas do checklist (`null` desmarca). */
+function applyAnswers(stored: StoredAsset, answers: Record<string, boolean | null>): void {
+  for (const [id, answer] of Object.entries(answers)) {
+    if (answer === null) delete stored.answers[id];
+    else stored.answers[id] = answer;
+  }
+}
 
 const handlers = [
   http.all("/api/v1/*", async ({ request }) => {
@@ -226,7 +267,7 @@ const handlers = [
       symbol: valueBased ? null : symbol,
       display_name: bond?.display_name ?? body.display_name ?? symbol ?? "Ativo",
       quantity: valueBased ? (body.amount ?? 0) : (body.quantity ?? 0),
-      quote_price: bond ? bond.price : valueBased ? 1 : 100,
+      quote_price: initialQuote(bond, valueBased),
       manual_price: valueBased ? 1 : (body.manual_price ?? null),
       currency: "BRL",
       score_override: body.score_override ?? null,
@@ -260,12 +301,7 @@ const handlers = [
       // Na B3 o ativo tem cotação; fora dela, um ticker da B3 fica sem preço.
       stored.quote_price = body.listed_on_b3 ? 52 : null;
     }
-    if (body.answers) {
-      for (const [id, answer] of Object.entries(body.answers)) {
-        if (answer === null) delete stored.answers[id];
-        else stored.answers[id] = answer;
-      }
-    }
+    if (body.answers) applyAnswers(stored, body.answers);
     return HttpResponse.json(assetView(stored));
   }),
 
@@ -354,7 +390,7 @@ const handlers = [
     const assetId = new URL(request.url).searchParams.get("asset_id");
     const list = db.transactions
       .filter((t) => !assetId || t.asset_id === assetId)
-      .sort((a, b) => (a.trade_date === b.trade_date ? 0 : a.trade_date < b.trade_date ? 1 : -1));
+      .sort((a, b) => byTradeDate(b, a));
     return HttpResponse.json(list);
   }),
 

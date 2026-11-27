@@ -24,6 +24,12 @@ function factor(group: ProjectionGroup, k: number): number {
   return 1;
 }
 
+/** O peso do mês no tipo: a ação paga só em maio e novembro; o resto, todo mês. */
+function monthShape(group: ProjectionGroup, month: string): number {
+  if (group !== "br_stocks") return 1;
+  return month.endsWith("-05") || month.endsWith("-11") ? 6 : 0;
+}
+
 export function sampleProjection(months: 12 | 24 = 12, spread = 2): IncomeProjection {
   const d = spread / 100;
   const monthList = Array.from({ length: months }, (_, i) => {
@@ -32,7 +38,7 @@ export function sampleProjection(months: 12 | 24 = 12, spread = 2): IncomeProjec
     // A ação paga só em maio e novembro: o calendário aparece nas barras.
     const by_group = Object.fromEntries(
       START.map(([, group, start]) => {
-        const shape = group === "br_stocks" ? (month.endsWith("-05") || month.endsWith("-11") ? 6 : 0) : 1;
+        const shape = monthShape(group, month);
         return [group, round2(start * factor(group, k) * shape)];
       }),
     ) as Partial<Record<ProjectionGroup, number>>;

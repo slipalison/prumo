@@ -6,7 +6,7 @@ export class FakeEventSource {
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
   static readonly CLOSED = 2;
-  static instances: FakeEventSource[] = [];
+  static readonly instances: FakeEventSource[] = [];
 
   readonly url: string;
   readonly withCredentials: boolean;
@@ -27,7 +27,7 @@ export class FakeEventSource {
   }
 
   static reset(): void {
-    FakeEventSource.instances = [];
+    FakeEventSource.instances.length = 0;
   }
 
   addEventListener(type: string, listener: (event: MessageEvent<string>) => void): void {

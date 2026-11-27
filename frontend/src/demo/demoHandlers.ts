@@ -42,18 +42,24 @@ const DAY_MS = 86_400_000;
 
 const iso = (date: Date) => date.toISOString().slice(0, 10);
 
+/** O primeiro dia do período. */
+function periodStart(period: PerformancePeriod): Date {
+  switch (period) {
+    case "month":
+      return new Date(TODAY.getTime() - 30 * DAY_MS);
+    case "ytd":
+      return new Date("2026-01-01T12:00:00Z");
+    case "12m":
+      return new Date(TODAY.getTime() - 365 * DAY_MS);
+    default:
+      // 2 e 5 anos passam do começo da série (2024-11-25): a janela começa nela.
+      return new Date("2024-11-25T12:00:00Z");
+  }
+}
+
 /** Os dias do período, do mais velho para hoje (a série começa em 2024-11-25). */
 function periodDays(period: PerformancePeriod): string[] {
-  const start = new Date("2024-11-25T12:00:00Z");
-  // 2 e 5 anos passam do começo da série (2024-11-25): a janela começa nela.
-  const from =
-    period === "month"
-      ? new Date(TODAY.getTime() - 30 * DAY_MS)
-      : period === "ytd"
-        ? new Date("2026-01-01T12:00:00Z")
-        : period === "12m"
-          ? new Date(TODAY.getTime() - 365 * DAY_MS)
-          : start;
+  const from = periodStart(period);
   const days: string[] = [];
   for (let t = from.getTime(); t <= TODAY.getTime(); t += DAY_MS) days.push(iso(new Date(t)));
   return days;
@@ -117,6 +123,15 @@ function demoYearIndex(months: Array<number | null>, asOf: string, before: numbe
   };
 }
 
+/**
+ * Até quando vai o índice no ano: o ano fechado, até o fim dele. No ano
+ * corrente, o IPCA de um mês sai no mês seguinte; os outros, no dia útil seguinte.
+ */
+function indexAsOf(year: number, code: string, yearEnd: string): string {
+  if (year !== 2026) return yearEnd;
+  return code === "ipca" ? "2026-10-31" : "2026-11-24";
+}
+
 /** Um ano fictício: os meses da carteira, o acumulado e os índices nas mesmas janelas. */
 function demoYear(
   year: number,
@@ -144,10 +159,9 @@ function demoYear(
     benchmarks: Object.fromEntries(
       Object.entries(indexes).map(([code, values]) => [
         code,
-        // O IPCA de um mês sai no mês seguinte; os outros, no dia útil seguinte.
         demoYearIndex(
           values,
-          year !== 2026 ? asOf : code === "ipca" ? "2026-10-31" : "2026-11-24",
+          indexAsOf(year, code, asOf),
           previous?.benchmarks[code as BenchmarkCode]?.accumulated_percent ?? null,
         ),
       ]),

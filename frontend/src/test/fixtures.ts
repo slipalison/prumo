@@ -1,6 +1,17 @@
 import type { Ceiling } from "../api/ceilingTypes";
 import type { Transaction } from "../api/ledgerTypes";
-import { ASSET_CLASSES, type Asset, type AssetClass, type Checklists, type GoalTargets, type Plan, type Portfolio, type Profit } from "../api/types";
+import {
+  ASSET_CLASSES,
+  type Asset,
+  type AssetClass,
+  type Checklists,
+  type GoalTargets,
+  type Plan,
+  type Portfolio,
+  type PriceSource,
+  type Profit,
+  type ScoreSource,
+} from "../api/types";
 import type { TaxInstrument } from "../api/taxTypes";
 import { checklistScore } from "../lib/score";
 
@@ -204,6 +215,18 @@ export function idealPercents(assets: StoredAsset[], checklists: Checklists): Ma
   );
 }
 
+/** De onde vem a nota: a manual vence; sem checklist na classe, não há nota. */
+function scoreSourceOf(scoreOverride: number | null, hasChecklist: boolean): ScoreSource {
+  if (scoreOverride !== null) return "manual";
+  return hasChecklist ? "checklist" : "none";
+}
+
+/** De onde vem o preço: o manual vence a cotação. */
+function priceSourceOf(manualPrice: number | null, price: number | null): PriceSource {
+  if (manualPrice !== null) return "manual";
+  return price === null ? "missing" : "quote";
+}
+
 export function toAsset(stored: StoredAsset, checklists: Checklists, classTotal: number, idealPercent = 0): Asset {
   const price = stored.manual_price ?? stored.quote_price;
   const value = price === null ? 0 : stored.quantity * price;
@@ -214,7 +237,7 @@ export function toAsset(stored: StoredAsset, checklists: Checklists, classTotal:
     !stored.listed_on_b3 &&
     !stored.treasury;
   const unrealized = cost === null || price === null ? null : round2(value - cost);
-  const scoreSource = stored.score_override !== null ? "manual" : kind ? "checklist" : "none";
+  const scoreSource = scoreSourceOf(stored.score_override, kind !== null);
   const score = scoreOf(stored, checklists);
   return {
     id: stored.id,
@@ -228,7 +251,7 @@ export function toAsset(stored: StoredAsset, checklists: Checklists, classTotal:
     manual_price: stored.manual_price,
     ceiling: stored.ceiling ?? null,
     currency: stored.currency,
-    price_source: stored.manual_price !== null ? "manual" : price === null ? "missing" : "quote",
+    price_source: priceSourceOf(stored.manual_price, price),
     quote_updated_at: stored.quote_price === null ? null : (stored.quote_at ?? QUOTES_AT),
     current_value: round2(value),
     class_percent: classTotal > 0 ? round2((value / classTotal) * 100) : 0,

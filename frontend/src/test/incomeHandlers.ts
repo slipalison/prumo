@@ -83,11 +83,17 @@ export function emptySummary(): IncomeSummary {
   };
 }
 
+/** O recebido do mês `index` (11 = o mês corrente); um em cada três fica sem. */
+function sampleReceived(index: number): number {
+  if (index === 11) return 150;
+  return index % 3 === 0 ? 0 : 120 + index * 5;
+}
+
 /** Carteira FICTÍCIA com renda: três pagadores, um ano e meio de histórico. */
 export function sampleSummary(): IncomeSummary {
   const months = emptyMonths().map((m, index) => ({
     ...m,
-    received: index === 11 ? 150 : index % 3 === 0 ? 0 : 120 + index * 5,
+    received: sampleReceived(index),
     upcoming: index === 11 ? 90 : 0,
   }));
   const total = months.reduce((acc, m) => acc + m.received, 0);

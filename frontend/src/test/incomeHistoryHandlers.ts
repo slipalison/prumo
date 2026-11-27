@@ -4,6 +4,7 @@ import type {
   DateBasis,
   HeatCell,
   HeatmapParams,
+  HeatYear,
   HistoryBucket,
   HistoryGroup,
   HistoryGrouping,
@@ -87,7 +88,7 @@ export function historyFrom(incomes: FakeIncome[], params: HistoryParams, today:
   const first = starts[0];
   if (first) {
     const now = intervalStart(monthOf(today), params.interval);
-    const lastKey = starts[starts.length - 1] ?? first;
+    const lastKey = starts.at(-1) ?? first;
     const end = lastKey > now ? lastKey : now;
     for (let start = first; start <= end; start = shiftMonth(start, SPAN[params.interval])) {
       const parts = [...(sums.get(start) ?? new Map<string, { received: number; upcoming: number }>()).entries()]
@@ -107,6 +108,95 @@ export function historyFrom(incomes: FakeIncome[], params: HistoryParams, today:
 /** O patrimônio e o custo médios de cada mês (`AAAA-MM`), ou `null` sem base. */
 export type MonthBase = (month: string) => { market_value: number | null; cost: number | null };
 
+/** O mês do mapa e o que se lê dele na soma do ano. */
+type MonthSum = {
+  cell: HeatCell;
+  /** O provento dos ativos que seguem na carteira: o que entra no DY e no yield on cost. */
+  kept: number;
+  /** Algum provento do mês é de ativo já apagado. */
+  removed: boolean;
+};
+
+/** Um mês do mapa: o recebido, o a receber e o rendimento sobre a base do mês (só até o mês corrente). */
+function monthSum(incomes: FakeIncome[], month: string, params: HeatmapParams, today: string, base: MonthBase): MonthSum {
+  const inside = incomes.filter((i) => monthOf(dateOf(i, params.basis)) === month);
+  const sum = (list: FakeIncome[]) => round2(list.reduce((acc, i) => acc + amountOf(i, params.value), 0));
+  const amount = sum(inside);
+  const upcoming = sum(inside.filter((i) => i.pay > today));
+  const kept = sum(inside.filter((i) => i.asset));
+  const removed = kept < amount;
+  const { market_value, cost } = month <= monthOf(today) ? base(month) : { market_value: null, cost: null };
+  return {
+    kept,
+    removed,
+    cell: {
+      amount,
+      upcoming,
+      market_value,
+      dy: market_value ? round4((kept * 100) / market_value) : null,
+      dy_partial: removed,
+      cost,
+      yield_on_cost: cost ? round4((kept * 100) / cost) : null,
+      yield_on_cost_partial: removed,
+    },
+  };
+}
+
+/** A soma do ano de um rendimento (DY ou yield on cost): o provento e a base dos meses que tinham base. */
+type YieldSum = { numerator: number; base: number; months: number; partial: boolean };
+
+/** Põe o mês na soma do ano; mês com provento e sem base deixa o ano parcial. */
+function addMonth(part: YieldSum, monthBase: number | null, { kept, removed, cell }: MonthSum): void {
+  if (monthBase) {
+    part.numerator += kept;
+    part.base += monthBase;
+    part.months += 1;
+    part.partial ||= removed;
+  } else part.partial ||= cell.amount > 0;
+}
+
+/** O rendimento do ano: o provento sobre a base média dos meses com base. */
+function yearYield(part: YieldSum) {
+  const mean = part.months > 0 ? round2(part.base / part.months) : null;
+  return { base: mean, value: mean ? round4((part.numerator * 100) / mean) : null, partial: part.partial };
+}
+
+/** Um ano do mapa: os doze meses e o total, com o rendimento sobre a base média. */
+function heatYear(incomes: FakeIncome[], year: number, params: HeatmapParams, today: string, base: MonthBase): HeatYear {
+  const months: HeatCell[] = [];
+  const dy: YieldSum = { numerator: 0, base: 0, months: 0, partial: false };
+  const yoc: YieldSum = { numerator: 0, base: 0, months: 0, partial: false };
+  let amountYear = 0;
+  let upcomingYear = 0;
+  for (let m = 1; m <= 12; m += 1) {
+    const month = `${year}-${String(m).padStart(2, "0")}`;
+    const sum = monthSum(incomes, month, params, today, base);
+    months.push(sum.cell);
+    amountYear += sum.cell.amount;
+    upcomingYear += sum.cell.upcoming;
+    if (month <= monthOf(today)) {
+      addMonth(dy, sum.cell.market_value, sum);
+      addMonth(yoc, sum.cell.cost, sum);
+    }
+  }
+  const d = yearYield(dy);
+  const y = yearYield(yoc);
+  return {
+    year,
+    months,
+    total: {
+      amount: round2(amountYear),
+      upcoming: round2(upcomingYear),
+      market_value: d.base,
+      dy: d.value,
+      dy_partial: d.partial,
+      cost: y.base,
+      yield_on_cost: y.value,
+      yield_on_cost_partial: y.partial,
+    },
+  };
+}
+
 /** O mapa de calor como o servidor o soma (sem custo desconhecido). */
 export function heatmapFrom(incomes: FakeIncome[], params: HeatmapParams, today: string, base: MonthBase): IncomeHeatmap {
   if (incomes.length === 0) return { today, ...params, years: [] };
@@ -114,69 +204,8 @@ export function heatmapFrom(incomes: FakeIncome[], params: HeatmapParams, today:
   const firstYear = Number(dates.reduce((a, b) => (a < b ? a : b)).slice(0, 4));
   const lastDate = dates.reduce((a, b) => (a > b ? a : b));
   const lastYear = Number((lastDate > today ? lastDate : today).slice(0, 4));
-  const current = monthOf(today);
-  const years = [];
-  for (let year = lastYear; year >= firstYear; year -= 1) {
-    const months: HeatCell[] = [];
-    const dy = { numerator: 0, base: 0, months: 0, partial: false };
-    const yoc = { numerator: 0, base: 0, months: 0, partial: false };
-    let amountYear = 0;
-    let upcomingYear = 0;
-    for (let m = 1; m <= 12; m += 1) {
-      const month = `${year}-${String(m).padStart(2, "0")}`;
-      const inside = incomes.filter((i) => monthOf(dateOf(i, params.basis)) === month);
-      const amount = round2(inside.reduce((acc, i) => acc + amountOf(i, params.value), 0));
-      const upcoming = round2(inside.filter((i) => i.pay > today).reduce((acc, i) => acc + amountOf(i, params.value), 0));
-      const kept = round2(inside.filter((i) => i.asset).reduce((acc, i) => acc + amountOf(i, params.value), 0));
-      const removed = kept < amount;
-      const { market_value, cost } = month <= current ? base(month) : { market_value: null, cost: null };
-      months.push({
-        amount,
-        upcoming,
-        market_value,
-        dy: market_value ? round4((kept * 100) / market_value) : null,
-        dy_partial: removed,
-        cost,
-        yield_on_cost: cost ? round4((kept * 100) / cost) : null,
-        yield_on_cost_partial: removed,
-      });
-      amountYear += amount;
-      upcomingYear += upcoming;
-      if (month <= current) {
-        for (const [part, b] of [
-          [dy, market_value],
-          [yoc, cost],
-        ] as const) {
-          if (b) {
-            part.numerator += kept;
-            part.base += b;
-            part.months += 1;
-            part.partial ||= removed;
-          } else part.partial ||= amount > 0;
-        }
-      }
-    }
-    const result = (part: typeof dy) => {
-      const mean = part.months > 0 ? round2(part.base / part.months) : null;
-      return { base: mean, value: mean ? round4((part.numerator * 100) / mean) : null, partial: part.partial };
-    };
-    const d = result(dy);
-    const y = result(yoc);
-    years.push({
-      year,
-      months,
-      total: {
-        amount: round2(amountYear),
-        upcoming: round2(upcomingYear),
-        market_value: d.base,
-        dy: d.value,
-        dy_partial: d.partial,
-        cost: y.base,
-        yield_on_cost: y.value,
-        yield_on_cost_partial: y.partial,
-      },
-    });
-  }
+  const years: HeatYear[] = [];
+  for (let year = lastYear; year >= firstYear; year -= 1) years.push(heatYear(incomes, year, params, today, base));
   return { today, ...params, years };
 }
 

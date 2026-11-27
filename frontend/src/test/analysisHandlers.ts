@@ -439,6 +439,46 @@ const problem = (detail: string) =>
     { status: 422, headers: { "Content-Type": "application/problem+json" } },
   );
 
+/** O primeiro erro do pedido, com o texto do servidor; `null` se o pedido vale. */
+function configError(body: ConfigRequest): string | null {
+  for (const [rule, change] of Object.entries(body.rules ?? {})) {
+    if (change.threshold !== undefined && change.threshold <= 0) return `${rule}: o limite precisa ser maior que 0.`;
+  }
+  if (body.bazin_yield !== undefined && (body.bazin_yield <= 0 || body.bazin_yield > 100)) {
+    return "bazin_yield: o rendimento-alvo precisa ser maior que 0 e até 100.";
+  }
+  for (const [name, value] of [
+    ["brick_premium", body.brick_premium],
+    ["paper_premium", body.paper_premium],
+  ] as const) {
+    if (value !== undefined && (value < 0 || value > 20)) {
+      return `${name}: o premio precisa estar entre 0 e 20 pontos percentuais.`;
+    }
+  }
+  return null;
+}
+
+/** Liga, desliga e muda o limite das regras guardadas, como o pedido manda. */
+function applyRuleChanges(rules: ConfigRequest["rules"]): void {
+  for (const [rule, change] of Object.entries(rules ?? {})) {
+    const stored = state.rules.find((r) => r.rule === rule);
+    if (!stored) continue;
+    if (change?.enabled !== undefined) stored.enabled = change.enabled;
+    if (change?.threshold !== undefined) stored.threshold = change.threshold;
+  }
+}
+
+/** O mercado com os prêmios do pedido e as taxas-alvo de FII refeitas com eles. */
+function marketWith(base: References["market"], body: ConfigRequest): References["market"] {
+  const market = { ...base };
+  if (body.brick_premium !== undefined) market.brick_premium = body.brick_premium;
+  if (body.paper_premium !== undefined) market.paper_premium = body.paper_premium;
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  market.brick_target = market.real_rate ? round2(market.real_rate.percent + market.brick_premium) : null;
+  market.paper_target = market.cdi_12m ? round2(market.cdi_12m.net_percent + market.paper_premium) : null;
+  return market;
+}
+
 export const analysisHandlers: HttpHandler[] = [
   http.get("/api/v1/analysis", () => HttpResponse.json(state.analysis)),
 
@@ -451,35 +491,11 @@ export const analysisHandlers: HttpHandler[] = [
   http.put("/api/v1/analysis/rules", async ({ request }) => {
     const body = (await request.json()) as ConfigRequest;
     state.saved.push(body);
-    for (const [rule, change] of Object.entries(body.rules ?? {})) {
-      if (change.threshold !== undefined && change.threshold <= 0) {
-        return problem(`${rule}: o limite precisa ser maior que 0.`);
-      }
-    }
-    if (body.bazin_yield !== undefined && (body.bazin_yield <= 0 || body.bazin_yield > 100)) {
-      return problem("bazin_yield: o rendimento-alvo precisa ser maior que 0 e até 100.");
-    }
-    for (const [name, value] of [
-      ["brick_premium", body.brick_premium],
-      ["paper_premium", body.paper_premium],
-    ] as const) {
-      if (value !== undefined && (value < 0 || value > 20)) {
-        return problem(`${name}: o premio precisa estar entre 0 e 20 pontos percentuais.`);
-      }
-    }
-    for (const [rule, change] of Object.entries(body.rules ?? {})) {
-      const stored = state.rules.find((r) => r.rule === rule);
-      if (!stored) continue;
-      if (change?.enabled !== undefined) stored.enabled = change.enabled;
-      if (change?.threshold !== undefined) stored.threshold = change.threshold;
-    }
+    const error = configError(body);
+    if (error !== null) return problem(error);
+    applyRuleChanges(body.rules);
     const all = references();
-    const market = { ...all.market };
-    if (body.brick_premium !== undefined) market.brick_premium = body.brick_premium;
-    if (body.paper_premium !== undefined) market.paper_premium = body.paper_premium;
-    const round2 = (n: number) => Math.round(n * 100) / 100;
-    market.brick_target = market.real_rate ? round2(market.real_rate.percent + market.brick_premium) : null;
-    market.paper_target = market.cdi_12m ? round2(market.cdi_12m.net_percent + market.paper_premium) : null;
+    const market = marketWith(all.market, body);
     state.analysis = {
       ...state.analysis,
       references: { ...all, market, bazin_yield: body.bazin_yield ?? all.bazin_yield },

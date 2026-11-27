@@ -3,6 +3,8 @@ import type {
   CompareAsset,
   CompareCell,
   CompareCurve,
+  CompareDirection,
+  CompareFamily,
   CompareReturns,
   CompareRow,
   CompareTable,
@@ -39,11 +41,16 @@ export function resetCompare() {
 const IN_PORTFOLIO = new Set(["ITSA4", "KNRI11", "HGLG11", "MXRF11", "BTLG11", "BTC"]);
 const PRICES: Record<string, number> = { ITSA4: 11.2, KNRI11: 142, HGLG11: 140.8, MXRF11: 8.37, VALE3: 62, PETR4: 38.5, AAPL: 200 };
 
+function assetClassOf(fund: boolean, us: boolean): AssetClass {
+  if (fund) return "br_reits";
+  return us ? "intl_stocks" : "br_stocks";
+}
+
 function assetOf(key: string): CompareAsset {
   const symbol = key.split(":")[0] ?? key;
   const fund = symbol.endsWith("11");
   const us = key.includes("intl_stocks") && !key.endsWith(":b3");
-  const assetClass: AssetClass = fund ? "br_reits" : us ? "intl_stocks" : "br_stocks";
+  const assetClass = assetClassOf(fund, us);
   return {
     key,
     symbol,
@@ -59,21 +66,36 @@ function assetOf(key: string): CompareAsset {
 const known = (value: number, mark: CompareCell["mark"] = null): CompareCell => ({ value, text: null, reason: null, mark });
 const missing = (reason: NonNullable<CompareCell["reason"]>): CompareCell => ({ value: null, text: null, reason, mark: null });
 
+/** Marca o melhor valor entre os ativos de um tipo; com menos de dois com valor, nenhum. */
+function markFamily(
+  cells: CompareCell[],
+  assets: CompareAsset[],
+  family: CompareFamily,
+  direction: Exclude<CompareDirection, "none">,
+): void {
+  const idx = assets.flatMap((a, i) => (a.family === family && cells[i]?.value != null ? [i] : []));
+  if (idx.length < 2) return;
+  const values = idx.map((i) => cells[i]?.value as number);
+  const extreme = direction === "higher" ? Math.max(...values) : Math.min(...values);
+  const best = direction === "higher" ? "max" : "min";
+  for (const i of idx) {
+    const cell = cells[i];
+    if (cell?.value === extreme) cell.mark = best;
+  }
+}
+
 /** O destaque da linha dentro de cada tipo, como o servidor faz. */
 function mark(row: CompareRow, assets: CompareAsset[]): CompareRow {
   if (row.direction === "none") return row;
   const cells = row.cells.map((cell) => ({ ...cell }));
-  for (const family of ["company", "fund", "other"] as const) {
-    const idx = assets.flatMap((a, i) => (a.family === family && cells[i]?.value != null ? [i] : []));
-    if (idx.length < 2) continue;
-    const values = idx.map((i) => cells[i]?.value as number);
-    const extreme = row.direction === "higher" ? Math.max(...values) : Math.min(...values);
-    for (const i of idx) {
-      const cell = cells[i];
-      if (cell && cell.value === extreme) cell.mark = row.direction === "higher" ? "max" : "min";
-    }
-  }
+  for (const family of ["company", "fund", "other"] as const) markFamily(cells, assets, family, row.direction);
   return { ...row, cells };
+}
+
+/** O ROE fictício: só de empresa, e só da que está na carteira ou na primeira coluna. */
+function roeCell(asset: CompareAsset, i: number): CompareCell {
+  if (asset.family !== "company") return missing("not_applicable");
+  return asset.in_portfolio || i === 0 ? known(12 + i) : missing("not_tracked");
 }
 
 export function sampleTable(keys: readonly string[]): CompareTable {
@@ -101,33 +123,33 @@ export function sampleTable(keys: readonly string[]): CompareTable {
       group: "company",
       unit: "percent",
       direction: "higher",
-      cells: assets.map((a, i) =>
-        a.family !== "company" ? missing("not_applicable") : a.in_portfolio || i === 0 ? known(12 + i) : missing("not_tracked"),
-      ),
+      cells: assets.map(roeCell),
     });
   }
   if (assets.some((a) => a.family === "fund")) {
-    rows.push({
-      id: "vacancy",
-      group: "fund",
-      unit: "percent",
-      direction: "lower",
-      cells: assets.map((a, i) => (a.family !== "fund" ? missing("not_applicable") : known(3 + i))),
-    });
-    rows.push({
-      id: "cash_share",
-      group: "fund",
-      unit: "percent",
-      direction: "none",
-      cells: assets.map((a, i) => (a.family !== "fund" ? missing("not_applicable") : known(6 + i))),
-    });
-    rows.push({
-      id: "liquidity_30d",
-      group: "fund",
-      unit: "money_compact",
-      direction: "higher",
-      cells: assets.map((a, i) => (a.family !== "fund" ? missing("not_applicable") : known(8_000_000 + 1_000_000 * i))),
-    });
+    rows.push(
+      {
+        id: "vacancy",
+        group: "fund",
+        unit: "percent",
+        direction: "lower",
+        cells: assets.map((a, i) => (a.family !== "fund" ? missing("not_applicable") : known(3 + i))),
+      },
+      {
+        id: "cash_share",
+        group: "fund",
+        unit: "percent",
+        direction: "none",
+        cells: assets.map((a, i) => (a.family !== "fund" ? missing("not_applicable") : known(6 + i))),
+      },
+      {
+        id: "liquidity_30d",
+        group: "fund",
+        unit: "money_compact",
+        direction: "higher",
+        cells: assets.map((a, i) => (a.family !== "fund" ? missing("not_applicable") : known(8_000_000 + 1_000_000 * i))),
+      },
+    );
   }
   const market = defaultMarket();
   return {
@@ -160,7 +182,7 @@ export function sampleReturns(keys: readonly string[], params: URLSearchParams):
   if (params.get("portfolio") === "true") series.push(curve("portfolio", "portfolio", "Carteira", 1.2));
   if (benchmarks.includes("cdi")) series.push(curve("cdi", "index", "CDI", 0.9));
   if (benchmarks.includes("ibov")) series.push(curve("ibov", "index", "Ibovespa", 0.4));
-  return { period, total_return: totalReturn, align_start: alignStart, from: DATES[0] ?? "", to: DATES[DATES.length - 1] ?? "", dates: DATES, series };
+  return { period, total_return: totalReturn, align_start: alignStart, from: DATES[0] ?? "", to: DATES.at(-1) ?? "", dates: DATES, series };
 }
 
 const problem = () =>

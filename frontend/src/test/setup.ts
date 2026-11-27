@@ -40,7 +40,7 @@ afterEach(() => {
   resetTaxDb();
   window.localStorage.clear();
   window.location.hash = "";
-  document.documentElement.removeAttribute("data-theme");
+  delete document.documentElement.dataset.theme;
   document.body.style.overflow = "";
 });
 

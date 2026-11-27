@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import type { AssetResults, Change, CompanyResults, FundResults, Quarter } from "../api/resultsTypes";
+import type { AssetResults, Change, CompanyResults, FundResults, Quarter, QuarterMethod } from "../api/resultsTypes";
 
 /*
  * `GET /results` dos testes e da demonstração: empresas e fundos FICTÍCIOS,
@@ -24,6 +24,12 @@ const STARTS = ["01-01", "04-01", "07-01", "10-01"];
 export const percent = (value: number): Change => ({ kind: "percent", value, gap: null });
 export const label = (kind: Change["kind"]): Change => ({ kind, value: null, gap: null });
 
+/** Como o trimestre `k` sai dos formulários: o 1º direto, o 4º do anual menos nove meses, os outros pela diferença. */
+function quarterMethod(k: number): QuarterMethod {
+  if (k === 1) return "first_quarter";
+  return k === 4 ? "annual_less_nine_months" : "year_to_date_difference";
+}
+
 /**
  * Até oito trimestres (terminando no 3º de 2026) com a linha de cima e o lucro
  * dados, em reais. `margin` troca a margem de todos (o motivo de banco ou
@@ -38,7 +44,7 @@ export function quarters(values: Array<[number, number]>, margin: Quarter["net_m
       fiscal_quarter: k,
       period_start: `${year}-${STARTS[k - 1]}`,
       period_end: end,
-      method: k === 1 ? "first_quarter" : k === 4 ? "annual_less_nine_months" : "year_to_date_difference",
+      method: quarterMethod(k),
       top_line: { value: top, gap: null },
       net_income: { value: profit, gap: null },
       net_margin: margin ?? (top > 0 ? { value: Math.round((profit / top) * 1e6) / 1e6, gap: null } : { value: null, gap: "non_positive_base" }),
