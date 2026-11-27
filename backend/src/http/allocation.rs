@@ -7,17 +7,38 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-use super::dto::optional_decimal;
+use super::dto::patch_decimal;
 use super::{ApiJson, AppState, CurrentUser};
 use crate::domain::allocation::{Limits, FULL_BP};
 use crate::error::{ApiError, ApiResult};
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "AllocationSettingsBody")]
 pub struct AllocationSettingsRequest {
     /// Obrigatório: um número de 0,01 a 100, ou `null` para desligar.
-    #[serde(deserialize_with = "optional_decimal")]
     pub max_asset_percent: Option<Decimal>,
+}
+
+/// O corpo como chega, com os três estados do campo: ausente (`None`), `null`
+/// (`Some(None)`) e número (`Some(Some)`). A exigência do campo fica explícita
+/// no `TryFrom`, e não num efeito colateral do `deserialize_with`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AllocationSettingsBody {
+    #[serde(default, deserialize_with = "patch_decimal")]
+    max_asset_percent: Option<Option<Decimal>>,
+}
+
+impl TryFrom<AllocationSettingsBody> for AllocationSettingsRequest {
+    type Error = &'static str;
+
+    /// Sem o campo, a mesma recusa (e o mesmo texto) que o serde dá a um campo
+    /// obrigatório que falta: desligar o limite pede `null` explícito.
+    fn try_from(body: AllocationSettingsBody) -> Result<Self, Self::Error> {
+        body.max_asset_percent
+            .map(|max_asset_percent| Self { max_asset_percent })
+            .ok_or("missing field `max_asset_percent`")
+    }
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -98,5 +119,18 @@ mod tests {
             max_asset_bp: Some(1250),
         });
         assert_eq!(dto.max_asset_percent, Some(12.5));
+    }
+
+    #[test]
+    fn a_missing_field_reads_as_none_and_is_refused_with_the_serde_message() {
+        let missing: AllocationSettingsBody = serde_json::from_str("{}").unwrap();
+        assert_eq!(missing.max_asset_percent, None);
+        let null: AllocationSettingsBody =
+            serde_json::from_str(r#"{"max_asset_percent": null}"#).unwrap();
+        assert_eq!(null.max_asset_percent, Some(None));
+        let error = serde_json::from_value::<AllocationSettingsRequest>(serde_json::json!({}))
+            .unwrap_err()
+            .to_string();
+        assert_eq!(error, "missing field `max_asset_percent`");
     }
 }

@@ -299,6 +299,22 @@ impl ClassState {
     fn ceiling(&self) -> Decimal {
         self.capacity.map_or(self.gap, |c| c.min(self.gap))
     }
+
+    /// Soma um ativo da classe: o valor dele e, se recebe, a nota e o que cabe
+    /// nele sob o limite.
+    fn add(&mut self, holding: &Holding, asset_cap: Option<Decimal>) {
+        self.current += holding.value;
+        if holding.is_eligible() {
+            self.candidates = true;
+            self.score_sum += Decimal::from(holding.score);
+            if let Some(cap) = asset_cap {
+                *self.capacity.get_or_insert(Decimal::ZERO) +=
+                    (cap - holding.value).max(Decimal::ZERO);
+            }
+        } else {
+            self.ineligible_value += holding.value;
+        }
+    }
 }
 
 /// Calcula o plano de compra para `amount` reais.
@@ -306,29 +322,86 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding], limits: Lim
     let amount = floor_cents(amount.max(Decimal::ZERO));
     let total: Decimal = holdings.iter().map(|h| h.value).sum();
     let grand_total = total + amount;
-    let bp_sum = targets.sum();
     // O limite de concentração em reais: a fatia máxima de um ativo em `N`.
     let asset_cap = limits
         .max_asset_bp
         .map(|bp| grand_total * Decimal::from(bp) / Decimal::from(FULL_BP));
-    // Até onde a fatia de um ativo pode ir: o limite, ou o que ele já vale
-    // (o motor não vende quem já passou).
-    let share_cap = |h: &Holding| asset_cap.map(|cap| cap.max(h.value));
 
+    let mut classes = class_states(targets, holdings, grand_total, asset_cap);
+    let unallocated = round_cents(split_between_classes(amount, &mut classes).max(Decimal::ZERO));
+    let (desired, at_limit) = desired_values(&classes, holdings, asset_cap);
+    let (planned_qty, planned_value) = buyable(holdings, &desired);
+
+    // Passo 6: o troco do arredondamento.
+    let mut leftover = Leftover::new(
+        holdings,
+        &classes,
+        ideal_values(&classes, holdings, asset_cap),
+        asset_cap,
+        planned_qty,
+        planned_value,
+    );
+    let pool = amount - unallocated - leftover.planned_value.iter().copied().sum::<Decimal>();
+    leftover.spend(pool);
+    let Leftover {
+        planned_qty,
+        planned_value,
+        ..
+    } = leftover;
+
+    let invested: Decimal = planned_value.iter().copied().sum();
+    let change = amount - unallocated - invested;
+    let total_after = total + invested;
+
+    let mut class_added = [Decimal::ZERO; 7];
+    for (i, holding) in holdings.iter().enumerate() {
+        class_added[class_index(holding.asset_class)] += planned_value[i];
+    }
+    let items = plan_items(
+        holdings,
+        &classes,
+        &class_added,
+        &planned_qty,
+        &planned_value,
+    );
+    let outcomes = class_outcomes(targets, &classes, &class_added, total, total_after);
+
+    let mut notices = notices(targets, &classes, holdings);
+    if let Some(bp) = limits.max_asset_bp {
+        notices.extend(limit_notice(bp, &classes, holdings, &at_limit, unallocated));
+    }
+
+    Plan {
+        amount,
+        invested: round_cents(invested),
+        change: round_cents(change),
+        unallocated,
+        total_before: round_cents(total),
+        total_after: round_cents(total_after),
+        items,
+        classes: outcomes,
+        notices,
+    }
+}
+
+/// Até onde a fatia de um ativo pode ir: o limite, ou o que ele já vale (o
+/// motor não vende quem já passou). `None` sem limite.
+fn share_cap(asset_cap: Option<Decimal>, holding: &Holding) -> Option<Decimal> {
+    asset_cap.map(|cap| cap.max(holding.value))
+}
+
+/// Passo 1: o que cada classe tem, a meta dela em `N` (`grand_total`), o que
+/// falta e se ela pode receber.
+fn class_states(
+    targets: Targets,
+    holdings: &[Holding],
+    grand_total: Decimal,
+    asset_cap: Option<Decimal>,
+) -> [ClassState; 7] {
+    let bp_sum = targets.sum();
     let mut classes = [ClassState::default(); 7];
     for holding in holdings {
-        let state = &mut classes[class_index(holding.asset_class)];
-        state.current += holding.value;
-        if holding.is_eligible() {
-            state.candidates = true;
-            state.score_sum += Decimal::from(holding.score);
-            if let Some(cap) = asset_cap {
-                *state.capacity.get_or_insert(Decimal::ZERO) +=
-                    (cap - holding.value).max(Decimal::ZERO);
-            }
-        } else {
-            state.ineligible_value += holding.value;
-        }
+        classes[class_index(holding.asset_class)].add(holding, asset_cap);
     }
     for class in AssetClass::ALL {
         let state = &mut classes[class_index(class)];
@@ -340,10 +413,14 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding], limits: Lim
         state.gap = (state.target_value - state.current).max(Decimal::ZERO);
         state.eligible = state.candidates && state.capacity.is_none_or(|c| c >= CENT);
     }
+    classes
+}
 
-    // Passo 2 e 3: entre classes, proporcional ao que falta, com teto no que
-    // falta (e no que cabe sob o limite). A classe que bate no que cabe sai da
-    // rodada, e o resto é redividido entre as outras pelo que ainda falta.
+/// Passos 2 e 3: entre classes, proporcional ao que falta, com teto no que
+/// falta (e no que cabe sob o limite). A classe que bate no que cabe sai da
+/// rodada, e o resto é redividido entre as outras pelo que ainda falta.
+/// Devolve o que ficou sem destino.
+fn split_between_classes(amount: Decimal, classes: &mut [ClassState; 7]) -> Decimal {
     let mut pool = amount;
     for _ in 0..=AssetClass::ALL.len() {
         let open: Vec<usize> = (0..classes.len())
@@ -357,27 +434,7 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding], limits: Lim
             break;
         }
         let fits = pool <= receivable;
-        let mut spent = Decimal::ZERO;
-        let mut capped = false;
-        for &c in &open {
-            let state = &mut classes[c];
-            let missing = state.gap - state.allocation;
-            let share = if fits {
-                pool * missing / receivable
-            } else {
-                missing
-            };
-            let room = state.ceiling() - state.allocation;
-            // Sem limite o teto é o que falta, e a divisão já não passa dele.
-            let give = if state.capacity.is_some() && share > room {
-                capped = true;
-                room
-            } else {
-                share
-            };
-            state.allocation += give;
-            spent += give;
-        }
+        let (spent, capped) = give_round(classes, &open, pool, receivable);
         if !capped {
             pool = if fits {
                 Decimal::ZERO
@@ -388,9 +445,52 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding], limits: Lim
         }
         pool -= spent;
     }
-    let unallocated = round_cents(pool.max(Decimal::ZERO));
+    pool
+}
 
-    // Passo 4: dentro da classe, proporcional ao que falta a cada ativo.
+/// Uma rodada da divisão entre as classes `open`: cada uma recebe a parte dela
+/// de `pool` (ou tudo o que falta nela, quando `pool` passa de `receivable`),
+/// sem passar do que cabe sob o limite. Devolve quanto saiu e se alguma classe
+/// parou no que cabe.
+fn give_round(
+    classes: &mut [ClassState; 7],
+    open: &[usize],
+    pool: Decimal,
+    receivable: Decimal,
+) -> (Decimal, bool) {
+    let fits = pool <= receivable;
+    let mut spent = Decimal::ZERO;
+    let mut capped = false;
+    for &c in open {
+        let state = &mut classes[c];
+        let missing = state.gap - state.allocation;
+        let share = if fits {
+            pool * missing / receivable
+        } else {
+            missing
+        };
+        let room = state.ceiling() - state.allocation;
+        // Sem limite o teto é o que falta, e a divisão já não passa dele.
+        let give = if state.capacity.is_some() && share > room {
+            capped = true;
+            room
+        } else {
+            share
+        };
+        state.allocation += give;
+        spent += give;
+    }
+    (spent, capped)
+}
+
+/// Passo 4: dentro da classe, proporcional ao que falta a cada ativo. Devolve
+/// quanto cada ativo deveria receber (na ordem de `holdings`) e quem parou no
+/// limite.
+fn desired_values(
+    classes: &[ClassState; 7],
+    holdings: &[Holding],
+    asset_cap: Option<Decimal>,
+) -> (Vec<Decimal>, Vec<usize>) {
     let mut desired = vec![Decimal::ZERO; holdings.len()];
     let mut at_limit: Vec<usize> = Vec::new();
     for class in AssetClass::ALL {
@@ -400,13 +500,9 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding], limits: Lim
         }
         let eligible_after = state.current + state.allocation - state.ineligible_value;
         let members = eligible_members(holdings, class);
-        let shares = capped_shares(
-            eligible_after,
-            state.score_sum,
-            &members,
-            holdings,
-            share_cap,
-        );
+        let shares = capped_shares(eligible_after, state.score_sum, &members, holdings, |h| {
+            share_cap(asset_cap, h)
+        });
         let gaps: Vec<Decimal> = members
             .iter()
             .zip(&shares)
@@ -419,22 +515,37 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding], limits: Lim
             } else {
                 // Inalcançável quando Σ metas = N (ver o cabeçalho), mas se a
                 // conta escorregar no arredondamento o excedente segue a nota.
-                let spread = gaps[slot]
-                    + (state.allocation - gap_sum).max(Decimal::ZERO)
-                        * Decimal::from(holdings[i].score)
-                        / state.score_sum;
-                match asset_cap {
-                    Some(cap) => spread.min((cap - holdings[i].value).max(Decimal::ZERO)),
-                    None => spread,
-                }
+                spread_by_score(&state, gaps[slot], gap_sum, &holdings[i], asset_cap)
             };
-            if share_cap(&holdings[i]).is_some_and(|cap| shares[slot] >= cap) {
+            if share_cap(asset_cap, &holdings[i]).is_some_and(|cap| shares[slot] >= cap) {
                 at_limit.push(i);
             }
         }
     }
+    (desired, at_limit)
+}
 
-    // Passo 5: converte em unidades compráveis.
+/// O que falta ao ativo mais a parte dele, pela nota, do que a classe recebe
+/// além do que falta aos ativos dela; com o limite, até o que cabe nele.
+fn spread_by_score(
+    state: &ClassState,
+    gap: Decimal,
+    gap_sum: Decimal,
+    holding: &Holding,
+    asset_cap: Option<Decimal>,
+) -> Decimal {
+    let spread = gap
+        + (state.allocation - gap_sum).max(Decimal::ZERO) * Decimal::from(holding.score)
+            / state.score_sum;
+    match asset_cap {
+        Some(cap) => spread.min((cap - holding.value).max(Decimal::ZERO)),
+        None => spread,
+    }
+}
+
+/// Passo 5: converte em unidades compráveis. Devolve a quantidade e o valor de
+/// cada ativo, na ordem de `holdings`.
+fn buyable(holdings: &[Holding], desired: &[Decimal]) -> (Vec<Decimal>, Vec<Decimal>) {
     let mut planned_qty = vec![Decimal::ZERO; holdings.len()];
     let mut planned_value = vec![Decimal::ZERO; holdings.len()];
     for (i, holding) in holdings.iter().enumerate() {
@@ -448,9 +559,16 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding], limits: Lim
         planned_qty[i] = qty;
         planned_value[i] = value;
     }
+    (planned_qty, planned_value)
+}
 
-    // Passo 6: o troco do arredondamento. A meta de cada ativo é a fatia dele
-    // na meta da classe, com o mesmo limite do passo 4.
+/// A meta de cada ativo no troco: a fatia dele na meta da classe, com o mesmo
+/// limite do passo 4.
+fn ideal_values(
+    classes: &[ClassState; 7],
+    holdings: &[Holding],
+    asset_cap: Option<Decimal>,
+) -> Vec<Decimal> {
     let mut ideal = vec![Decimal::ZERO; holdings.len()];
     for class in AssetClass::ALL {
         let state = classes[class_index(class)];
@@ -459,85 +577,153 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding], limits: Lim
         }
         let members = eligible_members(holdings, class);
         let base = (state.target_value - state.ineligible_value).max(Decimal::ZERO);
-        let shares = capped_shares(base, state.score_sum, &members, holdings, share_cap);
+        let shares = capped_shares(base, state.score_sum, &members, holdings, |h| {
+            share_cap(asset_cap, h)
+        });
         for (&i, share) in members.iter().zip(shares) {
             ideal[i] = share;
         }
     }
-    let mut pool = amount - unallocated - planned_value.iter().copied().sum::<Decimal>();
-    let mut class_planned = [Decimal::ZERO; 7];
-    for (i, holding) in holdings.iter().enumerate() {
-        class_planned[class_index(holding.asset_class)] += planned_value[i];
-    }
-    for _ in 0..MAX_LEFTOVER_STEPS {
-        if pool < CENT {
-            break;
+    ideal
+}
+
+/// Passo 6: a rodada gulosa do troco do arredondamento, sobre o que os passos
+/// anteriores já planejaram.
+struct Leftover<'a> {
+    holdings: &'a [Holding],
+    classes: &'a [ClassState; 7],
+    /// A meta de cada ativo ([`ideal_values`]).
+    ideal: Vec<Decimal>,
+    asset_cap: Option<Decimal>,
+    planned_qty: Vec<Decimal>,
+    planned_value: Vec<Decimal>,
+    /// O valor planejado em cada classe.
+    class_planned: [Decimal; 7],
+}
+
+impl<'a> Leftover<'a> {
+    fn new(
+        holdings: &'a [Holding],
+        classes: &'a [ClassState; 7],
+        ideal: Vec<Decimal>,
+        asset_cap: Option<Decimal>,
+        planned_qty: Vec<Decimal>,
+        planned_value: Vec<Decimal>,
+    ) -> Self {
+        let mut class_planned = [Decimal::ZERO; 7];
+        for (i, holding) in holdings.iter().enumerate() {
+            class_planned[class_index(holding.asset_class)] += planned_value[i];
         }
-        let deficit = |i: usize| ideal[i] - holdings[i].value - planned_value[i];
-        // O que ainda falta na classe do ativo: o troco também não leva a
-        // classe além da meta (nem dá nada à classe que já passou dela).
-        let class_deficit = |i: usize| {
-            let c = class_index(holdings[i].asset_class);
-            classes[c].target_value - classes[c].current - class_planned[c]
-        };
-        // O que ainda cabe no ativo sob o limite. Aqui não há meia unidade de
-        // folga: o limite é teto duro.
-        let limit_room = |i: usize| asset_cap.map(|cap| cap - holdings[i].value - planned_value[i]);
-        // Primeiro uma unidade inteira, se ela aproxima o ativo e a classe da meta.
-        let whole = (0..holdings.len())
+        Self {
+            holdings,
+            classes,
+            ideal,
+            asset_cap,
+            planned_qty,
+            planned_value,
+            class_planned,
+        }
+    }
+
+    /// Gasta o troco `pool`, um passo por vez, enquanto houver centavo e passo
+    /// que aproxime alguém da meta.
+    fn spend(&mut self, mut pool: Decimal) {
+        for _ in 0..MAX_LEFTOVER_STEPS {
+            if pool < CENT {
+                break;
+            }
+            // Primeiro uma unidade inteira, se ela aproxima o ativo e a classe da meta.
+            if let Some((i, price)) = self.next_whole(pool) {
+                self.buy(i, Decimal::ONE, price);
+                pool -= price;
+                continue;
+            }
+            // Senão, o que cabe no fracionável mais atrasado.
+            let Some(i) = self.next_fractional() else {
+                break;
+            };
+            let Some(price) = self.holdings[i].price() else {
+                break;
+            };
+            let mut budget = pool.min(self.deficit(i)).min(self.class_deficit(i));
+            if let Some(room) = self.limit_room(i) {
+                budget = budget.min(room);
+            }
+            let (qty, value) = purchasable(self.holdings[i].unit, budget, price);
+            if value <= Decimal::ZERO {
+                break;
+            }
+            self.buy(i, qty, value);
+            pool -= value;
+        }
+    }
+
+    fn deficit(&self, i: usize) -> Decimal {
+        self.ideal[i] - self.holdings[i].value - self.planned_value[i]
+    }
+
+    /// O que ainda falta na classe do ativo: o troco também não leva a classe
+    /// além da meta (nem dá nada à classe que já passou dela).
+    fn class_deficit(&self, i: usize) -> Decimal {
+        let c = class_index(self.holdings[i].asset_class);
+        self.classes[c].target_value - self.classes[c].current - self.class_planned[c]
+    }
+
+    /// O que ainda cabe no ativo sob o limite. Aqui não há meia unidade de
+    /// folga: o limite é teto duro.
+    fn limit_room(&self, i: usize) -> Option<Decimal> {
+        self.asset_cap
+            .map(|cap| cap - self.holdings[i].value - self.planned_value[i])
+    }
+
+    /// O ativo de unidade inteira mais atrasado cuja próxima unidade cabe no
+    /// troco e aproxima o ativo e a classe da meta (falta > meio preço), sem
+    /// passar do limite; com o preço dela.
+    fn next_whole(&self, pool: Decimal) -> Option<(usize, Decimal)> {
+        let holdings = self.holdings;
+        (0..holdings.len())
             .filter(|&i| holdings[i].is_eligible() && holdings[i].unit == UnitKind::Whole)
             .filter_map(|i| holdings[i].price().map(|p| (i, p)))
             .filter(|&(i, price)| {
                 price <= pool
-                    && deficit(i) * Decimal::TWO > price
-                    && class_deficit(i) * Decimal::TWO > price
-                    && limit_room(i).is_none_or(|room| price <= room)
+                    && self.deficit(i) * Decimal::TWO > price
+                    && self.class_deficit(i) * Decimal::TWO > price
+                    && self.limit_room(i).is_none_or(|room| price <= room)
             })
-            .max_by(|a, b| deficit(a.0).cmp(&deficit(b.0)));
-        if let Some((i, price)) = whole {
-            planned_qty[i] += Decimal::ONE;
-            planned_value[i] += price;
-            class_planned[class_index(holdings[i].asset_class)] += price;
-            pool -= price;
-            continue;
-        }
-        // Senão, o que cabe no fracionável mais atrasado.
-        let fractional = (0..holdings.len())
+            .max_by(|a, b| self.deficit(a.0).cmp(&self.deficit(b.0)))
+    }
+
+    /// O ativo fracionável mais atrasado, com ao menos um centavo de folga na
+    /// meta dele, na da classe e no limite.
+    fn next_fractional(&self) -> Option<usize> {
+        let holdings = self.holdings;
+        (0..holdings.len())
             .filter(|&i| holdings[i].is_eligible() && holdings[i].unit != UnitKind::Whole)
             .filter(|&i| {
-                deficit(i) >= CENT
-                    && class_deficit(i) >= CENT
-                    && limit_room(i).is_none_or(|room| room >= CENT)
+                self.deficit(i) >= CENT
+                    && self.class_deficit(i) >= CENT
+                    && self.limit_room(i).is_none_or(|room| room >= CENT)
             })
-            .max_by(|&a, &b| deficit(a).cmp(&deficit(b)));
-        let Some(i) = fractional else { break };
-        let Some(price) = holdings[i].price() else {
-            break;
-        };
-        let mut budget = pool.min(deficit(i)).min(class_deficit(i));
-        if let Some(room) = limit_room(i) {
-            budget = budget.min(room);
-        }
-        let (qty, value) = purchasable(holdings[i].unit, budget, price);
-        if value <= Decimal::ZERO {
-            break;
-        }
-        planned_qty[i] += qty;
-        planned_value[i] += value;
-        class_planned[class_index(holdings[i].asset_class)] += value;
-        pool -= value;
+            .max_by(|&a, &b| self.deficit(a).cmp(&self.deficit(b)))
     }
 
-    let invested: Decimal = planned_value.iter().copied().sum();
-    let change = amount - unallocated - invested;
-    let total_after = total + invested;
-
-    let mut class_added = [Decimal::ZERO; 7];
-    for (i, holding) in holdings.iter().enumerate() {
-        class_added[class_index(holding.asset_class)] += planned_value[i];
+    fn buy(&mut self, i: usize, quantity: Decimal, value: Decimal) {
+        self.planned_qty[i] += quantity;
+        self.planned_value[i] += value;
+        self.class_planned[class_index(self.holdings[i].asset_class)] += value;
     }
+}
 
-    let items = holdings
+/// Os itens do plano: cada ativo que recebe, com a fatia dele na própria
+/// classe depois do aporte.
+fn plan_items(
+    holdings: &[Holding],
+    classes: &[ClassState; 7],
+    class_added: &[Decimal; 7],
+    planned_qty: &[Decimal],
+    planned_value: &[Decimal],
+) -> Vec<PlanItem> {
+    holdings
         .iter()
         .enumerate()
         .filter(|(i, _)| planned_value[*i] > Decimal::ZERO)
@@ -555,26 +741,23 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding], limits: Lim
                 class_percent_after: percent(holding.value + planned_value[i], class_after),
             })
         })
-        .collect();
+        .collect()
+}
 
-    let outcomes = AssetClass::ALL
+/// Como cada classe fica: a meta, o antes e o depois, e o status.
+fn class_outcomes(
+    targets: Targets,
+    classes: &[ClassState; 7],
+    class_added: &[Decimal; 7],
+    total: Decimal,
+    total_after: Decimal,
+) -> Vec<ClassOutcome> {
+    let bp_sum = targets.sum();
+    AssetClass::ALL
         .into_iter()
         .map(|class| {
             let state = classes[class_index(class)];
             let added = class_added[class_index(class)];
-            let status = if targets.get(class) == 0 {
-                ClassStatus::NoTarget
-            } else if added > Decimal::ZERO {
-                ClassStatus::Receiving
-            } else if state.gap >= CENT && !state.eligible {
-                ClassStatus::Blocked
-            } else if state.gap >= CENT {
-                ClassStatus::BelowTarget
-            } else if state.current > state.target_value + CENT {
-                ClassStatus::AboveTarget
-            } else {
-                ClassStatus::OnTarget
-            };
             ClassOutcome {
                 asset_class: class,
                 target_percent: percent(
@@ -584,26 +767,26 @@ pub fn plan(amount: Decimal, targets: Targets, holdings: &[Holding], limits: Lim
                 percent_before: percent(state.current, total),
                 percent_after: percent(state.current + added, total_after),
                 allocated: round_cents(added),
-                status,
+                status: class_status(targets.get(class), added, &state),
             }
         })
-        .collect();
+        .collect()
+}
 
-    let mut notices = notices(targets, &classes, holdings);
-    if let Some(bp) = limits.max_asset_bp {
-        notices.extend(limit_notice(bp, &classes, holdings, &at_limit, unallocated));
-    }
-
-    Plan {
-        amount,
-        invested: round_cents(invested),
-        change: round_cents(change),
-        unallocated,
-        total_before: round_cents(total),
-        total_after: round_cents(total_after),
-        items,
-        classes: outcomes,
-        notices,
+/// O status da classe no plano, de uma meta `target_bp` e do que ela recebeu.
+fn class_status(target_bp: u32, added: Decimal, state: &ClassState) -> ClassStatus {
+    if target_bp == 0 {
+        ClassStatus::NoTarget
+    } else if added > Decimal::ZERO {
+        ClassStatus::Receiving
+    } else if state.gap >= CENT && !state.eligible {
+        ClassStatus::Blocked
+    } else if state.gap >= CENT {
+        ClassStatus::BelowTarget
+    } else if state.current > state.target_value + CENT {
+        ClassStatus::AboveTarget
+    } else {
+        ClassStatus::OnTarget
     }
 }
 
