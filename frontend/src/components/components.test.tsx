@@ -211,6 +211,24 @@ describe("controles", () => {
     expect(input.selectionEnd).toBe(input.value.length);
   });
 
+  it("dinheiro: com o campo vazio o foco não seleciona o zero (sem bloco dourado) e o dígito entra como centavo", async () => {
+    const user = userEvent.setup();
+    function Harness() {
+      const [value, setValue] = useState(0);
+      return <MoneyInput id="m" label="Valor" value={value} onChange={setValue} />;
+    }
+    render(<Harness />);
+    const input = screen.getByLabelText<HTMLInputElement>("Valor");
+    await user.click(input);
+    // Nada a substituir: o cursor fica no fim, sem seleção cobrindo "R$ 0,00".
+    expect(input.selectionStart).toBe(input.value.length);
+    expect(input.selectionEnd).toBe(input.value.length);
+    await user.keyboard("5");
+    expect(nbsp(input.value)).toBe("R$ 0,05");
+    await user.keyboard("00");
+    expect(nbsp(input.value)).toBe("R$ 5,00");
+  });
+
   it("dinheiro: digitar logo depois do foco cancela a seleção atrasada", () => {
     vi.useFakeTimers();
     try {

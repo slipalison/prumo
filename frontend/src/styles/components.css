@@ -750,6 +750,14 @@
   caret-color: var(--gold);
 }
 
+.money-field__input::selection {
+  /* A seleção do app é o dourado cheio (base.css); no campo de valor ela
+     cobria o número inteiro com um bloco. Aqui é um véu: o valor segue legível
+     e o dourado só avisa que o próximo dígito o substitui. */
+  background: color-mix(in srgb, var(--gold) 28%, transparent);
+  color: inherit;
+}
+
 .money-field--hero .money-field__input:focus {
   box-shadow: none;
   background: transparent;

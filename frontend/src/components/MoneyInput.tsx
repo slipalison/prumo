@@ -29,9 +29,12 @@ const FULL_SIZE_CHARS = 11;
  *
  * Ao ganhar foco o valor inteiro fica selecionado: o próximo dígito começa um
  * valor novo, em vez de se pendurar no anterior (R$ 3.000,00 + "3000" não pode
- * virar R$ 3.000.003.000,00). Com o campo já focado, o clique não mexe no
- * cursor: numa máscara de caixa eletrônico o dígito sempre entra pela direita,
- * e um cursor no meio do número produziria valores sem sentido.
+ * virar R$ 3.000.003.000,00). Com o campo vazio (R$ 0,00) não há o que
+ * substituir: o cursor vai para o fim, e o campo não acende um bloco dourado
+ * (a seleção de um zero parecia um defeito de cor). Com o campo já focado, o
+ * clique não mexe no cursor: numa máscara de caixa eletrônico o dígito sempre
+ * entra pela direita, e um cursor no meio do número produziria valores sem
+ * sentido.
  *
  * Com os valores ocultos o campo segue editável, mas só mostra o número
  * enquanto tem o foco — é a pessoa digitando o próprio valor. Fora do foco, e
@@ -63,18 +66,25 @@ export function MoneyInput({
   const text = money.hidden && !focused ? money.brl(value) : formatMoneyInput(value);
   const fit = Math.min(1, FULL_SIZE_CHARS / Math.max(text.length, 1));
 
+  // Valor a trocar: seleciona tudo. Campo vazio: o cursor no fim, onde o
+  // próximo dígito entra como centavo.
+  const takeCursor = (input: HTMLInputElement) => {
+    if (value > 0) input.select();
+    else input.setSelectionRange(input.value.length, input.value.length);
+  };
+
   const handleFocus = (event: FocusEvent<HTMLInputElement>) => {
     setFocused(true);
     justFocused.current = true;
     const input = event.currentTarget;
-    input.select();
+    takeCursor(input);
     // No Chrome o clique que dá o foco posiciona o cursor DEPOIS do evento de
     // foco, desfazendo a seleção acima; a segunda chamada vem depois dele.
     // Se a pessoa já começou a digitar, a seleção atrasada não pode engolir o
     // que ela digitou: `handleKeyDown` cancela.
     pendingSelect.current = window.setTimeout(() => {
       pendingSelect.current = undefined;
-      if (document.activeElement === input) input.select();
+      if (document.activeElement === input) takeCursor(input);
     }, 0);
   };
 
