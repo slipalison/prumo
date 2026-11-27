@@ -244,7 +244,12 @@ passado: não diz comprar nem vender.
 ## Referências de preço
 
 Opcional e pequeno. **Referência pública, não é recomendação**: fórmulas abertas
-sobre o histórico de dividendos, sem dizer se o ativo está barato ou caro.
+sobre dividendos, balanços e taxas de mercado, sem dizer se o ativo está barato
+ou caro. As ações têm Bazin e Graham; os FIIs, VP e Rendimento (Bazin e Graham
+**não valem** para FII: fundo não tem LPA, e a média de 5 anos de proventos de um
+FII esconde a troca de juro que move o preço dele).
+
+### Ações: Bazin e Graham
 
 - **Bazin**: `média anual de dividendos por cota ÷ rendimento-alvo`. O
   rendimento-alvo é da pessoa (`bazin_yield`, padrão **6% ao ano**, de 0
@@ -253,35 +258,98 @@ sobre o histórico de dividendos, sem dizer se o ativo está barato ou caro.
   mais velhas só entram **inteiras**, ou seja, se o primeiro dividendo conhecido é
   de antes do início delas — uma janela em que o papel ainda nem existia (ou o
   histórico não chega) não vira "zero dividendo". A tela diz quantos anos entraram
-  (no ⓘ do Bazin, na tabela de referências).
-  Dividendo é o bruto por cota (data ex) do cache do Yahoo (`dividend_history`),
-  que pede **10 anos** (`dividends.rs`; o cache se refaz em um dia): com 5, o
-  primeiro dividendo do histórico era sempre depois do começo da quinta janela,
-  e a média nunca passava de 4 anos. Só ações e FIIs da B3 (em reais).
+  (no ⓘ do Bazin). Dividendo é o bruto por cota (data ex) do cache do Yahoo
+  (`dividend_history`), que pede **10 anos** (`dividends.rs`; o cache se refaz em
+  um dia): com 5, o primeiro dividendo do histórico era sempre depois do começo da
+  quinta janela, e a média nunca passava de 4 anos.
 - **Graham**: `√(22,5 × LPA × VPA)`, com lucro e patrimônio **por ação**: o LPA é
   o lucro dos controladores dos últimos 12 meses ÷ ações e o VPA, o patrimônio
   deles ÷ ações (balanços da CVM e número de ações da B3, `fundamentos.md`). Só
-  aparece quando os **dois forem positivos**; com um zero ou negativo, a raiz
-  não existe e nada é mostrado. Fica ao lado do Bazin, com o mesmo rótulo
-  ("referência pública, não é recomendação") e o mesmo botão de teto. Vale para
-  ações; FII não tem LPA.
-- **Pelas duas** (`ceiling`): o **menor** valor entre Bazin e Graham; com uma
-  referência só, é ela. Abaixo dele, o preço passa nos dois critérios
-  (dividendos e lucro com patrimônio). Não é a média: a média deixaria passar
-  um preço acima de uma das duas. A pessoa não escolhe fórmula.
-- **Uma conta só**: a Análise (`analysis::build_references`) e o aviso do aporte
-  para ativo sem teto (`analysis::plan_references`, ver
-  [`alocacao.md`](alocacao.md#sem-teto-o-aviso-do-aporte-informativo)) usam a
-  mesma função, `analysis::price_references`, que por sua vez chama
-  `references::price_references` (domínio puro: dividendos + fundamentos →
-  Bazin e Graham). O rendimento-alvo é sempre o da pessoa. Como a conta não
-  depende do valor em carteira, um ativo recém-cadastrado, ainda sem quantidade,
-  também recebe Graham.
-- **Teto de preço**: a tela mostra as referências numa tabela, ao lado do teto que a pessoa
-  pôs no ativo (`max_price`) e do preço de hoje. Um botão só ("Usar R$ X como
-  meu teto") aplica o valor pelas duas como teto **depois de uma confirmação**,
-  pelo mesmo `PATCH /assets/{id}` do resto do app. O Prumo não calcula
-  "margem" nem "potencial".
+  tem valor com os **dois positivos**; prejuízo (`loss`) ou patrimônio negativo
+  (`negative_equity`) zeram a raiz.
+- **Pelas duas**: o **menor** valor entre Bazin e Graham; com uma referência só,
+  é ela. Abaixo dele, o preço passa nos dois critérios (dividendos e lucro com
+  patrimônio). Não é a média: a média deixaria passar um preço acima de uma das
+  duas.
+
+### FIIs: VP e Rendimento, pelo tipo do fundo
+
+- **VP**: o valor patrimonial por cota (patrimônio líquido ÷ cotas emitidas do
+  informe mensal da CVM, `fundamentos.md`): o preço de **P/VP 1**. Vale para todo
+  tipo. Patrimônio zero ou negativo: sem VP (`negative_equity`).
+- **Rendimento**: `proventos por cota dos últimos 12 meses ÷ rendimento-alvo do
+  tipo`. É o preço em que o que o fundo pagou em 12 meses renderia o alvo.
+  - **Proventos de 12 meses**: a **mesma conta** da estimativa de renda
+    (`income::estimate_assets`): anúncios da B3 com o Yahoo de reserva, janela de
+    365 dias pela data ex e a base de cotas de hoje (`proventos-automaticos.md`
+    § 9). O provento de FII é isento para pessoa física, então bruto e líquido
+    são o mesmo número.
+  - **Tipo**: o que o Prumo já deriva do balanço do informe mensal da CVM
+    (`sectors::cvm`, corte de dois terços): tijolo, papel, híbrido ou fundo de
+    fundos. A **composição** (frações de imóveis, recebíveis e cotas de FII, que
+    somam 1) passou a ser guardada junto do tipo, em `sector_reference`.
+  - **Alvo por tipo**:
+
+    | Tipo | Alvo | Por quê |
+    |---|---|---|
+    | Tijolo | juro real do Tesouro IPCA+ de ~10 anos + **prêmio do tijolo** (padrão **2,5 p.p.**) | o aluguel do imóvel é reajustado pela inflação: o provento do tijolo compete com um título que paga IPCA + juro real. O prêmio paga o risco do imóvel (vacância, inadimplência, iliquidez) acima do título público |
+    | Papel | CDI de 12 meses × (1 − 15% de IR) + **prêmio do papel** (padrão **1,0 p.p.**) | o CRI rende CDI (ou IPCA) mais spread; o provento do FII é isento e o CDI paga IR (15% na menor alíquota), então a comparação é com o CDI líquido. O prêmio paga o risco de crédito dos recebíveis |
+    | Híbrido | `peso dos imóveis × alvo do tijolo + peso dos recebíveis × alvo do papel` | a carteira é parte de cada um; as **cotas de FII contam metade para cada lado** (a carteira de baixo não é conhecida) |
+    | Fundo de fundos | a **média simples** dos alvos de tijolo e papel | os fundos de baixo podem ser de qualquer tipo e não são conhecidos; a tela diz isso no ⓘ |
+
+    Os alvos e as contas intermediárias têm duas casas, com o meio para longe do
+    zero (11,345% → 11,35%), como a tela mostra.
+  - Exemplo fictício (juro real 7,12%, CDI 12m 14,20%): tijolo `7,12% + 2,5 p.p.
+    = 9,62%`, e R$ 13,20 de proventos em 12 meses dão `R$ 13,20 ÷ 9,62% =
+    R$ 137,21`; papel `14,20% × 0,85 = 12,07% + 1,0 p.p. = 13,07%`; híbrido com
+    50% em imóveis, 30% em recebíveis e 20% em cotas → 60% tijolo e 40% papel,
+    `0,6 × 9,62% + 0,4 × 13,07% = 11,00%`; fundo de fundos `(9,62% + 13,07%) ÷ 2
+    = 11,35%`.
+  - Sem Rendimento, com o motivo: tipo desconhecido (`unknown_fund_type`: o fundo
+    não está no informe), híbrido sem composição (`no_composition`), sem a taxa
+    do alvo (`no_market_rate`), alvo não positivo (`non_positive_target`, juro
+    real negativo com prêmio zero) ou sem provento em 12 meses (`no_dividends`).
+- **Pelas duas**: o menor de VP e Rendimento; com um só, é ele.
+- **Prêmios editáveis** em Ajustes › Análise, junto do rendimento-alvo do Bazin:
+  de 0 a 20 p.p., com até duas casas (`brick_premium`, `paper_premium` em
+  `analysis_settings`; nulo = o padrão). A tela mostra o juro real e o CDI de hoje
+  com a data e o alvo que sai de cada prêmio.
+
+### As taxas de mercado
+
+- **Juro real**: a **taxa de compra** (`Taxa Compra Manha`) do título IPCA+ do
+  Tesouro Direto que vence **mais perto de 10 anos** depois da data-base, com a
+  **NTN-B** ("Tesouro IPCA+ com Juros Semestrais", o título que o mercado usa
+  como "juro real de 10 anos") na frente da NTN-B Principal. Sai do mesmo CSV do
+  Tesouro Transparente que a rodada diária já lê em fluxo
+  ([`tesouro.md`](tesouro.md#juro-real-de-referência)); fica guardada com o
+  título e a data-base (`treasury_real_rate`). Ex.: "juro real 7,60% em
+  26/11/2026 (Tesouro IPCA+ com Juros Semestrais 2037)".
+- **CDI de 12 meses**: o acumulado das taxas diárias do CDI (BCB/SGS 12) nos 12
+  meses que terminam na última taxa publicada, do `index_history` que o
+  Desempenho já guarda. A tarefa diária passou a guardar **sempre** pelo menos
+  400 dias de CDI, mesmo sem foto da carteira (antes começava 10 dias antes da
+  primeira foto). Série que não cobre os 12 meses (com 7 dias de folga no começo)
+  não vira CDI.
+
+### Uma conta só, e o teto
+
+- **Uma função só**: a Análise, a escolha do teto, os chips do plano para ativo
+  sem teto, o teto do plano (o motor), a carteira e os alertas leem as
+  referências por `crate::ceiling` (que só lê o banco) sobre as regras puras de
+  `domain::analysis::references` (ações) e `domain::analysis::fund_references`
+  (FIIs), e o teto de hoje sai de `domain::ceiling::effective`.
+- **O teto é escolha da pessoa**: nenhum, um **método** (Bazin, Graham ou Pelas
+  duas nas ações; VP, Rendimento ou Pelas duas nos FIIs) ou um **valor próprio**.
+  Com método, grava-se o método e o valor recalcula sozinho quando mudam o
+  balanço, os proventos ou as taxas; método sem valor tira o ativo do aporte com
+  o motivo ([`alocacao.md`](alocacao.md#teto-de-preço-por-ativo-ceiling)).
+- **Na tela**: duas tabelas, Ações (Bazin, Graham, Pelas duas) e FIIs (Tipo, VP,
+  Rendimento, Pelas duas), cada uma com "Seu teto" (valor e método, ou "Sem
+  teto") e "Hoje". "Teto ▾" abre a escolha — Sem teto, cada método com o valor
+  de hoje e o chip aprova/não aprova contra o preço de hoje, Valor próprio — e
+  confirmar grava pelo `PATCH /assets/{id}`. O Prumo não calcula "margem" nem
+  "potencial".
 
 ## Configuração e migração
 
@@ -294,6 +362,12 @@ sobre o histórico de dividendos, sem dizer se o ativo está barato ou caro.
 - A **migração 0022** só amplia o `check` de `health_rules` com as oito regras de
   Qualidade (linhas existentes intactas); quem nunca mexeu nelas as vê ligadas, com
   70%.
+- A **migração 0024** guarda a escolha do teto em `assets.ceiling_method` (o
+  valor próprio continua em `max_price`, então quem tinha teto fica com ele como
+  valor próprio) e os prêmios dos FIIs em `analysis_settings` (o `bazin_yield`
+  passa a aceitar nulo = 6%). A **0025** cria `treasury_real_rate`, acrescenta a
+  composição a `sector_reference` e apaga o estado da fonte da CVM, para ela ser
+  relida (com a composição) na primeira conferência depois do deploy.
 - `GET`/`PUT /analysis/rules` leem e gravam **a mesma configuração** que
   `GET`/`PUT /health/rules`: as sete originais aparecem nos dois, e as novas só
   em `/analysis/rules`. Os endereços antigos continuam respondendo (o motor de
@@ -327,5 +401,8 @@ sobre o histórico de dividendos, sem dizer se o ativo está barato ou caro.
 
 - Nenhum host externo novo: a Análise lê só o que já está guardado. O pedido de
   dividendos ao Yahoo passou de `range=2y` para `range=5y` (mesmo host).
-- Tabelas: `health_rules` (regras), `analysis_settings` (Bazin). Os fundamentos vêm de
-  `Store::fundamentals_for_user` (`fundamentos.md`), lidos a cada `GET /analysis`.
+- Tabelas: `health_rules` (regras), `analysis_settings` (Bazin e prêmios),
+  `treasury_real_rate` (juro real) e a composição em `sector_reference`. Os
+  fundamentos vêm de `Store::fundamentals_for_user` (`fundamentos.md`), lidos a
+  cada `GET /analysis`. Nenhum host externo novo: o juro real sai do CSV do
+  Tesouro que já é baixado, e o CDI, do SGS que o Desempenho já consulta.

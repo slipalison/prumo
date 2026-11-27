@@ -63,7 +63,7 @@ despejaria tudo de uma vez.
 |---|---|---|
 | `income_tomorrow` | provento lançado em Renda com pagamento **amanhã** (somado por pagador, líquido) | — |
 | `class_drift` | uma classe passou a ficar a X p.p. ou mais da meta, para cima ou para baixo | X, padrão 5 p.p. |
-| `price_below_ceiling` | um ativo com teto de preço voltou a custar o teto ou menos (voltou a ser comprável no aporte) | — |
+| `price_below_ceiling` | um ativo com teto de preço voltou a custar o teto ou menos (voltou a ser comprável no aporte); o teto é o de hoje, o valor próprio ou o do método escolhido, e método sem valor não avisa | — |
 | `objective_achieved` | um objetivo seu passou a constar como atingido (`objectives.achieved_at`) | — |
 | `tax_exemption` | as vendas de ações do mês chegaram a X% do limite de isenção, e de novo quando o passaram | X% do limite, padrão 80% |
 | `health_warning` | uma regra de [Saúde da carteira](saude.md) passou a avisar (regra + ativo, setor ou classe) | os da própria Saúde; entram também as de renda (provento em todo mês e pagador acima do limite). Sem valores, o pagador sai só com o percentual |

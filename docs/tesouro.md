@@ -22,8 +22,9 @@ com `curl` em 25/11/2026:
 | Última data-base vista | 19/11/2026 (arquivo modificado em 20/11/2026) |
 
 O Prumo usa **`PU Venda Manha`**: o preço a que o Tesouro recompra o título da
-pessoa — o resgate, que é o que o patrimônio vale. `PU Compra Manha` é o preço
-de quem compra (mais alto); `PU Base Manha` é o da data-base. A tabela traz só o
+pessoa — o resgate, que é o que o patrimônio vale. Também lê a **`Taxa Compra
+Manha`**: dos títulos IPCA+ sai o juro real de referência (abaixo). `PU Compra
+Manha` é o preço de quem compra (mais alto); `PU Base Manha` é o da data-base. A tabela traz só o
 que o Tesouro oferece: hoje 58 títulos vigentes, de 8 tipos.
 
 **O que ficou de fora.** O JSON do site `tesourodireto.com.br`
@@ -69,6 +70,29 @@ momento do resgate.
 - As colunas são achadas pelo nome do cabeçalho: coluna nova ou fora de ordem
   não quebra a leitura; coluna que falta (`PU Venda Manha`) é erro. Tipo de
   título que o Prumo não conhece vira aviso no log, não erro.
+
+## Juro real de referência
+
+O alvo de rendimento do FII de tijolo é o juro real do Tesouro mais um prêmio
+([`analise.md`](analise.md#fiis-vp-e-rendimento-pelo-tipo-do-fundo)). Ele sai do
+mesmo arquivo, na mesma leitura em fluxo:
+
+- De cada título vigente fica, junto do preço de resgate, a **taxa de compra**
+  (`Taxa Compra Manha`, % ao ano) da linha mais nova — só quando o título está à
+  venda no dia (`PU Compra Manha` maior que zero) e as duas colunas existem no
+  cabeçalho; sem elas o preço continua sendo lido e só não há taxa.
+- Entre os títulos **IPCA+** (`Tesouro IPCA+` e `Tesouro IPCA+ com Juros
+  Semestrais`) da **data-base mais nova**, a rodada escolhe a **NTN-B** (com
+  juros semestrais, o título que o mercado usa como "juro real de 10 anos") que
+  vence **mais perto de 10 anos** depois da data-base; sem NTN-B, a NTN-B
+  Principal mais perto de 10 anos; no empate, a mais longa
+  (`domain::market_rates::pick_real_rate`). Em 26/11/2026, isso era a NTN-B
+  15/05/2037, a 7,60%.
+- Grava a taxa, o título e a data-base em **`treasury_real_rate`** (migração
+  `0025`, uma linha só, compartilhada como `quotes`). Tabela sem nenhum IPCA+ com
+  taxa não apaga a de ontem.
+- A tela mostra "juro real 7,60% em 26/11/2026 (Tesouro IPCA+ com Juros
+  Semestrais 2037)".
 
 ## Como o título entra no modelo
 
@@ -180,14 +204,18 @@ unidade (valor em centavos × título em centésimos).
 
 - Leitura da tabela: unidade em `src/treasury.rs` (ordem das linhas, vencidos,
   preço zero, BOM/CRLF/colunas fora de ordem, linhas ilegíveis, arquivo sem
-  preço) e contra servidor de mentira em `tests/treasury_feed.rs`, com um recorte
+  preço, taxa de compra só com o título à venda, arquivo sem as colunas de
+  compra), a escolha do juro real em `src/domain/market_rates.rs` (NTN-B mais
+  perto de 10 anos, com proptest) e contra servidor de mentira em
+  `tests/treasury_feed.rs`, com um recorte
   do CSV real (`tests/data/precotaxatesourodireto_amostra.csv`): descoberta pelo
   CKAN, endereço conhecido, falha de rede, página de erro e um arquivo grande
   lido em fluxo.
 - Domínio: `src/domain/treasury.rs` (chave, nomes, busca, com proptest) e
   `src/domain/allocation.rs` (centésimos de título, com a propriedade do motor
   incluindo títulos).
-- Postgres de verdade: `tests/treasury_api.rs` — a tabela vira cotação, a busca
+- Postgres de verdade: `tests/treasury_api.rs` — a tabela vira cotação e juro
+  real (a NTN-B 2032 do recorte, a 7,77%, que a Análise mostra), a busca
   sugere, o título é cadastrado com preço, o plano compra fração, o streamer e o
   provedor o ignoram, e o que sai da tabela só some se ninguém o guarda.
 - Telas: `PortfolioScreen.test.tsx` e `ContributeScreen.test.tsx`.

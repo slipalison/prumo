@@ -14,12 +14,15 @@ comprar para a carteira ficar o mais perto possível das suas metas.
 - **A lista do que você quer ter** — ativo cadastrado com quantidade 0 já
   entra na divisão pela nota: é assim que uma classe vazia passa a receber.
 - **Teto de preço e limite por ativo** — guarda-corpos opcionais seus: acima
-  do teto que você define, o ativo fica fora do aporte; com o limite, nenhum
-  ativo passa de X% da carteira, e o excedente vai para os outros da classe.
-  Preço médio não entra na conta: o Prumo não compra mais só porque caiu.
-  O teto é opcional: sem ele, o aporte segue pelo preço de hoje (a escolha é
-  sua) e o ativo que recebe dinheiro traz uma nota com as referências públicas
-  de Bazin e de Graham e se o preço está acima ou abaixo de cada uma, só para
+  do teto, o ativo fica fora do aporte; com o limite, nenhum ativo passa de X%
+  da carteira, e o excedente vai para os outros da classe. Preço médio não entra
+  na conta: o Prumo não compra mais só porque caiu. O teto é escolha sua, na
+  Análise ou na folha do ativo: nenhum, um valor próprio ou um método — Bazin,
+  Graham ou o menor dos dois nas ações; VP, Rendimento ou o menor dos dois nos
+  FIIs —, que acompanha o balanço, os proventos e as taxas sozinho; se o método
+  ficar sem valor, o ativo fica fora do aporte com o motivo. Sem teto, o aporte
+  segue pelo preço de hoje e o ativo que recebe dinheiro traz uma nota com as
+  referências públicas e se o preço está acima ou abaixo de cada uma, só para
   informar.
 - **Negociado na B3** — um ETF de bitcoin conta em Cripto, um BDR ou ETF de
   S&P 500 em Ações Internacionais, cotados na B3 em cota inteira.
@@ -119,7 +122,10 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   pontuação de uma dimensão é só o percentual das regras com dado que estão ok,
   com o número exato. Regra sem dado não é falha. Traz ainda o perfil de risco
   (carteira e metas), os destaques de 12 meses e referências de preço públicas
-  (Bazin e Graham) para comparar com o seu teto, e pontos de atenção por ativo, sem
+  para comparar com o seu teto — Bazin e Graham nas ações; nos FIIs, o valor
+  patrimonial por cota e o Rendimento contra o juro de mercado do tipo do fundo
+  (tijolo: juro real do Tesouro IPCA+ + prêmio; papel: CDI líquido + prêmio;
+  híbrido, pela composição; prêmios editáveis) —, e pontos de atenção por ativo, sem
   recomendar nada. O setor vem da B3 (ações) e da CVM (FIIs). Detalhes em
   [`docs/analise.md`](docs/analise.md) e [`docs/saude.md`](docs/saude.md).
 - **Resultados trimestrais** — em Análise, o último trimestre que cada empresa

@@ -195,10 +195,14 @@ estão em [layout.md](layout.md).
    - Avisos em linguagem simples ("Ações Internacionais está abaixo da meta,
      mas você não tem nenhum ativo lá — R$ 37.800 ficaram sem destino"), cada
      um com a ação que resolve. "XPTO3 está a R$ 32,50, acima do seu teto de
-     R$ 30,00" abre a folha do ativo, onde o teto está; "XPTO3 chegou no seu
+     R$ 30,00" (ou "acima do seu teto pelo Graham de R$ 30,00") abre a folha do
+     ativo, onde o teto está; "XPTO3 fica fora deste aporte: o teto pelo Graham
+     está sem valor hoje (prejuízo: lucro por ação zero ou negativo). Troque o
+     teto ou escolha Sem teto." também; "XPTO3 chegou no seu
      limite de 15% da carteira" (e a classe bloqueada pelo limite) leva ao
      controle do limite.
-   - Ativo **sem teto** de preço, com Bazin e/ou Graham: o cartão leva, abaixo
+   - Ativo **sem teto** de preço, com referência (Bazin e Graham nas ações, VP e
+     Rendimento nos FIIs): o cartão leva, abaixo
      da renda e separado por um filete, um bloco curto (`role="note"`): o rótulo
      "Sem teto" com um ⓘ e um chip por método, "✓ Bazin R$ 18,69" ou
      "✗ Graham R$ 77,77". ✓ = o preço de hoje está até o do método (igual, no
@@ -212,7 +216,7 @@ estão em [layout.md](layout.md).
      referências públicas e que a decisão de aportar é da pessoa. Só informa:
      não bloqueia, não preenche o teto e não tem botão de ação. Com o olho
      fechado, os R$ saem mascarados (chip, nome acessível e explicação) e o
-     veredito continua. Ativo com teto, ou sem nenhuma das duas referências, não
+     veredito continua. Ativo com teto, ou sem nenhuma referência com valor, não
      tem o bloco.
    - **"Comprei", por ativo.** A pessoa pode não comprar um ativo, ou comprar
      outra quantidade, então a compra é marcada cartão a cartão:
@@ -306,8 +310,8 @@ estão em [layout.md](layout.md).
   fracionária, preço automático).
 - Tocar num ativo abre a **folha larga** (`Sheet size="wide"`, ~1,0–1,2 do
   tamanho da folha; antes 1,9–2,4), em duas colunas: à esquerda o resumo
-  ("Hoje" e a nota ao vivo), a quantidade com stepper, as chaves **Usar preço
-  manual** e **Teto de preço** lado a lado, o imposto e o checklist em linhas
+  ("Hoje" e a nota ao vivo), a quantidade com stepper, a chave **Usar preço
+  manual** e a linha **Teto de preço** lado a lado, o imposto e o checklist em linhas
   (pergunta e sim/não na mesma linha) ou o controle de nota manual (0–10) para
   cripto e renda fixa; à direita os **Lançamentos** e os **Fundamentos**. As
   dicas (quantidade, preço manual, teto, nota na mão, fonte dos fundamentos,
@@ -315,12 +319,20 @@ estão em [layout.md](layout.md).
   escolha. **Salvar** e **Remover da carteira** ficam numa barra que acompanha a
   rolagem. A folha do checklist aberta do plano (`RateAssetSheet`) é a mesma.
   Abaixo de 640 px de largura a folha volta a uma coluna.
-- Teto de preço: uma chave "Teto de preço" com a explicação curta no ⓘ ("Seu
-  critério: acima deste preço o ativo fica fora do aporte até voltar. Não é
-  preço justo de ninguém.") e, ligada, o campo "Pagar no máximo, por unidade".
-  Com o preço de hoje acima do teto digitado, um aviso com ícone e texto diz
-  "Hoje está a R$ X, acima do teto: fica fora do aporte". Renda fixa por valor
-  não tem a chave. Remover fica no
+- Teto de preço: uma linha "Teto de preço" com a explicação curta no ⓘ e, à
+  direita, um botão com o teto de agora ("Sem teto", "Graham · R$ 9,50", "Valor
+  próprio · R$ 10,00", "Graham · sem valor"; nome acessível "Mudar o teto de
+  preço (agora: …)", `aria-expanded`). O toque abre embaixo a **mesma escolha da
+  Análise** (`features/ceiling/CeilingPicker`, uma implementação só): Sem teto,
+  cada método da família do ativo com o valor de hoje e o chip aprova/não aprova,
+  Valor próprio (abre o campo "Pagar no máximo, por unidade"). As referências vêm
+  de `GET /assets/{id}/references`; ativo sem referência (exterior, cripto,
+  título do Tesouro) só tem Sem teto e Valor próprio. Fechada, a folha não
+  cresce. Com o preço de hoje acima do teto escolhido, um aviso com ícone e texto
+  diz "Hoje está a R$ X, acima do teto: fica fora do aporte"; método sem valor
+  avisa que o ativo fica fora do aporte até o método voltar a ter valor. Renda
+  fixa por valor não tem a linha. Na Carteira, o selo ao lado do ideal diz
+  "acima do teto" ou "teto sem valor". Remover fica no
   fim, discreto, com confirmação na própria folha (nunca `window.confirm`).
 - **Lançamentos**, dentro da folha:
   - um resumo em quatro números — preço médio, custo (em renda fixa,
@@ -483,16 +495,32 @@ medidas estão em [layout.md](layout.md) § 7.5):
   "Mais subiram" e "Mais caíram" (até 3), o ícone, o nome e a variação **com
   sinal** (+18,40%, −12,80%); como cada medida é tirada fica no ⓘ.
 - **Referências de preço** (`ReferencesCard`): o aviso fixo (`role="note"`)
-  "Referência pública, não é recomendação" em uma linha; as três fórmulas (com
-  o rendimento-alvo de hoje) no ⓘ do título e "Mudar o rendimento-alvo" à
-  direita. Uma **tabela compacta**: Ativo, **Bazin** (a média de dividendos
-  usada no ⓘ da célula), **Graham** (só com lucro e patrimônio por ação
-  positivos), **Pelas duas** (o menor dos dois, só quando há os dois), **Seu
-  teto**, **Hoje** e, na linha, o botão "Usar R$ 9,50 como meu teto" (com o
-  valor pelas duas; a pessoa não escolhe fórmula), que abre uma folha de
-  **confirmação** ("Definir R$ 9,50 como teto de preço de ITSA4?") antes do
-  `PATCH`. Célula sem valor mostra "—" e diz o motivo ao leitor de tela. Nada de
-  "oportunidade", "compre", "preço justo" ou "upside".
+  "Referência pública, não é recomendação" em uma linha; as fórmulas (com o
+  rendimento-alvo, o juro real e o CDI de hoje, com data e título) no ⓘ do
+  título e "Mudar o rendimento-alvo e os prêmios" à direita. Duas **tabelas
+  compactas**, com a legenda à vista:
+  - **Ações**: Ativo, **Bazin** (a média de dividendos no ⓘ da célula),
+    **Graham**, **Pelas duas** (o menor, ou o que existir), **Seu teto**, **Hoje**
+    e "Teto ▾".
+  - **FIIs**: Ativo, **Tipo** (Tijolo, Papel, Híbrido, Fundo de fundos ou "Sem
+    tipo"), **VP**, **Rendimento** (a conta de verdade no ⓘ: "Tijolo: alvo do
+    tijolo 7,12% + 2,5 p.p. = 9,62%; proventos 12m R$ 13,20 ÷ 9,62% =
+    R$ 137,21"; no híbrido, "60% tijolo (9,62%) + 40% papel (13,07%) = 11,00%";
+    no fundo de fundos, a média e o porquê), **Pelas duas**, **Seu teto**,
+    **Hoje** e "Teto ▾".
+  - **Seu teto**: o valor de hoje com o método embaixo em versalete ("R$ 9,50 ·
+    GRAHAM", "VALOR PRÓPRIO") ou "Sem teto"; método sem valor diz "Graham: sem
+    valor" com o motivo no ⓘ.
+  - **"Teto ▾"** (nome acessível "Escolher o teto de ITSA4") abre uma folha
+    pequena com o grupo de rádio (`fieldset` com legenda, foco visível, 44 px por
+    opção): **Sem teto**, cada método com o valor de hoje e o chip ✓ aprova / ✗
+    não aprova contra o preço de hoje (a explicação no ⓘ de cada um), e **Valor
+    próprio** (o campo abre ao escolher). O que está gravado vem marcado; nada
+    vem pré-escolhido. **Confirmar** grava (`PATCH`); "Sem teto" tira o teto;
+    confirmar sem mudar não grava. Método sem valor pode ser escolhido, com o
+    aviso de que o ativo fica fora do aporte até ele voltar a ter valor.
+  - Célula sem valor mostra "—" e diz o motivo ao leitor de tela. Nada de
+    "oportunidade", "compre", "preço justo", "barato/caro" ou "upside".
 - **De onde vêm os dados**, recolhido no fim: a fonte de setor de cada classe,
   de quando é, se a última busca falhou (a falha aparece já na frase fechada:
   "1 fonte falhou"), quantos ativos ficaram sem setor e por que os EUA não têm
@@ -508,8 +536,14 @@ para 60%" aparece quando o limite não é o de fábrica. **Salvar regras** só
 habilita com mudança válida; com mudança por salvar, a barra de salvar
 acompanha a rolagem no desktop. O erro de um limite aparece na própria linha
 (`role="alert"`, `aria-invalid`). A Qualidade tem as suas oito regras (a de
-recuperação judicial só liga e desliga). Um painel à parte guarda o
-**rendimento-alvo do Bazin** (% ao ano).
+recuperação judicial só liga e desliga). Um painel à parte, **Referências de
+preço**, guarda o **rendimento-alvo do Bazin** (% ao ano) e os **prêmios dos
+FIIs** (tijolo, sobre o juro real; papel, sobre o CDI líquido; em p.p., de 0 a
+20, com "Voltar para 2,5 p.p." quando não é o de fábrica). O ⓘ de cada prêmio
+mostra o alvo de hoje ("7,12% + 2,5 p.p. = 9,62%"), e uma linha embaixo diz as
+taxas de hoje com data e fonte ("juro real 7,12% em 19/11/2026 (Tesouro IPCA+
+com Juros Semestrais 2037)", "CDI de 12 meses 14,20% até 18/11/2026, 12,07%
+depois dos 15% de IR"); sem elas, que ainda não chegaram.
 
 Na **Carteira**:
 
@@ -529,8 +563,9 @@ Com o **olho fechado**, todo valor em reais da Análise vira `R$ ••••` (
 `useMoney()`, também para o leitor de tela e para a folha de confirmação): o
 aporte sugerido (no ⓘ do "o que fazer"), o que o pagador pagou, a renda de 12
 meses e a base do yield (o valor das ações e FIIs), o Bazin e a média de
-dividendos do ⓘ, o Graham, o "pelas duas", o teto, o preço de hoje e o botão de
-teto (cujo nome acessível não leva valor). Percentuais, contagens,
+dividendos do ⓘ, o Graham, o VP, o Rendimento (na conta do ⓘ, os proventos e o
+resultado; os percentuais do alvo ficam), o "pelas duas", o teto, o preço de
+hoje e os valores da escolha do teto (cujos nomes acessíveis não levam valor). Percentuais, contagens,
 limites, o perfil e os destaques são percentuais e ficam à vista. O título do
 Tesouro Direto (renda fixa) não tem setor e aparece nos achados pelo nome
 ("Tesouro IPCA+ 2035"), não pela chave `TD-…`.

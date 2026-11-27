@@ -784,7 +784,8 @@ da página ÷ altura da janela; 1,02 é o piso da casca):
 | Ajustes › Análise (antes 4,70 / 3,92 / 4,16 / 3,69 / 8,78) | 1,61 | 1,24 | 1,47 | 1,30 | 4,49 |
 | Ajustes › Alertas (antes 2,18 / 1,82 / 1,99 / 1,60 / 3,65) | 1,02 | 1,01 | 1,02 | 1,01 | 2,25 |
 
-A folha de teto (aberta da tabela de referências) segue em 1,0.
+A folha de teto (aberta da tabela de referências) segue em 1,0 (ver § 7.6, onde
+ela virou a escolha do teto).
 
 O que mudou, e onde o desenho foi outro:
 
@@ -823,6 +824,52 @@ O que mudou, e onde o desenho foi outro:
   rolava de lado (`overflow-x: auto`) e isso cortava o ⓘ da primeira linha; o G4
   contornou com `overflow: visible` no `analysis.css`. O contorno foi desfeito na
   integração (§ 10): a causa estava na primitiva.
+
+### 7.6 Teto por escolha e referências de FII (frente teto-fii)
+
+**Análise › Referências de preço** virou duas `DataTable` no mesmo painel, com a
+legenda à vista: **Ações** (Ativo, Bazin, Graham, Pelas duas, Seu teto, Hoje,
+Teto ▾) e **FIIs** (Ativo, Tipo, VP, Rendimento, Pelas duas, Seu teto, Hoje,
+Teto ▾). O botão longo "Usar R$ X como meu teto" deu lugar ao "Teto ▾" compacto
+(36 px; 44 px com toque), que abre uma folha pequena com a escolha. No celular
+cada ativo é um cartão empilhado, e o "Teto ▾" fecha a última linha à direita
+(antes ocupava uma linha só para ele).
+
+**A escolha do teto** (`features/ceiling/CeilingPicker`) é uma lista de rádio de
+44 px por opção: o nome à esquerda, o valor de hoje e o chip aprova/não aprova à
+direita, a conta no ⓘ. A opção marcada ganha fundo afundado e filete dourado;
+foco visível no rádio. Na **folha do ativo**, ela fica recolhida numa linha ao
+lado de "Usar preço manual" (o lugar da antiga chave "Teto de preço"): "Teto de
+preço ⓘ … [Graham · R$ 9,50 ▾]", e abre embaixo no toque — fechada, a folha
+tem a mesma altura de antes.
+
+**Ajustes › Análise**: o painel Referências de preço ganhou os dois prêmios
+(linhas iguais à do rendimento-alvo) e uma linha com as taxas de hoje.
+
+Medido no modo de demonstração, em telas (altura ÷ altura da janela; folhas:
+conteúdo ÷ altura da folha); escuro e claro dão os mesmos números, e o celular
+foi medido com o "Teto ▾" já na última linha do cartão. A demonstração
+ganhou dois FIIs fictícios (um híbrido e um fundo de fundos) para a Análise
+mostrar um FII de cada tipo: a tabela de FIIs tem 6 linhas.
+
+| Tela | 1440×900 | 1920×1080 | iPad 1366×1024 | iPad 1024×1366 | Celular 390×844 |
+|---|---|---|---|---|---|
+| Análise (antes 2,76 / 2,25 / 2,50 / 2,27 / 6,40) | 3,17 | 2,59 | 2,86 | 2,54 | 7,28 |
+| Ajustes › Análise (antes 1,61 / 1,24 / 1,47 / 1,30 / 4,49) | 1,69 | 1,33 | 1,58 | 1,45 | 4,79 |
+| Folha do ativo, ação (antes 1,00 / 1,00 / 1,00 / 1,00 / 1,71) | 1,00 | 1,00 | 1,00 | 1,00 | 1,71 |
+| Folha do ativo, FII (antes 1,17 / 1,13 / 1,13 / 1,14 / 2,04) | 1,17 | 1,13 | 1,13 | 1,15 | 2,04 |
+| Folha do teto, ação (ITSA4) | 1,00 | 1,00 | 1,00 | 1,00 | 1,00 |
+| Folha do teto, FII (KNRI11) | 1,00 | 1,00 | 1,00 | 1,00 | 1,00 |
+
+- A Análise cresce pelo que entrou: a segunda tabela, com uma linha por FII (a
+  carteira da demonstração tem uma ação e seis FIIs nas referências; antes, só os
+  ativos com Bazin ou Graham apareciam). Fica acima da meta de 3,0 em 1440×900
+  por 0,17 tela (~150 px, umas três linhas de FII); a altura acompanha quantos
+  FIIs a carteira tem.
+- A folha do ativo não cresceu: fechada, a escolha do teto ocupa a mesma linha
+  da chave antiga; aberta, soma ~230 px.
+- Rolagem lateral: nenhuma nova (as que aparecem no celular são as pílulas de
+  Ajustes e as tabelas anuais da Renda, de antes).
 
 ## 8. Etapa 2: grupos e arquivos
 

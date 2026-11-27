@@ -183,7 +183,7 @@ A tela inteira numa chamada.
       "quantity": 10,
       "unit_price": 142.0,
       "manual_price": null,
-      "max_price": 150.0,
+      "ceiling": { "method": "manual", "value": 150.0, "unavailable_reason": null },
       "currency": "BRL",
       "price_source": "quote",
       "quote_updated_at": "2026-11-25T12:00:00Z",
@@ -222,12 +222,14 @@ A tela inteira numa chamada.
 }
 ```
 
-- `eligible`: a classe tem pelo menos um ativo com nota > 0, preço > 0 e
-  preço até o `max_price` dele (quando há). O limite de concentração não
-  entra aqui: ele depende do valor do aporte e aparece no plano.
-- `max_price`: o teto de preço da pessoa, em reais por unidade (`null` = sem
-  teto). Com o preço acima dele, o ativo fica fora do aporte
-  ([`alocacao.md`](alocacao.md#teto-de-preço-por-ativo-max_price)).
+- `eligible`: a classe tem pelo menos um ativo com nota > 0 e preço > 0 (a
+  fatia na composição-alvo). O teto e o limite de concentração não entram
+  aqui: o teto depende das referências do dia (que só o plano resolve) e vai
+  por ativo (`ceiling`) e no plano; o limite depende do valor do aporte.
+- `ceiling`: o teto de preço que a pessoa escolheu, com o valor de hoje (`null`
+  = sem teto). Ver [Teto de preço](#teto-de-preço-ceiling). Acima do valor, ou
+  com o método sem valor, o ativo fica fora do aporte
+  ([`alocacao.md`](alocacao.md#teto-de-preço-por-ativo-ceiling)).
 - `price_source`: `quote` (cotação automática), `manual` (`manual_price`
   vence a cotação) ou `missing` (sem preço — vale 0 e não recebe aporte).
 - `unit_price` já vem em reais. `currency` é a moeda da cotação original.
@@ -239,7 +241,7 @@ A tela inteira numa chamada.
   ou sem preço vale `0`; numa classe com ao menos um ativo que recebe, a soma
   dos ideais é 100 (com a folga do arredondamento). O ideal não depende de
   quanto se aporta nem do valor dos ativos: muda com a nota e com o ativo
-  ganhar ou perder preço. Também **não** muda com o `max_price`: o ideal é a
+  ganhar ou perder preço. Também **não** muda com o teto (`ceiling`): o ideal é a
   composição-alvo pela nota, e o teto é filtro temporário de compra (o ativo
   acima dele mantém o ideal e só fica fora do aporte de hoje).
   - **O selo "abaixo do ideal" é da tela**, não do servidor: ele compara o
@@ -370,10 +372,10 @@ Título do Tesouro Direto (ver [Título do Tesouro Direto](#título-do-tesouro-d
 { "asset_class": "fixed_income", "symbol": "TD-IPCA-20350515", "treasury": true, "quantity": 0.35, "score_override": 6 }
 ```
 
-Opcionais em todos: `display_name`, `manual_price` e `max_price` (só por
+Opcionais em todos: `display_name`, `manual_price` e `ceiling` (só por
 unidade; em renda fixa por valor são `422`), `score_override`, `listed_on_b3`,
-`treasury`. `max_price` é o teto de preço da pessoa, em reais por unidade,
-maior que zero; vale também para título do Tesouro. `quantity`/`amount` ausente vale
+`treasury`. `ceiling` é a escolha do teto ([Teto de preço](#teto-de-preço-ceiling));
+ausente ou `null`, o ativo nasce **sem teto**. `quantity`/`amount` ausente vale
 0. Na B3 e nas ações americanas a quantidade é inteira; no Tesouro, em
 centésimos (até duas casas).
 
@@ -411,7 +413,7 @@ Qualquer subconjunto de:
   "display_name": "Kinea Renda",
   "manual_price": null,
   "score_override": null,
-  "max_price": 30,
+  "ceiling": { "method": "graham" },
   "answers": { "4c1e…": true, "9a77…": null },
   "listed_on_b3": true,
   "tax_instrument": "etf"
@@ -422,8 +424,9 @@ Qualquer subconjunto de:
 hoje, com a diferença (o custo não muda). Compra e venda vão por `POST
 /transactions`, com data e preço.
 
-`null` em `manual_price`/`score_override`/`max_price` limpa o campo.
-`max_price` maior que zero; em renda fixa por valor, `422`. Em `answers`, `true`/
+`null` em `manual_price`/`score_override` limpa o campo; `"ceiling": null` tira o
+teto (ausente, fica como está). O campo antigo `max_price` não existe mais e é
+`422` como qualquer campo desconhecido. Em `answers`, `true`/
 `false` grava e `null` apaga a resposta. Trocar `listed_on_b3` cota o ativo no
 mercado novo na hora; se a unidade passa a ser inteira, a quantidade que fica
 (a enviada ou a atual) tem de ser inteira. Responde `200` com o ativo.
@@ -435,6 +438,66 @@ quando `listed_on_b3` ou o nome mudam; com escolha, fica.
 ### `DELETE /api/v1/assets/{id}`
 
 `204`.
+
+### Teto de preço (`ceiling`)
+
+O teto é **escolha da pessoa** e é opcional: o Prumo informa, nunca impõe nem
+preenche sozinho (ativo novo nasce sem teto). No pedido (`POST` e `PATCH
+/assets`), `ceiling` é uma de:
+
+```json
+{ "ceiling": null }
+{ "ceiling": { "method": "graham" } }
+{ "ceiling": { "method": "manual", "value": 30.5 } }
+```
+
+- `method` de referência — grava-se **o método**, e o valor é recalculado a cada
+  leitura com o balanço, os proventos e as taxas de hoje
+  ([`analise.md`](analise.md#referências-de-preço)):
+  - Ações Nacionais: `bazin`, `graham` ou `combined` (o menor dos dois);
+  - FIIs: `nav` (valor patrimonial por cota), `fund_yield` (Rendimento) ou
+    `combined` (o menor dos dois).
+- `manual`: valor próprio, fixo, em reais por unidade, maior que zero (`value`
+  obrigatório; com método, `value` é `422`). Vale em qualquer ativo com preço
+  por unidade (exterior, cripto, título do Tesouro).
+- Método de outra família (Graham em FII, VP em ação) ou de classe sem
+  referência (cripto, EUA, ETF/BDR noutras classes) é `422 validation_failed`,
+  com a mensagem sem acento. Renda fixa por valor não tem teto (`422`). O banco
+  garante que método e valor próprio não coexistem.
+
+Na resposta (o ativo, a Análise e as referências), o teto vem com o valor de hoje:
+
+```json
+"ceiling": { "method": "graham", "value": 27.43, "unavailable_reason": null }
+"ceiling": { "method": "graham", "value": null, "unavailable_reason": "loss" }
+"ceiling": { "method": "manual", "value": 30.5, "unavailable_reason": null }
+"ceiling": null
+```
+
+Método **sem valor hoje** nunca vira "sem teto": `value` é `null` e
+`unavailable_reason` diz por quê, e o ativo fica fora do aporte
+(`asset_ceiling_unavailable` no plano). Os motivos (os mesmos das referências,
+campo `gap`):
+
+| Código | Quando |
+|---|---|
+| `no_dividends` | sem provento por cota no período (Bazin, Rendimento) |
+| `no_fundamentals` | sem os dados da CVM (lucro e patrimônio por ação; o VP do FII) |
+| `loss` | lucro por ação zero ou negativo (Graham) |
+| `negative_equity` | patrimônio por ação (ou por cota) zero ou negativo |
+| `unknown_fund_type` | o tipo do FII não é conhecido (Rendimento) |
+| `no_composition` | FII híbrido sem a composição da carteira (Rendimento) |
+| `no_market_rate` | falta o juro real do Tesouro ou o CDI de 12 meses (Rendimento) |
+| `non_positive_target` | o alvo de rendimento saiu zero ou negativo |
+| `no_reference` | "pelas duas" sem nenhuma das duas |
+
+### `GET /api/v1/assets/{id}/references`
+
+As referências de preço e o teto de **um** ativo, para a escolha do teto na
+folha dele. Mesmo formato do bloco `references` de [`GET /analysis`](#get-apiv1analysis),
+com as listas só com esse ativo (as duas vazias para quem não tem referência:
+exterior, cripto, renda fixa). Ativo de outra pessoa: `404`. Só lê o que já está
+guardado, sem rede.
 
 ### Checklists
 
@@ -501,15 +564,17 @@ Calcula, não grava.
   Renda, para "+~R$ X/mês" e "sua renda vai de A para B" falarem da mesma renda
   que a Renda e a meta). `null` quando o ativo não tem nenhuma fonte (renda
   fixa, cripto, histórico ainda não buscado ou provedor fora do ar).
-- `items[].price_references`: o aviso de quem está **sem teto**
-  (`max_price` nulo), só informativo: `{ "bazin": 18.69, "graham": 77.77 }`, cada
-  um `null` quando falta dado (Bazin: histórico de dividendos em cache; Graham:
-  lucro e patrimônio por ação positivos). O objeto inteiro é `null` quando o
-  ativo tem teto ou não tem nenhuma das duas referências (cripto, exterior, renda
-  fixa). São os mesmos números de `GET /analysis` (`references.items[]`, com o
-  rendimento-alvo do Bazin da pessoa), lidos só do que já está guardado, sem
-  rede. O plano não muda por causa dele; a tela compara com `unit_price`.
-  Referência pública, não é recomendação.
+- `items[].price_references`: o aviso de quem está **sem teto** (`ceiling`
+  nulo), só informativo: a lista das referências que têm valor, uma por método —
+  `bazin` e `graham` nas ações, `nav` e `fund_yield` nos FIIs ("pelas duas" é a
+  menor delas e não vira item):
+  `[{ "method": "bazin", "value": 18.69 }, { "method": "graham", "value": 77.77 }]`.
+  `null` quando o ativo tem teto ou não tem nenhuma referência com valor
+  (cripto, exterior, renda fixa). São os mesmos números de `GET /analysis`
+  (`references.stocks[]`/`funds[]`, com o rendimento-alvo e os prêmios da
+  pessoa), lidos só do que já está guardado, sem rede. O plano não muda por
+  causa dele; a tela compara com `unit_price`. Referência pública, não é
+  recomendação.
 - `income`: o que o aporte soma por mês (`added_monthly`, a soma dos itens) e a
   renda mensal estimada da carteira antes e depois (`before_monthly` é o
   `estimate.monthly` da Renda), tudo líquido do IR retido na fonte. É estimativa, nunca
@@ -535,13 +600,20 @@ Calcula, não grava.
   - `class_blocked`, com `asset_class`, `amount` (quanto falta na classe) e
     `reason`: `no_assets` (nenhum ativo cadastrado), `unrated` (há ativos,
     nenhum com nota), `unpriced` (há ativo com nota, mas sem preço),
-    `above_ceiling` (os com nota e preço estão acima do `max_price`) ou
-    `concentration_limit` (os que receberiam já estão no limite por ativo);
+    `above_ceiling` (os com nota e preço estão acima do teto),
+    `ceiling_unavailable` (os com nota e preço estão fora pelo teto, e ao menos
+    um porque o método escolhido está sem valor hoje) ou `concentration_limit`
+    (os que receberiam já estão no limite por ativo);
   - `assets_without_price` e `assets_without_score`, com `symbols`;
   - `no_targets`: nenhuma meta definida, nada é comprado;
   - `asset_above_ceiling`: o ativo ficou fora deste aporte porque o preço passou
-    do teto da pessoa.
-    `{ "code": "asset_above_ceiling", "asset_id": "…", "symbol": "XPTO3", "unit_price": 32.5, "max_price": 30.0 }`;
+    do teto da pessoa; `max_price` é o teto de hoje e `method` diz de onde ele
+    veio (`manual` ou o método).
+    `{ "code": "asset_above_ceiling", "asset_id": "…", "symbol": "XPTO3", "unit_price": 32.5, "max_price": 30.0, "method": "bazin" }`;
+  - `asset_ceiling_unavailable`: o ativo ficou fora deste aporte porque o método
+    de teto escolhido está sem valor hoje (`reason` como em
+    [Teto de preço](#teto-de-preço-ceiling)); nunca cai calado para "sem teto".
+    `{ "code": "asset_ceiling_unavailable", "asset_id": "…", "symbol": "XPTO3", "method": "graham", "reason": "loss" }`;
   - `concentration_limit`: o limite por ativo mudou o plano. `symbols` (e
     `asset_ids`, na mesma ordem) chegaram no limite, e o que iria para eles
     foi para os outros ativos da classe ou para outras classes; `amount` é o
@@ -951,16 +1023,49 @@ que a Análise não faz estão em [analise.md](analise.md). Tudo pelo dono.
   },
   "references": {
     "bazin_yield": 6.0,
-    "items": [
+    "market": {
+      "real_rate": {
+        "percent": 7.12,
+        "base_date": "2026-11-19",
+        "bond": "Tesouro IPCA+ com Juros Semestrais 2037",
+        "bond_symbol": "TD-IPCAJS-20370515",
+        "source": "tesouro_transparente"
+      },
+      "cdi_12m": { "percent": 14.2, "net_percent": 12.07, "from": "2025-11-19", "to": "2026-11-18", "source": "bcb_sgs_12" },
+      "brick_premium": 2.5,
+      "paper_premium": 1.0,
+      "default_brick_premium": 2.5,
+      "default_paper_premium": 1.0,
+      "brick_target": 9.62,
+      "paper_target": 13.07
+    },
+    "stocks": [
       {
         "asset_id": "8f0c…",
         "label": "ITSA4",
         "asset_class": "br_stocks",
         "unit_price": 11.2,
-        "max_price": 10.0,
-        "bazin": { "price": 12.5, "annual_average": 0.75, "years": 4 },
-        "graham": 9.5,
-        "ceiling": 9.5
+        "ceiling": { "method": "manual", "value": 10.0, "unavailable_reason": null },
+        "bazin": { "value": 12.5, "gap": null, "annual_average": 0.75, "years": 4 },
+        "graham": { "value": 9.5, "gap": null },
+        "combined": { "value": 9.5, "gap": null }
+      }
+    ],
+    "funds": [
+      {
+        "asset_id": "1a2b…",
+        "label": "KNRI11",
+        "asset_class": "br_reits",
+        "unit_price": 142.0,
+        "ceiling": null,
+        "fund_type": "brick",
+        "composition": { "brick": 0.9, "paper": 0.1, "funds": 0.0 },
+        "nav": { "value": 98.4, "gap": null },
+        "fund_yield": {
+          "value": 137.21, "gap": null, "dividends_12m": 13.2,
+          "target": { "percent": 9.62, "brick": 9.62, "paper": null, "brick_weight": 1.0, "paper_weight": 0.0 }
+        },
+        "combined": { "value": 98.4, "gap": null }
       }
     ]
   },
@@ -1019,12 +1124,28 @@ que a Análise não faz estão em [analise.md](analise.md). Tudo pelo dono.
   (`conservative`, `moderate`, `aggressive`).
 - `highlights`: até 3 de cada lado, só quem subiu em `best` e quem caiu em
   `worst`; ativo sem histórico não entra (`price_12m` ajusta desdobramentos).
-- `references`: `bazin_yield` é o rendimento-alvo da pessoa; `items` só tem
-  ativos da B3 com Bazin (histórico de dividendos) ou Graham (lucro e patrimônio
-  por ação, os dois positivos; `null` se faltar um). `ceiling` é o teto pelas
-  duas: o menor de `bazin.price` e `graham`, ou o que existir. Referência pública,
-  não é recomendação; o teto é o `max_price` do ativo, que a tela só muda com o
-  `PATCH /assets/{id}` e uma confirmação.
+- `references`: as referências de preço de cada ação e FII da B3 da carteira
+  (inclusive os sem nenhuma referência: é dali que a pessoa escolhe ou tira o
+  teto), em ordem de rótulo. Fórmulas, fontes e prêmios em
+  [analise.md](analise.md#referências-de-preço). Referência pública, não é
+  recomendação.
+  - Cada referência é `{ "value": …, "gap": … }`: o valor em reais por cota, ou
+    `null` com o motivo (`gap`, os códigos de [Teto de preço](#teto-de-preço-ceiling)).
+  - `stocks[]`: `bazin` (mais `annual_average` e `years` da média), `graham` e
+    `combined` (o menor dos dois, ou o que existir).
+  - `funds[]`: `fund_type` (`brick`, `paper`, `hybrid`, `fund_of_funds` ou
+    `null`, o tipo que a CVM dá ao fundo), `composition` (frações de imóveis,
+    recebíveis e cotas de FII, somam 1; `null` sem informe), `nav` (o VP),
+    `fund_yield` (mais `dividends_12m`, os proventos por cota de 12 meses, e
+    `target`: o alvo em %, os alvos de tijolo e papel que entraram e os pesos) e
+    `combined`. FII nunca tem Bazin nem Graham.
+  - `ceiling`: o teto escolhido, com o valor de hoje (o mesmo do ativo); muda
+    pelo `PATCH /assets/{id}`.
+  - `bazin_yield` é o rendimento-alvo da pessoa; `market` traz o juro real
+    (taxa de compra do título IPCA+ de referência, com a data-base e o título),
+    o CDI de 12 meses (bruto e depois dos 15% de IR, com a janela), os prêmios
+    da pessoa e os padrões, e os alvos de hoje (`brick_target` = juro real +
+    prêmio; `paper_target` = CDI líquido + prêmio; `null` sem a taxa).
 - `unclassified_count` e `sources`: como em `GET /health`.
 
 Valores em reais (`needed_contribution`, `income_12m`, `base_value`,
@@ -1042,22 +1163,26 @@ não.
     { "rule": "beat_cdi_12m", "dimension": "returns", "enabled": true, "unit": "percent",
       "direction": "at_least", "threshold": null, "default_threshold": null }
   ],
-  "bazin_yield": 6.0
+  "bazin_yield": 6.0,
+  "market": { "real_rate": { "percent": 7.12, "base_date": "2026-11-19", "…": "…" }, "brick_premium": 2.5, "…": "…" }
 }
 ```
 
 As 33 regras na ordem da tela, como a pessoa as deixou (o que ela nunca mexeu
-vale `default_threshold`), e o rendimento-alvo do Bazin (padrão 6).
+vale `default_threshold`), o rendimento-alvo do Bazin (padrão 6) e `market`, o
+mesmo bloco de `references.market` da Análise: os prêmios dos FIIs (padrões
+2,5 e 1,0) com as taxas e os alvos de hoje.
 
 ### `PUT /api/v1/analysis/rules`
 
 ```json
-{ "rules": { "min_abroad": { "threshold": 15 }, "max_loss": { "enabled": false } }, "bazin_yield": 7.5 }
+{ "rules": { "min_abroad": { "threshold": 15 }, "max_loss": { "enabled": false } }, "bazin_yield": 7.5, "brick_premium": 3, "paper_premium": 0.5 }
 ```
 
 Muda só as regras e os campos enviados; o resto fica como está. Cada regra leva
-`enabled`, `threshold` ou os dois; `bazin_yield` é opcional, mas o corpo precisa
-de ao menos uma regra ou o `bazin_yield` (vazio é `422`). Responde como o `GET`.
+`enabled`, `threshold` ou os dois; `bazin_yield`, `brick_premium` e
+`paper_premium` são opcionais, mas o corpo precisa de ao menos uma regra ou um
+deles (vazio é `422`). Responde como o `GET`.
 Tudo ou nada: um valor inválido não grava nada.
 
 - `threshold` de percentual: maior que 0 e até 100, com até duas casas. De
@@ -1069,6 +1194,8 @@ Tudo ou nada: um valor inválido não grava nada.
 - Regra sem limite editável (`empty_class`, `income_growth`, `brick_reit`,
   `quality_recovery` e as seis `beat_*`): mandar `threshold` é `422`; elas só ligam e desligam.
 - `bazin_yield`: percentual maior que 0 e até 100, com até duas casas.
+- `brick_premium` e `paper_premium`: pontos percentuais de 0 a 20, com até duas
+  casas.
 - Regra desconhecida, campo desconhecido ou corpo que não é objeto: `422`.
 
 ## Desempenho

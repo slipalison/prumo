@@ -163,11 +163,30 @@ ele e a classe acima da meta aparecia "recebendo".
 Os dois são critério da própria pessoa, opcionais e desligados por padrão.
 Nenhum vira "preço justo" de terceiros nem recomendação.
 
-### Teto de preço por ativo (`max_price`)
+### Teto de preço por ativo (`ceiling`)
 
-Um valor em reais por unidade, gravado no ativo. Com o preço de hoje **acima**
-do teto, o ativo sai da divisão daquele aporte (preço igual ao teto ainda
-compra), e o plano diz por quê: `asset_above_ceiling`, com o preço e o teto.
+O teto é **escolha da pessoa**, uma de quatro: **sem teto** (o padrão de todo
+ativo novo), **Bazin**, **Graham** ou **Pelas duas** nas ações, **VP**,
+**Rendimento** ou **Pelas duas** nos FIIs, ou um **valor próprio** em reais por
+unidade. Com um método, grava-se o método, e o teto de hoje é a referência de
+hoje ([`analise.md`](analise.md#referências-de-preço)): ele acompanha o balanço,
+os proventos e as taxas sem a pessoa mexer. O teto de hoje sai de uma função só
+(`domain::ceiling::effective`, lida por `crate::ceiling::resolve_ceilings`), a
+mesma do plano, da Análise, da carteira e dos alertas.
+
+Com o preço de hoje **acima** do teto, o ativo sai da divisão daquele aporte
+(preço igual ao teto ainda compra), e o plano diz por quê:
+`asset_above_ceiling`, com o preço, o teto e de onde ele veio (`manual` ou o
+método).
+
+**Método sem valor.** Se o método escolhido fica sem valor — prejuízo zera o
+Graham, FII sem proventos em 12 meses, sem VP, tipo do FII desconhecido, taxa de
+mercado que ainda não chegou —, o teto **não cai calado para "sem teto"**: o
+ativo sai do aporte, como o que está acima do teto, e o plano diz
+`asset_ceiling_unavailable` com o método e o motivo. Se todos os ativos com nota
+e preço da classe estiverem fora pelo teto e ao menos um por método sem valor, a
+classe fica bloqueada com `reason: "ceiling_unavailable"`. A pessoa escolhe outro
+método, um valor próprio ou "sem teto" para o ativo voltar.
 Fora da divisão, ele continua ocupando o espaço dele na classe, como o ativo
 sem nota. Se todos os ativos com nota e preço da classe estiverem acima do
 teto, a classe fica bloqueada com `reason: "above_ceiling"`, e a parte dela vai
@@ -184,7 +203,20 @@ de aporte (`N` = R$ 2.000).
 CARA3 ocupa R$ 500 da classe; BOA3 pode ir a R$ 2.000 − R$ 500 = R$ 1.500 e
 leva o aporte inteiro. O teto é por ativo e serve para quem tem preço por
 unidade (renda fixa por valor não tem). Em ativo cotado em dólar, o teto é em
-reais, contra o preço já convertido.
+reais, contra o preço já convertido. Métodos só existem para Ações Nacionais e
+FIIs da B3; nos outros ativos o teto é valor próprio ou nenhum.
+
+Exemplo fictício do teto pelo método: PREJ3 com nota 8 e teto pelo Graham, e
+BOA3 com nota 4, sem teto, numa classe com R$ 1.000 e R$ 1.000 de aporte.
+
+| Situação de PREJ3 | Teto de hoje | PREJ3 recebe | Aviso |
+|---|---|---|---|
+| lucro, Graham R$ 30,00, preço R$ 10,00 | R$ 30,00 (Graham) | sim, pela nota | — |
+| lucro, Graham R$ 8,00, preço R$ 10,00 | R$ 8,00 (Graham) | não | `asset_above_ceiling`, `method: "graham"` |
+| prejuízo nos 12 meses | sem valor | não | `asset_ceiling_unavailable`, `reason: "loss"` |
+
+Nos dois últimos casos PREJ3 ocupa o espaço dele na classe e BOA3 recebe o
+aporte inteiro (vai a R$ 2.000 − R$ 500).
 
 ### Sem teto: o aviso do aporte (informativo)
 
@@ -196,14 +228,15 @@ Graham (as da Análise, ver [`analise.md`](analise.md#referências-de-preço)) a
 lado do preço de hoje: a tela mostra um chip por método com o veredito ("✓
 Bazin R$ 18,69" quando o preço de hoje está até o do método, "✗" quando está
 acima) e a explicação no toque (ver [`design.md`](design.md)). A decisão de
-aportar é da pessoa.
+aportar é da pessoa. Nos FIIs, os chips são o **VP** e o **Rendimento** (Bazin e
+Graham não valem para FII).
 
-- É só informação, calculada **depois** do plano (`analysis::plan_references`),
+- É só informação, calculada **depois** do plano (`ceiling::plan_references`),
   só com o que já está guardado (dividendos em cache e fundamentos gravados), sem
   rede, e só para os ativos do plano. As quantidades, os valores, as sobras e os
   avisos do motor são **idênticos** com e sem ela (há teste de integração).
 - Ativo **com** teto não ganha aviso: o critério já é o da pessoa. Ativo sem
-  nenhuma das duas referências (cripto, exterior, renda fixa, sem dividendo e sem
+  nenhuma referência com valor (cripto, exterior, renda fixa, sem dividendo e sem
   lucro e patrimônio por ação) também não.
 - O texto não diz "compre", "oportunidade", "preço justo" nem "upside": são
   referências públicas, não recomendação.
