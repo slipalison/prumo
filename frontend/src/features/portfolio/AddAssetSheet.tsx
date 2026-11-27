@@ -6,12 +6,12 @@ import { AssetForm } from "./AssetForm";
 
 type AddAssetSheetProps = {
   open: boolean;
-  initialClass?: AssetClass | undefined;
+  initialClass?: AssetClass;
   onClose: () => void;
   onCreated: (asset: Asset) => void;
 };
 
-export function AddAssetSheet({ open, initialClass, onClose, onCreated }: AddAssetSheetProps) {
+export function AddAssetSheet({ open, initialClass, onClose, onCreated }: Readonly<AddAssetSheetProps>) {
   const toast = useToast();
   return (
     <Sheet open={open} onClose={onClose} title="Novo ativo" description="Digite o ticker. Pode ser um ativo que você ainda não comprou: com a nota, ele já entra no aporte.">

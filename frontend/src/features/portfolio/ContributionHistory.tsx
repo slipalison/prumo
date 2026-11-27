@@ -8,6 +8,12 @@ import { STAGGER } from "../../lib/motion";
 import { useMoney } from "../../lib/privacy";
 import { assetName } from "../../lib/rating";
 
+/** O número ao lado do título: nada enquanto carrega, "nenhum" com a lista vazia. */
+function countLabel(count: number | undefined): number | "nenhum" | undefined {
+  if (count === undefined) return undefined;
+  return count === 0 ? "nenhum" : count;
+}
+
 /** Histórico de aportes, recolhido: a frase diz quantos há; abrir mostra cada um. */
 export function ContributionHistory() {
   const contributions = useContributions();
@@ -16,10 +22,10 @@ export function ContributionHistory() {
 
   return (
     <GlassCard as="section" className="panel panel--compact history" aria-label="Histórico de aportes">
-      <Disclosure summary="Histórico de aportes" count={count === undefined ? undefined : count === 0 ? "nenhum" : count}>
+      <Disclosure summary="Histórico de aportes" count={countLabel(count)}>
         {contributions.isPending && <Skeleton height={56} radius={16} />}
         {contributions.isError && <p className="field__hint">Não consegui carregar o histórico agora.</p>}
-        {contributions.data && contributions.data.length === 0 && (
+        {contributions.data?.length === 0 && (
           <p className="field__hint">Nenhum aporte registrado ainda. Quando você marcar &quot;Já comprei&quot;, ele aparece aqui.</p>
         )}
         {contributions.data && contributions.data.length > 0 && (

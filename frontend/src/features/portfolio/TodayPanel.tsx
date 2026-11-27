@@ -4,7 +4,7 @@ import type { Asset, AssetClass } from "../../api/types";
 import { Panel } from "../../components/Layout";
 import { ASSET_CLASSES, CLASS_META, classColor } from "../../lib/assetClasses";
 import { cx } from "../../lib/cx";
-import { classDays, dayMovers, dayTotal, signDirection, topMovers, type PricedMover } from "../../lib/panel";
+import { classDays, dayMovers, dayTotal, signDirection, topMovers, type Direction, type PricedMover } from "../../lib/panel";
 import { useMoney } from "../../lib/privacy";
 import { formatSignedPercent, signedBRL } from "../ledger/format";
 import { DeltaArrow } from "./DeltaArrow";
@@ -12,18 +12,25 @@ import "./panel.css";
 
 const SHOWN = 5;
 
-function Change({ percent, direction }: { percent: number; direction?: "above" | "below" | "equal" }) {
+/** O sentido da variação escrito para o leitor de tela, antes do número. */
+const SPOKEN_DIRECTION: Record<Direction, string> = {
+  above: "alta de ",
+  below: "baixa de ",
+  equal: "sem variação, ",
+};
+
+function Change({ percent, direction }: Readonly<{ percent: number; direction?: Direction }>) {
   const kind = direction ?? signDirection(Math.round(percent * 10) / 10, 0.05);
   return (
     <span className={cx("day-change", `day-change--${kind}`)}>
       <DeltaArrow direction={kind} />
-      <span className="sr-only">{kind === "above" ? "alta de " : kind === "below" ? "baixa de " : "sem variação, "}</span>
+      <span className="sr-only">{SPOKEN_DIRECTION[kind]}</span>
       {formatSignedPercent(percent)}
     </span>
   );
 }
 
-function MoverList({ title, movers, showClass }: { title: string; movers: PricedMover[]; showClass: boolean }) {
+function MoverList({ title, movers, showClass }: Readonly<{ title: string; movers: PricedMover[]; showClass: boolean }>) {
   return (
     <section className="movers" aria-label={title}>
       <h3 className="movers__title">{title}</h3>
@@ -53,7 +60,7 @@ function MoverList({ title, movers, showClass }: { title: string; movers: Priced
  * ao vivo (a tela se atualiza com o stream); o fechamento anterior vem da série
  * diária. Informa o que aconteceu; não diz o que fazer.
  */
-export function TodayPanel({ assets }: { assets: Asset[] }) {
+export function TodayPanel({ assets }: Readonly<{ assets: Asset[] }>) {
   const references = useDayReferences();
   const money = useMoney();
   const [filter, setFilter] = useState<AssetClass | null>(null);

@@ -17,6 +17,12 @@ type SymbolComboboxProps = {
   placeholder?: string;
 };
 
+/** O índice anterior na lista, dando a volta do primeiro para o último; -1 com a lista vazia. */
+function previousIndex(current: number, count: number): number {
+  if (count === 0) return -1;
+  return current <= 0 ? count - 1 : current - 1;
+}
+
 /**
  * Um campo só: digita o ticker ou o nome, a lista aparece, setas escolhem,
  * Enter confirma. Se a busca cair, o que foi digitado continua valendo.
@@ -29,7 +35,7 @@ export function SymbolCombobox({
   focusOnMount,
   label = "Ticker ou nome",
   placeholder = "KNRI11, PETR4, BTC…",
-}: SymbolComboboxProps) {
+}: Readonly<SymbolComboboxProps>) {
   const listId = useId();
   const inputRef = useFocusOnMount<HTMLInputElement>(focusOnMount);
   const [open, setOpen] = useState(false);
@@ -51,7 +57,7 @@ export function SymbolCombobox({
       setActive((current) => (results.length ? (current + 1) % results.length : -1));
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
-      setActive((current) => (results.length ? (current <= 0 ? results.length - 1 : current - 1) : -1));
+      setActive((current) => previousIndex(current, results.length));
     } else if (event.key === "Enter" && showList && active >= 0) {
       const picked = results[active];
       if (picked) {
@@ -101,11 +107,16 @@ export function SymbolCombobox({
         />
       </div>
       {showList && (
-        <ul id={listId} role="listbox" className="combo__list glass" aria-label="Sugestões">
+        <ul // NOSONAR: combobox do padrão ARIA; <select>/<datalist> não levam ícone nem a busca assíncrona
+          id={listId}
+          role="listbox"
+          className="combo__list glass"
+          aria-label="Sugestões"
+        >
           {search.isError && <li className="combo__status">Busca indisponível agora — pode seguir com o que digitou.</li>}
           {!search.isError && results.length === 0 && <li className="combo__status">Buscando…</li>}
           {results.map((suggestion, index) => (
-            <li
+            <li // NOSONAR: opção do listbox do combobox acima; <option> não leva ícone nem três colunas de texto
               key={`${suggestion.symbol}-${suggestion.exchange}`}
               id={optionId(index)}
               role="option"

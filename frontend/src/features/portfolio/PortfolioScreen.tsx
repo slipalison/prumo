@@ -17,11 +17,12 @@ import { MagneticButton } from "../../components/MagneticButton";
 import { PriceFlash, TrendMark } from "../../components/PriceFlash";
 import { ScoreBadge } from "../../components/ScoreBadge";
 import { useToast } from "../../components/toastContext";
-import { acceptsB3Listing, CLASS_META, classColor, nounOf, unitOf } from "../../lib/assetClasses";
+import { acceptsB3Listing, CLASS_META, classColor, nounOf, unitOf, type UnitKind } from "../../lib/assetClasses";
 import { cx } from "../../lib/cx";
 import { formatPercent, plural } from "../../lib/format";
 import { countBelowIdeal, hasIdeal, readIdeal, type IdealReading } from "../../lib/ideal";
 import { useLiveStatus } from "../../lib/liveStatus";
+import type { Money } from "../../lib/money";
 import { SPRING, STAGGER } from "../../lib/motion";
 import { useMoney } from "../../lib/privacy";
 import { assetName, isAboveCeiling, isCeilingUnavailable, needsRating, ratingIntro } from "../../lib/rating";
@@ -40,8 +41,8 @@ import { SectorBreakdown } from "./SectorBreakdown";
 
 type PortfolioScreenProps = { portfolio: Portfolio };
 
-export function PortfolioScreen({ portfolio }: PortfolioScreenProps) {
-  const [adding, setAdding] = useState<{ open: boolean; initialClass?: AssetClass | undefined }>({ open: false });
+export function PortfolioScreen({ portfolio }: Readonly<PortfolioScreenProps>) {
+  const [adding, setAdding] = useState<{ open: boolean; initialClass?: AssetClass }>({ open: false });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [justCreated, setJustCreated] = useState<Asset | null>(null);
   const refresh = useRefreshQuotes();
@@ -192,7 +193,7 @@ export function PortfolioScreen({ portfolio }: PortfolioScreenProps) {
       <EditAssetSheet
         asset={editing}
         portfolio={portfolio}
-        intro={justCreated && justCreated.id === editingId ? ratingIntro(justCreated) : undefined}
+        intro={justCreated?.id === editingId ? ratingIntro(justCreated) : undefined}
         onClose={() => {
           setEditingId(null);
           setJustCreated(null);
@@ -203,7 +204,7 @@ export function PortfolioScreen({ portfolio }: PortfolioScreenProps) {
 }
 
 /** Quantos ativos estão abaixo da fatia ideal da própria classe. */
-function BelowIdealStat({ count }: { count: number }) {
+function BelowIdealStat({ count }: Readonly<{ count: number }>) {
   return (
     <GlassCard as="section" className={cx("stat-card", count > 0 && "is-below")} aria-label="Abaixo do ideal">
       <span className="stat-card__label">
@@ -223,7 +224,7 @@ function BelowIdealStat({ count }: { count: number }) {
 }
 
 /** A rosca por classe, com a legenda escrita: o nome e a fatia nunca dependem da cor. */
-function ClassDonut({ portfolio }: { portfolio: Portfolio }) {
+function ClassDonut({ portfolio }: Readonly<{ portfolio: Portfolio }>) {
   const held = portfolio.classes.filter((c) => c.current_value > 0);
   return (
     <Panel title="Por classe" className="class-donut">
@@ -266,7 +267,7 @@ type ClassSectionProps = {
   onAdd: () => void;
 };
 
-function ClassSection({ index, summary, assets, onEdit, onAdd }: ClassSectionProps) {
+function ClassSection({ index, summary, assets, onEdit, onAdd }: Readonly<ClassSectionProps>) {
   const meta = CLASS_META[summary.asset_class];
   const headingId = `class-${summary.asset_class}`;
 
@@ -322,13 +323,32 @@ function ClassSection({ index, summary, assets, onEdit, onAdd }: ClassSectionPro
   );
 }
 
+/** A linha da quantidade: "Ainda não tem", "Valor informado" ou "10 cotas · R$ 9,50 · PM R$ 9,00". */
+function quantityText(asset: Asset, unit: UnitKind, price: string, money: Money): string {
+  const notOwned = asset.quantity === 0;
+  if (unit === "value") return notOwned ? "Ainda não tem" : "Valor informado";
+  if (notOwned) return `Ainda não tem · ${price}`;
+  const noun =
+    unit === "fraction" && !asset.treasury
+      ? (asset.symbol ?? "")
+      : plural(asset.quantity, nounOf(asset.asset_class, asset.listed_on_b3, asset.treasury));
+  const averagePrice = asset.average_price === null ? "" : ` · PM ${money.brl(asset.average_price)}`;
+  return `${money.quantity(asset.quantity, unit === "fraction")} ${noun} · ${price}${averagePrice}`;
+}
+
+/** A linha sob o nome: o Tesouro, o nome do ativo com ticker ou, sem ticker, a quantidade. */
+function subtitleOf(asset: Asset, quantityLine: string): string {
+  if (asset.treasury) return "Tesouro Direto";
+  return asset.symbol ? asset.display_name : quantityLine;
+}
+
 /**
  * Uma linha por ativo, no desenho de uma tabela: ativo, quantidade · preço ·
  * PM, valor, rentabilidade, fatia da classe × ideal e nota. A linha inteira é
  * um botão que abre a folha; no celular as mesmas peças empilham em duas ou
  * três linhas (container query do painel, ver `portfolio.css`).
  */
-function AssetRow({ asset, classAssets, onClick }: { asset: Asset; classAssets: Asset[]; onClick: () => void }) {
+function AssetRow({ asset, classAssets, onClick }: Readonly<{ asset: Asset; classAssets: Asset[]; onClick: () => void }>) {
   const money = useMoney();
   const ideal = readIdeal(asset, classAssets);
   const unit = unitOf(asset.asset_class, asset.listed_on_b3, asset.treasury);
@@ -336,18 +356,7 @@ function AssetRow({ asset, classAssets, onClick }: { asset: Asset; classAssets: 
   const price = missingPrice || asset.unit_price === null ? "sem preço" : money.brl(asset.unit_price);
   // Quantidade 0 é ativo da lista, ainda não comprado: recebe aporte pela nota.
   const notOwned = asset.quantity === 0;
-  const quantityLine =
-    unit === "value"
-      ? notOwned
-        ? "Ainda não tem"
-        : "Valor informado"
-      : notOwned
-        ? `Ainda não tem · ${price}`
-        : `${money.quantity(asset.quantity, unit === "fraction")} ${
-            unit === "fraction" && !asset.treasury
-              ? (asset.symbol ?? "")
-              : plural(asset.quantity, nounOf(asset.asset_class, asset.listed_on_b3, asset.treasury))
-          } · ${price}${asset.average_price === null ? "" : ` · PM ${money.brl(asset.average_price)}`}`;
+  const quantityLine = quantityText(asset, unit, price, money);
   const b3Tag = asset.listed_on_b3 && acceptsB3Listing(asset.asset_class);
 
   return (
@@ -370,7 +379,7 @@ function AssetRow({ asset, classAssets, onClick }: { asset: Asset; classAssets: 
             )}
           </span>
           <span className="asset-row__name">
-            {asset.treasury ? "Tesouro Direto" : asset.symbol ? asset.display_name : quantityLine}
+            {subtitleOf(asset, quantityLine)}
           </span>
         </span>
       </span>
@@ -380,10 +389,7 @@ function AssetRow({ asset, classAssets, onClick }: { asset: Asset; classAssets: 
       </span>
       <span className="asset-row__return-cell">{asset.return_percent !== null && <ReturnMark percent={asset.return_percent} />}</span>
       {ideal.counts ? (
-        <IdealLine
-          reading={ideal}
-          ceiling={asset.score > 0 ? (isCeilingUnavailable(asset) ? "unavailable" : isAboveCeiling(asset) ? "above" : null) : null}
-        />
+        <IdealLine reading={ideal} ceiling={ceilingBlockOf(asset)} />
       ) : (
         <span className="asset-row__ideal">
           <span className="asset-row__share">{formatPercent(asset.class_percent)} da classe</span>
@@ -391,7 +397,7 @@ function AssetRow({ asset, classAssets, onClick }: { asset: Asset; classAssets: 
       )}
       <span className="asset-row__score">
         {(missingPrice || asset.score === 0) && (
-          <IconAlert
+          <IconAlert // NOSONAR: ícone em SVG; role="img" com aria-label é o que o nomeia, não há tag nativa equivalente
             className="asset-row__warn"
             aria-hidden={false}
             aria-label={missingPrice ? "Sem cotação" : "Sem nota"}
@@ -414,7 +420,16 @@ function AssetRow({ asset, classAssets, onClick }: { asset: Asset; classAssets: 
 /** Por que o teto tira o ativo do aporte agora: o preço passou dele, ou o método escolhido está sem valor. */
 type CeilingBlock = "above" | "unavailable" | null;
 
-function IdealLine({ reading, ceiling }: { reading: IdealReading; ceiling: CeilingBlock }) {
+/** O selo do teto só vale para quem recebe aporte (nota acima de 0). */
+function ceilingBlockOf(asset: Asset): CeilingBlock {
+  if (asset.score > 0) {
+    if (isCeilingUnavailable(asset)) return "unavailable";
+    return isAboveCeiling(asset) ? "above" : null;
+  }
+  return null;
+}
+
+function IdealLine({ reading, ceiling }: Readonly<{ reading: IdealReading; ceiling: CeilingBlock }>) {
   const scale = Math.min(Math.max(reading.idealShare, reading.currentShare, 1) * 1.15, 100);
   const at = (value: number) => `${Math.min((value / scale) * 100, 100)}%`;
   return (
@@ -448,12 +463,19 @@ function IdealLine({ reading, ceiling }: { reading: IdealReading; ceiling: Ceili
  * o leitor de tela ouve "rentabilidade +12,0%". Percentual não revela
  * patrimônio: fica visível com o olho fechado, como o % da classe.
  */
-function ReturnMark({ percent }: { percent: number }) {
-  const direction = percent > 0 ? "up" : percent < 0 ? "down" : "flat";
+function ReturnMark({ percent }: Readonly<{ percent: number }>) {
+  const direction = returnDirection(percent);
   return (
     <span className={cx("asset-row__return", `asset-row__return--${direction}`)} title="Rentabilidade sobre o preço médio">
       <span className="sr-only">rentabilidade </span>
       {formatSignedPercent(percent)}
     </span>
   );
+}
+
+/** O sentido da rentabilidade, para a cor: alta, baixa ou no zero. */
+function returnDirection(percent: number): "up" | "down" | "flat" {
+  if (percent > 0) return "up";
+  if (percent < 0) return "down";
+  return "flat";
 }

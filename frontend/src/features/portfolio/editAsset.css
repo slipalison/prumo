@@ -1,0 +1,15 @@
+/*
+ * Folha do ativo: a escolha do teto e a confirmação da remoção são <fieldset>
+ * (o grupo nativo). Aqui só sai a moldura padrão dele; o desenho de cada um
+ * mora em styles/ceiling.css e styles/portfolio.css.
+ */
+.edit-asset fieldset.edit-asset__ceiling,
+.edit-asset fieldset.danger-zone__confirm {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+}
+
+.edit-asset fieldset.edit-asset__ceiling {
+  padding: 0;
+}

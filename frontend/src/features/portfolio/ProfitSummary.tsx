@@ -26,7 +26,7 @@ function partialNote(profit: Profit): string {
  * "(parcial)", sem nenhum número inventado. As três parcelas e o que falta
  * moram no ⓘ. Com o olho fechado, todo valor é mascarado, inclusive no ⓘ.
  */
-export function ProfitSummary({ profit }: { profit: Profit }) {
+export function ProfitSummary({ profit }: Readonly<{ profit: Profit }>) {
   const money = useMoney();
   const capital = profit.realized + profit.unrealized;
   return (

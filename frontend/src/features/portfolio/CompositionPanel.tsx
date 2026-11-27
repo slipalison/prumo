@@ -7,6 +7,7 @@ import { CLASS_META, classColor } from "../../lib/assetClasses";
 import { buildComposition, LEVEL_LABEL, leavesByClass, type CompositionLevel, type CompositionNode } from "../../lib/composition";
 import { cx } from "../../lib/cx";
 import { formatPercent, plural } from "../../lib/format";
+import type { Money } from "../../lib/money";
 import { useMoney } from "../../lib/privacy";
 import { Sankey } from "./Sankey";
 import { useNarrow } from "./useNarrow";
@@ -27,9 +28,9 @@ function sliceColor(node: CompositionNode, index: number): string {
 }
 
 /** Uma barra empilhada por classe: a largura é a fatia dentro da classe, e a legenda escreve cada nome e fatia. */
-function StackedBars({ nodes, headings }: { nodes: CompositionNode[]; headings: string[] }) {
+function StackedBars({ nodes, headings }: Readonly<{ nodes: CompositionNode[]; headings: string[] }>) {
   const groups = leavesByClass({ total: 0, headings, nodes });
-  const lastHeading = headings[headings.length - 1]?.toLowerCase() ?? "";
+  const lastHeading = headings.at(-1)?.toLowerCase() ?? "";
   return (
     <ul className="stacked-bars">
       {groups.map(({ node, leaves }) => (
@@ -82,13 +83,24 @@ function useWidth<T extends HTMLElement>() {
   return { ref, width };
 }
 
+/** As colunas da tabela da composição, com os valores pelos formatadores que respeitam o olho fechado. */
+function compositionColumns(money: Money, headings: string[]): Array<DataColumn<CompositionNode>> {
+  return [
+    { key: "label", label: "Item", rowHeader: true, cell: (n) => <span className={cx("composition-item", `composition-item--${n.column}`)}>{n.label}</span> },
+    { key: "level", label: "Nível", cell: (n) => headings[n.column] ?? "" },
+    { key: "class", label: "Classe", wideOnly: true, cell: (n) => (n.assetClass ? CLASS_META[n.assetClass].label : "") },
+    { key: "value", label: "Valor", align: "end", cell: (n) => money.brl(n.value) },
+    { key: "percent", label: "Da carteira", align: "end", cell: (n) => formatPercent(n.percent) },
+  ];
+}
+
 /**
  * Composição da carteira: o diagrama de Sankey (carteira → classe → setor →
  * ativo) com o seletor do último nível, ou as barras empilhadas, que no
  * celular são a única vista (o diagrama pede largura). A tabela embaixo traz
  * cada valor, pelos formatadores que respeitam o olho fechado.
  */
-export function CompositionPanel({ assets }: { assets: Asset[] }) {
+export function CompositionPanel({ assets }: Readonly<{ assets: Asset[] }>) {
   const money = useMoney();
   const { ref, width } = useWidth<HTMLDivElement>();
   const narrow = useNarrow() || (width > 0 && width < MIN_DIAGRAM_WIDTH);
@@ -100,13 +112,7 @@ export function CompositionPanel({ assets }: { assets: Asset[] }) {
   const collapsed = useMemo(() => buildComposition(assets, level, true), [assets, level]);
 
   const rows = full.nodes.filter((n) => n.column > 0);
-  const columns: Array<DataColumn<CompositionNode>> = [
-    { key: "label", label: "Item", rowHeader: true, cell: (n) => <span className={cx("composition-item", `composition-item--${n.column}`)}>{n.label}</span> },
-    { key: "level", label: "Nível", cell: (n) => full.headings[n.column] ?? "" },
-    { key: "class", label: "Classe", wideOnly: true, cell: (n) => (n.assetClass ? CLASS_META[n.assetClass].label : "") },
-    { key: "value", label: "Valor", align: "end", cell: (n) => money.brl(n.value) },
-    { key: "percent", label: "Da carteira", align: "end", cell: (n) => formatPercent(n.percent) },
-  ];
+  const columns = compositionColumns(money, full.headings);
 
   const classes = full.nodes.filter((n) => n.kind === "class");
   const summary = classes.map((c) => `${c.label} ${formatPercent(c.percent)}`).join(", ");
@@ -120,21 +126,21 @@ export function CompositionPanel({ assets }: { assets: Asset[] }) {
       infoLabel="Sobre a composição"
       actions={
         <div className="composition__controls">
-          <div className="chips" role="group" aria-label="Último nível">
+          <fieldset className="chips" aria-label="Último nível">
             {LEVELS.map((id) => (
               <button key={id} type="button" className={cx("chip chip--quick", level === id && "is-active")} aria-pressed={level === id} onClick={() => setLevel(id)}>
                 {LEVEL_LABEL[id]}
               </button>
             ))}
-          </div>
+          </fieldset>
           {!narrow && (
-            <div className="chips" role="group" aria-label="Vista">
+            <fieldset className="chips" aria-label="Vista">
               {VIEWS.map((v) => (
                 <button key={v.id} type="button" className={cx("chip chip--quick", view === v.id && "is-active")} aria-pressed={view === v.id} onClick={() => setChosen(v.id)}>
                   {v.label}
                 </button>
               ))}
-            </div>
+            </fieldset>
           )}
         </div>
       }

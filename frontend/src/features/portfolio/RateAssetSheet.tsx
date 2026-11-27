@@ -16,7 +16,7 @@ type RateAssetSheetProps = {
  * do plano). Usa a versão mais nova do ativo quando a carteira já a tem — o
  * ativo recém-criado ainda pode não ter chegado na lista.
  */
-export function RateAssetSheet({ target, portfolio, onClose, onSaved }: RateAssetSheetProps) {
+export function RateAssetSheet({ target, portfolio, onClose, onSaved }: Readonly<RateAssetSheetProps>) {
   const asset = target ? (portfolio.assets.find((a) => a.id === target.asset.id) ?? target.asset) : null;
   return (
     <EditAssetSheet asset={asset} portfolio={portfolio} intro={target?.intro} onClose={onClose} onSaved={onSaved} />

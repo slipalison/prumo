@@ -19,13 +19,74 @@ import { cx } from "../../lib/cx";
 import { SymbolCombobox } from "./SymbolCombobox";
 
 type AssetFormProps = {
-  initialClass?: AssetClass | undefined;
+  initialClass?: AssetClass;
   submitLabel?: string;
   onCreated: (asset: Asset) => void;
 };
 
 function cleanSymbol(text: string): string {
   return text.trim().toUpperCase().replace(/\.SA$/, "");
+}
+
+/** O que o formulário tem na hora de enviar, com a classe, a unidade e a B3 já resolvidas. */
+type AssetDraft = {
+  assetClass: AssetClass;
+  symbol: string;
+  displayName: string;
+  amount: number;
+  invested: number;
+  units: number;
+  averagePrice: number;
+  score: number;
+  treasuryKey: string | null;
+  valueBased: boolean;
+  treasury: boolean;
+  needsManualScore: boolean;
+  listedOnB3: boolean;
+};
+
+/** O mínimo para cadastrar: o nome (por valor), o título escolhido (Tesouro) ou o ticker. */
+function isComplete(draft: AssetDraft): boolean {
+  if (draft.valueBased) return draft.displayName.trim().length > 0;
+  if (draft.treasury) return draft.treasuryKey !== null;
+  return cleanSymbol(draft.symbol).length > 0;
+}
+
+/** O preço médio de entrada só vai com posição e preço informados. */
+function entryCost(units: number, averagePrice: number) {
+  return units > 0 && averagePrice > 0 ? { average_price: averagePrice } : {};
+}
+
+/** O corpo do `POST /assets`: renda fixa por valor, título do Tesouro ou ativo com ticker. */
+function createRequest(draft: AssetDraft): CreateAssetRequest {
+  if (draft.valueBased) {
+    return {
+      asset_class: draft.assetClass,
+      display_name: draft.displayName.trim(),
+      amount: draft.amount,
+      score_override: draft.score,
+      ...(draft.amount > 0 && draft.invested > 0 ? { invested: draft.invested } : {}),
+    };
+  }
+  if (draft.treasury && draft.treasuryKey) {
+    return {
+      asset_class: draft.assetClass,
+      symbol: draft.treasuryKey,
+      treasury: true,
+      quantity: draft.units,
+      score_override: draft.score,
+      ...entryCost(draft.units, draft.averagePrice),
+    };
+  }
+  return {
+    asset_class: draft.assetClass,
+    symbol: cleanSymbol(draft.symbol),
+    quantity: draft.units,
+    ...(draft.displayName ? { display_name: draft.displayName } : {}),
+    ...(draft.needsManualScore ? { score_override: draft.score } : {}),
+    ...(draft.listedOnB3 ? { listed_on_b3: true } : {}),
+    ...entryCost(draft.units, draft.averagePrice),
+  };
 }
 
 /**
@@ -36,7 +97,7 @@ function cleanSymbol(text: string): string {
  * Quantidade 0 vale: o ativo que a pessoa ainda não comprou entra na lista com
  * a nota, e o aporte já o considera na divisão da classe.
  */
-export function AssetForm({ initialClass, submitLabel = "Adicionar à carteira", onCreated }: AssetFormProps) {
+export function AssetForm({ initialClass, submitLabel = "Adicionar à carteira", onCreated }: Readonly<AssetFormProps>) {
   const ids = {
     symbol: useId(),
     quantity: useId(),
@@ -70,17 +131,31 @@ export function AssetForm({ initialClass, submitLabel = "Adicionar à carteira",
   const meta = CLASS_META[assetClass];
   const treasury = bondMode && assetClass === "fixed_income";
   const b3Choice = acceptsB3Listing(assetClass) && !treasury;
-  const onB3 = treasury ? false : b3Choice ? listedOnB3 : true;
+  // Título do Tesouro nunca é da B3; onde a chave existe, vale ela; sem chave, o ativo é da B3.
+  const onB3 = !treasury && (!b3Choice || listedOnB3);
   const unit = unitOf(assetClass, onB3, treasury);
   const valueBased = unit === "value";
   const needsManualScore = meta.checklist === null;
   // O campo de cota inteira mostra o número arredondado; é ele que vai.
   const units = unit === "fraction" ? quantity : Math.round(quantity);
-  const valid = valueBased
-    ? displayName.trim().length > 0
-    : treasury
-      ? treasuryKey !== null
-      : cleanSymbol(symbol).length > 0;
+  const draft: AssetDraft = {
+    assetClass,
+    symbol,
+    displayName,
+    amount,
+    invested,
+    units,
+    averagePrice,
+    score,
+    treasuryKey,
+    valueBased,
+    treasury,
+    needsManualScore,
+    listedOnB3: b3Choice && onB3,
+  };
+  const valid = isComplete(draft);
+  // O Tesouro troca o rótulo e o exemplo da busca.
+  const comboboxText = treasury ? { label: "Título do Tesouro Direto", placeholder: "Tesouro IPCA+, Selic, Prefixado…" } : {};
 
   const handleSymbolChange = (text: string) => {
     setSymbol(text);
@@ -123,33 +198,7 @@ export function AssetForm({ initialClass, submitLabel = "Adicionar à carteira",
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!valid || create.isPending) return;
-    const body: CreateAssetRequest = valueBased
-      ? {
-          asset_class: assetClass,
-          display_name: displayName.trim(),
-          amount,
-          score_override: score,
-          ...(amount > 0 && invested > 0 ? { invested } : {}),
-        }
-      : treasury && treasuryKey
-        ? {
-            asset_class: assetClass,
-            symbol: treasuryKey,
-            treasury: true,
-            quantity: units,
-            score_override: score,
-            ...(units > 0 && averagePrice > 0 ? { average_price: averagePrice } : {}),
-          }
-        : {
-            asset_class: assetClass,
-            symbol: cleanSymbol(symbol),
-            quantity: units,
-            ...(displayName ? { display_name: displayName } : {}),
-            ...(needsManualScore ? { score_override: score } : {}),
-            ...(b3Choice && onB3 ? { listed_on_b3: true } : {}),
-            ...(units > 0 && averagePrice > 0 ? { average_price: averagePrice } : {}),
-          };
-    create.mutate(body, { onSuccess: onCreated });
+    create.mutate(createRequest(draft), { onSuccess: onCreated });
   };
 
   return (
@@ -158,7 +207,7 @@ export function AssetForm({ initialClass, submitLabel = "Adicionar à carteira",
         <legend className="field__label">Classe</legend>
         <div className="chips" role="radiogroup" aria-label="Classe do ativo">
           {ASSET_CLASSES.map((c) => (
-            <button
+            <button // NOSONAR: chip de escolha com Tab e clique em cada um; <input type="radio"> trocaria o teclado (setas mudam a classe)
               key={c}
               type="button"
               role="radio"
@@ -182,7 +231,7 @@ export function AssetForm({ initialClass, submitLabel = "Adicionar à carteira",
               { bond: false, label: "Por valor (CDB, LCI…)" },
               { bond: true, label: "Tesouro Direto" },
             ].map(({ bond, label }) => (
-              <button
+              <button // NOSONAR: chip de escolha, como o da classe acima; <input type="radio"> trocaria o teclado
                 key={label}
                 type="button"
                 role="radio"
@@ -201,7 +250,7 @@ export function AssetForm({ initialClass, submitLabel = "Adicionar à carteira",
       {b3Choice && (
         <div className="switch-row">
           <label htmlFor={ids.b3} className="switch-row__label">
-            Negociado na B3
+            Negociado na B3{" "}
             <span className="field__hint">
               ETF ou BDR com ticker da B3, como um ETF de bitcoin em Cripto: cotado em reais, cota inteira.
             </span>
@@ -253,9 +302,7 @@ export function AssetForm({ initialClass, submitLabel = "Adicionar à carteira",
             onChange={handleSymbolChange}
             onSelect={handleSelect}
             focusOnMount
-            {...(treasury
-              ? { label: "Título do Tesouro Direto", placeholder: "Tesouro IPCA+, Selic, Prefixado…" }
-              : {})}
+            {...comboboxText}
           />
           {treasury && treasuryKey === null && (
             <p className="field__hint">Digite o tipo ou o ano e escolha o título na lista: o preço vem sozinho.</p>

@@ -26,7 +26,7 @@ type SankeyProps = { composition: Composition; label: string };
  * valores em reais estão na tabela que acompanha. É um desenho: quem lê o
  * leitor de tela é o `aria-label` e a tabela.
  */
-export function Sankey({ composition, label }: SankeyProps) {
+export function Sankey({ composition, label }: Readonly<SankeyProps>) {
   const layout = useMemo(
     () => layoutSankey(composition.nodes, { width: WIDTH, height: HEIGHT, nodeWidth: NODE_WIDTH, gap: GAP, labelRoom: LABEL_ROOM }),
     [composition],
@@ -43,7 +43,13 @@ export function Sankey({ composition, label }: SankeyProps) {
   const lastColumn = composition.headings.length - 1;
 
   return (
-    <svg className="sankey" viewBox={`0 0 ${WIDTH} ${HEIGHT + HEADING}`} role="img" aria-label={label} preserveAspectRatio="xMidYMid meet">
+    <svg // NOSONAR: diagrama em SVG; role="img" com aria-label é o que o nomeia, não há tag nativa equivalente
+      className="sankey"
+      viewBox={`0 0 ${WIDTH} ${HEIGHT + HEADING}`}
+      role="img"
+      aria-label={label}
+      preserveAspectRatio="xMidYMid meet"
+    >
       {composition.headings.map((heading, column) => (
         <text key={heading} className="sankey__heading" x={columnX.get(column) ?? 0} y={12}>
           {heading}

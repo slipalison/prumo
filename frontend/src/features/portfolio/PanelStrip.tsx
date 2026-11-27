@@ -10,10 +10,15 @@ import { formatDay } from "../performance/performanceFormat";
 import { DeltaArrow } from "./DeltaArrow";
 import "./panel.css";
 
-const toneOf = (direction: Direction): Stat["tone"] => (direction === "above" ? "up" : direction === "below" ? "down" : undefined);
+/** O tom do número pelo sentido: alta, baixa ou nenhum (igual). */
+function toneOf(direction: Direction): Stat["tone"] {
+  if (direction === "above") return "up";
+  if (direction === "below") return "down";
+  return undefined;
+}
 
 /** O valor de um indicador: a seta e o número, juntos. */
-function Figure({ direction, children }: { direction: Direction; children: string }) {
+function Figure({ direction, children }: Readonly<{ direction: Direction; children: string }>) {
   return (
     <span className="panel-figure">
       <DeltaArrow direction={direction} />
@@ -100,11 +105,11 @@ function moneyStat(
  * se o mês foi maior ou menor); os percentuais ficam, como no resto da tela.
  * Enquanto carrega, sem série ou se falhar, não aparece.
  */
-export function PanelStrip({ portfolio }: { portfolio: Portfolio }) {
+export function PanelStrip({ portfolio }: Readonly<{ portfolio: Portfolio }>) {
   const month = usePanelMonth();
   const money = useMoney();
   const data = month.data;
-  if (!data || data.as_of === null) return null;
+  if (data?.as_of == null) return null;
 
   const name = monthName(data.month_starts_on);
   const previousName = monthName(previousMonthStart(data.month_starts_on));

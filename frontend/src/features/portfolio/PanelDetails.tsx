@@ -4,7 +4,7 @@ import { CompositionPanel } from "./CompositionPanel";
 import { TodayPanel } from "./TodayPanel";
 
 /** A composição e o dia da carteira, lado a lado (a composição pede a largura). */
-export function PanelDetails({ portfolio }: { portfolio: Portfolio }) {
+export function PanelDetails({ portfolio }: Readonly<{ portfolio: Portfolio }>) {
   return (
     <Grid cols="main-aside" alignStart className="panel-details">
       <CompositionPanel assets={portfolio.assets} />

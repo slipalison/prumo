@@ -25,7 +25,7 @@ const shownPercent = (percent: number) => Math.round(percent * 100) / 100;
  * máscara e o percentual fica. Enquanto carrega, ou se a API falhar, não
  * aparece.
  */
-export function DayResultCard({ assets }: { assets: Asset[] }) {
+export function DayResultCard({ assets }: Readonly<{ assets: Asset[] }>) {
   const references = useDayReferences();
   const money = useMoney();
   const total = useMemo(() => dayTotal(dayMovers(assets, references.data?.assets ?? [])), [assets, references.data]);

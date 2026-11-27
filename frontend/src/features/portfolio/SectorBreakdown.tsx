@@ -17,7 +17,7 @@ const SOURCE_NAME: Partial<Record<AssetClass, string>> = {
  * painel lateral da Carteira: o nome e a fatia estão sempre escritos, a cor só
  * ajuda a achar.
  */
-export function SectorBreakdown({ assetClass, assets }: SectorBreakdownProps) {
+export function SectorBreakdown({ assetClass, assets }: Readonly<SectorBreakdownProps>) {
   const slices = sectorSlices(assets, assetClass);
   if (slices.length === 0) return null;
 
@@ -25,6 +25,7 @@ export function SectorBreakdown({ assetClass, assets }: SectorBreakdownProps) {
   const classLabel = CLASS_META[assetClass].label;
   const classified = slices.filter((s) => s.kind !== "none");
   const sectorCount = slices.filter((s) => s.kind === "sector").length;
+  const sliceList = slices.map((s) => `${s.label} ${formatPercent(s.percent)}`).join(", ");
 
   if (classified.length === 0) {
     return (
@@ -46,7 +47,7 @@ export function SectorBreakdown({ assetClass, assets }: SectorBreakdownProps) {
         <Donut
           size={104}
           thickness={12}
-          label={`${heading}: ${slices.map((s) => `${s.label} ${formatPercent(s.percent)}`).join(", ")}`}
+          label={`${heading}: ${sliceList}`}
           segments={slices.map((s) => ({ key: s.key, value: s.value, color: s.color, label: s.label }))}
         >
           <strong className="donut__number donut__number--sm">{sectorCount}</strong>
