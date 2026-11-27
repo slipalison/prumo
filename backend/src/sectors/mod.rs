@@ -111,6 +111,19 @@ pub fn is_due(state: Option<&SyncState>, now: OffsetDateTime) -> bool {
     }
 }
 
+/// Se uma fonte em dia precisa ser lida de novo porque a referência guardada
+/// está incompleta (`incomplete`). Uma falha recente segura a nova tentativa
+/// pelo mesmo [`RETRY_AFTER`] de sempre: a fonte fora do ar não é martelada.
+pub fn needs_backfill(state: Option<&SyncState>, incomplete: bool, now: OffsetDateTime) -> bool {
+    if !incomplete {
+        return false;
+    }
+    match state {
+        Some(state) if state.last_error.is_some() => now - state.last_attempt_at >= RETRY_AFTER,
+        _ => true,
+    }
+}
+
 /// O resultado de buscar uma fonte.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyncOutcome {
@@ -152,7 +165,18 @@ impl SectorService {
                     continue;
                 }
             };
-            if !is_due(state.as_ref(), now) {
+            // A referência guardada sem o que o código de hoje grava (a
+            // composição dos FIIs, que veio depois) é lida de novo, mesmo em
+            // dia: a condição é o dado, não uma marca da migração, então um pod
+            // antigo que releia a fonte durante o deploy não a "consome".
+            let incomplete = match self.store.sector_reference_incomplete(source).await {
+                Ok(incomplete) => incomplete,
+                Err(error) => {
+                    tracing::error!(source = source.as_str(), error = %error, "referencia de setor ilegivel");
+                    false
+                }
+            };
+            if !is_due(state.as_ref(), now) && !needs_backfill(state.as_ref(), incomplete, now) {
                 continue;
             }
             outcomes.push(self.refresh_one(feed.as_ref(), state, now).await);
@@ -261,6 +285,21 @@ mod tests {
         assert!(!is_due(Some(&fresh), now));
         let old = state(Span::days(31), Some(Span::days(31)), None, now);
         assert!(is_due(Some(&old), now));
+    }
+
+    #[test]
+    fn an_incomplete_reference_is_read_again_even_when_fresh() {
+        let now = OffsetDateTime::now_utc();
+        let fresh = state(Span::days(2), Some(Span::days(2)), None, now);
+        assert!(!is_due(Some(&fresh), now));
+        assert!(needs_backfill(Some(&fresh), true, now));
+        assert!(!needs_backfill(Some(&fresh), false, now));
+        assert!(needs_backfill(None, true, now));
+        // Falhou há pouco: espera, como qualquer nova tentativa.
+        let failed = state(Span::hours(1), Some(Span::days(2)), Some("fora"), now);
+        assert!(!needs_backfill(Some(&failed), true, now));
+        let retry = state(Span::hours(7), Some(Span::days(2)), Some("fora"), now);
+        assert!(needs_backfill(Some(&retry), true, now));
     }
 
     #[test]

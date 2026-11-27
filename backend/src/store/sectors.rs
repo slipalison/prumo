@@ -194,6 +194,27 @@ impl Store {
         Ok(found)
     }
 
+    /// Se a referência guardada de `source` está sem algo que o código de hoje
+    /// grava: nos FIIs, alguma linha da CVM sem a composição (gravada por um
+    /// código de antes dela). A B3 não tem o que faltar.
+    pub async fn sector_reference_incomplete(
+        &self,
+        source: SectorSource,
+    ) -> Result<bool, StoreError> {
+        if source != SectorSource::CvmReits {
+            return Ok(false);
+        }
+        let (incomplete,): (bool,) = sqlx::query_as(
+            "select exists (
+                select 1 from sector_reference where source = $1 and brick_share is null
+             )",
+        )
+        .bind(source.as_str())
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(incomplete)
+    }
+
     /// A composição da carteira dos FIIs (código do emissor → frações), dos
     /// que a CVM classificou com ela.
     pub async fn fund_compositions(

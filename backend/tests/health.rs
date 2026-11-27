@@ -11,8 +11,9 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use axum::http::StatusCode;
 use common::*;
-use prumo::domain::sector::SectorSource;
+use prumo::domain::sector::{FundComposition, SectorSource};
 use prumo::sectors::{SectorEntry, SectorError, SectorFeed, SectorService};
+use rust_decimal::Decimal;
 use serde_json::{json, Value};
 use time::{Duration, OffsetDateTime};
 
@@ -86,11 +87,24 @@ fn b3_entries() -> Vec<SectorEntry> {
     ]
 }
 
+/// Um FII como a fonte da CVM de hoje grava: o tipo e a composição da carteira.
+fn fund(code: &str, sector: &str, segment: &str) -> SectorEntry {
+    let (brick, paper) = if sector == "Papel" { (5, 95) } else { (90, 10) };
+    SectorEntry {
+        composition: FundComposition::from_amounts(
+            Decimal::from(brick),
+            Decimal::from(paper),
+            Decimal::ZERO,
+        ),
+        ..entry(code, sector, None, Some(segment))
+    }
+}
+
 fn cvm_entries() -> Vec<SectorEntry> {
     vec![
-        entry("KNRI", "Tijolo", None, Some("Multicategoria")),
-        entry("HGLG", "Tijolo", None, Some("Multicategoria")),
-        entry("MXRF", "Papel", None, Some("Logística")),
+        fund("KNRI", "Tijolo", "Multicategoria"),
+        fund("HGLG", "Tijolo", "Multicategoria"),
+        fund("MXRF", "Papel", "Logística"),
     ]
 }
 
@@ -254,8 +268,8 @@ async fn the_reference_is_fetched_once_and_kept_until_it_is_due(
     // Passado o mês, busca de novo e troca a referência (inclusive tirando o
     // que a fonte deixou de listar).
     cvm.answer(Ok(vec![
-        entry("KNRI", "Papel", None, Some("Multicategoria")),
-        entry("HGLG", "Tijolo", None, Some("Multicategoria")),
+        fund("KNRI", "Papel", "Multicategoria"),
+        fund("HGLG", "Tijolo", "Multicategoria"),
     ]));
     let later = service.refresh_due(now + Duration::days(31)).await;
     assert_eq!(later.len(), 2);
@@ -277,6 +291,42 @@ async fn the_reference_is_fetched_once_and_kept_until_it_is_due(
     cvm.answer(Ok(cvm_entries()));
     let refreshed = service.refresh_due(now + Duration::days(62)).await;
     assert_eq!(refreshed.len(), 2);
+
+    // Uma referência gravada por um código de antes da composição (um pod
+    // antigo durante o deploy) é lida de novo mesmo em dia, só até ficar
+    // completa: a condição é o dado, não uma marca da migração.
+    let old_code: Vec<SectorEntry> = cvm_entries()
+        .into_iter()
+        .map(|e| SectorEntry {
+            composition: None,
+            ..e
+        })
+        .collect();
+    db.store
+        .replace_sector_reference(SectorSource::CvmReits, &old_code, now + Duration::days(62))
+        .await
+        .unwrap();
+    assert!(db
+        .store
+        .sector_reference_incomplete(SectorSource::CvmReits)
+        .await
+        .unwrap());
+    let calls = (b3.calls(), cvm.calls());
+    let backfill = service
+        .refresh_due(now + Duration::days(62) + Duration::minutes(5))
+        .await;
+    assert_eq!(backfill.len(), 1, "{backfill:?}");
+    assert_eq!(backfill[0].source, SectorSource::CvmReits);
+    assert_eq!((b3.calls(), cvm.calls()), (calls.0, calls.1 + 1));
+    assert!(!db
+        .store
+        .sector_reference_incomplete(SectorSource::CvmReits)
+        .await
+        .unwrap());
+    let done = service
+        .refresh_due(now + Duration::days(62) + Duration::minutes(10))
+        .await;
+    assert!(done.is_empty(), "{done:?}");
 }
 
 async fn assets_carry_their_sector(db: &Database, dir: &tempfile_dir::Dir) {

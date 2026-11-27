@@ -319,13 +319,10 @@ pub async fn estimate_assets(
 ) -> PortfolioIncome {
     let now = OffsetDateTime::now_utc();
     let ledgers = match user {
-        Some(user) => store
-            .entries_by_asset(user)
-            .await
-            .unwrap_or_else(|error| {
-                tracing::error!(error = %error, "livro ilegivel para a estimativa");
-                HashMap::new()
-            }),
+        Some(user) => store.entries_by_asset(user).await.unwrap_or_else(|error| {
+            tracing::error!(error = %error, "livro ilegivel para a estimativa");
+            HashMap::new()
+        }),
         None => HashMap::new(),
     };
     let payers: Vec<Payer> = assets

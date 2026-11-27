@@ -35,7 +35,7 @@ alter table sector_reference add constraint sector_reference_composition
         )
     );
 
--- A referência dos FIIs que já existe não tem composição: a CVM é buscada de
--- novo na próxima conferência (até uma hora depois do deploy), em vez de
--- esperar o mês da próxima atualização.
-delete from sector_sync where source = 'cvm_reits';
+-- A referência dos FIIs que já existe fica sem composição (colunas nulas). Não
+-- há marca a zerar aqui: o código novo relê a CVM enquanto houver linha sem
+-- composição (`Store::sector_reference_incomplete`), o que vale também se um
+-- pod antigo reler a fonte durante o deploy.
