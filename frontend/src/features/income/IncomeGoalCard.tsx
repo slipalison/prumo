@@ -15,7 +15,6 @@ import { formatDay } from "../../lib/income";
 import { useMoney } from "../../lib/privacy";
 import { SPRING } from "../../lib/motion";
 import { IncomeGoalProjection } from "./IncomeGoalProjection";
-import "./nativeTags.css";
 
 type IncomeGoalCardProps = {
   goal: IncomeGoal | null;

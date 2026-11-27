@@ -13,7 +13,6 @@ import { formatPercent } from "../../lib/format";
 import { balanceTargets, isComplete, PRESETS, sameTargets, sumTargets, targetsFromClasses } from "../../lib/goals";
 import { ConcentrationLimitCard } from "../allocation/ConcentrationLimitCard";
 import { SumRing } from "./SumRing";
-import "./nativeTags.css";
 
 type GoalsScreenProps = { portfolio: Portfolio };
 

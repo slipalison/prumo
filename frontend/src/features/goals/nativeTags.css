@@ -1,17 +1,4 @@
 /*
- * Os perfis prontos são um <fieldset> (o papel "group" nativo, com o nome no
- * aria-label). O navegador põe borda, margem, recheio e largura mínima no
- * fieldset; aqui eles voltam ao que uma <div> teria. O :where() deixa a regra
- * sem peso: a borda, o recheio e o min-width de .preset-row__group continuam.
- */
-:where(fieldset.preset-row__group) {
-  min-width: auto;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-/*
  * O anel da soma é um <output> (o papel "status" nativo), que é inline: em
  * bloco, a largura e a altura de .sum-ring valem como na <div> de antes.
  */

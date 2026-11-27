@@ -1,7 +1,6 @@
 import { motion } from "motion/react";
 import { useId, type ReactNode } from "react";
 import { cx } from "../../lib/cx";
-import "./nativeTags.css";
 
 export type SegmentedOption<T extends string> = { id: T; label: ReactNode };
 

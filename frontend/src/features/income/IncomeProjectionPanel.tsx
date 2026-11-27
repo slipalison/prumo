@@ -23,7 +23,6 @@ import type { Money } from "../../lib/money";
 import { formatMonth, formatPoints } from "../../lib/objectives";
 import { useMoney } from "../../lib/privacy";
 import "../objectives/projection.css";
-import "./nativeTags.css";
 import "./incomeProjection.css";
 
 const GROUP_LABEL: Record<ProjectionGroup, string> = {

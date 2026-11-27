@@ -10,7 +10,6 @@ import { cx } from "../../lib/cx";
 import { formatIsoDate, formatIsoDay, KIND_LABEL, STATUS_LABEL } from "../../lib/income";
 import { STAGGER } from "../../lib/motion";
 import { useMoney } from "../../lib/privacy";
-import "./nativeTags.css";
 
 const payer = (event: IncomeEvent) => event.symbol ?? event.display_name;
 

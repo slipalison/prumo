@@ -36,7 +36,6 @@ import type { Money } from "../../lib/money";
 import { useMoney } from "../../lib/privacy";
 import { assetName } from "../../lib/rating";
 import { answeredCount, answersDiff, checklistScore, type Answer } from "../../lib/score";
-import "./editAsset.css";
 
 type EditAssetSheetProps = {
   asset: Asset | null;

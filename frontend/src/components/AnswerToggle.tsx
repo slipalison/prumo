@@ -3,9 +3,6 @@ import type { Answer } from "../lib/score";
 import { cx } from "../lib/cx";
 import { SPRING } from "../lib/motion";
 
-/** O `fieldset` sem a moldura do navegador: a caixa da pergunta vem de `.answer`. */
-const FIELDSET_RESET = { margin: 0, border: 0, minWidth: 0 } as const;
-
 type AnswerToggleProps = {
   questionId: string;
   prompt: string;
@@ -25,7 +22,7 @@ const OPTIONS = [
  */
 export function AnswerToggle({ questionId, prompt, value, onChange, disabled }: Readonly<AnswerToggleProps>) {
   return (
-    <fieldset className="answer" style={FIELDSET_RESET} aria-label={prompt}>
+    <fieldset className="answer" aria-label={prompt}>
       <p className="answer__prompt">{prompt}</p>
       <div className="answer__pills">
         {OPTIONS.map((option) => {

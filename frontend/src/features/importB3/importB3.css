@@ -232,11 +232,3 @@
 .import-b3 output {
   display: block;
 }
-
-/* "Contra a carteira" é um <fieldset> (o grupo nativo): sem a moldura, o recuo e a largura mínima padrão. */
-.import-summary fieldset {
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}

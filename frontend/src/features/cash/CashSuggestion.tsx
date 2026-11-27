@@ -5,7 +5,6 @@ import { InfoTip } from "../../components/InfoTip";
 import { formatIsoDate, formatIsoDay } from "../../lib/income";
 import { plural } from "../../lib/format";
 import { useMoney } from "../../lib/privacy";
-import "./nativeTags.css";
 
 type CashSuggestionProps = {
   /** O valor do aporte digitado. */

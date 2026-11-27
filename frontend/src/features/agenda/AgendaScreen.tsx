@@ -30,7 +30,6 @@ import {
   type YearMonth,
 } from "./agendaText";
 import { MonthCalendar } from "./MonthCalendar";
-import "./nativeTags.css";
 
 type View = "timeline" | "calendar";
 

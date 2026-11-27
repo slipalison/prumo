@@ -58,14 +58,6 @@
   gap: var(--space-2);
 }
 
-/* Cada grupo de chips é um <fieldset> (o grupo nativo): sem a moldura, o recuo e a largura mínima padrão. */
-.composition__controls fieldset.chips {
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
 .composition .chip {
   min-height: 36px;
   padding: 0 12px;
