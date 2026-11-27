@@ -8,7 +8,7 @@ const MAX_DIGITS = 13;
  * Digitar `600000` dá R$ 6.000,00. Qualquer outro caractere é ignorado.
  */
 export function centsFromInput(text: string): number {
-  const digits = text.replace(/\D/g, "").replace(/^0+/, "").slice(0, MAX_DIGITS);
+  const digits = text.replaceAll(/\D/g, "").replace(/^0+/, "").slice(0, MAX_DIGITS);
   return digits ? Number(digits) : 0;
 }
 

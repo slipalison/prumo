@@ -16,8 +16,8 @@ export function readThemePreference(): ThemePreference {
 /** "system" REMOVE o atributo: a media query manda e acompanha o sistema ao vivo. */
 export function applyTheme(preference: ThemePreference): void {
   const root = document.documentElement;
-  if (preference === "system") root.removeAttribute("data-theme");
-  else root.setAttribute("data-theme", preference);
+  if (preference === "system") delete root.dataset.theme;
+  else root.dataset.theme = preference;
 }
 
 export function saveThemePreference(preference: ThemePreference): void {

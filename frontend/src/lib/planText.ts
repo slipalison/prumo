@@ -2,7 +2,7 @@ import type { CeilingMethod, PriceReference } from "../api/ceilingTypes";
 import type { Asset, PlanItem, PlanNotice } from "../api/types";
 import { acceptsB3Listing, CLASS_META, looksLikeB3Ticker, nounOf, unitOf } from "./assetClasses";
 import { GAP_TEXT, METHOD_LABEL, methodPhrase } from "./ceilingText";
-import { formatPercent, plural } from "./format";
+import { formatPercent, joinNames, plural } from "./format";
 import type { Money } from "./money";
 import { findAssetByLabel } from "./rating";
 
@@ -30,12 +30,6 @@ function blockedText(notice: Extract<PlanNotice, { code: "class_blocked" }>, mon
     case "concentration_limit":
       return `${lead}, mas os ativos dela já estão no seu limite por ativo. Cadastre outro ativo na classe ou suba o limite.`;
   }
-}
-
-/** "A", "A e B", "A, B e C". */
-function joinNames(names: string[]): string {
-  if (names.length <= 1) return names.join("");
-  return `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
 }
 
 function limitText(notice: Extract<PlanNotice, { code: "concentration_limit" }>, money: Money): string {

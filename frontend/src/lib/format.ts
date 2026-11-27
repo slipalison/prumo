@@ -33,6 +33,12 @@ export function plural(count: number, [singular, pluralForm]: [string, string]):
   return Math.abs(count) === 1 ? singular : pluralForm;
 }
 
+/** "A", "A e B", "A, B e C". */
+export function joinNames(names: readonly string[]): string {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} e ${names.at(-1)}`;
+}
+
 const dateFormat = new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium", timeStyle: "short" });
 
 export function formatDateTime(iso: string): string {
@@ -70,7 +76,7 @@ export function formatRelative(iso: string | null, now: Date = new Date()): stri
 export function parseDecimal(text: string): number | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
-  const normalized = trimmed.includes(",") ? trimmed.replace(/\./g, "").replace(",", ".") : trimmed;
+  const normalized = trimmed.includes(",") ? trimmed.replaceAll(".", "").replace(",", ".") : trimmed;
   if (!/^-?\d*(\.\d*)?$/.test(normalized)) return null;
   const value = Number(normalized);
   return Number.isFinite(value) ? value : null;

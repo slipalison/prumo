@@ -14,9 +14,11 @@ export function compare(value: number, base: number, epsilon = MONEY_EPSILON): D
   return diff > 0 ? "above" : "below";
 }
 
+const DIRECTION_WORD: Record<Direction, string> = { above: "acima", below: "abaixo", equal: "igual" };
+
 /** A palavra que acompanha a seta: o sentido nunca depende só da cor ou do desenho. */
 export function directionWord(direction: Direction): string {
-  return direction === "above" ? "acima" : direction === "below" ? "abaixo" : "igual";
+  return DIRECTION_WORD[direction];
 }
 
 /** O sentido de um ganho ou perda (zero é "igual"). */

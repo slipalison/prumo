@@ -163,7 +163,8 @@ export function payerSlices(payers: IncomePayer[]): PayerSlice[] {
 
 /** Um teto "redondo" para o eixo: 1, 2, 2,5, 5 ou 10 vezes uma potência de dez. */
 export function niceCeiling(value: number): number {
-  if (!(value > 0)) return 1;
+  // NaN também cai aqui, como zero e negativo.
+  if (Number.isNaN(value) || value <= 0) return 1;
   const exponent = Math.floor(Math.log10(value));
   const base = 10 ** exponent;
   const fraction = value / base;

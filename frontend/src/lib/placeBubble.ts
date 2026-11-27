@@ -14,6 +14,25 @@ export type ToggletipAlign = "center" | "start" | "end" | "stretch";
 
 type Box = { left: number; right: number; top: number; bottom: number; width: number };
 
+/** O outro lado: o balão que não cabe em cima abre embaixo, e vice-versa. */
+export function oppositeSide(placement: ToggletipPlacement): ToggletipPlacement {
+  return placement === "top" ? "bottom" : "top";
+}
+
+/** A borda esquerda do balão alinhado como pedido, antes de empurrá-lo para dentro da janela. */
+function alignedLeft(trigger: Box, anchor: Box, width: number, align: ToggletipAlign): number {
+  switch (align) {
+    case "stretch":
+      return anchor.left;
+    case "start":
+      return trigger.left;
+    case "end":
+      return trigger.right - width;
+    case "center":
+      return trigger.left + trigger.width / 2 - width / 2;
+  }
+}
+
 /**
  * Onde o balão fica na janela, dadas as caixas do gatilho e do bloco de
  * referência: alinhado como pedido, empurrado para dentro da janela e virado
@@ -28,19 +47,11 @@ export function placeBubble(
   viewport: { width: number; height: number },
 ) {
   const width = align === "stretch" ? anchor.width : bubble.width;
-  let left =
-    align === "stretch"
-      ? anchor.left
-      : align === "start"
-        ? trigger.left
-        : align === "end"
-          ? trigger.right - width
-          : trigger.left + trigger.width / 2 - width / 2;
-  left = Math.max(EDGE, Math.min(left, viewport.width - EDGE - width));
+  const left = Math.max(EDGE, Math.min(alignedLeft(trigger, anchor, width, align), viewport.width - EDGE - width));
   const above = trigger.top - GAP - bubble.height;
   const below = trigger.bottom + GAP;
   const flipped = placement === "top" ? above < EDGE : below + bubble.height > viewport.height - EDGE;
-  const side = flipped ? (placement === "top" ? "bottom" : "top") : placement;
+  const side = flipped ? oppositeSide(placement) : placement;
   return { left, top: side === "top" ? above : below, flipped };
 }
 

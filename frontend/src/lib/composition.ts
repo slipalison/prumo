@@ -99,7 +99,12 @@ function group(assets: Asset[], keyOf: (asset: Asset) => string, none: string): 
     map.set(label, entry);
   }
   // "Sem setor" por último, mesmo quando é a maior fatia: é o que a fonte não disse.
-  return [...map.values()].sort((a, b) => (a.label === none ? 1 : b.label === none ? -1 : byValueThenLabel(a, b)));
+  const noneLast = (a: Entry, b: Entry): number => {
+    if (a.label === none) return 1;
+    if (b.label === none) return -1;
+    return byValueThenLabel(a, b);
+  };
+  return [...map.values()].sort(noneLast);
 }
 
 function headingsOf(level: CompositionLevel): string[] {

@@ -11,7 +11,7 @@ import type {
   Score,
 } from "../api/analysisTypes";
 import { CLASS_META } from "./assetClasses";
-import { formatPercent, plural } from "./format";
+import { formatPercent, joinNames, plural } from "./format";
 import { formatRuleValue, type RuleText, type WarningAction } from "./healthText";
 import type { Money } from "./money";
 
@@ -286,7 +286,8 @@ export function ruleName(rule: AnalysisRuleId): string {
 export function ruleSentence(rule: RuleConfig): string {
   const { lead, tail } = RULE_TEXT[rule.rule];
   const limit = rule.threshold === null ? "" : ` ${formatRuleValue(rule.unit, rule.threshold)}`;
-  return `${lead}${limit}${tail ? ` ${tail}` : ""}`;
+  const suffix = tail ? ` ${tail}` : "";
+  return `${lead}${limit}${suffix}`;
 }
 
 /** O rótulo do segundo número ao lado do "Agora": o limite, o mínimo ou o índice. */
@@ -359,8 +360,7 @@ const NOT_APPLICABLE_SHORT: Record<NotApplicable[number]["reason"], string> = {
 function qualityCoverage(covered: number, total: number, failing: string[], label: string, outside: NotApplicable = []): string {
   const base = `Entraram na conta ${covered} de ${total} ${plural(total, ["ativo", "ativos"])}.`;
   const names = outside.map((o) => `${o.label} (${NOT_APPLICABLE_SHORT[o.reason]})`);
-  const notApplicable =
-    names.length > 0 ? ` Não se aplica a ${names.length > 1 ? `${names.slice(0, -1).join(", ")} e ${names.at(-1)}` : names[0]}.` : "";
+  const notApplicable = names.length > 0 ? ` Não se aplica a ${joinNames(names)}.` : "";
   const below = failing.length > 0 ? ` ${label}: ${failing.join(", ")}.` : "";
   return `${base}${notApplicable}${below}`;
 }
@@ -378,85 +378,93 @@ function day(iso: string): string {
   return year && month && date ? `${date}/${month}/${year}` : iso;
 }
 
+/** A frase com os números de uma regra; `null` quando falta o dado. */
+type Explainer = (result: RuleResult, money: Money) => string | null;
+
+const benchmarkExplanation: Explainer = ({ detail }) =>
+  detail?.kind === "benchmark"
+    ? `De ${day(detail.from)} a ${day(detail.to)} a carteira rendeu ${formatSignedPercent(detail.portfolio_percent)}; o ${BENCHMARK_LABEL[detail.benchmark]}, ${formatSignedPercent(detail.benchmark_percent)}.`
+    : null;
+
+const qualityExplanation: Explainer = ({ detail }) =>
+  detail?.kind === "quality"
+    ? qualityCoverage(detail.covered, detail.total, detail.failing, "Abaixo do critério", detail.not_applicable)
+    : null;
+
+/**
+ * A explicação de cada regra da Análise. As regras originais da Saúde
+ * (`findings`) não estão aqui: têm cartão próprio.
+ */
+const RULE_EXPLANATION: Partial<Record<AnalysisRuleId, Explainer>> = {
+  min_portfolio_assets: ({ current }) =>
+    current === null ? null : `Você tem ${current} ${plural(current, ["ativo", "ativos"])} com valor.`,
+  min_classes: ({ detail, current }) =>
+    detail?.kind === "classes" && current !== null
+      ? `Dinheiro em ${current} ${plural(current, ["classe", "classes"])}: ${detail.asset_classes.map((c) => CLASS_META[c].label).join(", ")}.`
+      : null,
+  min_sectors: ({ detail, current }) =>
+    detail?.kind === "sectors" && current !== null
+      ? `Suas ações estão em ${current} ${plural(current, ["setor", "setores"])}: ${detail.sectors.join(", ")}.`
+      : null,
+  min_abroad: ({ current }) => (current === null ? null : `${pct(current)} da carteira está no exterior.`),
+  min_low_risk: ({ current }) => (current === null ? null : `${pct(current)} da carteira está em renda fixa.`),
+  min_yield: ({ detail }, money) =>
+    detail?.kind === "yield"
+      ? `Você recebeu ${money.compact(detail.income_12m)} em 12 meses sobre ${money.compact(detail.base_value)} em ações e FIIs.`
+      : null,
+  min_paying_share: ({ detail }) => {
+    if (detail?.kind !== "paying") return null;
+    const silent = detail.silent.length > 0 ? `. Sem provento: ${detail.silent.join(", ")}` : "";
+    return `${detail.paying} de ${detail.total} ${plural(detail.total, ["ativo pagou", "ativos pagaram"])} provento em 12 meses${silent}.`;
+  },
+  income_growth: ({ detail }, money) =>
+    detail?.kind === "income_growth"
+      ? `Renda de 12 meses: ${money.compact(detail.current_12m)}; dos 12 meses anteriores: ${money.compact(detail.previous_12m)}.`
+      : null,
+  brick_reit: ({ detail }) =>
+    detail?.kind === "brick"
+      ? `${detail.brick} de ${detail.reits} ${plural(detail.reits, ["FII é", "FIIs são"])} de tijolo.`
+      : null,
+  beat_cdi_12m: benchmarkExplanation,
+  beat_cdi_5y: benchmarkExplanation,
+  beat_ibov_12m: benchmarkExplanation,
+  beat_ibov_5y: benchmarkExplanation,
+  beat_ipca_12m: benchmarkExplanation,
+  beat_ipca_5y: benchmarkExplanation,
+  min_positive_years: ({ detail }) =>
+    detail?.kind === "years"
+      ? `${detail.positive} de ${detail.total} ${plural(detail.total, ["ano civil fechado", "anos civis fechados"])} com retorno positivo.`
+      : null,
+  max_volatility: ({ current }) =>
+    current === null ? null : `Os retornos mensais oscilaram o equivalente a ${pct(current)} ao ano.`,
+  quality_roe: qualityExplanation,
+  quality_profit: qualityExplanation,
+  quality_leverage: qualityExplanation,
+  quality_margin: qualityExplanation,
+  quality_cash: qualityExplanation,
+  quality_fii_pvp: qualityExplanation,
+  quality_fii_vacancy: qualityExplanation,
+  quality_recovery: ({ detail }) => {
+    if (detail?.kind !== "quality") return null;
+    return detail.failing.length > 0
+      ? `Em recuperação judicial: ${detail.failing.join(", ")}.`
+      : `Nenhuma empresa está em recuperação judicial (${detail.covered} com cadastro na CVM).`;
+  },
+  max_loss: ({ detail, current }) => {
+    if (detail?.kind === "losses") {
+      return detail.assets.map((a) => `${a.label} está ${pct(a.loss_percent)} abaixo do que você pagou`).join("; ") + ".";
+    }
+    return current === null ? null : `A maior perda desde a compra é de ${pct(current)}.`;
+  },
+};
+
 /**
  * A frase com os números por trás do estado da regra. As regras originais da
  * Saúde (`findings`) têm cartão próprio e voltam `null` aqui. Os valores em
  * reais passam por `money`, que os mascara com o olho fechado.
  */
 export function ruleExplanation(result: RuleResult, money: Money): string | null {
-  const { detail } = result;
-  const current = result.current;
-  switch (result.rule) {
-    case "min_portfolio_assets":
-      return current === null ? null : `Você tem ${current} ${plural(current, ["ativo", "ativos"])} com valor.`;
-    case "min_classes":
-      return detail?.kind === "classes" && current !== null
-        ? `Dinheiro em ${current} ${plural(current, ["classe", "classes"])}: ${detail.asset_classes.map((c) => CLASS_META[c].label).join(", ")}.`
-        : null;
-    case "min_sectors":
-      return detail?.kind === "sectors" && current !== null
-        ? `Suas ações estão em ${current} ${plural(current, ["setor", "setores"])}: ${detail.sectors.join(", ")}.`
-        : null;
-    case "min_abroad":
-      return current === null ? null : `${pct(current)} da carteira está no exterior.`;
-    case "min_low_risk":
-      return current === null ? null : `${pct(current)} da carteira está em renda fixa.`;
-    case "min_yield":
-      return detail?.kind === "yield"
-        ? `Você recebeu ${money.compact(detail.income_12m)} em 12 meses sobre ${money.compact(detail.base_value)} em ações e FIIs.`
-        : null;
-    case "min_paying_share":
-      return detail?.kind === "paying"
-        ? `${detail.paying} de ${detail.total} ${plural(detail.total, ["ativo pagou", "ativos pagaram"])} provento em 12 meses${
-            detail.silent.length > 0 ? `. Sem provento: ${detail.silent.join(", ")}` : ""
-          }.`
-        : null;
-    case "income_growth":
-      return detail?.kind === "income_growth"
-        ? `Renda de 12 meses: ${money.compact(detail.current_12m)}; dos 12 meses anteriores: ${money.compact(detail.previous_12m)}.`
-        : null;
-    case "brick_reit":
-      return detail?.kind === "brick"
-        ? `${detail.brick} de ${detail.reits} ${plural(detail.reits, ["FII é", "FIIs são"])} de tijolo.`
-        : null;
-    case "beat_cdi_12m":
-    case "beat_cdi_5y":
-    case "beat_ibov_12m":
-    case "beat_ibov_5y":
-    case "beat_ipca_12m":
-    case "beat_ipca_5y":
-      return detail?.kind === "benchmark"
-        ? `De ${day(detail.from)} a ${day(detail.to)} a carteira rendeu ${formatSignedPercent(detail.portfolio_percent)}; o ${BENCHMARK_LABEL[detail.benchmark]}, ${formatSignedPercent(detail.benchmark_percent)}.`
-        : null;
-    case "min_positive_years":
-      return detail?.kind === "years"
-        ? `${detail.positive} de ${detail.total} ${plural(detail.total, ["ano civil fechado", "anos civis fechados"])} com retorno positivo.`
-        : null;
-    case "max_volatility":
-      return current === null ? null : `Os retornos mensais oscilaram o equivalente a ${pct(current)} ao ano.`;
-    case "quality_roe":
-    case "quality_profit":
-    case "quality_leverage":
-    case "quality_margin":
-    case "quality_cash":
-    case "quality_fii_pvp":
-    case "quality_fii_vacancy":
-      return detail?.kind === "quality"
-        ? qualityCoverage(detail.covered, detail.total, detail.failing, "Abaixo do critério", detail.not_applicable)
-        : null;
-    case "quality_recovery":
-      if (detail?.kind !== "quality") return null;
-      return detail.failing.length > 0
-        ? `Em recuperação judicial: ${detail.failing.join(", ")}.`
-        : `Nenhuma empresa está em recuperação judicial (${detail.covered} com cadastro na CVM).`;
-    case "max_loss":
-      if (detail?.kind === "losses") {
-        return detail.assets.map((a) => `${a.label} está ${pct(a.loss_percent)} abaixo do que você pagou`).join("; ") + ".";
-      }
-      return current === null ? null : `A maior perda desde a compra é de ${pct(current)}.`;
-    default:
-      return null;
-  }
+  return RULE_EXPLANATION[result.rule]?.(result, money) ?? null;
 }
 
 /**
@@ -557,7 +565,19 @@ export function ruleAction(result: RuleResult, money: Money): WarningAction | nu
 
 /** Vezes, sem zeros à direita: `2,9 vezes`, `3 vezes`. */
 function times(value: number): string {
-  return `${value.toFixed(2).replace(".", ",").replace(/,?0+$/, "")} vezes`;
+  return `${trimTrailingZeros(value.toFixed(2).replace(".", ","))} vezes`;
+}
+
+/**
+ * Tira os zeros do fim e, se havia zero, a vírgula logo antes deles (`2,90` →
+ * `2,9`, `3,00` → `3`) — o mesmo que `replace(/,?0+$/, "")`, sem a expressão
+ * regular, que volta atrás de forma quadrática numa sequência longa de zeros.
+ */
+function trimTrailingZeros(text: string): string {
+  let end = text.length;
+  while (text[end - 1] === "0") end -= 1;
+  if (end < text.length && text[end - 1] === ",") end -= 1;
+  return text.slice(0, end);
 }
 
 /** Um ponto de atenção em uma frase curta e factual; nunca recomenda. */

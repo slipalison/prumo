@@ -39,11 +39,11 @@ export function iconKind(subject: IconSubject): IconKind {
  * (renda fixa por valor), as iniciais do nome (`Caixa Reserva` → CR).
  */
 export function initialsOf(symbol?: string | null, name?: string | null): string {
-  const ticker = symbol && !isTreasuryKey(symbol) ? symbol.toUpperCase().replace(/[^A-Z0-9]/g, "") : "";
+  const ticker = symbol && !isTreasuryKey(symbol) ? symbol.toUpperCase().replaceAll(/[^A-Z0-9]/g, "") : "";
   if (ticker) return ticker.slice(0, 2);
   const words = (name ?? "")
     .normalize("NFD")
-    .replace(/[^A-Za-z0-9\s]/g, "")
+    .replaceAll(/[^A-Za-z0-9\s]/g, "")
     .toUpperCase()
     .split(/\s+/)
     .filter(Boolean);

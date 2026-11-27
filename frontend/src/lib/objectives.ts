@@ -116,6 +116,11 @@ const CONTRIBUTION_SOURCE_TEXT: Record<ContributionSource, string> = {
   ledger: "a média das suas compras nos últimos 12 meses, do livro de lançamentos",
 };
 
+/** Os anos da inflação do Focus: " para 2027" ou " de 2027 a 2030". */
+function yearSpan([first, last]: [number, number]): string {
+  return first === last ? ` para ${first}` : ` de ${first} a ${last}`;
+}
+
 /** De onde veio a inflação, com os anos e a data da pesquisa do Focus quando há. */
 export function inflationSourceText(
   source: InflationSource,
@@ -126,7 +131,7 @@ export function inflationSourceText(
       return "informada por você";
     case "focus": {
       const years = defaults?.inflation_years;
-      const span = years ? (years[0] === years[1] ? ` para ${years[0]}` : ` de ${years[0]} a ${years[1]}`) : "";
+      const span = years ? yearSpan(years) : "";
       const day = defaults?.focus ? `, pesquisa de ${formatIsoDate(defaults.focus.survey_date)}` : "";
       return `o IPCA esperado pelo Focus do Banco Central${span}${day}`;
     }

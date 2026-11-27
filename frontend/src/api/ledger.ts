@@ -15,7 +15,8 @@ export const ledgerApi = {
     const params = new URLSearchParams(
       Object.entries(filter).filter((entry): entry is [string, string] => Boolean(entry[1])),
     ).toString();
-    return request<Transaction[]>("GET", `/transactions${params ? `?${params}` : ""}`);
+    const query = params ? `?${params}` : "";
+    return request<Transaction[]>("GET", `/transactions${query}`);
   },
   create: (body: CreateTransactionRequest) => request<Transaction>("POST", "/transactions", body),
   update: (id: string, body: UpdateTransactionRequest) =>

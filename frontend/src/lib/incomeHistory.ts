@@ -155,6 +155,19 @@ export type Series = {
 };
 
 /**
+ * A cor própria do grupo: a da classe, a do total, a do que saiu da carteira
+ * ou, para segmento e ativo, a da posição dele na lista; `null` quando ele vai
+ * para "Outros".
+ */
+function ownColor(group: HistoryGroup, ranked: number | null): string | null {
+  if (group.kind === "total") return "var(--gold-text)";
+  if (group.kind === "class") return group.asset_class ? `var(--c-${group.asset_class})` : REMOVED_COLOR;
+  if (group.kind === "removed") return REMOVED_COLOR;
+  if (ranked !== null && ranked < PAYER_COLORS.length) return PAYER_COLORS[ranked] ?? OTHERS_COLOR;
+  return null;
+}
+
+/**
  * As séries do gráfico, na ordem do histórico inteiro (a do servidor), para a
  * cor seguir o grupo e não mudar quando o período muda: a classe tem a cor dela;
  * segmento e ativo levam as seis cores de "Quem pagou" pela ordem, e o resto
@@ -169,12 +182,9 @@ export function seriesOf(groups: HistoryGroup[], visible: HistoryBucket[]): Seri
   for (const group of groups) {
     const ranked = group.kind === "segment" || group.kind === "asset" ? rank++ : null;
     if (!present.has(group.key)) continue;
-    const one = (color: string) => own.push({ key: group.key, label: groupLabel(group), color, members: [group.key] });
-    if (group.kind === "total") one("var(--gold-text)");
-    else if (group.kind === "class") one(group.asset_class ? `var(--c-${group.asset_class})` : REMOVED_COLOR);
-    else if (group.kind === "removed") one(REMOVED_COLOR);
-    else if (ranked !== null && ranked < PAYER_COLORS.length) one(PAYER_COLORS[ranked] ?? OTHERS_COLOR);
-    else rest.push(group.key);
+    const color = ownColor(group, ranked);
+    if (color === null) rest.push(group.key);
+    else own.push({ key: group.key, label: groupLabel(group), color, members: [group.key] });
   }
   if (rest.length === 0) return own;
   return [...own, { key: OTHERS_GROUP, label: `Outros (${rest.length})`, color: OTHERS_COLOR, members: rest }];
@@ -208,9 +218,14 @@ export function seriesTotals(visible: HistoryBucket[], series: Series[]): Map<st
   return totals;
 }
 
+/** Maior que zero. NaN não é: a conta que deu NaN cai no caso de "sem valor". */
+function isPositive(value: number): boolean {
+  return value > 0;
+}
+
 /** De quantos em quantos intervalos vai um rótulo no eixo, para os rótulos não se encostarem. */
 export function labelStep(slot: number, minWidth = 44): number {
-  if (!(slot > 0)) return 1;
+  if (!isPositive(slot)) return 1;
   return Math.max(1, Math.ceil(minWidth / slot));
 }
 
@@ -247,7 +262,7 @@ export function heatMax(years: HeatYear[], metric: HeatMetric): number {
 
 /** O nível de cor de 1 a 5 pela fração do maior mês; 0 sem provento ou sem base. */
 export function heatLevel(value: number | null, max: number): number {
-  if (value === null || !(value > 0) || !(max > 0)) return 0;
+  if (value === null || !isPositive(value) || !isPositive(max)) return 0;
   return Math.min(HEAT_LEVELS, Math.max(1, Math.ceil((value / max) * HEAT_LEVELS)));
 }
 
