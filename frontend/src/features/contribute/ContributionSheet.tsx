@@ -28,7 +28,7 @@ type ContributionSheetProps = {
  * ativos marcados, com o que foi comprado e o total; quem ficou de fora não
  * entra. A quantidade e o preço se corrigem nos cartões (Editar), não aqui.
  */
-export function ContributionSheet({ open, plan, marks, cashIncluded, onClose, onRegistered }: ContributionSheetProps) {
+export function ContributionSheet({ open, plan, marks, cashIncluded, onClose, onRegistered }: Readonly<ContributionSheetProps>) {
   return (
     <Sheet
       open={open}
@@ -43,7 +43,7 @@ export function ContributionSheet({ open, plan, marks, cashIncluded, onClose, on
 
 type FormProps = Pick<ContributionSheetProps, "plan" | "marks" | "cashIncluded" | "onRegistered">;
 
-function ContributionForm({ plan, marks, cashIncluded, onRegistered }: FormProps) {
+function ContributionForm({ plan, marks, cashIncluded, onRegistered }: Readonly<FormProps>) {
   const money = useMoney();
   const contribute = useContribute();
   const buttonRef = useRef<HTMLDivElement>(null);

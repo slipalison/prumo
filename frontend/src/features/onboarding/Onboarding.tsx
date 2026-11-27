@@ -27,7 +27,7 @@ const STEPS = ["Perfil", "Primeiro ativo", "Pronto"] as const;
  * Três passos e a carteira existe: perfil (que vira as metas), o primeiro
  * ativo, e o convite para calcular o primeiro aporte.
  */
-export function Onboarding({ open, portfolio, onClose, onRateAsset }: OnboardingProps) {
+export function Onboarding({ open, portfolio, onClose, onRateAsset }: Readonly<OnboardingProps>) {
   const [step, setStep] = useState(0);
   const [created, setCreated] = useState<Asset | null>(null);
 
@@ -76,7 +76,7 @@ export function Onboarding({ open, portfolio, onClose, onRateAsset }: Onboarding
   );
 }
 
-function ProfileStep({ portfolio, onNext }: { portfolio: Portfolio; onNext: () => void }) {
+function ProfileStep({ portfolio, onNext }: Readonly<{ portfolio: Portfolio; onNext: () => void }>) {
   const current = targetsFromClasses(portfolio.classes);
   const initial = PRESETS.find((p) => sameTargets(p.targets, current))?.id ?? null;
   const [selected, setSelected] = useState<PresetId | null>(initial);
@@ -102,7 +102,7 @@ function ProfileStep({ portfolio, onNext }: { portfolio: Portfolio; onNext: () =
       <p className="field__hint">Vira suas metas por classe. Dá para ajustar depois, em Metas.</p>
       <div className="preset-grid" role="radiogroup" aria-label="Perfil">
         {PRESETS.map((preset) => (
-          <button
+          <button // NOSONAR: cartão de perfil com título e texto, no padrão dos chips de escolha (botão com role="radio"); o <input type="radio"> trocaria o teclado (setas mudam a escolha) e a estrutura do cartão.
             key={preset.id}
             type="button"
             role="radio"
@@ -127,7 +127,7 @@ function ProfileStep({ portfolio, onNext }: { portfolio: Portfolio; onNext: () =
   );
 }
 
-function AssetStep({ onNext }: { onNext: (asset: Asset) => void }) {
+function AssetStep({ onNext }: Readonly<{ onNext: (asset: Asset) => void }>) {
   return (
     <div className="onboarding__step">
       <h3 className="onboarding__title">Qual ativo você já tem?</h3>
@@ -139,7 +139,7 @@ function AssetStep({ onNext }: { onNext: (asset: Asset) => void }) {
 
 type DoneStepProps = { asset: Asset | null; onClose: () => void; onRate: (asset: Asset) => void };
 
-function DoneStep({ asset, onClose, onRate }: DoneStepProps) {
+function DoneStep({ asset, onClose, onRate }: Readonly<DoneStepProps>) {
   useEffect(() => {
     celebrate();
   }, []);

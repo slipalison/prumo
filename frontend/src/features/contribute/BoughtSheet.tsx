@@ -27,7 +27,7 @@ type BoughtSheetProps = {
  * ou outro preço. Uma folha pequena, não um balão: o campo numérico no celular
  * sobe o teclado, e a folha prende o foco e fecha com Esc.
  */
-export function BoughtSheet({ open, item, mark, onClose, onConfirm }: BoughtSheetProps) {
+export function BoughtSheet({ open, item, mark, onClose, onConfirm }: Readonly<BoughtSheetProps>) {
   return (
     <Sheet
       open={open}
@@ -40,7 +40,7 @@ export function BoughtSheet({ open, item, mark, onClose, onConfirm }: BoughtShee
   );
 }
 
-function BoughtForm({ item, mark, onConfirm }: { item: PlanItem; mark?: Mark; onConfirm: (mark: Mark) => void }) {
+function BoughtForm({ item, mark, onConfirm }: Readonly<{ item: PlanItem; mark?: Mark; onConfirm: (mark: Mark) => void }>) {
   const baseId = useId();
   const money = useMoney();
   const initial = mark ?? suggested(item);

@@ -36,75 +36,125 @@ function single(list: Array<Asset | undefined>): Asset | undefined {
   return found.length === 1 ? found[0] : undefined;
 }
 
-/** A ação de cada aviso: abre o que resolve, sem a pessoa procurar. */
-function NoticeAction({ notice, assets, onRateAsset, onEditAsset, onAddAsset }: AssetActions & { notice: PlanNotice; assets: Asset[] }) {
-  const arrow = <IconArrowRight width={16} height={16} />;
-  const rate = (asset: Asset | undefined) =>
-    asset && (
-      <button type="button" className="link-btn" onClick={() => onRateAsset(asset)}>
-        Dar nota ao {assetName(asset)} {arrow}
-      </button>
-    );
-  const open = (asset: Asset | undefined) =>
-    asset && (
-      <button type="button" className="link-btn" onClick={() => onEditAsset(asset)}>
-        Abrir {assetName(asset)} {arrow}
-      </button>
-    );
+/** O que resolve cada aviso: uma tela, o cadastro na classe ou a folha de um ativo. */
+type NoticeTarget =
+  | { kind: "goals" }
+  | { kind: "limit" }
+  | { kind: "add"; assetClass: AssetClass }
+  | { kind: "rate" | "open"; asset: Asset }
+  | { kind: "portfolio" };
+
+const PORTFOLIO_TARGET: NoticeTarget = { kind: "portfolio" };
+
+/** Dar nota ou abrir o ativo, quando há um só a abrir; sem ele, a Carteira. */
+function assetTarget(kind: "rate" | "open", asset: Asset | undefined): NoticeTarget {
+  return asset ? { kind, asset } : PORTFOLIO_TARGET;
+}
+
+/** A classe abaixo da meta que não recebe: o que a destrava, pelo motivo. */
+function blockedClassTarget(notice: Extract<PlanNotice, { code: "class_blocked" }>, assets: Asset[]): NoticeTarget {
+  if (notice.reason === "no_assets") return { kind: "add", assetClass: notice.asset_class };
+  if (notice.reason === "concentration_limit") return { kind: "limit" };
+  const members = assets.filter((a) => a.asset_class === notice.asset_class);
+  if (notice.reason === "unrated") return assetTarget("rate", single(members.filter((a) => a.score <= 0)));
+  const rated = members.filter((a) => a.score > 0);
+  if (notice.reason === "above_ceiling") return assetTarget("open", single(rated.filter((a) => isAboveCeiling(a))));
+  if (notice.reason === "ceiling_unavailable") return assetTarget("open", single(rated.filter((a) => isCeilingUnavailable(a))));
+  return assetTarget("open", single(rated.filter((a) => a.price_source === "missing")));
+}
+
+function noticeTarget(notice: PlanNotice, assets: Asset[]): NoticeTarget {
   const bySymbol = (symbols: string[]) => single(symbols.map((s) => findAssetByLabel(assets, s)));
-
-  const adjustLimit = (
-    <a className="link-btn" href={LIMIT_HREF}>
-      Ajustar o limite {arrow}
-    </a>
-  );
-
-  if (notice.code === "no_targets") {
-    return (
-      <a className="link-btn" href="#/ajustes/metas">
-        Ir para Metas {arrow}
-      </a>
-    );
+  switch (notice.code) {
+    case "no_targets":
+      return { kind: "goals" };
+    case "concentration_limit":
+      return { kind: "limit" };
+    case "asset_above_ceiling":
+    case "asset_ceiling_unavailable":
+      return assetTarget("open", assets.find((a) => a.id === notice.asset_id) ?? findAssetByLabel(assets, notice.symbol));
+    case "class_blocked":
+      return blockedClassTarget(notice, assets);
+    case "assets_without_score":
+      return assetTarget("rate", bySymbol(notice.symbols));
+    case "assets_without_price":
+      return assetTarget("open", bySymbol(notice.symbols));
+    default:
+      return PORTFOLIO_TARGET;
   }
-  if (notice.code === "concentration_limit") return adjustLimit;
-  if (notice.code === "asset_above_ceiling" || notice.code === "asset_ceiling_unavailable") {
-    const action = open(assets.find((a) => a.id === notice.asset_id) ?? findAssetByLabel(assets, notice.symbol));
-    if (action) return action;
-  }
-  if (notice.code === "class_blocked") {
-    if (notice.reason === "no_assets") {
+}
+
+/** A ação de cada aviso: abre o que resolve, sem a pessoa procurar. */
+function NoticeAction({
+  notice,
+  assets,
+  onRateAsset,
+  onEditAsset,
+  onAddAsset,
+}: Readonly<AssetActions & { notice: PlanNotice; assets: Asset[] }>) {
+  const arrow = <IconArrowRight width={16} height={16} />;
+  const target = noticeTarget(notice, assets);
+
+  switch (target.kind) {
+    case "goals":
       return (
-        <button type="button" className="link-btn" onClick={() => onAddAsset(notice.asset_class)}>
-          <IconPlus width={16} height={16} /> Adicionar em {CLASS_META[notice.asset_class].shortLabel}
+        <a className="link-btn" href="#/ajustes/metas">
+          Ir para Metas {arrow}
+        </a>
+      );
+    case "limit":
+      return (
+        <a className="link-btn" href={LIMIT_HREF}>
+          Ajustar o limite {arrow}
+        </a>
+      );
+    case "add":
+      return (
+        <button type="button" className="link-btn" onClick={() => onAddAsset(target.assetClass)}>
+          <IconPlus width={16} height={16} /> Adicionar em {CLASS_META[target.assetClass].shortLabel}
         </button>
       );
-    }
-    if (notice.reason === "concentration_limit") return adjustLimit;
-    const members = assets.filter((a) => a.asset_class === notice.asset_class);
-    const action =
-      notice.reason === "unrated"
-        ? rate(single(members.filter((a) => a.score <= 0)))
-        : notice.reason === "above_ceiling"
-          ? open(single(members.filter((a) => a.score > 0 && isAboveCeiling(a))))
-          : notice.reason === "ceiling_unavailable"
-            ? open(single(members.filter((a) => a.score > 0 && isCeilingUnavailable(a))))
-            : open(single(members.filter((a) => a.score > 0 && a.price_source === "missing")));
-    if (action) return action;
+    case "rate":
+      return (
+        <button type="button" className="link-btn" onClick={() => onRateAsset(target.asset)}>
+          Dar nota ao {assetName(target.asset)} {arrow}
+        </button>
+      );
+    case "open":
+      return (
+        <button type="button" className="link-btn" onClick={() => onEditAsset(target.asset)}>
+          Abrir {assetName(target.asset)} {arrow}
+        </button>
+      );
+    default:
+      return (
+        <a className="link-btn" href="#/carteira">
+          Abrir Carteira {arrow}
+        </a>
+      );
   }
-  if (notice.code === "assets_without_score") {
-    const action = rate(bySymbol(notice.symbols));
-    if (action) return action;
-  }
-  if (notice.code === "assets_without_price") {
-    const action = open(bySymbol(notice.symbols));
-    if (action) return action;
-  }
-  return (
-    <a className="link-btn" href="#/carteira">
-      Abrir Carteira <IconArrowRight width={16} height={16} />
-    </a>
-  );
 }
+
+/** Plano sem compra: a manchete e o porquê, do motivo mais forte ao mais comum. */
+function emptyPlanText(noTargets: boolean, missingAssets: boolean): { title: string; detail: string } {
+  if (noTargets) {
+    return { title: "Defina suas metas primeiro", detail: "As metas dizem quanto você quer em cada classe." };
+  }
+  if (missingAssets) {
+    return {
+      title: "Faltam ativos onde o aporte precisa ir",
+      detail:
+        "As classes abaixo da meta não têm ativo pronto para receber. Cadastre o que você quer ter — mesmo sem ter comprado — e eu divido pelas notas.",
+    };
+  }
+  return {
+    title: "Nada a comprar agora",
+    detail: "Nenhum ativo com nota está abaixo da meta — ou o valor não compra uma unidade.",
+  };
+}
+
+/** Chave de um aviso pelo conteúdo: o plano não repete aviso (um por classe, por ativo ou por tipo). */
+const noticeKey = (notice: PlanNotice) => JSON.stringify(notice);
 
 const list = {
   hidden: {},
@@ -162,6 +212,7 @@ export function PlanResult({ plan, assets, marks, onMark, onUnmark, onMarkAll, o
 
   const marked = plan.items.filter((item) => marks[item.asset_id] !== undefined).length;
   const left = count - marked;
+  const empty = emptyPlanText(noTargets, missingAssets);
 
   const title =
     count > 0 ? (
@@ -169,9 +220,7 @@ export function PlanResult({ plan, assets, marks, onMark, onUnmark, onMarkAll, o
         Compre <span className="gold">{count}</span> {plural(count, ["ativo", "ativos"])}
       </span>
     ) : (
-      <span aria-live="polite">
-        {noTargets ? "Defina suas metas primeiro" : missingAssets ? "Faltam ativos onde o aporte precisa ir" : "Nada a comprar agora"}
-      </span>
+      <span aria-live="polite">{empty.title}</span>
     );
 
   return (
@@ -315,13 +364,7 @@ export function PlanResult({ plan, assets, marks, onMark, onUnmark, onMarkAll, o
               </motion.div>
             </>
           ) : (
-            <p className="plan__subtitle muted">
-              {noTargets
-                ? "As metas dizem quanto você quer em cada classe."
-                : missingAssets
-                  ? "As classes abaixo da meta não têm ativo pronto para receber. Cadastre o que você quer ter — mesmo sem ter comprado — e eu divido pelas notas."
-                  : "Nenhum ativo com nota está abaixo da meta — ou o valor não compra uma unidade."}
-            </p>
+            <p className="plan__subtitle muted">{empty.detail}</p>
           )}
           {plan.unallocated >= 0.01 && (
             <p className="plan__unallocated">
@@ -391,7 +434,7 @@ export function PlanBelow({ plan, assets, children, ...actions }: PlanBelowProps
             <ul className="notices">
               {plan.notices.map((notice, index) => (
                 <motion.li
-                  key={`${notice.code}-${index}`}
+                  key={noticeKey(notice)}
                   className={cx("notice", `notice--${notice.code}`)}
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}

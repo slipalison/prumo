@@ -31,7 +31,7 @@ type BalancePanelProps = {
  * rosca e uma barra por classe com a meta. Antes do cálculo mostra "hoje"; com
  * o plano, alterna "antes" e "depois do aporte".
  */
-export function BalancePanel({ classes, totalBefore, totalAfter, mode, planKey }: BalancePanelProps) {
+export function BalancePanel({ classes, totalBefore, totalAfter, mode, planKey }: Readonly<BalancePanelProps>) {
   const reduce = useReducedMotion();
   const money = useMoney();
   const planned = mode === "plan";
@@ -61,7 +61,7 @@ export function BalancePanel({ classes, totalBefore, totalAfter, mode, planKey }
       }
       actions={
         planned ? (
-          <div className="segmented" role="group" aria-label="Comparar">
+          <fieldset className="segmented" aria-label="Comparar">
             {(["before", "after"] as const).map((option) => (
               <button
                 key={option}
@@ -74,7 +74,7 @@ export function BalancePanel({ classes, totalBefore, totalAfter, mode, planKey }
                 <span className="segmented__label">{option === "before" ? "Antes" : "Depois"}</span>
               </button>
             ))}
-          </div>
+          </fieldset>
         ) : undefined
       }
     >

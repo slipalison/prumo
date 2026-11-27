@@ -12,7 +12,7 @@ import { IconArrowRight, IconSparkle } from "../../components/icons";
 import { Grid, Page } from "../../components/Layout";
 import { MagneticButton } from "../../components/MagneticButton";
 import { MoneyInput } from "../../components/MoneyInput";
-import { Plumb } from "../../components/Plumb";
+import { Plumb, type PlumbState } from "../../components/Plumb";
 import { useToast } from "../../components/toastContext";
 import { cx } from "../../lib/cx";
 import { formatBRL } from "../../lib/format";
@@ -37,7 +37,14 @@ const formatQuick = (value: number) => formatBRL(value).replace(",00", "");
 
 type ContributeScreenProps = { portfolio: Portfolio };
 
-export function ContributeScreen({ portfolio }: ContributeScreenProps) {
+/** O prumo do campo: balança enquanto calcula, comemora o registro e assenta com o plano. */
+function plumbStateOf(pending: boolean, registered: boolean, planned: boolean): PlumbState {
+  if (pending) return "swinging";
+  if (registered) return "success";
+  return planned ? "settled" : "idle";
+}
+
+export function ContributeScreen({ portfolio }: Readonly<ContributeScreenProps>) {
   const [onboarding, setOnboarding] = useState(false);
   const [rating, setRating] = useState<RatingTarget>(null);
 
@@ -77,7 +84,7 @@ export function ContributeScreen({ portfolio }: ContributeScreenProps) {
   );
 }
 
-function Calculator({ portfolio }: { portfolio: Portfolio }) {
+function Calculator({ portfolio }: Readonly<{ portfolio: Portfolio }>) {
   const titleId = useId();
   const inputId = useId();
   const [amount, setAmount] = useState(0);
@@ -136,7 +143,7 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
     if (registered) document.getElementById(inputId)?.focus({ preventScroll: true });
   }, [registered, inputId]);
 
-  const plumbState = planMutation.isPending ? "swinging" : registered ? "success" : plan ? "settled" : "idle";
+  const plumbState = plumbStateOf(planMutation.isPending, registered, plan !== null);
   // A carteira de hoje, para o espaço ao lado do campo antes do primeiro cálculo
   // (o mesmo painel que depois mostra antes e depois do aporte).
   const today: BalanceClass[] = portfolio.classes.map((c) => ({
@@ -183,7 +190,7 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
               onEnter={() => calculate()}
             />
             <CashSuggestion amount={amount} included={cashIncluded} onChange={changeAmount} />
-            <div className="quick" role="group" aria-label="Valores rápidos">
+            <fieldset className="quick" aria-label="Valores rápidos">
               {quick.map((value) => (
                 <motion.button
                   key={value}
@@ -199,7 +206,7 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
                   {value === lastAmount ? `Último: ${money.brl(value)}` : formatQuick(value)}
                 </motion.button>
               ))}
-            </div>
+            </fieldset>
             <MagneticButton type="submit" disabled={amount <= 0} loading={planMutation.isPending} className="ask__submit">
               {planMutation.isPending ? "Equilibrando…" : "Calcular"}
               {!planMutation.isPending && <IconArrowRight />}
@@ -214,10 +221,9 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
 
         <AnimatePresence mode="wait">
           {registered && (
-            <motion.div
+            <motion.output
               key="registered"
               className="registered glass"
-              role="status"
               initial={{ opacity: 0, scale: 0.96 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0 }}
@@ -228,7 +234,7 @@ function Calculator({ portfolio }: { portfolio: Portfolio }) {
                 <h2 className="registered__title">Aporte registrado!</h2>
                 <p className="field__hint">A carteira já está atualizada. Até o próximo.</p>
               </div>
-            </motion.div>
+            </motion.output>
           )}
           {plan && !registered && (
             <PlanResult
