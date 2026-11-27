@@ -12,9 +12,9 @@ import { formatDay, signedMoney, spansYears, trend } from "./performanceFormat";
  * veio de aporte, quanto do mercado, e os proventos que a carteira pagou.
  * Método em docs/desempenho.md ("Patrimônio × aportado").
  */
-export function NetWorthPanel({ worth }: { worth: NetWorth }) {
+export function NetWorthPanel({ worth }: Readonly<{ worth: NetWorth }>) {
   const money = useMoney();
-  const last = worth.points[worth.points.length - 1];
+  const last = worth.points.at(-1);
   if (!last) return null;
   const first = worth.points[0]?.date ?? last.date;
   const withYear = spansYears(first, last.date);

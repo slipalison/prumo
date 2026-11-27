@@ -57,7 +57,7 @@ function PerformanceOverview() {
         infoLabel="Sobre a tela Desempenho"
         summary={<RiskLink />}
         actions={
-          <div className="chips" role="group" aria-label="Período">
+          <fieldset className="chips" aria-label="Período">
             {PERIODS.map((p) => (
               <button
                 key={p.id}
@@ -69,15 +69,15 @@ function PerformanceOverview() {
                 {p.label}
               </button>
             ))}
-          </div>
+          </fieldset>
         }
       />
 
       {(worth.isPending || perf.isPending) && (
-        <div className="performance__loading" role="status" aria-label="Carregando o desempenho">
+        <output className="performance__loading" aria-label="Carregando o desempenho">
           <Skeleton height={96} radius={22} />
           <Skeleton height={260} radius={22} />
-        </div>
+        </output>
       )}
       {(worth.isError || perf.isError) && (
         <GlassCard as="section" className="state-card" role="alert">
@@ -98,7 +98,7 @@ function PerformanceOverview() {
   );
 }
 
-function Loaded({ worth, perf, period }: { worth: NetWorth; perf: Performance; period: PerformancePeriod }) {
+function Loaded({ worth, perf, period }: Readonly<{ worth: NetWorth; perf: Performance; period: PerformancePeriod }>) {
   const money = useMoney();
   if (!perf.starts_on) {
     return (
@@ -118,10 +118,10 @@ function Loaded({ worth, perf, period }: { worth: NetWorth; perf: Performance; p
   return (
     <>
       {rebuilding && (
-        <p className="performance__notice" role="status">
+        <output className="performance__notice">
           Refazendo a série desde {formatDay(rebuilding, true)} com os lançamentos novos. Os números se acertam em
           instantes.
-        </p>
+        </output>
       )}
       {young && (
         <p className="performance__notice" role="note">
@@ -156,7 +156,7 @@ function statsOf(perf: Performance, worth: NetWorth, money: Money): Stat[] {
   if (twelve) items.push(twelve);
   const since = versusStat("since", "Desde o início", perf.summary.since_start, false);
   if (since) items.push(since);
-  const last = worth.points[worth.points.length - 1];
+  const last = worth.points.at(-1);
   if (last) {
     items.push(
       { id: "worth", label: "Patrimônio", value: <CountUp value={last.market_value} />, tone: "gold" },
@@ -164,7 +164,7 @@ function statsOf(perf: Performance, worth: NetWorth, money: Money): Stat[] {
       {
         id: "gain",
         label: "Ganho",
-        value: `${money.hidden ? "" : last.gain > 0 ? "+" : last.gain < 0 ? "−" : ""}${money.brl(Math.abs(last.gain))}`,
+        value: `${money.hidden ? "" : gainSign(last.gain)}${money.brl(Math.abs(last.gain))}`,
         info: "O ganho é o do preço; os proventos recebidos ficam ao lado e entram na rentabilidade.",
         ...(money.hidden || trend(last.gain) === "flat" ? {} : { tone: trend(last.gain) as "up" | "down" }),
       },
@@ -172,6 +172,13 @@ function statsOf(perf: Performance, worth: NetWorth, money: Money): Stat[] {
     );
   }
   return items;
+}
+
+/** O sinal do ganho em R$: `+` na alta, `−` na baixa e nada no zero. */
+function gainSign(gain: number): string {
+  if (gain > 0) return "+";
+  if (gain < 0) return "−";
+  return "";
 }
 
 function versusStat(id: string, label: string, data: VersusCdi | null, twelveMonths: boolean): Stat | null {
@@ -204,7 +211,7 @@ function versusStat(id: string, label: string, data: VersusCdi | null, twelveMon
   };
 }
 
-function ReturnCard({ perf }: { perf: Performance }) {
+function ReturnCard({ perf }: Readonly<{ perf: Performance }>) {
   const [hidden, setHidden] = useState<ReadonlySet<BenchmarkCode>>(new Set());
   const toggle = (code: BenchmarkCode) =>
     setHidden((current) => {

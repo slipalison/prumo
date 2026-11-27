@@ -9,9 +9,9 @@ export type ChartSeries = {
   /** Cor da linha (variável CSS); o texto nunca usa a cor da série. */
   color: string;
   /** Tracejado do SVG: a segunda pista, além da cor. */
-  dash?: string | undefined;
+  dash?: string;
   /** Preenche a área até a base (o patrimônio). */
-  area?: boolean | undefined;
+  area?: boolean;
   values: Array<number | null>;
 };
 
@@ -67,7 +67,7 @@ function linePath(values: Array<number | null>, s: Scale): string {
 
 function areaPath(values: Array<number | null>, s: Scale): string {
   const line = linePath(values, s);
-  if (!line || values.some((v) => v === null)) return "";
+  if (!line || values.includes(null)) return "";
   const base = yAt(Math.max(s.min, 0), s).toFixed(2);
   return `${line} L${xAt(values.length - 1, values.length).toFixed(2)} ${base} L${xAt(0, values.length).toFixed(2)} ${base} Z`;
 }
@@ -78,13 +78,25 @@ function areaPath(values: Array<number | null>, s: Scale): string {
  * de cada série no dia. O desenho é `role="img"` com um resumo; quem lê a tela
  * tem a tabela.
  */
-export function LineChart({ dates, series, format, label, zeroLine = false, fromZero = false }: LineChartProps) {
+export function LineChart({
+  dates,
+  series,
+  format,
+  label,
+  zeroLine = false,
+  fromZero = false,
+}: Readonly<LineChartProps>) {
   const [hover, setHover] = useState<number | null>(null);
   const gradient = useId();
   const reveal = useId();
   const s = scale(series, zeroLine, fromZero);
   const count = dates.length;
-  const ticks = [s.max - (s.max - s.min) * 0.08, (s.max + s.min) / 2, s.min + (fromZero ? 0 : (s.max - s.min) * 0.08)];
+  // As três marcas da escala (topo, meio e base), cada uma com nome fixo para a chave.
+  const ticks = [
+    { id: "top", value: s.max - (s.max - s.min) * 0.08 },
+    { id: "middle", value: (s.max + s.min) / 2 },
+    { id: "base", value: s.min + (fromZero ? 0 : (s.max - s.min) * 0.08) },
+  ];
 
   const onMove = (event: PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -99,9 +111,9 @@ export function LineChart({ dates, series, format, label, zeroLine = false, from
   return (
     <div className="chart">
       <div className="chart__axis" aria-hidden="true">
-        {ticks.map((tick, i) => (
-          <span key={i} className="chart__tick" style={{ top: `${(yAt(tick, s) / H) * 100}%` }}>
-            {format(tick)}
+        {ticks.map((tick) => (
+          <span key={tick.id} className="chart__tick" style={{ top: `${(yAt(tick.value, s) / H) * 100}%` }}>
+            {format(tick.value)}
           </span>
         ))}
       </div>
@@ -112,7 +124,12 @@ export function LineChart({ dates, series, format, label, zeroLine = false, from
         onPointerLeave={() => setHover(null)}
         data-testid="chart-plot"
       >
-        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={label}>
+        <svg // NOSONAR: gráfico em SVG; role="img" com aria-label é o que o nomeia, não há tag nativa equivalente
+          viewBox={`0 0 ${W} ${H}`}
+          preserveAspectRatio="none"
+          role="img"
+          aria-label={label}
+        >
           <defs>
             <linearGradient id={gradient} x1="0" x2="0" y1="0" y2="1">
               <stop offset="0%" stopColor="var(--perf-portfolio)" stopOpacity="0.28" />
@@ -133,8 +150,8 @@ export function LineChart({ dates, series, format, label, zeroLine = false, from
               />
             </clipPath>
           </defs>
-          {ticks.map((tick, i) => (
-            <line key={i} className="chart__grid" x1={0} x2={W} y1={yAt(tick, s)} y2={yAt(tick, s)} />
+          {ticks.map((tick) => (
+            <line key={tick.id} className="chart__grid" x1={0} x2={W} y1={yAt(tick.value, s)} y2={yAt(tick.value, s)} />
           ))}
           {zeroLine && <line className="chart__zero" x1={0} x2={W} y1={yAt(0, s)} y2={yAt(0, s)} />}
           {series.map((line) => {

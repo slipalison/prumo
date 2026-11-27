@@ -37,7 +37,9 @@
   gap: var(--gap-stack);
 }
 
+/* O aviso de "refazendo a série" é um <output> (o status nativo), que nasce inline. */
 .performance__notice {
+  display: block;
   margin: 0;
   padding: var(--space-2) var(--space-4);
   border: 1px solid var(--border);
@@ -322,6 +324,18 @@
 
 .performance .page-header__actions .chips {
   gap: var(--space-2);
+}
+
+/* Os grupos de botões são <fieldset> (o grupo nativo): sem a moldura, o recuo e a largura mínima padrão. */
+.performance fieldset.chips,
+.year-table__controls fieldset.segmented {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+}
+
+.performance fieldset.chips {
+  padding: 0;
 }
 
 @media (max-width: 560px) {

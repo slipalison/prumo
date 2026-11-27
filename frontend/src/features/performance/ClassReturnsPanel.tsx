@@ -19,7 +19,7 @@ const INFO =
  * da tela, e o índice de referência na mesma janela (docs/desempenho.md, "Por
  * classe").
  */
-export function ClassReturnsPanel({ period }: { period: PerformancePeriod }) {
+export function ClassReturnsPanel({ period }: Readonly<{ period: PerformancePeriod }>) {
   const query = usePerformanceClasses(period);
   return (
     <Panel title="Por classe" info={INFO} infoLabel="Como se calcula o desempenho por classe">
@@ -37,7 +37,7 @@ export function ClassReturnsPanel({ period }: { period: PerformancePeriod }) {
   );
 }
 
-function ClassTable({ data }: { data: ClassesPerformance }) {
+function ClassTable({ data }: Readonly<{ data: ClassesPerformance }>) {
   const money = useMoney();
   const range = data.window;
   const withYear = spansYears(range?.from, range?.to);

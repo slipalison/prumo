@@ -61,6 +61,11 @@ export function monthLabel(month: number, year: number): string {
  * o sentido também é informação sobre o valor.
  */
 export function signedMoney(money: Money, value: number): string {
-  const sign = money.hidden || Math.abs(value) < 0.005 ? "" : value > 0 ? "+" : "−";
-  return `${sign}${money.brl(Math.abs(value))}`;
+  return `${moneySign(money, value)}${money.brl(Math.abs(value))}`;
+}
+
+/** O sinal de `signedMoney`: nenhum com o olho fechado ou no zero. */
+function moneySign(money: Money, value: number): string {
+  if (money.hidden || Math.abs(value) < 0.005) return "";
+  return value > 0 ? "+" : "−";
 }

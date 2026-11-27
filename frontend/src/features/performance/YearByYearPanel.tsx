@@ -19,7 +19,7 @@ const MODES: Array<{ id: Mode; label: string }> = [
  * melhor, pior, quantos subiram e caíram e em quantos a carteira ficou acima do
  * índice. Método em docs/desempenho.md ("Ano a ano").
  */
-export function YearByYearPanel({ perf }: { perf: Performance }) {
+export function YearByYearPanel({ perf }: Readonly<{ perf: Performance }>) {
   const [mode, setMode] = useState<Mode>("year");
   const available = perf.benchmarks.map((b) => ({ code: b.code, label: b.label }));
   const [chosen, setChosen] = useState<BenchmarkCode | "none">("cdi");
@@ -34,7 +34,7 @@ export function YearByYearPanel({ perf }: { perf: Performance }) {
       infoLabel="Como se mede cada mês"
       actions={
         <div className="year-table__controls">
-          <div className="segmented" role="group" aria-label="Modo da tabela">
+          <fieldset className="segmented" aria-label="Modo da tabela">
             {MODES.map((option) => (
               <button
                 key={option.id}
@@ -47,7 +47,7 @@ export function YearByYearPanel({ perf }: { perf: Performance }) {
                 <span className="segmented__label">{option.label}</span>
               </button>
             ))}
-          </div>
+          </fieldset>
           <label className="year-table__compare" htmlFor={selectId}>
             <span>Comparar com</span>
             <select
@@ -99,11 +99,12 @@ function monthStats(perf: Performance, compare: BenchmarkCode | null): Stat[] {
       detail: monthLabel(summary.worst.month, summary.worst.year),
     });
   }
+  const flatNote = summary.flat > 0 ? `, ${summary.flat} no zero` : "";
   items.push({
     id: "positive",
     label: "Meses positivos",
     value: `${summary.positive} de ${total}`,
-    detail: `${summary.negative} ${summary.negative === 1 ? "negativo" : "negativos"}${summary.flat > 0 ? `, ${summary.flat} no zero` : ""}`,
+    detail: `${summary.negative} ${summary.negative === 1 ? "negativo" : "negativos"}${flatNote}`,
   });
   const versus = summary.versus.find((v) => v.code === compare);
   if (versus) {
@@ -121,7 +122,7 @@ function monthStats(perf: Performance, compare: BenchmarkCode | null): Stat[] {
 type Compare = { code: BenchmarkCode; label: string } | null;
 
 /** Mês a mês com duas casas; o acumulado, maior, com uma (cabe sem rolar de lado no iPad). */
-function Cell({ value, digits }: { value: number | null | undefined; digits: number }) {
+function Cell({ value, digits }: Readonly<{ value: number | null | undefined; digits: number }>) {
   if (value === null || value === undefined) {
     return (
       <td>
@@ -133,9 +134,9 @@ function Cell({ value, digits }: { value: number | null | undefined; digits: num
   return <td className={`is-${trend(value)}`}>{formatSignedPercent(value, digits)}</td>;
 }
 
-function YearTable({ perf, mode, compare }: { perf: Performance; mode: Mode; compare: Compare }) {
+function YearTable({ perf, mode, compare }: Readonly<{ perf: Performance; mode: Mode; compare: Compare }>) {
   const accumulated = mode === "accumulated";
-  const newest = perf.years[perf.years.length - 1];
+  const newest = perf.years.at(-1);
   const index = compare && newest ? newest.benchmarks[compare.code] : undefined;
   const lastDay = perf.window?.to;
   const lagging = compare && index?.as_of && lastDay && index.as_of < lastDay ? index.as_of : null;
@@ -177,7 +178,11 @@ function YearTable({ perf, mode, compare }: { perf: Performance; mode: Mode; com
   );
 }
 
-function YearRows({ row, accumulated, compare }: { row: PerformanceYear; accumulated: boolean; compare: Compare }) {
+function YearRows({
+  row,
+  accumulated,
+  compare,
+}: Readonly<{ row: PerformanceYear; accumulated: boolean; compare: Compare }>) {
   const months = accumulated ? row.accumulated : row.months;
   const total = accumulated ? row.accumulated_percent : row.return_percent;
   const index = compare ? row.benchmarks[compare.code] : undefined;
@@ -186,8 +191,9 @@ function YearRows({ row, accumulated, compare }: { row: PerformanceYear; accumul
     <>
       <tr className={cx(compare && "year-table__portfolio")}>
         <th scope="row">{row.year}</th>
+        {/* As colunas são os doze meses, fixos: o mês é a chave. */}
         {months.map((value, i) => (
-          <Cell key={i} value={value} digits={digits} />
+          <Cell key={MONTHS[i]} value={value} digits={digits} />
         ))}
         <td className={cx("month-table__total", `is-${trend(total)}`)}>{formatSignedPercent(total, digits)}</td>
       </tr>
@@ -197,8 +203,8 @@ function YearRows({ row, accumulated, compare }: { row: PerformanceYear; accumul
             <span className="sr-only">{row.year}, </span>
             {compare.label}
           </th>
-          {Array.from({ length: 12 }, (_, i) => (
-            <Cell key={i} value={(accumulated ? index?.accumulated : index?.months)?.[i]} digits={digits} />
+          {MONTHS.map((month, i) => (
+            <Cell key={month} value={(accumulated ? index?.accumulated : index?.months)?.[i]} digits={digits} />
           ))}
           <Cell value={accumulated ? index?.accumulated_percent : index?.return_percent} digits={digits} />
         </tr>
