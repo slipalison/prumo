@@ -227,3 +227,16 @@
 .import-review__opening p {
   margin: 0;
 }
+
+/* Os avisos são <output> (o status nativo), que nasce inline: aqui ocupam a linha, como o parágrafo de antes. */
+.import-b3 output {
+  display: block;
+}
+
+/* "Contra a carteira" é um <fieldset> (o grupo nativo): sem a moldura, o recuo e a largura mínima padrão. */
+.import-summary fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}

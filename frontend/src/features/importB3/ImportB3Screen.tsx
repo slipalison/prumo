@@ -9,6 +9,7 @@ import type {
   B3LineStatus,
   B3Plan,
   B3PreviewResponse,
+  B3ReplacedEntry,
 } from "../../api/b3ImportTypes";
 import { ApiError, errorMessage } from "../../api/client";
 import type { AssetClass } from "../../api/types";
@@ -150,7 +151,7 @@ export function ImportB3Screen() {
               onChange={pick}
             />
           </div>
-          {notice && <p role="status">{notice}</p>}
+          {notice && <output>{notice}</output>}
           {files.length > 0 && (
             <ul className="import-files" aria-label="Arquivos escolhidos">
               {files.map((file) => {
@@ -161,8 +162,7 @@ export function ImportB3Screen() {
                     <span className="import-file__meta">{formatBytes(file.size)}</span>
                     {report && <FileResult report={report} />}
                     <button type="button" className="btn btn--ghost import-file__remove" onClick={() => remove(file)}>
-                      Tirar
-                      <span className="sr-only"> {file.name}</span>
+                      Tirar<span className="sr-only"> {file.name}</span>
                     </button>
                   </li>
                 );
@@ -197,8 +197,8 @@ export function ImportB3Screen() {
               Entre na <strong>Área do Investidor</strong> da B3 (<strong>investidor.b3.com.br</strong>) com o seu login.
             </li>
             <li>
-              Em <strong>Extratos</strong>, abra <strong>Negociação</strong>, defina o período e baixe em Excel (
-              <strong>.xlsx</strong>).
+              Em <strong>Extratos</strong>, abra <strong>Negociação</strong>, defina o período e baixe em Excel
+              (<strong>.xlsx</strong>).
             </li>
             <li>
               Repita em <strong>Movimentação</strong> e em <strong>Proventos</strong> (os recebidos e os a receber).
@@ -233,7 +233,7 @@ export function ImportB3Screen() {
   );
 }
 
-function FileResult({ report }: { report: B3FileReport }) {
+function FileResult({ report }: Readonly<{ report: B3FileReport }>) {
   if (report.status !== "read") {
     const problem = report.problem ? FILE_PROBLEM_TEXT[report.problem] : "Não consegui ler este arquivo.";
     return (
@@ -278,7 +278,16 @@ function importHint(plan: B3Plan, dirty: boolean): string {
   return `Grava ${transactions_new} ${plural(transactions_new, ["lançamento", "lançamentos"])} e ${income} ${plural(income, ["provento", "proventos"])}, tudo de uma vez. Importar de novo não duplica.`;
 }
 
-function PreviewResult({ preview, decisions, decide, dirty, refreshing, importing, onRefresh, onImport }: PreviewProps) {
+function PreviewResult({
+  preview,
+  decisions,
+  decide,
+  dirty,
+  refreshing,
+  importing,
+  onRefresh,
+  onImport,
+}: Readonly<PreviewProps>) {
   const money = useMoney();
   const { summary, plan } = preview;
   const nothing = summary.assets === 0;
@@ -310,18 +319,18 @@ function PreviewResult({ preview, decisions, decide, dirty, refreshing, importin
     <>
       <Panel title="O que entraria" className="import-summary">
         <StatStrip items={found} inset />
-        <div role="group" aria-label="Contra a carteira">
+        <fieldset aria-label="Contra a carteira">
           <StatStrip items={against} inset />
-        </div>
+        </fieldset>
         {summary.first_date && summary.last_date && (
           <p className="field__hint">
             De {formatIsoDate(summary.first_date)} a {formatIsoDate(summary.last_date)}.
           </p>
         )}
         {nothing ? (
-          <p role="status">
+          <output>
             Não achei nenhuma linha que o Prumo consiga importar nestes arquivos. Confira o que cada um disse acima.
-          </p>
+          </output>
         ) : (
           <AssetsTable assets={preview.assets} planOf={planOf} lines={plan.lines} decisions={decisions} decide={decide} />
         )}
@@ -402,7 +411,7 @@ type TableProps = {
   decide: (key: string, patch: B3AssetDecision) => void;
 };
 
-function AssetsTable({ assets, planOf, lines, decisions, decide }: TableProps) {
+function AssetsTable({ assets, planOf, lines, decisions, decide }: Readonly<TableProps>) {
   const [open, setOpen] = useState<string | null>(null);
   return (
     <div className="data-table import-table-wrap">
@@ -464,7 +473,7 @@ const orDash = (value: number, text: string) => (value > 0 ? text : "—");
 /** O título do Tesouro não tem código: o "key" já é o nome dele. */
 const titleOf = (asset: { treasury: boolean; key: string }) => (asset.treasury ? "Tesouro Direto" : asset.key);
 
-function LineState({ status }: { status: B3LineStatus | undefined }) {
+function LineState({ status }: Readonly<{ status: B3LineStatus | undefined }>) {
   if (!status) return null;
   const why = lineReason(status.reason_code);
   return (
@@ -486,7 +495,7 @@ type RowsProps = {
   onToggle: () => void;
 };
 
-function AssetRows({ asset, plan, lines, decision, decide, expanded, onToggle }: RowsProps) {
+function AssetRows({ asset, plan, lines, decision, decide, expanded, onToggle }: Readonly<RowsProps>) {
   const money = useMoney();
   const { totals } = asset;
   const detailId = useId();
@@ -606,13 +615,26 @@ function AssetRows({ asset, plan, lines, decision, decide, expanded, onToggle }:
   );
 }
 
+/** Lançamento à mão não tem id: a chave é o conteúdo, e um repetido leva o número da vez. */
+function keyedByContent<T>(items: readonly T[], contentOf: (item: T) => string): Array<{ key: string; item: T }> {
+  const seen = new Map<string, number>();
+  return items.map((item) => {
+    const content = contentOf(item);
+    const times = (seen.get(content) ?? 0) + 1;
+    seen.set(content, times);
+    return { key: times === 1 ? content : `${content}#${times}`, item };
+  });
+}
+
+const replacedContent = (entry: B3ReplacedEntry) => `${entry.kind}-${entry.date}-${entry.quantity}-${entry.unit_price}`;
+
 type ReviewProps = {
   asset: B3AssetPlan;
   decision: B3AssetDecision | undefined;
   decide: (key: string, patch: B3AssetDecision) => void;
 };
 
-function AssetReview({ asset, decision, decide }: ReviewProps) {
+function AssetReview({ asset, decision, decide }: Readonly<ReviewProps>) {
   const money = useMoney();
   const ids = { quantity: useId(), price: useId(), skip: useId() };
   const title = titleOf(asset);
@@ -682,8 +704,8 @@ function AssetReview({ asset, decision, decide }: ReviewProps) {
         <div>
           <p className="field__hint">O que você tinha lançado à mão dá lugar ao histórico da B3:</p>
           <ul className="import-list">
-            {asset.replaced.map((entry, index) => (
-              <li key={`${entry.kind}-${entry.date}-${index}`}>
+            {keyedByContent(asset.replaced, replacedContent).map(({ key, item: entry }) => (
+              <li key={key}>
                 {REPLACED_KIND_LABEL[entry.kind] ?? entry.kind} de {money.quantity(entry.quantity, fractional)} em{" "}
                 {formatIsoDate(entry.date)}
               </li>
@@ -713,21 +735,21 @@ function AssetReview({ asset, decision, decide }: ReviewProps) {
   );
 }
 
-function CommitResult({ result }: { result: B3CommitResult }) {
+function CommitResult({ result }: Readonly<{ result: B3CommitResult }>) {
   const { summary } = result;
   const reasons = new Map<string, number>();
   for (const line of result.not_imported) reasons.set(line.reason_code, (reasons.get(line.reason_code) ?? 0) + 1);
   const income = summary.income_new + summary.income_replaced;
   return (
     <Panel title="Importação concluída">
-      <p role="status">
+      <output>
         Entraram {summary.transactions_new} {plural(summary.transactions_new, ["lançamento", "lançamentos"])} e {income}{" "}
         {plural(income, ["provento", "proventos"])}
         {summary.income_replaced > 0
           ? ` (${summary.income_replaced} ${plural(summary.income_replaced, ["substituiu um provento a receber", "substituíram proventos a receber"])})`
           : ""}
         .
-      </p>
+      </output>
       <StatStrip
         inset
         items={[
