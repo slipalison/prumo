@@ -5,6 +5,7 @@ import { InfoTip } from "../../components/InfoTip";
 import { formatIsoDate, formatIsoDay } from "../../lib/income";
 import { plural } from "../../lib/format";
 import { useMoney } from "../../lib/privacy";
+import "./nativeTags.css";
 
 type CashSuggestionProps = {
   /** O valor do aporte digitado. */
@@ -22,7 +23,7 @@ const cents = (value: number) => Math.round(value * 100) / 100;
  * deixaram e ainda não foi aportado. Só soma ao valor de entrada, se a pessoa
  * aceitar: o motor do aporte não muda. O detalhe diz de onde o saldo veio.
  */
-export function CashSuggestion({ amount, included, onChange }: CashSuggestionProps) {
+export function CashSuggestion({ amount, included, onChange }: Readonly<CashSuggestionProps>) {
   const cash = useCash();
   const money = useMoney();
   const balance = cash.data?.balance ?? 0;
@@ -31,7 +32,7 @@ export function CashSuggestion({ amount, included, onChange }: CashSuggestionPro
   if (!cash.data || (balance <= 0 && !active)) return null;
 
   return (
-    <div className="cash-suggestion" role="group" aria-label="Caixa disponível para aportar">
+    <fieldset className="cash-suggestion" aria-label="Caixa disponível para aportar">
       <p className="cash-suggestion__line">
         {active ? (
           <>
@@ -54,7 +55,7 @@ export function CashSuggestion({ amount, included, onChange }: CashSuggestionPro
         </InfoTip>
       </p>
       <CashDetail cash={cash.data} />
-    </div>
+    </fieldset>
   );
 }
 
@@ -64,8 +65,22 @@ const KIND_LABEL: Record<CashMovement["kind"], string> = {
   contribution: "Aporte",
 };
 
+/**
+ * Os movimentos com a chave do React: o conteúdo do movimento e, se dois saírem
+ * iguais (mesmo dia, tipo, ativo e valor), a ordem entre os iguais.
+ */
+function keyedMovements(movements: CashMovement[]): { key: string; movement: CashMovement }[] {
+  const seen = new Map<string, number>();
+  return movements.map((movement) => {
+    const signature = `${movement.date}-${movement.kind}-${movement.label}-${movement.amount}`;
+    const repeat = seen.get(signature) ?? 0;
+    seen.set(signature, repeat + 1);
+    return { key: repeat === 0 ? signature : `${signature}#${repeat}`, movement };
+  });
+}
+
 /** De onde o saldo veio: proventos, vendas e o que os aportes já usaram. */
-function CashDetail({ cash }: { cash: Cash }) {
+function CashDetail({ cash }: Readonly<{ cash: Cash }>) {
   const money = useMoney();
   return (
     <Disclosure summary="De onde vem esse caixa" className="cash-detail">
@@ -95,8 +110,8 @@ function CashDetail({ cash }: { cash: Cash }) {
       </dl>
       {cash.recent.length > 0 && (
         <ul className="cash-detail__recent">
-          {cash.recent.map((movement, index) => (
-            <li key={`${movement.date}-${movement.kind}-${movement.label}-${index}`}>
+          {keyedMovements(cash.recent).map(({ key, movement }) => (
+            <li key={key}>
               <span>
                 {formatIsoDay(movement.date)} · {KIND_LABEL[movement.kind]} · {movement.label}
               </span>
