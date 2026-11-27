@@ -51,12 +51,15 @@ export function sampleProjection(months: 12 | 24 = 12, spread = 2): IncomeProjec
       basis: group === "br_stocks" ? "usual" : "trailing_12m",
       usual_years: group === "br_stocks" ? 5 : null,
       monthly_start: start,
+      // A ação parte da média de 5 anos (50); os 12 meses pagaram 60, com um extraordinário.
+      estimate_monthly: group === "br_stocks" ? 60 : start,
       totals: { low: round2(base * (1 - d / 2)), base, high: round2(base * (1 + d / 2)) },
     };
   });
   return {
     today: "2026-11-27",
-    estimate_monthly: 262.5,
+    estimate_monthly: 260,
+    reconciliation: { start_monthly: 250, usual_difference: -10, unprojected_monthly: 0, usual_years: 5 },
     months: monthList,
     totals: { low: sum("low"), base: sum("base"), high: sum("high") },
     groups: assets.map((a) => ({ group: a.group, driver: a.driver, assets: 1, monthly_start: a.monthly_start, totals: a.totals })),
@@ -75,7 +78,15 @@ export function sampleProjection(months: 12 | 24 = 12, spread = 2): IncomeProjec
 
 export function emptyProjection(): IncomeProjection {
   const sample = sampleProjection();
-  return { ...sample, months: [], totals: { low: 0, base: 0, high: 0 }, groups: [], assets: [], estimate_monthly: 0 };
+  return {
+    ...sample,
+    months: [],
+    totals: { low: 0, base: 0, high: 0 },
+    groups: [],
+    assets: [],
+    estimate_monthly: 0,
+    reconciliation: { start_monthly: 0, usual_difference: 0, unprojected_monthly: 0, usual_years: null },
+  };
 }
 
 /** O padrão das telas: sem ativo com estimativa, a projeção não tem o que mostrar. */

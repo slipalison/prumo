@@ -98,6 +98,13 @@ recebíveis = papel).
   carrega o provento extraordinário ("acima do habitual" na Renda); a média de
   até 5 anos é o que ela costuma pagar. Os FIIs pagam todo mês e acompanham o
   juro e o aluguel de agora, então partem dos 12 meses.
+- **Partida contra a estimativa:** a soma das partidas só é a estimativa da
+  Renda quando nenhum ativo parte da média do habitual. A resposta traz a conta
+  (`reconciliation`: a diferença da média e o que ficou fora da projeção) e a
+  tela a escreve sob os números. A média do habitual é **líquida** pela mesma
+  regra da estimativa (`estimate::asset_estimate`): o JCP sai pela parte de JCP
+  dos 12 meses, com a alíquota da data de pagamento de cada anúncio da B3 (o
+  histórico longo é do Yahoo, que não separa o JCP); 30% nos EUA; nada no BDR.
 - **Calendário:** cada mês recebe o peso que o mesmo mês teve nos últimos 12
   (`Shape`, média 1): pelo dia de pagamento quando a B3 o informa, senão pela
   data ex. A ação que paga em maio e novembro continua pagando em maio e

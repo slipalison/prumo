@@ -48,6 +48,17 @@ describe("Renda: renda projetada", () => {
     expect(within(types).getByText("acompanha o CDI esperado")).toBeInTheDocument();
     expect(within(types).getByText("reajuste pelo IPCA esperado")).toBeInTheDocument();
     expect(within(types).getByText("a média, sem crescimento")).toBeInTheDocument();
+    // A partida tem nome próprio e diz, em cada linha, de onde sai.
+    expect(within(types).getByRole("columnheader", { name: "Ponto de partida, por mês" })).toBeInTheDocument();
+    expect(within(types).queryByRole("columnheader", { name: /Hoje/ })).not.toBeInTheDocument();
+    expect(within(types).getByText("12 meses; anda com o CDI do Focus")).toBeInTheDocument();
+    expect(within(types).getByText("12 meses; anda com o IPCA do Focus")).toBeInTheDocument();
+    expect(within(types).getByText("média de 5 anos")).toBeInTheDocument();
+
+    // A conta que liga a estimativa da Renda à partida da projeção.
+    expect(within(panel).getByText(/A estimativa de hoje é/)).toHaveTextContent(
+      /A estimativa de hoje é R\$\s260,00 por mês \(12 meses\)\. A projeção parte de R\$\s250,00: nas ações usa a média de 5 anos, sem o que veio acima do habitual \(R\$\s10,00 por mês a menos\)\./,
+    );
 
     const premises = within(panel).getByRole("list", { name: "Premissas da projeção" });
     expect(premises).toHaveTextContent("CDI de 14,90% hoje a 13,40% em nov/2027 (meta Selic do Focus menos 0,10 ponto).");
@@ -60,8 +71,8 @@ describe("Renda: renda projetada", () => {
     await user.click(within(panel).getByText("Por ativo"));
     const assets = within(panel).getByRole("table", { name: "Renda projetada por ativo" });
     expect(within(assets).getByRole("rowheader", { name: "ACAO3" })).toBeInTheDocument();
-    expect(within(assets).getByText("média de 5 anos")).toBeInTheDocument();
-    expect(within(assets).getAllByText("12 meses")).toHaveLength(2);
+    expect(within(assets).getByText(/média de 5 anos \(12 meses: R\$\s60,00\)/)).toBeInTheDocument();
+    expect(within(assets).getByText("12 meses; anda com o CDI do Focus")).toBeInTheDocument();
 
     // O leitor de tela tem a tabela de cada mês; o desenho tem o resumo.
     expect(within(panel).getByRole("table", { name: "Renda projetada por mês" })).toBeInTheDocument();
@@ -134,6 +145,37 @@ describe("Renda: renda projetada", () => {
     expect(premises).toHaveTextContent("1 ponto ao ano para cada lado (seu)");
     expect(premises).toHaveTextContent("Ainda sem Focus no banco: a busca é diária.");
     expect(within(panel).getByText(/Sem estimativa, fora da conta: XPTO11/)).toBeInTheDocument();
+  });
+
+  it("a conta da partida cobre a média acima dos 12 meses, o ativo fora da projeção e a partida igual", async () => {
+    let variant = 0;
+    trackProjection(() => {
+      const p = sampleProjection();
+      const foreign = p.assets.map((a) => (a.group === "br_stocks" ? { ...a, group: "foreign" as const, usual_years: 3 } : a));
+      const variants = [
+        { ...p, assets: foreign, estimate_monthly: 247.5, reconciliation: { start_monthly: 250, usual_difference: 5, unprojected_monthly: 2.5, usual_years: 3 } },
+        { ...p, estimate_monthly: 250, reconciliation: { start_monthly: 250, usual_difference: 0, unprojected_monthly: 0, usual_years: null } },
+      ];
+      return variants[Math.min(variant, 1)] ?? p;
+    });
+    const { user, panel } = await openIncome();
+    expect(await within(panel).findByText(/A estimativa de hoje é/)).toHaveTextContent(
+      /A projeção parte de R\$\s250,00: no exterior usa a média de 3 anos, acima dos 12 meses, que vieram abaixo do habitual \(R\$\s5,00 por mês a mais\); e deixa de fora R\$\s2,50 por mês de ativos sem tipo de renda na projeção\./,
+    );
+    variant = 1;
+    await user.click(within(panel).getByRole("button", { name: "24 meses" }));
+    expect(await within(panel).findByText(/A projeção parte da estimativa de hoje: R\$\s250,00 por mês \(12 meses\)\./)).toBeInTheDocument();
+  });
+
+  it("com o CDI e o IPCA trocados, a origem de cada linha diz que foram informados", async () => {
+    trackProjection(() => {
+      const p = sampleProjection();
+      return { ...p, premises: { ...p.premises, cdi: { ...p.premises.cdi, source: "informed" }, ipca: { ...p.premises.ipca, source: "measured" } } };
+    });
+    const { panel } = await openIncome();
+    const types = await within(panel).findByRole("table", { name: "Renda projetada por tipo" });
+    expect(within(types).getByText("12 meses; anda com o CDI informado")).toBeInTheDocument();
+    expect(within(types).getByText("12 meses; anda com o IPCA medido")).toBeInTheDocument();
   });
 
   it("sem ativo com estimativa, explica que não há o que projetar", async () => {

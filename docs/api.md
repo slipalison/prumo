@@ -2099,7 +2099,8 @@ Consulta (tudo opcional; campo desconhecido é `422`):
 ```json
 {
   "today": "2026-11-27",
-  "estimate_monthly": 250.0,
+  "estimate_monthly": 260.0,
+  "reconciliation": { "start_monthly": 250.0, "usual_difference": -10.0, "unprojected_monthly": 0.0, "usual_years": 5 },
   "months": [
     { "month": "2026-12", "low": 247.7, "base": 248.1, "high": 248.5,
       "by_group": { "paper_reits": 118.4, "brick_reits": 80.3, "br_stocks": 49.4 } }
@@ -2112,7 +2113,7 @@ Consulta (tudo opcional; campo desconhecido é `422`):
   "assets": [
     { "asset_id": "…", "symbol": "PAPL11", "display_name": "PAPL11",
       "group": "paper_reits", "driver": "cdi", "basis": "trailing_12m", "usual_years": null,
-      "monthly_start": 120.0, "totals": { "low": 1375.6, "base": 1389.5, "high": 1403.3 } }
+      "monthly_start": 120.0, "estimate_monthly": 120.0, "totals": { "low": 1375.6, "base": 1389.5, "high": 1403.3 } }
   ],
   "premises": {
     "horizon_months": 12,
@@ -2136,6 +2137,16 @@ Consulta (tudo opcional; campo desconhecido é `422`):
   `driver`: `cdi`, `ipca` ou `flat`.
 - `basis`: `trailing_12m` (os 12 meses da estimativa) ou `usual` (a média do
   habitual, `usual_years` anos: ações e exterior que têm histórico longo).
+  `monthly_start` é a partida da projeção; `estimate_monthly`, os 12 meses da
+  estimativa da Renda (os dois só diferem na média do habitual, líquida pela
+  mesma regra da estimativa: a parte de JCP dos 12 meses, 30% nos EUA, nada no
+  BDR).
+- `reconciliation` liga a estimativa à partida:
+  `estimate_monthly = start_monthly − usual_difference + unprojected_monthly`.
+  `usual_difference` é a média do habitual menos os 12 meses nos ativos que
+  partem dela (negativa quando os 12 meses vieram acima do habitual);
+  `unprojected_monthly`, a estimativa de ativos sem tipo de renda, que a
+  projeção não leva; `usual_years`, a maior janela da média.
 - `premises.cdi.source` e `premises.ipca.source`: `focus`, `informed` (veio na
   consulta), `measured` (sem Focus: o CDI de hoje parado; o IPCA de 12 meses),
   `fallback` (a meta de inflação de 3%) ou `missing` (sem CDI nenhum: o papel

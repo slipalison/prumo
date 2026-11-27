@@ -37,8 +37,21 @@ export type ProjectedAsset = {
   /** Os 12 meses da Renda ou a média do habitual. */
   basis: "trailing_12m" | "usual";
   usual_years: number | null;
+  /** A partida da projeção, por mês. */
   monthly_start: number;
+  /** Os 12 meses da estimativa da Renda, por mês (difere da partida na média do habitual). */
+  estimate_monthly: number;
   totals: ScenarioTotals;
+};
+
+/** `estimate_monthly = start_monthly − usual_difference + unprojected_monthly`. */
+export type ProjectionReconciliation = {
+  start_monthly: number;
+  /** Média do habitual menos os 12 meses (negativa: os 12 meses vieram acima do habitual). */
+  usual_difference: number;
+  /** A estimativa dos ativos sem tipo de renda, fora da projeção. */
+  unprojected_monthly: number;
+  usual_years: number | null;
 };
 
 export type ProjectionPremises = {
@@ -60,6 +73,7 @@ export type IncomeProjection = {
   today: string;
   /** A estimativa mensal da Renda, de onde a projeção parte. */
   estimate_monthly: number;
+  reconciliation: ProjectionReconciliation;
   months: ProjectedMonth[];
   totals: ScenarioTotals;
   groups: ProjectedGroup[];

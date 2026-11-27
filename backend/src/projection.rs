@@ -233,6 +233,9 @@ pub struct ProjectedAsset {
     pub basis: LevelBasis,
     /// Quantos anos a média do habitual tem (só em `Usual`).
     pub usual_years: Option<u32>,
+    /// A renda líquida por mês dos 12 meses (a da estimativa da Renda): igual à
+    /// partida, salvo quando a partida é a média do habitual.
+    pub estimate_monthly: Decimal,
 }
 
 /// O calendário de um ativo: o líquido de cada pagamento no mês em que cai (a
@@ -284,9 +287,44 @@ pub fn projected_assets(view: &PortfolioView, income: &PortfolioIncome) -> Vec<P
                 display_name: a.asset.display_name.clone(),
                 basis,
                 usual_years,
+                estimate_monthly: found.estimate.monthly.net,
             })
         })
         .collect()
+}
+
+/// Por que a partida da projeção não é a estimativa da Renda, em reais por mês:
+/// `estimativa = partida − diferença_do_habitual + fora_da_projeção`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Reconciliation {
+    /// A soma das partidas.
+    pub start_monthly: Decimal,
+    /// Média do habitual menos os 12 meses, nos ativos que partem da média
+    /// (negativa quando os 12 meses vieram acima do habitual).
+    pub usual_difference: Decimal,
+    /// A estimativa dos ativos que não entram na projeção (sem tipo de renda).
+    pub unprojected_monthly: Decimal,
+    /// A maior janela da média do habitual entre os ativos que partem dela.
+    pub usual_years: Option<u32>,
+}
+
+/// A conta que liga a estimativa da Renda à partida da projeção.
+pub fn reconcile(assets: &[ProjectedAsset], estimate_monthly: Decimal) -> Reconciliation {
+    let start_monthly: Decimal = assets.iter().map(|a| a.input.monthly).sum();
+    let usual: Vec<&ProjectedAsset> = assets
+        .iter()
+        .filter(|a| a.basis == LevelBasis::Usual)
+        .collect();
+    let projected_estimate: Decimal = assets.iter().map(|a| a.estimate_monthly).sum();
+    Reconciliation {
+        start_monthly,
+        usual_difference: usual
+            .iter()
+            .map(|a| a.input.monthly - a.estimate_monthly)
+            .sum(),
+        unprojected_monthly: estimate_monthly - projected_estimate,
+        usual_years: usual.iter().filter_map(|a| a.usual_years).max(),
+    }
 }
 
 /// A renda mensal estimada (líquida) dos ativos de uma classe, ou da carteira
@@ -377,6 +415,49 @@ mod tests {
         assert!(o.cdi_trailing.unwrap() > 0.0);
         let none = Outlook::from_series(Focus::default(), None, Vec::new(), Vec::new(), TODAY);
         assert_eq!((none.cdi_now, none.cdi_trailing), (None, None));
+    }
+
+    fn projected(
+        basis: LevelBasis,
+        start: Decimal,
+        estimate: Decimal,
+        years: Option<u32>,
+    ) -> ProjectedAsset {
+        ProjectedAsset {
+            input: AssetInput {
+                asset_id: uuid::Uuid::new_v4(),
+                group: Group::BrStocks,
+                monthly: start,
+                shape: Shape::uniform(),
+            },
+            symbol: None,
+            display_name: "Ficticia".into(),
+            basis,
+            usual_years: years,
+            estimate_monthly: estimate,
+        }
+    }
+
+    #[test]
+    fn the_reconciliation_closes_the_estimate() {
+        let assets = [
+            // Ação que pagou extraordinário: os 12 meses (60) acima da média (45).
+            projected(LevelBasis::Usual, dec!(45), dec!(60), Some(5)),
+            projected(LevelBasis::Usual, dec!(12), dec!(10), Some(3)),
+            projected(LevelBasis::Trailing12m, dec!(100), dec!(100), None),
+        ];
+        // 7,50 da estimativa é de um ativo sem tipo de renda (fora da projeção).
+        let r = reconcile(&assets, dec!(177.50));
+        assert_eq!(r.start_monthly, dec!(157));
+        assert_eq!(r.usual_difference, dec!(-13));
+        assert_eq!(r.unprojected_monthly, dec!(7.50));
+        assert_eq!(r.usual_years, Some(5));
+        assert_eq!(
+            r.start_monthly - r.usual_difference + r.unprojected_monthly,
+            dec!(177.50)
+        );
+        let none = reconcile(&[], dec!(0));
+        assert_eq!((none.start_monthly, none.usual_years), (dec!(0), None));
     }
 
     #[test]

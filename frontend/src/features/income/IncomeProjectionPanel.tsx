@@ -3,6 +3,7 @@ import { errorMessage } from "../../api/client";
 import { useIncomeProjection } from "../../api/projection";
 import type {
   IncomeProjection,
+  PathSource,
   ProjectedAsset,
   ProjectedGroup,
   ProjectedMonth,
@@ -110,9 +111,10 @@ function Loaded({ data, overrides, onOverrides }: LoadedProps) {
         ]}
       />
       <ProjectedBars months={data.months} />
-      <GroupTable groups={data.groups} money={money} />
+      <Reconciliation data={data} money={money} />
+      <GroupTable data={data} money={money} />
       <Disclosure summary="Por ativo" count={data.assets.length}>
-        <AssetTable assets={data.assets} money={money} />
+        <AssetTable data={data} money={money} />
       </Disclosure>
       <PremisesLine premises={data.premises} months={data.months} />
       {data.missing.length > 0 && (
@@ -242,30 +244,131 @@ function scenarioColumns<T extends { totals: { low: number; base: number; high: 
   ];
 }
 
-function GroupTable({ groups, money }: { groups: ProjectedGroup[]; money: Money }) {
+const START_LABEL = "Ponto de partida, por mês";
+
+/** De onde sai a partida de um ativo: os 12 meses da estimativa ou a média do habitual. */
+function basisText(asset: Pick<ProjectedAsset, "basis" | "usual_years">): string {
+  return asset.basis === "usual" ? `média de ${asset.usual_years ?? 2} anos` : "12 meses";
+}
+
+/** O que move a partida depois: o CDI ou o IPCA (do Focus, ou o que a pessoa informou). */
+function driverSource(driver: ProjectionDriver, premises: ProjectionPremises): string | null {
+  const from = (source: PathSource) => (source === "informed" ? "informado" : source === "focus" ? "do Focus" : "medido");
+  if (driver === "cdi") return `anda com o CDI ${from(premises.cdi.source)}`;
+  if (driver === "ipca") return `anda com o IPCA ${from(premises.ipca.source)}`;
+  return null;
+}
+
+/** De onde sai a partida de um tipo: junta a base de cada ativo dele ("média de até 5 anos (3), 12 meses (1)"). */
+function groupBasisText(group: ProjectedGroup, assets: ProjectedAsset[]): string {
+  const mine = assets.filter((a) => a.group === group.group);
+  const usual = mine.filter((a) => a.basis === "usual");
+  const trailing = mine.length - usual.length;
+  const years = Math.max(...usual.map((a) => a.usual_years ?? 2), 0);
+  const average = `média de ${usual.length > 1 ? "até " : ""}${years} anos`;
+  if (usual.length === 0) return "12 meses";
+  if (trailing === 0) return average;
+  return `${average} (${usual.length}), 12 meses (${trailing})`;
+}
+
+function StartCell({ value, hint, money }: { value: number; hint: string; money: Money }) {
+  return (
+    <span className="income-projection__start">
+      {money.brl(value)}
+      <span className="income-projection__origin">{hint}</span>
+    </span>
+  );
+}
+
+function GroupTable({ data, money }: { data: IncomeProjection; money: Money }) {
   const columns: DataColumn<ProjectedGroup>[] = [
     { key: "group", label: "Tipo", rowHeader: true, cell: (g) => GROUP_LABEL[g.group] },
     { key: "driver", label: "Como anda", cell: (g) => DRIVER_LABEL[g.driver] },
-    { key: "start", label: "Hoje, por mês", align: "end", cell: (g) => money.brl(g.monthly_start) },
+    {
+      key: "start",
+      label: START_LABEL,
+      align: "end",
+      cell: (g) => (
+        <StartCell
+          value={g.monthly_start}
+          money={money}
+          hint={[groupBasisText(g, data.assets), driverSource(g.driver, data.premises)].filter(Boolean).join("; ")}
+        />
+      ),
+    },
     ...scenarioColumns<ProjectedGroup>(money),
   ];
-  return <DataTable caption="Renda projetada por tipo" columns={columns} rows={groups} rowKey={(g) => g.group} />;
+  return <DataTable caption="Renda projetada por tipo" columns={columns} rows={data.groups} rowKey={(g) => g.group} />;
 }
 
-function AssetTable({ assets, money }: { assets: ProjectedAsset[]; money: Money }) {
+function AssetTable({ data, money }: { data: IncomeProjection; money: Money }) {
   const columns: DataColumn<ProjectedAsset>[] = [
     { key: "asset", label: "Ativo", rowHeader: true, cell: (a) => a.symbol ?? a.display_name },
     { key: "group", label: "Tipo", cell: (a) => GROUP_LABEL[a.group] },
     {
-      key: "basis",
-      label: "Partida",
-      wideOnly: true,
-      cell: (a) => (a.basis === "usual" ? `média de ${a.usual_years ?? 2} anos` : "12 meses"),
+      key: "start",
+      label: START_LABEL,
+      align: "end",
+      cell: (a) => (
+        <StartCell
+          value={a.monthly_start}
+          money={money}
+          hint={[
+            a.basis === "usual" ? `${basisText(a)} (12 meses: ${money.brl(a.estimate_monthly)})` : basisText(a),
+            driverSource(a.driver, data.premises),
+          ]
+            .filter(Boolean)
+            .join("; ")}
+        />
+      ),
     },
-    { key: "start", label: "Hoje, por mês", align: "end", cell: (a) => money.brl(a.monthly_start) },
     ...scenarioColumns<ProjectedAsset>(money),
   ];
-  return <DataTable caption="Renda projetada por ativo" columns={columns} rows={assets} rowKey={(a) => a.asset_id} />;
+  return <DataTable caption="Renda projetada por ativo" columns={columns} rows={data.assets} rowKey={(a) => a.asset_id} />;
+}
+
+/** Onde a média do habitual entra: nas ações, no exterior ou nos dois. */
+function usualWhere(assets: ProjectedAsset[]): string {
+  const groups = new Set(assets.filter((a) => a.basis === "usual").map((a) => a.group));
+  if (groups.has("br_stocks") && groups.has("foreign")) return "nas ações e no exterior";
+  return groups.has("foreign") ? "no exterior" : "nas ações";
+}
+
+/**
+ * A conta que liga a estimativa da Renda (logo acima, 12 meses) à partida da
+ * projeção: as duas diferem quando ações e exterior partem da média do
+ * habitual, ou quando um ativo sem tipo de renda fica de fora. Tudo calculado
+ * pelo servidor e escrito pelo `useMoney`.
+ */
+function Reconciliation({ data, money }: { data: IncomeProjection; money: Money }) {
+  const r = data.reconciliation;
+  const estimate = money.brl(data.estimate_monthly);
+  if (Math.abs(r.start_monthly - data.estimate_monthly) < 0.005) {
+    return (
+      <p className="income-projection__reconcile">
+        A projeção parte da estimativa de hoje: {estimate} por mês (12 meses).
+      </p>
+    );
+  }
+  const parts: string[] = [];
+  if (Math.abs(r.usual_difference) >= 0.005) {
+    const spans = new Set(data.assets.filter((a) => a.basis === "usual").map((a) => a.usual_years));
+    const years = `média de ${spans.size > 1 ? "até " : ""}${r.usual_years ?? 2} anos`;
+    parts.push(
+      r.usual_difference < 0
+        ? `${usualWhere(data.assets)} usa a ${years}, sem o que veio acima do habitual (${money.brl(-r.usual_difference)} por mês a menos)`
+        : `${usualWhere(data.assets)} usa a ${years}, acima dos 12 meses, que vieram abaixo do habitual (${money.brl(r.usual_difference)} por mês a mais)`,
+    );
+  }
+  if (Math.abs(r.unprojected_monthly) >= 0.005) {
+    parts.push(`deixa de fora ${money.brl(r.unprojected_monthly)} por mês de ativos sem tipo de renda na projeção`);
+  }
+  return (
+    <p className="income-projection__reconcile">
+      A estimativa de hoje é {estimate} por mês (12 meses). A projeção parte de {money.brl(r.start_monthly)}
+      {parts.length > 0 ? `: ${parts.join("; e ")}.` : "."}
+    </p>
+  );
 }
 
 const pct = (value: number | null) => (value === null ? "—" : formatPercent(value, 2));

@@ -819,11 +819,16 @@ e o botão **Lançar provento** à direita.
    o pessimista e o otimista. Embaixo, barras mensais do base com um traço do
    pessimista ao otimista — o mesmo calendário dos últimos 12 meses (a ação que
    paga em maio e novembro aparece em maio e novembro); o ponteiro mostra o
-   mês, a faixa e cada tipo. Depois, a tabela por tipo (FII de papel, de
-   tijolo, híbrido ou de fundos, ações, exterior), com "como anda" escrito
-   ("acompanha o CDI esperado", "reajuste pelo IPCA esperado", "a média, sem
-   crescimento"); "Por ativo" recolhido, com a base de cada um (12 meses ou
-   média de N anos). As premissas ficam **à vista** numa lista curta (o CDI de
+   mês, a faixa e cada tipo. Uma linha liga a projeção à estimativa logo acima,
+   com os números calculados: "A estimativa de hoje é R$ X por mês (12 meses). A
+   projeção parte de R$ Y: nas ações usa a média de 5 anos, sem o que veio acima
+   do habitual (R$ Z por mês a menos)." (iguais, "A projeção parte da estimativa
+   de hoje"). Depois, a tabela por tipo (FII de papel, de tijolo, híbrido ou de
+   fundos, ações, exterior), com "como anda" escrito ("acompanha o CDI
+   esperado", "reajuste pelo IPCA esperado", "a média, sem crescimento") e a
+   coluna **"Ponto de partida, por mês"**, cada valor com a origem embaixo ("12
+   meses; anda com o CDI do Focus", "média de 5 anos"); "Por ativo" recolhido,
+   com a mesma coluna (na média do habitual, os 12 meses entre parênteses). As premissas ficam **à vista** numa lista curta (o CDI de
    hoje e o do fim do período, a base do papel, o IPCA, a amplitude e a data da
    pesquisa do Focus), e "Trocar premissas" (recolhido) refaz a conta com o
    CDI, o IPCA e a amplitude da pessoa, sem gravar nada ("Voltar ao Focus"

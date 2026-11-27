@@ -20,7 +20,7 @@ use crate::domain::projection::income::{project, Driver, Group, IncomePremises};
 use crate::domain::projection::rates::PathSource;
 use crate::domain::projection::{fraction, percent, to_decimal, DEFAULT_SPREAD_PERCENT};
 use crate::error::{ApiError, ApiResult};
-use crate::projection::{projected_assets, LevelBasis, Outlook};
+use crate::projection::{projected_assets, reconcile, LevelBasis, Outlook};
 use crate::service;
 
 time::serde::format_description!(iso_date, Date, "[year]-[month]-[day]");
@@ -99,9 +99,31 @@ pub struct AssetDto {
     /// `trailing_12m` (os 12 meses da Renda) ou `usual` (a média do habitual).
     basis: LevelBasis,
     usual_years: Option<u32>,
+    /// A partida da projeção, por mês.
     #[serde(with = "decimal_out")]
     monthly_start: Decimal,
+    /// Os 12 meses da estimativa da Renda, por mês (difere da partida quando
+    /// ela é a média do habitual).
+    #[serde(with = "decimal_out")]
+    estimate_monthly: Decimal,
     totals: TotalsDto,
+}
+
+/// Por que a partida não é a estimativa da Renda:
+/// `estimate_monthly = start_monthly − usual_difference + unprojected_monthly`.
+#[derive(Debug, Serialize)]
+pub struct ReconciliationDto {
+    #[serde(with = "decimal_out")]
+    start_monthly: Decimal,
+    /// Média do habitual menos os 12 meses nos ativos que partem da média
+    /// (negativa: os 12 meses vieram acima do habitual).
+    #[serde(with = "decimal_out")]
+    usual_difference: Decimal,
+    /// A estimativa dos ativos sem tipo de renda, que a projeção não leva.
+    #[serde(with = "decimal_out")]
+    unprojected_monthly: Decimal,
+    /// A maior janela da média do habitual (anos).
+    usual_years: Option<u32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -154,6 +176,8 @@ pub struct IncomeProjectionDto {
     /// A estimativa mensal da Renda (líquida), de onde a projeção parte.
     #[serde(with = "decimal_out")]
     estimate_monthly: Decimal,
+    /// A conta da partida contra a estimativa.
+    reconciliation: ReconciliationDto,
     months: Vec<MonthDto>,
     totals: TotalsDto,
     groups: Vec<GroupDto>,
@@ -220,6 +244,7 @@ pub async fn income_projection(
             basis: a.basis,
             usual_years: a.usual_years,
             monthly_start: a.input.monthly,
+            estimate_monthly: a.estimate_monthly,
             totals: totals(p.low, p.base, p.high),
         })
         .collect();
@@ -235,9 +260,16 @@ pub async fn income_projection(
         slot.4 += p.high;
     }
     let (low, base, high) = projection.totals();
+    let reconciliation = reconcile(&assets, income.monthly_total);
     let dto = IncomeProjectionDto {
         today,
         estimate_monthly: income.monthly_total,
+        reconciliation: ReconciliationDto {
+            start_monthly: reconciliation.start_monthly,
+            usual_difference: reconciliation.usual_difference,
+            unprojected_monthly: reconciliation.unprojected_monthly,
+            usual_years: reconciliation.usual_years,
+        },
         months: projection
             .months
             .iter()

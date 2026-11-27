@@ -397,6 +397,26 @@ async fn estimate_uses_the_b3_net_of_jcp_and_falls_back_to_yahoo() {
     assert_eq!(money(&income["before_monthly"]), dec!(48.25));
     assert_eq!(money(&income["after_monthly"]), dec!(48.25) + expected);
 
+    // A renda projetada parte da média do habitual na ação, líquida pela
+    // mesma regra da estimativa (a parte de JCP dos 12 meses, pela data de
+    // pagamento): 10,95 por mês, e não os 18,25 dos 12 meses. A conta que liga
+    // a partida à estimativa fecha.
+    let projection = get(&me.router, "/api/v1/income/projection").await;
+    assert_eq!(projection.status, StatusCode::OK, "{}", projection.text);
+    let start = find(&projection.body["assets"], "asset_id", &abcd);
+    assert_eq!(start["basis"], "usual", "{start}");
+    assert_eq!(money(&start["monthly_start"]), dec!(10.95));
+    assert_eq!(money(&start["estimate_monthly"]), dec!(18.25));
+    let r = &projection.body["reconciliation"];
+    assert_eq!(money(&projection.body["estimate_monthly"]), dec!(48.25));
+    assert_eq!(money(&r["unprojected_monthly"]), dec!(0.00));
+    assert_eq!(r["usual_years"], 5);
+    assert_eq!(
+        money(&r["start_monthly"]) - money(&r["usual_difference"])
+            + money(&r["unprojected_monthly"]),
+        dec!(48.25)
+    );
+
     // A B3 fora do ar há dias, com o Yahoo do fundo em cache: vale o Yahoo.
     fetched(&env, "FICT", OffsetDateTime::now_utc() - Duration::days(5)).await;
     let stale = get(&me.router, "/api/v1/income/summary").await;
