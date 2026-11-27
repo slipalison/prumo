@@ -2852,8 +2852,10 @@ A declaração do ano-calendário.
 - `by_payer`: uma linha por fonte pagadora ([ir.md § 2.10](ir.md)). `symbols`
   são os tickers que somaram (ON e PN da mesma empresa vão juntos, pelo CNPJ);
   `cnpj`, `name` e `payer_source` (`cvm_company`, cadastro de companhias abertas
-  da CVM; `cvm_fund`, informe mensal de FII) são `null` quando o Prumo não achou
-  o cadastro. `above_threshold` (dividendos, de 2026 em diante): cada mês em que
+  da CVM; `cvm_fund`, informe mensal de FII, do fundo que a B3 lista para o
+  ticker ou do desempate de [fundamentos.md](fundamentos.md) "Ticker de FII →
+  fundo"; `b3_fund`, CNPJ e nome da lista de fundos da B3, quando o fundo dela
+  não está no informe) são `null` quando o Prumo não achou o cadastro. `above_threshold` (dividendos, de 2026 em diante): cada mês em que
   a mesma empresa pagou mais de R$ 50 mil, com `gross`, a retenção de 10% pela
   regra (`withholding_by_rule`) e o `withheld` que veio no provento.
 - `doubts`: `irpf_codes`, `withholding_leftover`, `dividend_withholding`,

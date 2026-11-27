@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use axum::http::StatusCode;
 use common::*;
+use prumo::domain::fund_issuer::FundClaim;
 use prumo::domain::sector::{FundComposition, SectorSource};
 use prumo::sectors::{SectorEntry, SectorError, SectorFeed, SectorService};
 use rust_decimal::Decimal;
@@ -61,6 +62,7 @@ fn entry(code: &str, sector: &str, subsector: Option<&str>, segment: Option<&str
         subsector: subsector.map(str::to_owned),
         segment: segment.map(str::to_owned),
         composition: None,
+        fund: None,
     }
 }
 
@@ -87,15 +89,22 @@ fn b3_entries() -> Vec<SectorEntry> {
     ]
 }
 
-/// Um FII como a fonte da CVM de hoje grava: o tipo e a composição da carteira.
+/// Um FII como a fonte da CVM de hoje grava: o tipo, a composição da carteira
+/// e o fundo de origem (CNPJ fictício).
 fn fund(code: &str, sector: &str, segment: &str) -> SectorEntry {
     let (brick, paper) = if sector == "Papel" { (5, 95) } else { (90, 10) };
+    let n: u32 = code.bytes().map(u32::from).sum::<u32>() % 100;
     SectorEntry {
         composition: FundComposition::from_amounts(
             Decimal::from(brick),
             Decimal::from(paper),
             Decimal::ZERO,
         ),
+        fund: Some(FundClaim {
+            cnpj: format!("{n:02}.000.000/0001-{n:02}"),
+            first_reported: time::macros::date!(2020 - 01 - 01),
+            last_reported: time::macros::date!(2026 - 10 - 01),
+        }),
         ..entry(code, sector, None, Some(segment))
     }
 }

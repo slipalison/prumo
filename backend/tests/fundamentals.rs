@@ -19,14 +19,19 @@ use async_trait::async_trait;
 use axum::http::{Method, StatusCode};
 use common::*;
 use prumo::domain::asset_class::AssetClass;
+use prumo::domain::fund_issuer::FundClaim;
 use prumo::domain::fundamentals::{
     AssetFundamentals, Column, Filing, FilingKind, Gap, Line, Scope, Statement, Template,
     Unsupported,
 };
-use prumo::fundamentals::b3::{parse_issuer, B3Issuers, IssuerDirectory, IssuerInfo};
+use prumo::domain::fundamentals::{FundMonth, FundReport};
+use prumo::domain::sector::SectorSource;
+use prumo::domain::tax::irpf::PayerSource;
+use prumo::fundamentals::b3::{parse_issuer, B3Issuers, IssuerDirectory, IssuerInfo, ListedFund};
 use prumo::fundamentals::download::Validators;
 use prumo::fundamentals::FundamentalsService;
 use prumo::quotes::Quote;
+use prumo::sectors::{SectorEntry, SectorError, SectorFeed, SectorService};
 use prumo::store::{NewAsset, Store};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -323,6 +328,8 @@ const DFP_2025: &str = "/dados/CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_2025.zip"
 #[derive(Default)]
 struct FakeCodes {
     codes: Mutex<HashMap<String, Option<i32>>>,
+    /// O fundo que a B3 lista para cada sigla de FII (sem a sigla: não lista).
+    funds: Mutex<HashMap<String, ListedFund>>,
     calls: AtomicUsize,
 }
 
@@ -354,6 +361,10 @@ impl IssuerDirectory for FakeCodes {
             cvm_code: code,
             total_shares: code.map(|_| dec!(1000)),
         })
+    }
+
+    async fn fund(&self, issuer: &str) -> Result<Option<ListedFund>, String> {
+        Ok(self.funds.lock().unwrap().get(issuer).cloned())
     }
 }
 
@@ -989,4 +1000,327 @@ async fn the_b3_client_reads_the_code_and_the_shares() {
     // Página que não existe: erro, para a rodada tentar de novo.
     assert!(client.issuer("ZZZZ").await.is_err());
     assert_eq!(parse_issuer(&serde_json::json!([])), IssuerInfo::default());
+}
+
+// ------------------------------------------- ticker de FII → fundo --
+
+const OLD_FUND: &str = "11.111.111/0001-11";
+const NEW_FUND: &str = "99.999.999/0001-99";
+
+/// Os meses de um fundo fictício, de `from` a `to` (dia 1º), com o patrimônio
+/// e as cotas dados.
+fn months(
+    cnpj: &str,
+    from: time::Date,
+    to: time::Date,
+    assets: Decimal,
+    shares: Decimal,
+) -> Vec<FundMonth> {
+    let mut out = Vec::new();
+    let mut day = from;
+    while day <= to {
+        out.push(FundMonth {
+            cnpj: cnpj.to_owned(),
+            reference_date: day,
+            version: 1,
+            net_assets: Some(assets),
+            shares: Some(shares),
+            dividend_yield: None,
+        });
+        day = (day + time::Duration::days(32)).replace_day(1).unwrap();
+    }
+    out
+}
+
+/// O caso de 27/11/2026, com nomes e números fictícios: o fundo antigo
+/// declara o ISIN da cota FICT desde 2025 (informe de setembro, valor
+/// patrimonial de R$ 100); um fundo novo preencheu o mesmo ISIN desde novembro
+/// de 2025 e entregou o de outubro (R$ 0,75 por cota).
+async fn two_funds_on_one_isin(store: &Store) {
+    let report =
+        |cnpj: &str, name: &str, day: time::Date, assets: Decimal, shares: Decimal| FundReport {
+            cnpj: cnpj.to_owned(),
+            issuer: "FICT".to_owned(),
+            isin: "BRFICTCTF000".to_owned(),
+            name: name.to_owned(),
+            reference_date: day,
+            version: 1,
+            net_assets: Some(assets),
+            shares: Some(shares),
+        };
+    let mut series = months(
+        OLD_FUND,
+        date!(2025 - 01 - 01),
+        date!(2026 - 09 - 01),
+        dec!(1000000),
+        dec!(10000),
+    );
+    series.extend(months(
+        NEW_FUND,
+        date!(2025 - 11 - 01),
+        date!(2026 - 10 - 01),
+        dec!(75),
+        dec!(100),
+    ));
+    store
+        .save_fund_monthly(
+            "fund_monthly:2026",
+            &[
+                report(
+                    OLD_FUND,
+                    "FUNDO ANTIGO FICTICIO FII",
+                    date!(2026 - 09 - 01),
+                    dec!(1000000),
+                    dec!(10000),
+                ),
+                report(
+                    NEW_FUND,
+                    "FUNDO NOVO FICTICIO FII",
+                    date!(2026 - 10 - 01),
+                    dec!(75),
+                    dec!(100),
+                ),
+            ],
+            &series,
+            &Validators::default(),
+            NOW,
+        )
+        .await
+        .unwrap();
+}
+
+fn fund_of(map: &HashMap<String, AssetFundamentals>) -> prumo::domain::fundamentals::FundMetrics {
+    match map.get("FICT11") {
+        Some(AssetFundamentals::Fund(m)) => (**m).clone(),
+        other => panic!("FICT11: {other:?}"),
+    }
+}
+
+/// A referência de setor da CVM (fonte falsa): os dois fundos que declaram o
+/// emissor, como o arquivo traz.
+struct TwoFundsFeed;
+
+#[async_trait]
+impl SectorFeed for TwoFundsFeed {
+    fn source(&self) -> SectorSource {
+        SectorSource::CvmReits
+    }
+
+    async fn fetch(&self) -> Result<Vec<SectorEntry>, SectorError> {
+        let entry = |cnpj: &str, sector: &str, first: time::Date, last: time::Date| SectorEntry {
+            code: "FICT".to_owned(),
+            sector: sector.to_owned(),
+            subsector: None,
+            segment: None,
+            composition: prumo::domain::sector::FundComposition::from_amounts(
+                dec!(90),
+                dec!(10),
+                dec!(0),
+            ),
+            fund: Some(FundClaim {
+                cnpj: cnpj.to_owned(),
+                first_reported: first,
+                last_reported: last,
+            }),
+        };
+        // No arquivo do ano os dois aparecem desde janeiro: só os dois anos
+        // guardados (ou a B3) separam um do outro.
+        Ok(vec![
+            entry(
+                OLD_FUND,
+                "Tijolo",
+                date!(2026 - 01 - 01),
+                date!(2026 - 09 - 01),
+            ),
+            entry(
+                NEW_FUND,
+                "Híbrido",
+                date!(2026 - 01 - 01),
+                date!(2026 - 10 - 01),
+            ),
+            SectorEntry {
+                code: "OUTR".to_owned(),
+                ..entry(
+                    "22.222.222/0001-22",
+                    "Papel",
+                    date!(2026 - 01 - 01),
+                    date!(2026 - 10 - 01),
+                )
+            },
+        ])
+    }
+}
+
+#[tokio::test]
+async fn two_funds_on_one_isin_resolve_to_the_same_fund_everywhere() {
+    let db = database().await;
+    let store = &db.store;
+    two_funds_on_one_isin(store).await;
+    let user = portfolio(store, "isin@teste.local").await;
+    let issuers = vec!["FICT".to_owned()];
+
+    // Sem a B3: o que declara o ISIN há mais tempo, em todos os caminhos.
+    let fund = fund_of(&store.fundamentals_for_user(user).await.unwrap());
+    assert_eq!(fund.cnpj, OLD_FUND);
+    assert_eq!(fund.nav_per_share.value(), Some(dec!(100)));
+    let (_, payers) = store.tax_payers(&[], &issuers).await.unwrap();
+    assert_eq!(payers["FICT"].cnpj, OLD_FUND);
+    assert_eq!(payers["FICT"].source, PayerSource::CvmFund);
+    assert_eq!(
+        store.agenda_fund_cnpjs(&issuers).await.unwrap()["FICT"],
+        OLD_FUND
+    );
+
+    // A referência de setor sai do mesmo fundo: o tipo dele (tijolo), e não o
+    // do fundo novo (híbrido).
+    let sectors = SectorService::new(store.clone(), vec![Arc::new(TwoFundsFeed)]);
+    let outcomes = sectors.refresh_due(NOW).await;
+    assert_eq!(outcomes.len(), 1);
+    assert_eq!(outcomes[0].result, Ok(2));
+    let key = (SectorSource::CvmReits, "FICT".to_owned());
+    let found = store
+        .sector_reference(std::slice::from_ref(&key))
+        .await
+        .unwrap();
+    assert_eq!(found[&key].sector, "Tijolo");
+    assert!(!store
+        .sector_reference_incomplete(SectorSource::CvmReits)
+        .await
+        .unwrap());
+
+    // A rodada pergunta à B3, que lista o fundo novo para a sigla (só para
+    // provar que ela manda): tudo passa a sair dele, e a referência de setor,
+    // gravada com o outro fundo, é lida de novo sozinha.
+    let cvm = FakeCvm::start().await;
+    cvm.standard(false).await;
+    let codes = FakeCodes::with(&[("UMUM", Some(99901)), ("ETFX", None)]);
+    codes.funds.lock().unwrap().insert(
+        "FICT".to_owned(),
+        ListedFund {
+            cnpj: NEW_FUND.to_owned(),
+            name: "FUNDO NOVO FICTICIO FII".to_owned(),
+        },
+    );
+    let report = service(store, &cvm, Arc::clone(&codes)).round(NOW).await;
+    assert_eq!(report.funds_fetched, 1, "{report:?}");
+    assert_eq!(
+        store.b3_funds(&issuers).await.unwrap()["FICT"]
+            .cnpj
+            .as_deref(),
+        Some(NEW_FUND)
+    );
+    // O informe falso da rodada traz um terceiro fundo com o mesmo ISIN: a B3
+    // manda.
+    let fund = fund_of(&store.fundamentals_for_user(user).await.unwrap());
+    assert_eq!(fund.cnpj, NEW_FUND);
+    assert_eq!(fund.nav_per_share.value(), Some(dec!(0.75)));
+    assert_eq!(
+        store.tax_payers(&[], &issuers).await.unwrap().1["FICT"].cnpj,
+        NEW_FUND
+    );
+    assert_eq!(
+        store.agenda_fund_cnpjs(&issuers).await.unwrap()["FICT"],
+        NEW_FUND
+    );
+    assert!(store
+        .sector_reference_incomplete(SectorSource::CvmReits)
+        .await
+        .unwrap());
+    let outcomes = sectors.refresh_due(NOW).await;
+    assert_eq!(outcomes[0].result, Ok(2));
+    let found = store
+        .sector_reference(std::slice::from_ref(&key))
+        .await
+        .unwrap();
+    assert_eq!(found[&key].sector, "Híbrido");
+    assert!(!store
+        .sector_reference_incomplete(SectorSource::CvmReits)
+        .await
+        .unwrap());
+    assert!(sectors.refresh_due(NOW).await.is_empty(), "lida uma vez só");
+
+    // A B3 lista um fundo que nenhum informe tem: o FII fica sem os números da
+    // CVM (nunca com os de outro fundo), e a fonte pagadora vem da B3.
+    store
+        .save_b3_fund(
+            "FICT",
+            Some(&ListedFund {
+                cnpj: "33.333.333/0001-33".to_owned(),
+                name: "FUNDO DA B3 FICTICIO FII".to_owned(),
+            }),
+            NOW,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        store
+            .fundamentals_for_user(user)
+            .await
+            .unwrap()
+            .get("FICT11"),
+        Some(&AssetFundamentals::Unsupported(Unsupported::FundNotFound))
+    );
+    let payer = &store.tax_payers(&[], &issuers).await.unwrap().1["FICT"];
+    assert_eq!(payer.cnpj, "33.333.333/0001-33");
+    assert_eq!(payer.name, "FUNDO DA B3 FICTICIO FII");
+    assert_eq!(payer.source, PayerSource::B3Fund);
+    // E a referência de setor do FICT sai (a fonte não tem o fundo da B3): a
+    // releitura fica com os outros emissores, uma vez só.
+    assert!(store
+        .sector_reference_incomplete(SectorSource::CvmReits)
+        .await
+        .unwrap());
+    let outcomes = sectors.refresh_due(NOW).await;
+    assert_eq!(outcomes[0].result, Ok(1));
+    assert!(store
+        .sector_reference(std::slice::from_ref(&key))
+        .await
+        .unwrap()
+        .is_empty());
+    assert!(!store
+        .sector_reference_incomplete(SectorSource::CvmReits)
+        .await
+        .unwrap());
+    assert!(sectors.refresh_due(NOW).await.is_empty());
+}
+
+#[tokio::test]
+async fn the_b3_client_finds_the_fund_of_a_ticker() {
+    let server = MockServer::start().await;
+    let list = prumo::income_auto::encoded(
+        r#"{"language":"pt-br","typeFund":"FII","pageNumber":1,"pageSize":20,"keyword":"FICT"}"#,
+    );
+    let detail = prumo::income_auto::encoded(
+        r#"{"language":"pt-br","idFNET":"841","idCEM":"FICT","typeFund":"FII"}"#,
+    );
+    Mock::given(method("GET"))
+        .and(path(format!("/fundsListedProxy/Search/GetListFunds/{list}")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "page": { "pageNumber": 1, "pageSize": 20, "totalRecords": 1, "totalPages": 1 },
+            "results": [{ "id": 841, "acronym": "FICT", "fundName": "FUNDO FICTICIO FII", "tradingName": "FII FICT" }]
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(format!(
+            "/fundsListedProxy/Search/GetDetailFund/{detail}"
+        )))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "idFNET": 841, "acronym": "FICT", "tradingCode": "FICT11",
+            "cnpj": "11111111000111", "fundName": "FUNDO FICTICIO FII"
+        })))
+        .mount(&server)
+        .await;
+    let client = B3Issuers::with_base(reqwest::Client::new(), &server.uri());
+    assert_eq!(
+        client.fund("FICT").await.unwrap(),
+        Some(ListedFund {
+            cnpj: OLD_FUND.to_owned(),
+            name: "FUNDO FICTICIO FII".to_owned()
+        })
+    );
+    // A lista sem a sigla (o wiremock responde 404 a outra busca): erro, para
+    // a rodada tentar de novo; sigla fora do padrão nem vai à B3.
+    assert!(client.fund("ZZZZ").await.is_err());
+    assert_eq!(client.fund("fict").await.unwrap(), None);
 }

@@ -572,6 +572,7 @@ async fn seed_fund_market(db: &Database) {
         subsector: None,
         segment: None,
         composition: FundComposition::from_amounts(mix.0, mix.1, mix.2),
+        fund: None,
     };
     db.store
         .replace_sector_reference(

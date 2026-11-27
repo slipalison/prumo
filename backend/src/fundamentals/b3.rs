@@ -6,6 +6,14 @@
 //! interessa é `codeCVM` e `totalNumberShares` (`"4.197.317.998"`, em ações,
 //! ON + PN). A consulta e o base64 do caminho são os de `crate::income_auto`.
 //!
+//! **O CNPJ de um FII** sai da página pública de fundos listados da B3, a que
+//! o site dela usa (`fundsListedPage`, sem login nem chave; medido em
+//! 27/11/2026): `fundsListedProxy/Search/GetListFunds` com
+//! `{"typeFund":"FII","keyword":"<sigla>"}` acha o fundo (`id`, `acronym`), e
+//! `GetDetailFund` com `{"idFNET":"<id>","idCEM":"<sigla>","typeFund":"FII"}`
+//! dá o `cnpj` (14 dígitos) e o `fundName`. É a fonte do ticker: o informe da
+//! CVM não traz o código de negociação (`domain::fund_issuer`).
+//!
 //! **Por que a B3, e não a CVM, para o número de ações.** O arquivo da CVM com
 //! a composição do capital (`*_composicao_capital_*.csv`) não tem coluna de
 //! escala, e as companhias preenchem de jeitos diferentes: medido em
@@ -17,6 +25,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use rust_decimal::Decimal;
 
+use crate::domain::fund_issuer::format_cnpj;
 use crate::domain::income_auto::{parse_br_decimal, Venue};
 use crate::income_auto::{encoded, supplement_query};
 
@@ -31,10 +40,26 @@ pub struct IssuerInfo {
     pub total_shares: Option<Decimal>,
 }
 
-/// O emissor da B3 (`WEGE`) → código CVM e número de ações.
+/// Um FII na lista de fundos da B3.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListedFund {
+    /// Como a CVM escreve (`00.000.000/0001-91`).
+    pub cnpj: String,
+    pub name: String,
+}
+
+/// O emissor da B3 (`WEGE`) → código CVM e número de ações; e o FII (`KNRI`)
+/// → CNPJ.
 #[async_trait]
 pub trait IssuerDirectory: Send + Sync {
     async fn issuer(&self, issuer: &str) -> Result<IssuerInfo, String>;
+
+    /// O fundo da sigla na lista de FIIs da B3. `Ok(None)`: a B3 não lista o
+    /// fundo. Quem não consulta a B3 (os testes que não tratam disso) responde
+    /// `Ok(None)`.
+    async fn fund(&self, _issuer: &str) -> Result<Option<ListedFund>, String> {
+        Ok(None)
+    }
 }
 
 /// As páginas públicas da B3.
@@ -81,8 +106,83 @@ pub fn parse_issuer(value: &serde_json::Value) -> IssuerInfo {
     }
 }
 
+/// O `id` do fundo da sigla na lista de FIIs (a busca por palavra traz mais de
+/// um; vale o de `acronym` igual à sigla).
+pub fn parse_fund_list(value: &serde_json::Value, issuer: &str) -> Option<i64> {
+    value
+        .get("results")?
+        .as_array()?
+        .iter()
+        .find(|item| {
+            item.get("acronym")
+                .and_then(|a| a.as_str())
+                .is_some_and(|a| a.trim().eq_ignore_ascii_case(issuer))
+        })?
+        .get("id")?
+        .as_i64()
+}
+
+/// O CNPJ e o nome do detalhe de um fundo; `None` sem CNPJ de 14 dígitos.
+pub fn parse_fund_detail(value: &serde_json::Value) -> Option<ListedFund> {
+    let text = |name: &str| value.get(name).and_then(|v| v.as_str()).map(str::trim);
+    let cnpj = format_cnpj(text("cnpj")?)?;
+    let name = text("fundName")
+        .unwrap_or_default()
+        .chars()
+        .take(200)
+        .collect();
+    Some(ListedFund { cnpj, name })
+}
+
+impl B3Issuers {
+    async fn get_json(&self, url: String) -> Result<serde_json::Value, String> {
+        let response = self
+            .http
+            .get(url)
+            .timeout(Duration::from_secs(20))
+            .send()
+            .await
+            .map_err(|e| e.without_url().to_string())?
+            .error_for_status()
+            .map_err(|e| e.without_url().to_string())?;
+        // O detalhe de um fundo que não existe volta 200 com o corpo vazio.
+        let body = response
+            .text()
+            .await
+            .map_err(|e| e.without_url().to_string())?;
+        if body.trim().is_empty() {
+            return Ok(serde_json::Value::Null);
+        }
+        serde_json::from_str(&body).map_err(|e| e.to_string())
+    }
+}
+
 #[async_trait]
 impl IssuerDirectory for B3Issuers {
+    async fn fund(&self, issuer: &str) -> Result<Option<ListedFund>, String> {
+        if !valid_issuer(issuer) {
+            return Ok(None);
+        }
+        let list = format!(
+            "{}/fundsListedProxy/Search/GetListFunds/{}",
+            self.base,
+            encoded(&format!(
+                r#"{{"language":"pt-br","typeFund":"FII","pageNumber":1,"pageSize":20,"keyword":"{issuer}"}}"#
+            ))
+        );
+        let Some(id) = parse_fund_list(&self.get_json(list).await?, issuer) else {
+            return Ok(None);
+        };
+        let detail = format!(
+            "{}/fundsListedProxy/Search/GetDetailFund/{}",
+            self.base,
+            encoded(&format!(
+                r#"{{"language":"pt-br","idFNET":"{id}","idCEM":"{issuer}","typeFund":"FII"}}"#
+            ))
+        );
+        Ok(parse_fund_detail(&self.get_json(detail).await?))
+    }
+
     async fn issuer(&self, issuer: &str) -> Result<IssuerInfo, String> {
         if !valid_issuer(issuer) {
             return Ok(IssuerInfo::default());
@@ -130,6 +230,32 @@ mod tests {
         assert_eq!(parse_issuer(&json!([])), IssuerInfo::default());
         assert_eq!(parse_issuer(&json!({ "codeCVM": "7" })).cvm_code, Some(7));
         assert_eq!(parse_issuer(&json!("x")), IssuerInfo::default());
+    }
+
+    #[test]
+    fn finds_the_fund_by_its_acronym_and_reads_the_cnpj() {
+        // Como a B3 respondeu em 27/11/2026, com nomes e números fictícios.
+        let list = json!({
+            "page": { "pageNumber": 1, "pageSize": 20, "totalRecords": 2, "totalPages": 1 },
+            "results": [
+                { "id": 7, "acronym": "FICX", "fundName": "OUTRO FUNDO FICTICIO FII", "tradingName": "FII FICX" },
+                { "id": 841, "acronym": "FICT", "fundName": "FUNDO FICTICIO FII", "tradingName": "FII FICT" }
+            ]
+        });
+        assert_eq!(parse_fund_list(&list, "FICT"), Some(841));
+        assert_eq!(parse_fund_list(&list, "NADA"), None);
+        assert_eq!(parse_fund_list(&json!({ "results": [] }), "FICT"), None);
+        assert_eq!(parse_fund_list(&serde_json::Value::Null, "FICT"), None);
+        let detail = json!({ "idFNET": 841, "acronym": "FICT", "tradingCode": "FICT11", "cnpj": "11111111000111", "fundName": "FUNDO FICTICIO FII" });
+        assert_eq!(
+            parse_fund_detail(&detail),
+            Some(ListedFund {
+                cnpj: "11.111.111/0001-11".into(),
+                name: "FUNDO FICTICIO FII".into()
+            })
+        );
+        assert_eq!(parse_fund_detail(&json!({ "cnpj": "123" })), None);
+        assert_eq!(parse_fund_detail(&serde_json::Value::Null), None);
     }
 
     #[test]

@@ -162,7 +162,9 @@ async fn cvm_falls_back_to_the_previous_year_when_the_new_file_is_not_out_yet() 
         .mount(&server)
         .await;
     let entries = cvm(&server, vec![2027, 2026]).fetch().await.unwrap();
-    assert_eq!(entries.len(), 9);
+    // Dez fundos com ISIN de cota, dois deles declarando o do TRXF: os dois
+    // vêm, e quem fica com um é `sectors::settle` (com a B3).
+    assert_eq!(entries.len(), 10);
 }
 
 #[tokio::test]

@@ -116,6 +116,10 @@ impl Store {
         let brick = share(|c| c.brick);
         let paper = share(|c| c.paper);
         let funds = share(|c| c.funds);
+        let cnpjs: Vec<Option<&str>> = entries
+            .iter()
+            .map(|e| e.fund.as_ref().map(|f| f.cnpj.as_str()))
+            .collect();
 
         let mut tx = self.pool.begin().await?;
         sqlx::query("delete from sector_reference where source = $1")
@@ -124,11 +128,12 @@ impl Store {
             .await?;
         sqlx::query(
             "insert into sector_reference
-                    (source, code, sector, subsector, segment, brick_share, paper_share, funds_share, updated_at)
-             select $1, code, sector, subsector, segment, brick, paper, funds, $6
+                    (source, code, sector, subsector, segment, brick_share, paper_share, funds_share,
+                     cnpj, updated_at)
+             select $1, code, sector, subsector, segment, brick, paper, funds, cnpj, $6
                from unnest($2::text[], $3::text[], $4::text[], $5::text[],
-                           $7::numeric[], $8::numeric[], $9::numeric[])
-                    as e (code, sector, subsector, segment, brick, paper, funds)",
+                           $7::numeric[], $8::numeric[], $9::numeric[], $10::text[])
+                    as e (code, sector, subsector, segment, brick, paper, funds, cnpj)",
         )
         .bind(source.as_str())
         .bind(&codes)
@@ -139,6 +144,7 @@ impl Store {
         .bind(&brick)
         .bind(&paper)
         .bind(&funds)
+        .bind(&cnpjs)
         .execute(&mut *tx)
         .await?;
         sqlx::query(
@@ -195,8 +201,10 @@ impl Store {
     }
 
     /// Se a referência guardada de `source` está sem algo que o código de hoje
-    /// grava: nos FIIs, alguma linha da CVM sem a composição (gravada por um
-    /// código de antes dela). A B3 não tem o que faltar.
+    /// grava, ou saiu do fundo errado: nos FIIs, alguma linha da CVM sem a
+    /// composição ou sem o fundo de origem (gravada por um código de antes
+    /// deles), ou com um fundo que não é o que a B3 lista para a sigla
+    /// (`b3_fund_cnpj`, `domain::fund_issuer`). A B3 não tem o que faltar.
     pub async fn sector_reference_incomplete(
         &self,
         source: SectorSource,
@@ -206,7 +214,14 @@ impl Store {
         }
         let (incomplete,): (bool,) = sqlx::query_as(
             "select exists (
-                select 1 from sector_reference where source = $1 and brick_share is null
+                select 1 from sector_reference
+                 where source = $1 and (brick_share is null or cnpj is null)
+             ) or exists (
+                select 1 from sector_reference r
+                  join b3_fund_cnpj b on b.issuer = r.code
+                 where r.source = $1 and b.cnpj is not null
+                   and regexp_replace(r.cnpj, '[^0-9]', '', 'g')
+                       <> regexp_replace(b.cnpj, '[^0-9]', '', 'g')
              )",
         )
         .bind(source.as_str())

@@ -21,6 +21,9 @@ use std::time::Duration;
 use async_trait::async_trait;
 use time::OffsetDateTime;
 
+use std::collections::{BTreeMap, HashMap};
+
+use crate::domain::fund_issuer::{choose_fund, cnpj_digits, ChosenBy, FundChoice, FundClaim};
 use crate::domain::sector::{FundComposition, SectorSource};
 use crate::store::sectors::SyncState;
 use crate::store::Store;
@@ -36,6 +39,64 @@ pub struct SectorEntry {
     /// Só nos FIIs (CVM): o que a carteira do fundo tem, que pondera o alvo de
     /// rendimento do híbrido.
     pub composition: Option<FundComposition>,
+    /// Só nos FIIs (CVM): o fundo de onde a linha saiu (CNPJ, primeiro e
+    /// último informe). A fonte pode trazer mais de um fundo para o mesmo
+    /// emissor; [`settle`] fica com um.
+    pub fund: Option<FundClaim>,
+}
+
+/// Uma linha por emissor: a do fundo do ticker. `chosen` é o caminho único de
+/// ticker de FII → fundo (`Store::fund_cnpjs`: o que a B3 lista, ou o desempate
+/// sobre os dois anos de informe guardados); emissor que ele não conhece cai no
+/// desempate sobre os informes do próprio arquivo ([`choose_fund`]). Se a B3
+/// lista um fundo que o arquivo não tem, o emissor fica sem linha: melhor sem
+/// tipo que com o tipo de outro fundo. Devolve as linhas e os emissores
+/// disputados, com a escolha.
+pub fn settle(
+    entries: Vec<SectorEntry>,
+    chosen: &HashMap<String, FundChoice>,
+) -> (Vec<SectorEntry>, Vec<(String, String, ChosenBy)>) {
+    let mut by_code: BTreeMap<String, Vec<SectorEntry>> = BTreeMap::new();
+    for entry in entries {
+        by_code.entry(entry.code.clone()).or_default().push(entry);
+    }
+    let mut settled = Vec::with_capacity(by_code.len());
+    let mut contested = Vec::new();
+    for (code, mut group) in by_code {
+        let claims: Vec<FundClaim> = group.iter().filter_map(|e| e.fund.clone()).collect();
+        if claims.is_empty() {
+            settled.extend(group.into_iter().take(1));
+            continue;
+        }
+        let position = |group: &[SectorEntry], cnpj: &str| {
+            let wanted = cnpj_digits(cnpj);
+            group.iter().position(|e| {
+                e.fund
+                    .as_ref()
+                    .is_some_and(|f| cnpj_digits(&f.cnpj) == wanted)
+            })
+        };
+        let known = chosen.get(&code);
+        let picked = match known {
+            // A B3 manda: o fundo dela, ou nenhum.
+            Some(choice) if choice.by == ChosenBy::B3 => {
+                position(&group, &choice.cnpj).map(|i| (i, choice.clone()))
+            }
+            Some(choice) if position(&group, &choice.cnpj).is_some() => {
+                position(&group, &choice.cnpj).map(|i| (i, choice.clone()))
+            }
+            _ => choose_fund(&claims, None)
+                .and_then(|choice| position(&group, &choice.cnpj).map(|i| (i, choice))),
+        };
+        let Some((i, choice)) = picked else {
+            continue;
+        };
+        if group.len() > 1 || !choice.rivals.is_empty() {
+            contested.push((code.clone(), choice.cnpj.clone(), choice.by));
+        }
+        settled.push(group.swap_remove(i));
+    }
+    (settled, contested)
 }
 
 #[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
@@ -166,9 +227,11 @@ impl SectorService {
                 }
             };
             // A referência guardada sem o que o código de hoje grava (a
-            // composição dos FIIs, que veio depois) é lida de novo, mesmo em
-            // dia: a condição é o dado, não uma marca da migração, então um pod
-            // antigo que releia a fonte durante o deploy não a "consome".
+            // composição e o fundo de origem dos FIIs, que vieram depois), ou
+            // com um fundo que não é o que a B3 lista para a sigla, é lida de
+            // novo, mesmo em dia: a condição é o dado, não uma marca da
+            // migração, então um pod antigo que releia a fonte durante o deploy
+            // não a "consome".
             let incomplete = match self.store.sector_reference_incomplete(source).await {
                 Ok(incomplete) => incomplete,
                 Err(error) => {
@@ -222,6 +285,28 @@ impl SectorService {
         now: OffsetDateTime,
     ) -> Result<usize, String> {
         let entries = feed.fetch().await.map_err(|e| e.to_string())?;
+        let codes: Vec<String> = entries
+            .iter()
+            .filter(|e| e.fund.is_some())
+            .map(|e| e.code.clone())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let chosen = self
+            .store
+            .fund_cnpjs(&codes)
+            .await
+            .map_err(|e| e.to_string())?;
+        let (entries, contested) = settle(entries, &chosen);
+        for (code, cnpj, by) in contested {
+            if by != ChosenBy::B3 {
+                tracing::warn!(
+                    code = %code,
+                    chosen = %cnpj,
+                    "mais de um fundo declara o ISIN da cota; vale o que declara ha mais tempo"
+                );
+            }
+        }
         if entries.is_empty() {
             return Err("a fonte voltou sem nenhuma linha".to_owned());
         }
@@ -257,7 +342,121 @@ impl SectorService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use time::Duration as Span;
+    use time::macros::date;
+    use time::{Date, Duration as Span};
+
+    /// Um FII da CVM de um fundo (CNPJ e meses fictícios).
+    fn reit(code: &str, sector: &str, cnpj: &str, first: Date, last: Date) -> SectorEntry {
+        SectorEntry {
+            code: code.to_owned(),
+            sector: sector.to_owned(),
+            subsector: None,
+            segment: None,
+            composition: None,
+            fund: Some(FundClaim {
+                cnpj: cnpj.to_owned(),
+                first_reported: first,
+                last_reported: last,
+            }),
+        }
+    }
+
+    /// O caso de 27/11/2026, fictício: o fundo antigo (tijolo) e um novo que
+    /// declarou o mesmo ISIN (híbrido), os dois desde janeiro no arquivo.
+    fn contested() -> Vec<SectorEntry> {
+        vec![
+            reit(
+                "FICT",
+                "Tijolo",
+                "11.111.111/0001-11",
+                date!(2026 - 01 - 01),
+                date!(2026 - 09 - 01),
+            ),
+            reit(
+                "FICT",
+                "Híbrido",
+                "99.999.999/0001-99",
+                date!(2026 - 01 - 01),
+                date!(2026 - 10 - 01),
+            ),
+            reit(
+                "OUTR",
+                "Papel",
+                "22.222.222/0001-22",
+                date!(2026 - 01 - 01),
+                date!(2026 - 10 - 01),
+            ),
+        ]
+    }
+
+    fn choice(cnpj: &str, by: ChosenBy) -> FundChoice {
+        FundChoice {
+            cnpj: cnpj.to_owned(),
+            by,
+            rivals: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn the_store_choice_settles_a_contested_issuer() {
+        // O store (dois anos de informe) sabe que o antigo declara há mais tempo.
+        let chosen = HashMap::from([(
+            "FICT".to_owned(),
+            choice("11.111.111/0001-11", ChosenBy::Oldest),
+        )]);
+        let (entries, contested_codes) = settle(contested(), &chosen);
+        assert_eq!(entries.len(), 2);
+        let fict = entries.iter().find(|e| e.code == "FICT").unwrap();
+        assert_eq!(fict.sector, "Tijolo");
+        assert_eq!(fict.fund.as_ref().unwrap().cnpj, "11.111.111/0001-11");
+        assert_eq!(
+            contested_codes,
+            vec![(
+                "FICT".to_owned(),
+                "11.111.111/0001-11".to_owned(),
+                ChosenBy::Oldest
+            )]
+        );
+        // A B3 manda, mesmo contra o desempate.
+        let b3 = HashMap::from([("FICT".to_owned(), choice("99999999000199", ChosenBy::B3))]);
+        let (entries, _) = settle(contested(), &b3);
+        assert_eq!(
+            entries.iter().find(|e| e.code == "FICT").unwrap().sector,
+            "Híbrido"
+        );
+        // A B3 lista um fundo que o arquivo não tem: sem linha, nunca a de outro.
+        let unseen = HashMap::from([("FICT".to_owned(), choice("33333333000133", ChosenBy::B3))]);
+        let (entries, _) = settle(contested(), &unseen);
+        assert!(entries.iter().all(|e| e.code != "FICT"));
+        assert_eq!(entries.len(), 1);
+    }
+
+    #[test]
+    fn without_the_store_the_file_decides_and_b3_rows_pass_through() {
+        // Sem escolha guardada: o desempate sobre o arquivo (o mesmo começo,
+        // então o informe mais novo; o store, com dois anos, resolve melhor).
+        let (entries, _) = settle(contested(), &HashMap::new());
+        assert_eq!(entries.len(), 2);
+        // Escolha do store que o arquivo não tem (sem a B3): o arquivo decide.
+        let stale = HashMap::from([(
+            "FICT".to_owned(),
+            choice("44.444.444/0001-44", ChosenBy::Oldest),
+        )]);
+        let (entries, _) = settle(contested(), &stale);
+        assert!(entries.iter().any(|e| e.code == "FICT"));
+        // Linha da B3 (sem fundo) passa como está.
+        let b3_row = SectorEntry {
+            code: "WEGE".into(),
+            sector: "Bens Industriais".into(),
+            subsector: None,
+            segment: None,
+            composition: None,
+            fund: None,
+        };
+        let (entries, contested_codes) = settle(vec![b3_row.clone()], &HashMap::new());
+        assert_eq!(entries, vec![b3_row]);
+        assert!(contested_codes.is_empty());
+    }
 
     fn state(
         attempt_ago: Span,

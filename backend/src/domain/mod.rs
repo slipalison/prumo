@@ -13,6 +13,7 @@ pub mod class_returns;
 pub mod compare;
 pub mod defaults;
 pub mod entitlement;
+pub mod fund_issuer;
 pub mod fundamentals;
 pub mod health;
 pub mod icon;

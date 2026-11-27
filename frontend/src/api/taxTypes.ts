@@ -169,7 +169,7 @@ export type IncomePayer = {
   /** `null`: o Prumo não achou na CVM. */
   cnpj: string | null;
   name: string | null;
-  payer_source: "cvm_company" | "cvm_fund" | null;
+  payer_source: "cvm_company" | "cvm_fund" | "b3_fund" | null;
   gross: number;
   withheld: number;
   net: number;

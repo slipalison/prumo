@@ -364,25 +364,18 @@ impl Store {
         Ok(())
     }
 
-    /// O CNPJ de cada FII pelo emissor (a raiz do ISIN da cota), do informe
-    /// mensal da CVM. Dois CNPJs no mesmo emissor (fundo que virou classe):
-    /// vale o informe mais novo.
-    pub async fn fund_cnpjs(
+    /// O CNPJ de cada FII pelo emissor, para o Fundos.NET: o caminho único
+    /// de ticker de FII → fundo (`Store::fund_cnpjs`).
+    pub async fn agenda_fund_cnpjs(
         &self,
         issuers: &[String],
     ) -> Result<HashMap<String, String>, StoreError> {
-        if issuers.is_empty() {
-            return Ok(HashMap::new());
-        }
-        let rows: Vec<(String, String)> = sqlx::query_as(
-            "select distinct on (issuer) issuer, cnpj from cvm_funds
-              where issuer = any($1)
-              order by issuer, reference_date desc, cnpj",
-        )
-        .bind(issuers)
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(rows.into_iter().collect())
+        Ok(self
+            .fund_cnpjs(issuers)
+            .await?
+            .into_iter()
+            .map(|(issuer, choice)| (issuer, choice.cnpj))
+            .collect())
     }
 
     /// Os documentos das companhias `codes` e dos fundos `cnpjs` entregues em

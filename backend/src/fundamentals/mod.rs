@@ -35,8 +35,10 @@ use tokio::sync::Notify;
 use self::b3::IssuerDirectory;
 use self::download::{FetchError, Opened, Validators};
 use crate::domain::asset_class::Market;
+use crate::domain::fund_issuer::ChosenBy;
 use crate::domain::fundamentals::{physical_vacancy, FilingKind, Vacancy};
 use crate::domain::income::today_in_brazil;
+use crate::store::fund_issuer::B3Fund;
 use crate::store::fundamentals::{FundVacancy, IssuerCode, SourceState};
 use crate::store::Store;
 
@@ -173,6 +175,30 @@ pub fn code_due(known: Option<&IssuerCode>, now: OffsetDateTime) -> bool {
     }
 }
 
+/// Se o fundo de uma sigla de FII precisa ser buscado na B3: nunca buscado,
+/// achado há mais de [`CODE_FOUND_TTL`] ou não achado há mais de
+/// [`CODE_MISSING_TTL`] (as mesmas idades do código CVM das companhias).
+pub fn fund_due(known: Option<&B3Fund>, now: OffsetDateTime) -> bool {
+    match known {
+        None
+        | Some(B3Fund {
+            fetched_at: None, ..
+        }) => true,
+        Some(B3Fund {
+            cnpj,
+            fetched_at: Some(at),
+            ..
+        }) => {
+            let ttl = if cnpj.is_some() {
+                CODE_FOUND_TTL
+            } else {
+                CODE_MISSING_TTL
+            };
+            now - *at >= ttl
+        }
+    }
+}
+
 /// Os arquivos de uma rodada: os de companhia só com companhia na carteira,
 /// os de FII só com FII.
 pub fn sources(year: i32, companies: bool, funds: bool) -> Vec<Source> {
@@ -198,6 +224,9 @@ pub fn sources(year: i32, companies: bool, funds: bool) -> Vec<Source> {
 pub struct RoundReport {
     pub codes_fetched: usize,
     pub codes_failed: usize,
+    /// FIIs cujo CNPJ a B3 respondeu (achando o fundo ou não) e os que falharam.
+    pub funds_fetched: usize,
+    pub funds_failed: usize,
     /// Arquivos lidos (baixados) e gravados.
     pub updated: usize,
     /// Arquivos que a CVM disse não terem mudado (304) ou que ainda não existem.
@@ -322,6 +351,72 @@ impl FundamentalsService {
         }
     }
 
+    /// O CNPJ que a B3 lista para cada sigla de FII das carteiras (a fonte do
+    /// ticker: `domain::fund_issuer`), e o aviso no log de cada emissor que
+    /// mais de um fundo declara sem a B3 para decidir.
+    async fn resolve_funds(&self, funds: &[String], now: OffsetDateTime, report: &mut RoundReport) {
+        let Some(directory) = &self.codes else {
+            return;
+        };
+        let known = match self.store.b3_funds(funds).await {
+            Ok(known) => known,
+            Err(error) => {
+                tracing::error!(error = %error, "fundos da B3 ilegiveis");
+                return;
+            }
+        };
+        let mut first = true;
+        for issuer in funds {
+            if !fund_due(known.get(issuer), now) {
+                continue;
+            }
+            match self.store.claim_b3_fund(issuer, now, CLAIM_FOR).await {
+                Ok(true) => {}
+                Ok(false) => continue,
+                Err(error) => {
+                    tracing::error!(error = %error, "reserva do fundo falhou");
+                    continue;
+                }
+            }
+            if !first {
+                tokio::time::sleep(self.pause).await;
+            }
+            first = false;
+            match directory.fund(issuer).await {
+                Ok(fund) => {
+                    if let Err(error) = self.store.save_b3_fund(issuer, fund.as_ref(), now).await {
+                        tracing::error!(issuer = %issuer, error = %error, "fundo da B3 nao gravado");
+                        report.funds_failed += 1;
+                    } else {
+                        report.funds_fetched += 1;
+                    }
+                }
+                Err(reason) => {
+                    report.funds_failed += 1;
+                    tracing::warn!(issuer = %issuer, reason = %reason, "fundo indisponivel na B3");
+                    if let Err(error) = self.store.release_b3_fund(issuer).await {
+                        tracing::error!(error = %error, "reserva do fundo nao liberada");
+                    }
+                }
+            }
+        }
+        match self.store.fund_cnpjs(funds).await {
+            Ok(chosen) => {
+                for (issuer, choice) in chosen {
+                    if !choice.rivals.is_empty() && choice.by != ChosenBy::B3 {
+                        tracing::warn!(
+                            issuer = %issuer,
+                            chosen = %choice.cnpj,
+                            rivals = ?choice.rivals,
+                            "mais de um fundo declara o ISIN da cota; vale o que declara ha mais tempo"
+                        );
+                    }
+                }
+            }
+            Err(error) => tracing::error!(error = %error, "fundos dos emissores ilegiveis"),
+        }
+    }
+
     /// Uma rodada: os códigos que faltam e os arquivos vencidos.
     pub async fn round(&self, now: OffsetDateTime) -> RoundReport {
         let mut report = RoundReport::default();
@@ -337,6 +432,8 @@ impl FundamentalsService {
         };
         let issuers: Vec<String> = wanted.companies.iter().cloned().collect();
         self.resolve_codes(&issuers, now, &mut report).await;
+        let funds: Vec<String> = wanted.funds.iter().cloned().collect();
+        self.resolve_funds(&funds, now, &mut report).await;
         let codes: BTreeSet<i32> = match self.store.issuer_codes(&issuers).await {
             Ok(known) => known.values().filter_map(|c| c.cvm_code).collect(),
             Err(error) => {

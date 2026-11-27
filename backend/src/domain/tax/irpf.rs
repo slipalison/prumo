@@ -45,9 +45,13 @@ pub enum PayerSource {
     /// Cadastro de companhias abertas da CVM (`cad_cia_aberta`), pelo código
     /// CVM que a B3 informa para o emissor do ticker.
     CvmCompany,
-    /// Informe mensal de FII da CVM, pela raiz do ISIN da cota (o mesmo
-    /// emissor do ticker).
+    /// Informe mensal de FII da CVM: o fundo do ticker (o CNPJ que a B3 lista
+    /// pelo código de negociação, ou o desempate entre os fundos que declaram
+    /// a raiz do ISIN da cota; `domain::fund_issuer`).
     CvmFund,
+    /// A lista de fundos da B3, quando o fundo que ela informa para o ticker
+    /// não aparece no informe mensal da CVM (CNPJ e nome da B3).
+    B3Fund,
 }
 
 /// A fonte pagadora, como a declaração pede.

@@ -292,9 +292,15 @@ dois do cadastro da CVM que ele já guarda para os fundamentos:
   código CVM que a B3 informa (`b3_issuer_cvm`), e o código dá o CNPJ e a razão
   social no cadastro de companhias abertas (`cvm_companies`,
   `cad_cia_aberta.csv`);
-- **FII e Fiagro** (rendimento): o informe mensal mais novo com a mesma raiz de
-  ISIN do ticker (`cvm_funds`, `inf_mensal_fii`), com o CNPJ do fundo (ou da
-  classe, depois da Resolução CVM 175).
+- **FII e Fiagro** (rendimento): o fundo do ticker pelo caminho único de
+  ticker de FII → fundo (`Store::fund_cnpjs`): o CNPJ que a B3 lista para a
+  sigla ou, sem ela, o desempate entre os fundos que declaram a raiz de ISIN no
+  informe mensal ([`fundamentos.md`](fundamentos.md), "Ticker de FII →
+  fundo"), com a razão social do informe (ou da B3, quando o fundo dela não
+  está no informe: `payer_source: "b3_fund"`). É o CNPJ do fundo (ou da
+  classe, depois da Resolução CVM 175). Antes, valia o informe mais novo da
+  raiz de ISIN, e um fundo que preencheu o ISIN de outro levava o CNPJ errado
+  ao informe de rendimentos.
 
 Tickers com o mesmo CNPJ somam numa linha só. Sem cadastro (ativo que nunca
 teve os fundamentos buscados, emissor fora da CVM), a linha sai pelo ticker,

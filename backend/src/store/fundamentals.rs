@@ -880,19 +880,19 @@ impl Store {
         out: &mut HashMap<String, AssetFundamentals>,
     ) -> Result<(), StoreError> {
         let issuers: Vec<String> = funds.iter().map(|(_, i)| i.clone()).collect();
-        // Dois CNPJs com o mesmo emissor (fundo que virou classe): o informe
-        // mais novo.
+        // O fundo de cada emissor (mais de um CNPJ pode declarar o mesmo ISIN
+        // de cota): o caminho único, `Store::fund_cnpjs`.
+        let chosen = self.fund_cnpjs(&issuers).await?;
+        let cnpjs: Vec<&str> = chosen.values().map(|c| c.cnpj.as_str()).collect();
         let rows: Vec<FundRow> = sqlx::query_as(
-            "select distinct on (f.issuer)
-                    f.cnpj, f.issuer, f.isin, f.name, f.reference_date, f.version, f.net_assets,
+            "select f.cnpj, f.issuer, f.isin, f.name, f.reference_date, f.version, f.net_assets,
                     f.shares, v.reference_date as vacancy_reference_date, v.vacancy, v.vacancy_gap,
                     v.properties
                from cvm_funds f
                left join cvm_fund_vacancy v on v.cnpj = f.cnpj
-              where f.issuer = any($1)
-              order by f.issuer, f.reference_date desc, f.version desc, f.cnpj",
+              where f.cnpj = any($1)",
         )
-        .bind(&issuers)
+        .bind(&cnpjs)
         .fetch_all(&self.pool)
         .await?;
         let symbols: Vec<String> = funds
@@ -900,7 +900,7 @@ impl Store {
             .filter_map(|(symbol, _)| Market::B3.quote_symbol(symbol))
             .collect();
         let quotes = self.quotes(&symbols).await?;
-        let mut by_issuer: HashMap<String, (FundReport, Option<Vacancy>)> = HashMap::new();
+        let mut by_cnpj: HashMap<String, (FundReport, Option<Vacancy>)> = HashMap::new();
         for row in rows {
             let vacancy = match (
                 row.vacancy_reference_date,
@@ -921,7 +921,7 @@ impl Store {
             };
             let report = FundReport {
                 cnpj: row.cnpj,
-                issuer: row.issuer.clone(),
+                issuer: row.issuer,
                 isin: row.isin,
                 name: row.name,
                 reference_date: row.reference_date,
@@ -929,10 +929,11 @@ impl Store {
                 net_assets: row.net_assets.map(|d| d.normalize()),
                 shares: row.shares.map(|d| d.normalize()),
             };
-            by_issuer.insert(row.issuer, (report, vacancy));
+            by_cnpj.insert(report.cnpj.clone(), (report, vacancy));
         }
         for (symbol, issuer) in funds {
-            let entry = match by_issuer.get(issuer) {
+            let found = chosen.get(issuer).and_then(|c| by_cnpj.get(&c.cnpj));
+            let entry = match found {
                 Some((report, vacancy)) => {
                     let price = Market::B3
                         .quote_symbol(symbol)

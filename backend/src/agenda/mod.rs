@@ -333,7 +333,7 @@ impl AgendaService {
         let Some(funds) = &self.funds else {
             return;
         };
-        let cnpjs = match self.store.fund_cnpjs(issuers).await {
+        let cnpjs = match self.store.agenda_fund_cnpjs(issuers).await {
             Ok(cnpjs) => cnpjs,
             Err(error) => {
                 tracing::error!(error = %error, "CNPJ dos fundos ilegivel");
@@ -633,7 +633,7 @@ async fn owners(store: &Store, assets: &HashMap<Uuid, Asset>) -> Result<Owners, 
     }
     let fund_issuers: Vec<String> = fund_assets.keys().cloned().collect();
     let mut funds: HashMap<String, Vec<Uuid>> = HashMap::new();
-    for (issuer, cnpj) in store.fund_cnpjs(&fund_issuers).await? {
+    for (issuer, cnpj) in store.agenda_fund_cnpjs(&fund_issuers).await? {
         if let Some(ids) = fund_assets.get(&issuer) {
             funds.entry(cnpj).or_default().extend(ids);
         }

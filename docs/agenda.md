@@ -37,7 +37,9 @@ mensal, trimestral e anual e as demonstrações (`dados.cvm.gov.br/dados/FII/DOC
 comunicado, aviso aos cotistas e assembleia de FII são entregues no
 **Fundos.NET**, o sistema da B3 que a própria CVM indica para fundos; a página
 de consulta é pública e responde em JSON. A Agenda consulta um fundo por vez,
-pelo CNPJ que o informe mensal da CVM já dá (`cvm_funds`). Nada contorna
+pelo CNPJ do caminho único de ticker de FII → fundo (`Store::fund_cnpjs`: o
+que a B3 lista para a sigla, ou o desempate entre os fundos que declaram o ISIN
+no informe mensal; [`fundamentos.md`](fundamentos.md)). Nada contorna
 bloqueio: se o Fundos.NET recusar, a falha fica registrada e o gravado continua.
 
 ### O IPE

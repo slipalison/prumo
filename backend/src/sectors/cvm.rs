@@ -33,9 +33,11 @@ use std::str::FromStr;
 
 use async_trait::async_trait;
 use rust_decimal::Decimal;
-use time::OffsetDateTime;
+use time::macros::format_description;
+use time::{Date, OffsetDateTime};
 
 use super::{download, SectorEntry, SectorError, SectorFeed};
+use crate::domain::fund_issuer::FundClaim;
 use crate::domain::sector::{FundComposition, FundType, SectorSource};
 
 const DEFAULT_BASE: &str = "https://dados.cvm.gov.br";
@@ -242,21 +244,44 @@ pub(crate) fn isin_root(isin: &str) -> Option<String> {
     valid.then(|| root.to_owned())
 }
 
-/// Lê o `.zip` do informe de `year` e devolve uma linha por emissor.
+/// O primeiro mês com informe de cada fundo no arquivo.
+fn first_by_fund(rows: &[HashMap<String, String>]) -> HashMap<String, Date> {
+    let mut first: HashMap<String, Date> = HashMap::new();
+    for row in rows {
+        let cnpj = field(row, "CNPJ_Fundo_Classe");
+        let Some(day) = iso_date(field(row, "Data_Referencia")) else {
+            continue;
+        };
+        if cnpj.is_empty() {
+            continue;
+        }
+        first
+            .entry(cnpj.to_owned())
+            .and_modify(|d| *d = (*d).min(day))
+            .or_insert(day);
+    }
+    first
+}
+
+fn iso_date(text: &str) -> Option<Date> {
+    Date::parse(text, format_description!("[year]-[month]-[day]")).ok()
+}
+
+/// Lê o `.zip` do informe de `year` e devolve uma linha por fundo com ISIN de
+/// cota e carteira: o emissor, o tipo e o fundo de origem. Dois fundos podem
+/// declarar o mesmo emissor (o ISIN de outro); quem fica com um é
+/// [`super::settle`], com a B3.
 pub fn parse_archive(bytes: &[u8], year: i32) -> Result<Vec<SectorEntry>, SectorError> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).map_err(format_error)?;
-    let general = latest_by_fund(read_csv(
-        &mut archive,
-        &format!("inf_mensal_fii_geral_{year}.csv"),
-    )?);
+    let rows = read_csv(&mut archive, &format!("inf_mensal_fii_geral_{year}.csv"))?;
+    let first = first_by_fund(&rows);
+    let general = latest_by_fund(rows);
     let balances = latest_by_fund(read_csv(
         &mut archive,
         &format!("inf_mensal_fii_ativo_passivo_{year}.csv"),
     )?);
 
-    // Quando dois fundos têm o mesmo emissor (fundo que mudou de CNPJ ao virar
-    // classe), vale o informe mais novo.
-    let mut chosen: HashMap<String, (String, SectorEntry)> = HashMap::new();
+    let mut entries = Vec::new();
     for (cnpj, row) in &general {
         let Some(code) = isin_root(field(row, "Codigo_ISIN")) else {
             continue;
@@ -264,27 +289,27 @@ pub fn parse_archive(bytes: &[u8], year: i32) -> Result<Vec<SectorEntry>, Sector
         let Some((kind, composition)) = balances.get(cnpj).and_then(fund_profile) else {
             continue;
         };
-        let segment = Some(field(row, "Segmento_Atuacao").to_owned()).filter(|s| !s.is_empty());
-        let reference = field(row, "Data_Referencia").to_owned();
-        if chosen.get(&code).is_some_and(|(at, _)| *at >= reference) {
+        let Some(last_reported) = iso_date(field(row, "Data_Referencia")) else {
             continue;
-        }
-        chosen.insert(
-            code.clone(),
-            (
-                reference,
-                SectorEntry {
-                    code,
-                    sector: kind.label().to_owned(),
-                    subsector: None,
-                    segment,
-                    composition: Some(composition),
-                },
-            ),
-        );
+        };
+        let segment = Some(field(row, "Segmento_Atuacao").to_owned()).filter(|s| !s.is_empty());
+        entries.push(SectorEntry {
+            code,
+            sector: kind.label().to_owned(),
+            subsector: None,
+            segment,
+            composition: Some(composition),
+            fund: Some(FundClaim {
+                cnpj: cnpj.chars().take(20).collect(),
+                first_reported: first.get(cnpj).copied().unwrap_or(last_reported),
+                last_reported,
+            }),
+        });
     }
-    let mut entries: Vec<SectorEntry> = chosen.into_values().map(|(_, entry)| entry).collect();
-    entries.sort_by(|a, b| a.code.cmp(&b.code));
+    entries.sort_by(|a, b| {
+        (a.code.as_str(), a.fund.as_ref().map(|f| f.cnpj.as_str()))
+            .cmp(&(b.code.as_str(), b.fund.as_ref().map(|f| f.cnpj.as_str())))
+    });
     Ok(entries)
 }
 
@@ -377,18 +402,38 @@ mod tests {
     }
 
     #[test]
-    fn one_row_per_issuer_and_the_newest_report_wins() {
+    fn every_fund_of_an_issuer_comes_with_its_cnpj() {
         let entries = parse_archive(SAMPLE, 2026).unwrap();
         // A amostra tem 11 fundos: um sem ISIN (fora) e dois de CNPJs diferentes
-        // com o emissor TRXF, que viram uma linha só.
-        assert_eq!(entries.len(), 9);
-        let mut codes: Vec<&str> = entries.iter().map(|e| e.code.as_str()).collect();
-        codes.sort_unstable();
-        codes.dedup();
-        assert_eq!(codes.len(), 9);
-        // O informe de outubro (híbrido) vale mais que o de setembro (tijolo),
-        // do outro CNPJ do mesmo emissor.
-        assert_eq!(by_code(&entries, "TRXF").sector, HYBRID);
+        // que declaram o ISIN do TRXF (um fundo novo preencheu o ISIN do outro).
+        // Os dois vêm, cada um com o fundo de origem; quem escolhe é
+        // `sectors::settle`, com a B3.
+        assert_eq!(entries.len(), 10);
+        let trxf: Vec<&SectorEntry> = entries.iter().filter(|e| e.code == "TRXF").collect();
+        assert_eq!(trxf.len(), 2);
+        let tijolo = trxf.iter().find(|e| e.sector == BRICK).unwrap();
+        let hibrido = trxf.iter().find(|e| e.sector == HYBRID).unwrap();
+        let (old, new) = (
+            tijolo.fund.as_ref().unwrap(),
+            hibrido.fund.as_ref().unwrap(),
+        );
+        assert_eq!(old.cnpj, "28.548.288/0001-52");
+        assert_eq!(old.last_reported, time::macros::date!(2026 - 09 - 01));
+        assert_eq!(new.cnpj, "63.134.454/0001-75");
+        assert_eq!(new.first_reported, time::macros::date!(2026 - 09 - 01));
+        assert_eq!(new.last_reported, time::macros::date!(2026 - 10 - 01));
+        // A B3 lista o fundo antigo para a sigla: a linha é a dele (tijolo).
+        let b3 = HashMap::from([(
+            "TRXF".to_owned(),
+            crate::domain::fund_issuer::FundChoice {
+                cnpj: "28548288000152".to_owned(),
+                by: crate::domain::fund_issuer::ChosenBy::B3,
+                rivals: Vec::new(),
+            },
+        )]);
+        let (settled, _) = super::super::settle(entries, &b3);
+        assert_eq!(settled.len(), 9);
+        assert_eq!(by_code(&settled, "TRXF").sector, BRICK);
     }
 
     #[test]

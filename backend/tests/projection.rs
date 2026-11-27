@@ -252,6 +252,7 @@ async fn income_projection_by_type_and_scenario() {
                     subsector: None,
                     segment: None,
                     composition: None,
+                    fund: None,
                 },
                 SectorEntry {
                     code: "TIJL".into(),
@@ -259,6 +260,7 @@ async fn income_projection_by_type_and_scenario() {
                     subsector: None,
                     segment: None,
                     composition: None,
+                    fund: None,
                 },
             ],
             OffsetDateTime::now_utc(),

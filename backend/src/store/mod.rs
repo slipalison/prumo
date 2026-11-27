@@ -11,6 +11,7 @@ mod analysis;
 mod b3_import;
 mod cash;
 mod compare;
+pub mod fund_issuer;
 pub mod fundamentals;
 pub mod health;
 pub mod icons;

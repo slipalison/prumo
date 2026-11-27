@@ -362,9 +362,10 @@ impl Store {
 
     /// CNPJ e razão social das fontes pagadoras, pelo emissor do ticker (as
     /// quatro letras): companhias pelo código CVM que a B3 informa
-    /// (`b3_issuer_cvm` → `cvm_companies`), fundos pelo informe mensal mais
-    /// novo com a mesma raiz de ISIN (`cvm_funds`). Emissor sem cadastro não
-    /// volta.
+    /// (`b3_issuer_cvm` → `cvm_companies`), fundos pelo caminho único de
+    /// ticker de FII → fundo (`Store::fund_cnpjs`: o CNPJ que a B3 lista, ou o
+    /// desempate entre os que declaram o ISIN), com o nome do informe mensal
+    /// (ou, sem ele, o da B3). Emissor sem cadastro não volta.
     pub async fn tax_payers(
         &self,
         companies: &[String],
@@ -387,17 +388,29 @@ impl Store {
         }
         let mut by_fund = HashMap::new();
         if !funds.is_empty() {
-            let rows: Vec<(String, String, String)> = sqlx::query_as(
-                "select distinct on (issuer) issuer, cnpj, name
-                   from cvm_funds
-                  where issuer = any($1)
-                  order by issuer, reference_date desc, version desc, cnpj",
+            let chosen = self.fund_cnpjs(funds).await?;
+            let cnpjs: Vec<&str> = chosen.values().map(|c| c.cnpj.as_str()).collect();
+            let names: HashMap<String, String> = sqlx::query_as::<_, (String, String)>(
+                "select cnpj, name from cvm_funds where cnpj = any($1)",
             )
-            .bind(funds)
+            .bind(&cnpjs)
             .fetch_all(&self.pool)
-            .await?;
-            for (issuer, cnpj, name) in rows {
-                by_fund.insert(issuer, payer(&cnpj, name, PayerSource::CvmFund));
+            .await?
+            .into_iter()
+            .collect();
+            let b3 = self.b3_funds(funds).await?;
+            for (issuer, choice) in chosen {
+                let entry = match names.get(&choice.cnpj) {
+                    Some(name) => payer(&choice.cnpj, name.clone(), PayerSource::CvmFund),
+                    None => {
+                        let name = b3
+                            .get(&issuer)
+                            .and_then(|f| f.name.clone())
+                            .unwrap_or_default();
+                        payer(&choice.cnpj, name, PayerSource::B3Fund)
+                    }
+                };
+                by_fund.insert(issuer, entry);
             }
         }
         Ok((by_company, by_fund))

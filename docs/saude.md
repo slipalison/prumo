@@ -123,8 +123,17 @@ lê dois:
 - `ativo_passivo`: o balanço, para dizer o **tipo**.
 
 O ticker não vem no informe, só o ISIN, e é dele que sai a chave. Vale o
-informe mais novo de cada fundo (`Data_Referencia`, depois `Versao`); dois
-fundos com o mesmo emissor (mudança de CNPJ) ficam com o mais novo.
+informe mais novo de cada fundo (`Data_Referencia`, depois `Versao`). Quando
+mais de um fundo declara o mesmo emissor (um fundo novo que preencheu o ISIN de
+outro, ou o CNPJ antigo de um fundo que virou classe), fica a linha do fundo
+que o caminho único de ticker de FII → fundo escolhe: o CNPJ que a B3 lista
+para a sigla, ou o desempate sobre os dois anos de informe guardados
+([`fundamentos.md`](fundamentos.md), "Ticker de FII → fundo"); emissor que ele
+ainda não conhece cai no mesmo desempate sobre o próprio arquivo. Se a B3 lista
+um fundo que o arquivo não tem, o emissor fica sem linha (sem tipo, nunca com o
+de outro fundo). Cada linha guarda o CNPJ de onde saiu, e a fonte é lida de
+novo, mesmo em dia, enquanto alguma linha estiver sem ele ou com um CNPJ que
+não é o que a B3 lista.
 
 **Tipo (tijolo, papel, fundo de fundos, híbrido).** O campo `Mandato` da CVM
 vem vazio e `Segmento_Atuacao` é, em cerca de três quartos dos fundos, `Multicategoria` ou

@@ -46,8 +46,51 @@ banco guarda reais); linha em outra moeda ou escala é ignorada.
   (`BOVA11`) volta com `codeCVM` `0`: fica sem fundamentos, com o motivo.
 - **FII:** o ISIN da cota no informe mensal é `BR` + emissor + `CTF` + série
   (`BRKNRICTF007` → `KNRI`), a mesma regra da referência de setor. O emissor
-  leva ao CNPJ do fundo, e o CNPJ liga o mensal ao trimestral. Dois CNPJs com o
-  mesmo emissor (fundo que virou classe): vale o informe mais novo.
+  leva ao CNPJ do fundo, e o CNPJ liga o mensal ao trimestral. Quando mais de
+  um CNPJ declara o mesmo emissor, a escolha é a de "Ticker de FII → fundo",
+  logo abaixo.
+
+### Ticker de FII → fundo
+
+O informe da CVM não traz o código de negociação, e o ISIN que o fundo declara
+pode estar errado: em 27/11/2026, 31 raízes de ISIN tinham mais de um CNPJ nos
+informes de 2025 e 2026. No caso que apareceu na tela, um fundo novo preencheu
+o ISIN de um fundo antigo e entregou um informe mais novo; o Prumo, que pegava
+o informe mais novo do emissor, mostrava o valor patrimonial (R$ 0,75 em vez de
+~R$ 97), o tipo e o "Pelas duas" do fundo errado, e o mesmo CNPJ errado ia para
+o Fundos.NET da Agenda e para a fonte pagadora do informe de rendimentos do IR.
+
+Agora há um caminho só, `Store::fund_cnpjs` (`store/fund_issuer.rs`), com a
+regra em `domain::fund_issuer::choose_fund`, e tudo sai dele: fundamentos (VP,
+P/VP), a série mensal dos Resultados (pelo CNPJ dos fundamentos), a referência
+de setor (tipo e composição), o CNPJ do Fundos.NET e o da fonte pagadora.
+
+1. **A B3, primeiro.** A página pública de fundos listados da B3 (a que o site
+   dela usa, sem login nem chave) dá o CNPJ pelo código:
+   `fundsListedProxy/Search/GetListFunds` com a sigla acha o fundo (`id`) e
+   `GetDetailFund` devolve o `cnpj` e o `fundName`. A rodada dos fundamentos
+   pergunta pelos FIIs das carteiras e guarda em `b3_fund_cnpj` (migração
+   0036), com as mesmas idades do código CVM das companhias (achado: 20 horas;
+   não achado: 7 dias) e a reserva por réplica. O que a B3 diz vale mesmo que
+   nenhum informe tenha esse CNPJ: o fundo fica sem os números da CVM (com o
+   motivo), nunca com os de outro; a fonte pagadora sai com o CNPJ e o nome da
+   B3 (`payer_source: "b3_fund"`).
+2. **Sem a B3** (fora do ar, ou a sigla não está na lista), entre os fundos em
+   dia (último informe a até 3 meses do mais novo deles: o CNPJ antigo de um
+   fundo que virou classe fica para trás), o que declara o emissor **há mais
+   tempo** (primeiro mês na série guardada, que cobre os dois anos de informe
+   que o Prumo lê); empate, o informe mais novo; depois, o menor CNPJ. Medido
+   nos informes de 2025 e 2026 contra a B3: das 20 raízes disputadas em que a B3
+   lista um fundo do informe, essa regra acertou 17 (o maior número de
+   cotistas, 16; "negociado em bolsa" e depois cotistas, 15). As três que ela
+   erra são fundos que declaram o mesmo ISIN desde o começo da série: só a B3
+   separa. A rodada registra no log cada emissor disputado decidido sem a B3.
+
+O que já estava gravado do fundo errado se corrige sozinho, sem depender de
+migração: fundamentos, IR e Agenda são calculados na leitura; a referência de
+setor guarda o CNPJ de onde cada linha saiu (`sector_reference.cnpj`) e é lida
+de novo enquanto houver linha sem ele ou com um CNPJ diferente do que a B3
+lista para a sigla (ver [`saude.md`](saude.md)).
 
 ### Número de ações (LPA e VPA)
 

@@ -243,6 +243,7 @@ pub fn parse_workbook(bytes: &[u8]) -> Result<Vec<SectorEntry>, SectorError> {
             subsector: Some(g_subsector.clone()).filter(|s| !s.is_empty()),
             segment: Some(g_segment.clone()).filter(|s| !s.is_empty()),
             composition: None,
+            fund: None,
         });
     }
     if entries.is_empty() {
