@@ -253,80 +253,205 @@ fn assess_month(
     state: &mut Carryforward,
     withholding_carry: &mut Decimal,
 ) -> Result<MonthReport, TaxError> {
-    let mut sales: Vec<InstrumentSales> = Instrument::ALL
-        .iter()
-        .map(|&instrument| InstrumentSales {
-            instrument,
-            common_sales: Decimal::ZERO,
-            day_trade_sales: Decimal::ZERO,
-            common_result: Decimal::ZERO,
-            day_trade_result: Decimal::ZERO,
-        })
-        .collect();
-    let mut capital_gains = Decimal::ZERO;
-    let mut capital_losses = Decimal::ZERO;
-    // Bases da retenção pela regra: vendas comuns em bolsa no mês e o
-    // resultado do day trade de cada dia.
-    let mut common_exchange_sales = Decimal::ZERO;
-    let mut day_trade_by_day: BTreeMap<Date, Decimal> = BTreeMap::new();
-    for item in realized {
-        let rule = rules.instrument(item.instrument)?;
-        if rule.regime == Regime::ExchangeNetGain {
-            if item.day_trade {
-                *day_trade_by_day.entry(item.date).or_default() += item.result();
-            } else {
-                common_exchange_sales += item.proceeds;
-            }
-        }
-        if let Some(line) = sales.iter_mut().find(|s| s.instrument == item.instrument) {
-            if item.day_trade {
-                line.day_trade_sales += item.proceeds;
-                line.day_trade_result += item.result();
-            } else {
-                line.common_sales += item.proceeds;
-                line.common_result += item.result();
-            }
-        }
-        if rule.regime == Regime::CapitalGain {
-            let result = item.result();
-            if result > Decimal::ZERO {
-                capital_gains += result;
-            } else {
-                capital_losses -= result;
-            }
-        }
-    }
+    let tally = tally_sales(rules, realized)?;
+    let mut sales = tally.lines;
 
     // Isentômetro.
-    let mut exemptions = Vec::new();
-    for exemption in &rules.exemptions {
-        let total: Decimal = sales
-            .iter()
-            .filter(|line| exemption.counted.contains(&line.instrument))
-            .map(|line| {
-                if exemption.counts_day_trade.value {
-                    line.common_sales + line.day_trade_sales
-                } else {
-                    line.common_sales
-                }
-            })
-            .sum();
-        let limit = exemption.limit.value;
-        exemptions.push(ExemptionStatus {
-            id: exemption.id,
-            sales: cents(total),
-            limit,
-            remaining: (limit - total).max(Decimal::ZERO),
-            exempt: total <= limit,
-            exempt_gain: Decimal::ZERO,
-        });
-    }
+    let mut exemptions = exemption_statuses(rules, &sales);
     let is_exempt = |id: ExemptionId| exemptions.iter().any(|e| e.id == id && e.exempt);
 
     // Resultado de cada grupo de compensação (ganho líquido em bolsa).
+    let (pool_results, mut exempt_gains) = exchange_results(rules, &sales, is_exempt)?;
+    let pools = assess_pools(rules, &pool_results, state)?;
+
+    // Ganho de capital (cripto).
+    let capital_gains = cents(tally.capital_gains);
+    let crypto_exempt = is_exempt(ExemptionId::CryptoSales);
+    if crypto_exempt {
+        *exempt_gains.entry(ExemptionId::CryptoSales).or_default() += capital_gains;
+    }
+    let capital_gain = capital_gain_of(rules, capital_gains, tally.capital_losses, crypto_exempt);
+    let by_rule = withholding_by_rule(rules, tally.common_exchange_sales, &tally.day_trade_by_day);
+    let notices = notices_of(rules, &capital_gain, informed, &by_rule);
+    for status in &mut exemptions {
+        status.exempt_gain = cents(exempt_gains.get(&status.id).copied().unwrap_or_default());
+    }
+
+    // IR retido.
+    let exchange_tax: Decimal = pools.iter().map(|pool| pool.tax).sum();
+    let carried_in = if rules.withholding_carry.value && period.month > 1 {
+        *withholding_carry
+    } else {
+        Decimal::ZERO
+    };
+    let withheld = cents(informed.unwrap_or_else(|| by_rule.total()));
+    let available = withheld + carried_in;
+    let used = available.min(exchange_tax);
+    let carried_out = available - used;
+    *withholding_carry = carried_out;
+    let withholding = WithholdingAssessment {
+        common_sales: cents(tally.common_exchange_sales),
+        common_rule: by_rule.common,
+        day_trade_gains: by_rule.day_trade_gains,
+        day_trade_rule: by_rule.day_trade,
+        informed,
+        withheld,
+        carried_in,
+        used,
+        carried_out,
+    };
+
+    // DARF.
+    let darfs = assess_darfs(
+        period,
+        rules,
+        [
+            (Regime::ExchangeNetGain, exchange_tax - used),
+            (Regime::CapitalGain, capital_gain.tax),
+        ],
+        state,
+    )?;
+
+    for line in &mut sales {
+        line.common_sales = cents(line.common_sales);
+        line.day_trade_sales = cents(line.day_trade_sales);
+        line.common_result = cents(line.common_result);
+        line.day_trade_result = cents(line.day_trade_result);
+    }
+
+    Ok(MonthReport {
+        period,
+        sales,
+        exemptions,
+        pools,
+        capital_gain,
+        withholding,
+        darfs,
+        notices,
+    })
+}
+
+/// As vendas do mês somadas, ainda sem arredondar.
+struct MonthSales {
+    /// Por instrumento (todos, com zero), na ordem de [`Instrument::ALL`].
+    lines: Vec<InstrumentSales>,
+    /// Lucros e prejuízos (em módulo) das alienações em ganho de capital.
+    capital_gains: Decimal,
+    capital_losses: Decimal,
+    /// Bases da retenção pela regra: vendas comuns em bolsa no mês e o
+    /// resultado do day trade de cada dia.
+    common_exchange_sales: Decimal,
+    day_trade_by_day: BTreeMap<Date, Decimal>,
+}
+
+impl MonthSales {
+    fn add(&mut self, regime: Regime, item: &Realized) {
+        if regime == Regime::ExchangeNetGain {
+            if item.day_trade {
+                *self.day_trade_by_day.entry(item.date).or_default() += item.result();
+            } else {
+                self.common_exchange_sales += item.proceeds;
+            }
+        }
+        if let Some(line) = self
+            .lines
+            .iter_mut()
+            .find(|s| s.instrument == item.instrument)
+        {
+            line.add(item);
+        }
+        if regime == Regime::CapitalGain {
+            let result = item.result();
+            if result > Decimal::ZERO {
+                self.capital_gains += result;
+            } else {
+                self.capital_losses -= result;
+            }
+        }
+    }
+}
+
+impl InstrumentSales {
+    fn add(&mut self, item: &Realized) {
+        if item.day_trade {
+            self.day_trade_sales += item.proceeds;
+            self.day_trade_result += item.result();
+        } else {
+            self.common_sales += item.proceeds;
+            self.common_result += item.result();
+        }
+    }
+}
+
+fn tally_sales(rules: &YearRules, realized: &[&Realized]) -> Result<MonthSales, TaxError> {
+    let mut tally = MonthSales {
+        lines: Instrument::ALL
+            .iter()
+            .map(|&instrument| InstrumentSales {
+                instrument,
+                common_sales: Decimal::ZERO,
+                day_trade_sales: Decimal::ZERO,
+                common_result: Decimal::ZERO,
+                day_trade_result: Decimal::ZERO,
+            })
+            .collect(),
+        capital_gains: Decimal::ZERO,
+        capital_losses: Decimal::ZERO,
+        common_exchange_sales: Decimal::ZERO,
+        day_trade_by_day: BTreeMap::new(),
+    };
+    for item in realized {
+        let rule = rules.instrument(item.instrument)?;
+        tally.add(rule.regime, item);
+    }
+    Ok(tally)
+}
+
+/// O isentômetro: as vendas que contam em cada isenção contra o limite. O
+/// lucro isento entra depois.
+fn exemption_statuses(rules: &YearRules, sales: &[InstrumentSales]) -> Vec<ExemptionStatus> {
+    rules
+        .exemptions
+        .iter()
+        .map(|exemption| {
+            let total: Decimal = sales
+                .iter()
+                .filter(|line| exemption.counted.contains(&line.instrument))
+                .map(|line| {
+                    if exemption.counts_day_trade.value {
+                        line.common_sales + line.day_trade_sales
+                    } else {
+                        line.common_sales
+                    }
+                })
+                .sum();
+            let limit = exemption.limit.value;
+            ExemptionStatus {
+                id: exemption.id,
+                sales: cents(total),
+                limit,
+                remaining: (limit - total).max(Decimal::ZERO),
+                exempt: total <= limit,
+                exempt_gain: Decimal::ZERO,
+            }
+        })
+        .collect()
+}
+
+/// O resultado do mês por grupo de compensação e o lucro em operação comum que
+/// ficou isento, por isenção.
+type ExchangeResults = (BTreeMap<Pool, Decimal>, BTreeMap<ExemptionId, Decimal>);
+
+/// O ganho líquido em bolsa de cada instrumento, separado nos grupos de
+/// compensação (comum e day trade) ou, quando a isenção vale, no lucro isento.
+fn exchange_results(
+    rules: &YearRules,
+    sales: &[InstrumentSales],
+    is_exempt: impl Fn(ExemptionId) -> bool,
+) -> Result<ExchangeResults, TaxError> {
     let mut pool_results: BTreeMap<Pool, Decimal> = BTreeMap::new();
     let mut exempt_gains: BTreeMap<ExemptionId, Decimal> = BTreeMap::new();
-    for line in &sales {
+    for line in sales {
         let rule = rules.instrument(line.instrument)?;
         if rule.regime != Regime::ExchangeNetGain {
             continue;
@@ -346,7 +471,16 @@ fn assess_month(
         }
         *pool_results.entry(day_trade_pool).or_default() += line.day_trade_result;
     }
+    Ok((pool_results, exempt_gains))
+}
 
+/// Cada grupo de compensação: o prejuízo acumulado abate o lucro do mês e o
+/// que sobra fica em `state` para os meses seguintes.
+fn assess_pools(
+    rules: &YearRules,
+    pool_results: &BTreeMap<Pool, Decimal>,
+    state: &mut Carryforward,
+) -> Result<Vec<PoolAssessment>, TaxError> {
     let mut pools = Vec::new();
     for pool in Pool::ALL {
         let result = cents(pool_results.get(&pool).copied().unwrap_or_default());
@@ -366,74 +500,61 @@ fn assess_month(
             loss_after,
         });
     }
+    Ok(pools)
+}
 
-    // Ganho de capital (cripto).
-    let capital_gains = cents(capital_gains);
-    let crypto_exempt = is_exempt(ExemptionId::CryptoSales);
-    if crypto_exempt {
-        *exempt_gains.entry(ExemptionId::CryptoSales).or_default() += capital_gains;
+/// O ganho de capital do mês (`gains` já em centavos): isento, a base é zero.
+fn capital_gain_of(
+    rules: &YearRules,
+    gains: Decimal,
+    losses: Decimal,
+    exempt: bool,
+) -> CapitalGainAssessment {
+    let base = if exempt { Decimal::ZERO } else { gains };
+    CapitalGainAssessment {
+        gains,
+        losses: cents(losses),
+        exempt,
+        base,
+        tax: cents(rules.capital_gain_tax(base)),
     }
-    let capital_base = if crypto_exempt {
-        Decimal::ZERO
-    } else {
-        capital_gains
-    };
-    let capital_gain = CapitalGainAssessment {
-        gains: capital_gains,
-        losses: cents(capital_losses),
-        exempt: crypto_exempt,
-        base: capital_base,
-        tax: cents(rules.capital_gain_tax(capital_base)),
-    };
+}
+
+/// Os avisos do mês: ganho de capital acima da primeira faixa e IR retido que
+/// saiu da regra.
+fn notices_of(
+    rules: &YearRules,
+    capital_gain: &CapitalGainAssessment,
+    informed: Option<Decimal>,
+    by_rule: &RuleWithholding,
+) -> Vec<Notice> {
     let mut notices = Vec::new();
     let first_bracket = rules
         .capital_gain_brackets
         .value
         .first()
         .and_then(|bracket| bracket.up_to);
-    if first_bracket.is_some_and(|up_to| capital_base > up_to) {
+    if first_bracket.is_some_and(|up_to| capital_gain.base > up_to) {
         notices.push(Notice::CapitalGainAboveFirstBracket);
     }
-    let by_rule = withholding_by_rule(rules, common_exchange_sales, &day_trade_by_day);
     if informed.is_none() && by_rule.total() > Decimal::ZERO {
         notices.push(Notice::WithholdingByRule);
     }
-    for status in &mut exemptions {
-        status.exempt_gain = cents(exempt_gains.get(&status.id).copied().unwrap_or_default());
-    }
+    notices
+}
 
-    // IR retido.
-    let exchange_tax: Decimal = pools.iter().map(|pool| pool.tax).sum();
-    let carried_in = if rules.withholding_carry.value && period.month > 1 {
-        *withholding_carry
-    } else {
-        Decimal::ZERO
-    };
-    let withheld = cents(informed.unwrap_or_else(|| by_rule.total()));
-    let available = withheld + carried_in;
-    let used = available.min(exchange_tax);
-    let carried_out = available - used;
-    *withholding_carry = carried_out;
-    let withholding = WithholdingAssessment {
-        common_sales: cents(common_exchange_sales),
-        common_rule: by_rule.common,
-        day_trade_gains: by_rule.day_trade_gains,
-        day_trade_rule: by_rule.day_trade,
-        informed,
-        withheld,
-        carried_in,
-        used,
-        carried_out,
-    };
-
-    // DARF.
+/// O DARF de cada regime (`taxes`, o imposto do mês já sem o IR retido): abaixo
+/// do mínimo, fica pendente em `state` e soma no do mês seguinte.
+fn assess_darfs(
+    period: YearMonth,
+    rules: &YearRules,
+    taxes: [(Regime, Decimal); 2],
+    state: &mut Carryforward,
+) -> Result<Vec<DarfAssessment>, TaxError> {
     let due_date = calendar::darf_due_date(period)?;
     let minimum = rules.darf_minimum.value;
     let mut darfs = Vec::new();
-    for (regime, tax) in [
-        (Regime::ExchangeNetGain, exchange_tax - used),
-        (Regime::CapitalGain, capital_gain.tax),
-    ] {
+    for (regime, tax) in taxes {
         let pending_before = state.pending_darf.get(&regime).copied().unwrap_or_default();
         let total = pending_before + tax;
         let payable = total > Decimal::ZERO && total >= minimum;
@@ -451,24 +572,7 @@ fn assess_month(
             pending_after,
         });
     }
-
-    for line in &mut sales {
-        line.common_sales = cents(line.common_sales);
-        line.day_trade_sales = cents(line.day_trade_sales);
-        line.common_result = cents(line.common_result);
-        line.day_trade_result = cents(line.day_trade_result);
-    }
-
-    Ok(MonthReport {
-        period,
-        sales,
-        exemptions,
-        pools,
-        capital_gain,
-        withholding,
-        darfs,
-        notices,
-    })
+    Ok(darfs)
 }
 
 /// A retenção que a regra manda a corretora fazer no mês.

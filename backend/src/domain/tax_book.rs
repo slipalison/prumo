@@ -271,155 +271,191 @@ fn is_event(kind: Kind) -> bool {
 
 /// Um ticker, na ordem do livro. `Err` tira o ticker da conta.
 fn convert(key: &str, instrument: Instrument, entries: &[Entry]) -> Result<Converted, Skipped> {
-    let at = |entry: &Entry, reason| Skipped {
-        subject: key.to_owned(),
-        date: Some(entry.trade_date),
-        reason,
-        amount: None,
-    };
     if let Some(entry) = entries.iter().find(|e| e.kind == Kind::Redemption) {
-        return Err(at(entry, SkipReason::Redemption));
+        return Err(skipped_at(key, entry, SkipReason::Redemption));
     }
     if let Some(entry) = entries
         .iter()
         .find(|e| e.kind == Kind::Opening && e.unit_price.is_none())
     {
-        return Err(at(entry, SkipReason::UnknownOpeningCost));
+        return Err(skipped_at(key, entry, SkipReason::UnknownOpeningCost));
     }
 
-    let mut out = Converted::default();
+    let mut conversion = Conversion {
+        key,
+        instrument,
+        held: Decimal::ZERO,
+        out: Converted::default(),
+    };
     // O saldo inicial que abre o livro é a posição de partida do IR.
     let leading = entries
         .iter()
         .take_while(|e| e.kind == Kind::Opening)
         .count();
-    let mut held = Decimal::ZERO;
     for entry in &entries[..leading] {
-        held += entry.quantity;
-        out.openings.push(OpeningPosition {
-            symbol: key.to_owned(),
-            instrument,
+        conversion.open(entry);
+    }
+    for day in entries[leading..].chunk_by(|a, b| a.trade_date == b.trade_date) {
+        // O IR aplica os eventos do dia antes dos negócios (positions::replay).
+        let trades = conversion.events_of_day(day)?;
+        for entry in trades {
+            conversion.trade(entry)?;
+        }
+    }
+    Ok(conversion.out)
+}
+
+/// O lançamento que tira o ticker da conta (ou vira nota), com a data dele.
+fn skipped_at(key: &str, entry: &Entry, reason: SkipReason) -> Skipped {
+    Skipped {
+        subject: key.to_owned(),
+        date: Some(entry.trade_date),
+        reason,
+        amount: None,
+    }
+}
+
+/// A conversão de um ticker em andamento: as cotas que o IR vê até aqui e o
+/// que já saiu.
+struct Conversion<'a> {
+    key: &'a str,
+    instrument: Instrument,
+    held: Decimal,
+    out: Converted,
+}
+
+impl Conversion<'_> {
+    fn skipped(&self, entry: &Entry, reason: SkipReason) -> Skipped {
+        skipped_at(self.key, entry, reason)
+    }
+
+    fn push(&mut self, entry: &Entry, action: Action) {
+        self.out.operations.push(Operation {
+            date: entry.trade_date,
+            symbol: self.key.to_owned(),
+            instrument: self.instrument,
+            broker: None,
+            action,
+        });
+    }
+
+    /// Um saldo inicial do começo do livro: posição de partida.
+    fn open(&mut self, entry: &Entry) {
+        self.held += entry.quantity;
+        self.out.openings.push(OpeningPosition {
+            symbol: self.key.to_owned(),
+            instrument: self.instrument,
             quantity: entry.quantity,
             total_cost: gross(entry) + fees(entry),
         });
     }
 
-    let operation = |entry: &Entry, action| Operation {
-        date: entry.trade_date,
-        symbol: key.to_owned(),
-        instrument,
-        broker: None,
-        action,
-    };
-    let rest = &entries[leading..];
-    let mut start = 0;
-    while start < rest.len() {
-        let date = rest[start].trade_date;
-        let end = start
-            + rest[start..]
-                .iter()
-                .take_while(|e| e.trade_date == date)
-                .count();
-        let day = &rest[start..end];
-        start = end;
-
-        // O IR aplica os eventos do dia antes dos negócios (positions::replay).
+    /// Aplica os eventos de um dia e devolve os negócios dele, que o IR aplica
+    /// depois dos eventos.
+    fn events_of_day<'e>(&mut self, day: &'e [Entry]) -> Result<Vec<&'e Entry>, Skipped> {
         let mut trades: Vec<&Entry> = Vec::new();
         for entry in day {
-            let kind = entry.kind;
-            if kind == Kind::Opening {
-                if held > Decimal::ZERO {
-                    // Saldo inicial no meio do livro: cotas que entram com
-                    // custo e sem negócio — a conta da bonificação.
-                    let cost = gross(entry) + fees(entry);
-                    held += entry.quantity;
-                    out.operations.push(operation(
-                        entry,
-                        Action::Bonus {
-                            quantity: entry.quantity,
-                            unit_cost: cost / entry.quantity,
-                        },
-                    ));
-                } else {
-                    trades.push(entry);
-                }
-                continue;
-            }
-            if !is_event(kind) {
+            if entry.kind == Kind::Opening && self.held > Decimal::ZERO {
+                self.opening_mid_book(entry);
+            } else if is_event(entry.kind) {
+                self.event(entry)?;
+            } else {
+                // Negócio, ou saldo inicial de quem estava zerado.
                 trades.push(entry);
-                continue;
-            }
-            match kind {
-                Kind::Amortization => out.notes.push(Skipped {
-                    amount: Some(gross(entry)),
-                    ..at(entry, SkipReason::Amortization)
-                }),
-                Kind::Bonus => {
-                    if held <= Decimal::ZERO {
-                        return Err(at(entry, SkipReason::EventWithoutPosition));
-                    }
-                    held += entry.quantity;
-                    out.operations.push(operation(
-                        entry,
-                        Action::Bonus {
-                            quantity: entry.quantity,
-                            unit_cost: entry.unit_price.unwrap_or_default() * entry.fx_rate,
-                        },
-                    ));
-                }
-                _ => {
-                    // Desdobramento, grupamento e ajuste: a quantidade muda e o
-                    // custo total fica. O livro diz quantas cotas, o IR quer o
-                    // fator.
-                    let after = held + kind.quantity_delta(entry.quantity);
-                    if kind == Kind::Adjustment && after.is_zero() && held > Decimal::ZERO {
-                        return Err(at(entry, SkipReason::AdjustmentClosesPosition));
-                    }
-                    if held <= Decimal::ZERO || after <= Decimal::ZERO {
-                        return Err(at(entry, SkipReason::EventWithoutPosition));
-                    }
-                    if kind == Kind::Adjustment {
-                        out.notes.push(at(entry, SkipReason::Adjustment));
-                    }
-                    let factor = after / held;
-                    held = (held * factor).round_dp(QUANTITY_DECIMALS);
-                    out.operations
-                        .push(operation(entry, Action::Split { factor }));
-                }
             }
         }
-        for entry in trades {
-            match entry.kind {
-                Kind::Sell => {
-                    if entry.quantity > held {
-                        return Err(at(entry, SkipReason::EventWithoutPosition));
-                    }
-                    held -= entry.quantity;
-                    out.operations.push(operation(
-                        entry,
-                        Action::Sell {
-                            quantity: entry.quantity,
-                            unit_price: price(entry),
-                            fees: fees(entry),
-                        },
-                    ));
-                }
-                // Compra, ou saldo inicial de quem estava zerado: entra como compra.
-                _ => {
-                    held += entry.quantity;
-                    out.operations.push(operation(
-                        entry,
-                        Action::Buy {
-                            quantity: entry.quantity,
-                            unit_price: price(entry),
-                            fees: fees(entry),
-                        },
-                    ));
-                }
-            }
-        }
+        Ok(trades)
     }
-    Ok(out)
+
+    /// Saldo inicial no meio do livro: cotas que entram com custo e sem
+    /// negócio — a conta da bonificação.
+    fn opening_mid_book(&mut self, entry: &Entry) {
+        let cost = gross(entry) + fees(entry);
+        self.held += entry.quantity;
+        self.push(
+            entry,
+            Action::Bonus {
+                quantity: entry.quantity,
+                unit_cost: cost / entry.quantity,
+            },
+        );
+    }
+
+    fn event(&mut self, entry: &Entry) -> Result<(), Skipped> {
+        match entry.kind {
+            Kind::Amortization => {
+                let note = Skipped {
+                    amount: Some(gross(entry)),
+                    ..self.skipped(entry, SkipReason::Amortization)
+                };
+                self.out.notes.push(note);
+            }
+            Kind::Bonus => {
+                if self.held <= Decimal::ZERO {
+                    return Err(self.skipped(entry, SkipReason::EventWithoutPosition));
+                }
+                self.held += entry.quantity;
+                self.push(
+                    entry,
+                    Action::Bonus {
+                        quantity: entry.quantity,
+                        unit_cost: entry.unit_price.unwrap_or_default() * entry.fx_rate,
+                    },
+                );
+            }
+            _ => self.reshape(entry)?,
+        }
+        Ok(())
+    }
+
+    /// Desdobramento, grupamento e ajuste: a quantidade muda e o custo total
+    /// fica. O livro diz quantas cotas, o IR quer o fator.
+    fn reshape(&mut self, entry: &Entry) -> Result<(), Skipped> {
+        let kind = entry.kind;
+        let held = self.held;
+        let after = held + kind.quantity_delta(entry.quantity);
+        if kind == Kind::Adjustment && after.is_zero() && held > Decimal::ZERO {
+            return Err(self.skipped(entry, SkipReason::AdjustmentClosesPosition));
+        }
+        if held <= Decimal::ZERO || after <= Decimal::ZERO {
+            return Err(self.skipped(entry, SkipReason::EventWithoutPosition));
+        }
+        if kind == Kind::Adjustment {
+            let note = self.skipped(entry, SkipReason::Adjustment);
+            self.out.notes.push(note);
+        }
+        let factor = after / held;
+        self.held = (held * factor).round_dp(QUANTITY_DECIMALS);
+        self.push(entry, Action::Split { factor });
+        Ok(())
+    }
+
+    fn trade(&mut self, entry: &Entry) -> Result<(), Skipped> {
+        let action = match entry.kind {
+            Kind::Sell => {
+                if entry.quantity > self.held {
+                    return Err(self.skipped(entry, SkipReason::EventWithoutPosition));
+                }
+                self.held -= entry.quantity;
+                Action::Sell {
+                    quantity: entry.quantity,
+                    unit_price: price(entry),
+                    fees: fees(entry),
+                }
+            }
+            // Compra, ou saldo inicial de quem estava zerado: entra como compra.
+            _ => {
+                self.held += entry.quantity;
+                Action::Buy {
+                    quantity: entry.quantity,
+                    unit_price: price(entry),
+                    fees: fees(entry),
+                }
+            }
+        };
+        self.push(entry, action);
+        Ok(())
+    }
 }
 
 fn price(entry: &Entry) -> Decimal {
