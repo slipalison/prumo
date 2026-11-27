@@ -7,6 +7,7 @@ import type {
   References,
   StockReference,
 } from "../api/ceilingTypes";
+import type { FundIndicators } from "../api/fundamentalsTypes";
 import { methodValue } from "../lib/ceilingText";
 
 /*
@@ -38,6 +39,22 @@ export function defaultMarket(): MarketRates {
 
 const ok = (value: number) => ({ value, gap: null });
 
+/** O caixa, a liquidez, os CAGRs e o rendimento de um FII fictício. */
+export function sampleIndicators(overrides: Partial<FundIndicators> = {}): FundIndicators {
+  return {
+    cash_share: ok(0.064),
+    liquidity_30d: ok(8_400_000),
+    liquidity_90d: ok(7_900_000),
+    dividend_cagr_3y: ok(0.052),
+    dividend_cagr_5y: ok(0.041),
+    price_cagr_3y: ok(-0.018),
+    price_cagr_5y: ok(0.012),
+    dividend_yield_12m: ok(0.0929),
+    dividends_12m: 13.2,
+    ...overrides,
+  };
+}
+
 function fund(
   asset_id: string,
   label: string,
@@ -47,6 +64,7 @@ function fund(
   dividends: number,
   target: { percent: number; brick: number | null; paper: number | null; brick_weight: number; paper_weight: number } | null,
   composition: FundReference["composition"] = null,
+  indicators: FundReference["indicators"] = sampleIndicators(),
 ): FundReference {
   const yieldValue = target ? Math.round((dividends / target.percent) * 10000) / 100 : null;
   const values = [nav, yieldValue].filter((v): v is number => v !== null);
@@ -64,6 +82,7 @@ function fund(
         ? { value: null, gap: fund_type === null ? "unknown_fund_type" : "no_market_rate", dividends_12m: null, target: null }
         : { value: yieldValue, gap: null, dividends_12m: dividends, target },
     combined: values.length > 0 ? ok(Math.min(...values)) : { value: null, gap: "no_reference" },
+    indicators,
   };
 }
 
@@ -111,8 +130,26 @@ export function defaultFunds(): FundReference[] {
       brick_weight: 0.5,
       paper_weight: 0.5,
     }),
-    // Sem informe da CVM: sem tipo, sem Rendimento.
-    fund("a-trxf", "TRXF11", 53.81, null, 110.2, 6.5, null),
+    // Sem informe da CVM: sem tipo, sem Rendimento, sem caixa; o histórico
+    // de mercado é curto para os CAGRs.
+    fund(
+      "a-trxf",
+      "TRXF11",
+      53.81,
+      null,
+      110.2,
+      6.5,
+      null,
+      null,
+      sampleIndicators({
+        cash_share: { value: null, gap: "not_reported" },
+        dividend_cagr_3y: { value: null, gap: "insufficient_history" },
+        dividend_cagr_5y: { value: null, gap: "insufficient_history" },
+        price_cagr_3y: { value: null, gap: "insufficient_history" },
+        price_cagr_5y: { value: null, gap: "insufficient_history" },
+        liquidity_90d: { value: null, gap: "insufficient_history" },
+      }),
+    ),
   ];
 }
 

@@ -58,7 +58,7 @@ describe("tela Comparar ativos", () => {
     expect(screen.getByText("3 de 5 ativos")).toBeInTheDocument();
 
     const general = within(await screen.findByRole("region", { name: "Em comum" }));
-    const row = (name: string) => general.getByRole("rowheader", { name }).closest("tr") as HTMLElement;
+    const row = (name: string | RegExp) => general.getByRole("rowheader", { name }).closest("tr") as HTMLElement;
     // O P/VP: menor valor de cada tipo (empresas: ITSA4; fundo sozinho não marca).
     const pvp = row("P/VP");
     expect(within(pvp).getByText("0,90×")).toBeInTheDocument();
@@ -68,9 +68,16 @@ describe("tela Comparar ativos", () => {
     expect(within(pvp).getByText("(menor valor da linha)")).toBeInTheDocument();
     // Linha sem direção não marca ninguém.
     expect(row("Preço").querySelector(".compare-mark")).toBeNull();
-    // Rendimento: o maior entre as empresas.
-    const dy = row("Rendimento em 12 meses (DY)");
+    // Rendimento: o maior entre as empresas; o CDI líquido e o juro real ao
+    // lado do nome, só como contexto (sem destaque).
+    const dy = row(/^Rendimento em 12 meses \(DY\)/);
     expect(dy.querySelector(".compare-mark")).toHaveTextContent("8,00%");
+    expect(within(dy).getByRole("rowheader")).toHaveTextContent("CDI 12 meses líquido 12,1% · juro real 7,1%");
+    // As linhas novas de fundo: o caixa sem destaque, a liquidez com o maior.
+    const fundRows = within(screen.getByRole("region", { name: "Fundos imobiliários" }));
+    const cash = fundRows.getByRole("rowheader", { name: "Caixa" }).closest("tr") as HTMLElement;
+    expect(cash.querySelector(".compare-mark")).toBeNull();
+    expect(fundRows.getByRole("rowheader", { name: "Liquidez média, 30 pregões" })).toBeInTheDocument();
 
     // Blocos de empresa e de fundo, com "não se aplica" no tipo errado.
     const companies = within(screen.getByRole("region", { name: "Empresas" }));

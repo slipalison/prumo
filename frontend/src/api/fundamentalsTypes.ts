@@ -1,3 +1,5 @@
+import type { Cdi12m, RealRate } from "./ceilingTypes";
+
 /**
  * `GET /api/v1/fundamentals` (docs/api.md § Fundamentos): os indicadores da
  * CVM de cada ativo da carteira. Toda medida é `{ value, gap }`: o número ou
@@ -85,6 +87,30 @@ export type CompanyFundamentals = {
   book_value_per_share: Figure;
 };
 
+/**
+ * O que o histórico de mercado de um FII dá (docs/fundamentos.md § FII
+ * completo): razões em fração (0,1 = 10%), a liquidez em reais por dia.
+ */
+export type FundMarket = {
+  /** Volume financeiro médio dos últimos 30 e 90 pregões. */
+  liquidity_30d: Figure;
+  liquidity_90d: Figure;
+  /** Crescimento anual composto dos proventos por cota e da cota. */
+  dividend_cagr_3y: Figure;
+  dividend_cagr_5y: Figure;
+  price_cagr_3y: Figure;
+  price_cagr_5y: Figure;
+  /** Proventos por cota dos últimos 365 dias sobre a cotação. */
+  dividend_yield_12m: Figure;
+  dividends_12m: number | null;
+};
+
+/** O caixa do informe da CVM e o histórico de mercado (a tabela de FIIs da Análise). */
+export type FundIndicators = FundMarket & { cash_share: Figure };
+
+/** As taxas ao lado do rendimento do FII: só contexto. */
+export type Rates = { cdi_12m: Cdi12m | null; real_rate: RealRate | null };
+
 export type FundFundamentals = {
   cnpj: string;
   name: string;
@@ -96,6 +122,11 @@ export type FundFundamentals = {
   price_to_book: Figure;
   vacancy: Figure;
   vacancy_reference_date: string | null;
+  /** O ativo total e o caixa (disponibilidades e aplicações de liquidez) sobre ele. */
+  total_assets: Figure;
+  cash_share: Figure;
+  /** O histórico de mercado; `null` sem leitura. */
+  market: FundMarket | null;
   synced_at: string | null;
 };
 
@@ -114,4 +145,4 @@ export type AssetFundamentals =
   | (Base & { kind: "fund"; company: null; fund: FundFundamentals; reason: null })
   | (Base & { kind: "unsupported"; company: null; fund: null; reason: UnsupportedReason });
 
-export type Fundamentals = { assets: AssetFundamentals[] };
+export type Fundamentals = { assets: AssetFundamentals[]; rates: Rates };

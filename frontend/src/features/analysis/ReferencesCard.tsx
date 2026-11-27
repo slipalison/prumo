@@ -28,6 +28,8 @@ import {
 import { formatPercent } from "../../lib/format";
 import type { Money } from "../../lib/money";
 import { useMoney } from "../../lib/privacy";
+import type { Figure } from "../../api/fundamentalsTypes";
+import { FundMarketGrid } from "../fundamentals/FundIndicators";
 import { CeilingPicker } from "../ceiling/CeilingPicker";
 import { methodTip } from "../ceiling/methodTip";
 
@@ -99,6 +101,52 @@ function assetColumn(group: string): DataColumn<Item> {
   };
 }
 
+/** O id da linha aberta de um FII (o `aria-controls` do botão). */
+const detailIdOf = (item: FundReference) => `references-detail-${item.asset_id}`;
+
+/**
+ * A primeira coluna da tabela de FIIs: o nome abre e fecha a linha com o
+ * caixa, a liquidez, os CAGRs e o rendimento (a tabela não cresce enquanto a
+ * linha está fechada). FII sem os indicadores lidos fica só com o nome.
+ */
+function fundAssetColumn(opened: ReadonlySet<string>, onToggle: (item: FundReference) => void): DataColumn<FundReference> {
+  return {
+    key: "asset",
+    label: "FIIs",
+    rowHeader: true,
+    cell: (item) => {
+      const name = (
+        <>
+          <AssetIcon size="sm" assetClass={item.asset_class} {...iconSubjectOfLabel(item.label)} />
+          {item.label}
+        </>
+      );
+      if (!item.indicators) return <span className="reference__asset">{name}</span>;
+      const isOpen = opened.has(item.asset_id);
+      return (
+        <button
+          type="button"
+          className="reference__asset reference__expand"
+          aria-expanded={isOpen}
+          aria-controls={isOpen ? detailIdOf(item) : undefined}
+          aria-label={`${item.label}: caixa, liquidez e crescimento`}
+          onClick={() => onToggle(item)}
+        >
+          {name}
+          <IconChevronDown width={14} height={14} className="reference__expand-icon" aria-hidden="true" />
+        </button>
+      );
+    },
+  };
+}
+
+/** O P/VP de hoje: a cotação sobre o VP da linha (o motivo quando falta um dos dois). */
+function priceToBookOf(item: FundReference): Figure {
+  if (item.unit_price === null) return { value: null, gap: "no_quote" };
+  if (item.nav.value === null || item.nav.value <= 0) return { value: null, gap: "not_reported" };
+  return { value: item.unit_price / item.nav.value, gap: null };
+}
+
 function tailColumns(onChoose: (item: Item) => void): DataColumn<Item>[] {
   return [
     {
@@ -160,11 +208,17 @@ function stockColumns(references: References, money: Money, onChoose: (item: Ite
   ];
 }
 
-function fundColumns(references: References, money: Money, onChoose: (item: Item) => void): DataColumn<FundReference>[] {
+function fundColumns(
+  references: References,
+  money: Money,
+  onChoose: (item: Item) => void,
+  opened: ReadonlySet<string>,
+  onToggle: (item: FundReference) => void,
+): DataColumn<FundReference>[] {
   const tip = (item: FundReference, method: "nav" | "fund_yield") =>
     methodTip(item, method, references.market, references.bazin_yield, money);
   return [
-    assetColumn("FIIs"),
+    fundAssetColumn(opened, onToggle),
     {
       key: "type",
       label: "Tipo",
@@ -232,6 +286,9 @@ export function ReferencesCard({ references }: { references: References }) {
   const update = useUpdateAsset();
   const [choosing, setChoosing] = useState<{ item: Item; draft: CeilingDraft } | null>(null);
   const [open, setOpen] = useState(false);
+  // Os FIIs com a linha de indicadores aberta (fechada por padrão: a altura
+  // da Análise não cresce, docs/layout.md § 7.6).
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
 
   const choose = (item: Item) => {
     setChoosing({ item, draft: draftOf(item.ceiling, item.unit_price ?? 0) });
@@ -261,6 +318,26 @@ export function ReferencesCard({ references }: { references: References }) {
       },
     );
   };
+
+  const toggle = (item: FundReference) =>
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(item.asset_id)) next.delete(item.asset_id);
+      else next.add(item.asset_id);
+      return next;
+    });
+  const rates = { cdi_12m: references.market.cdi_12m, real_rate: references.market.real_rate };
+  const fundDetail = (item: FundReference) =>
+    item.indicators && expanded.has(item.asset_id) ? (
+      <FundMarketGrid
+        cashShare={item.indicators.cash_share}
+        market={item.indicators}
+        rates={rates}
+        money={money}
+        priceToBook={priceToBookOf(item)}
+        label={item.label}
+      />
+    ) : null;
 
   const empty = references.stocks.length === 0 && references.funds.length === 0;
   const manualInvalid = choosing?.draft.kind === "manual" && choosing.draft.value <= 0;
@@ -307,9 +384,11 @@ export function ReferencesCard({ references }: { references: References }) {
               caption="FIIs"
               className="references__table references__table--funds"
               cozy
-              columns={fundColumns(references, money, choose)}
+              columns={fundColumns(references, money, choose, expanded, toggle)}
               rows={references.funds}
               rowKey={(item) => item.asset_id}
+              detail={fundDetail}
+              detailId={detailIdOf}
             />
           )}
         </>

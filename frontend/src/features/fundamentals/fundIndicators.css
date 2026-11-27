@@ -1,0 +1,97 @@
+/* Os indicadores de mercado do FII (docs/design.md § Folha do ativo e §
+   Análise): a mesma grade dos fundamentos, rótulo pequeno em cima e número
+   tabular embaixo, com uma linha de contexto mais apagada quando há. */
+
+.fund-indicators {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  padding: var(--space-3);
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+}
+
+.fund-indicators dt {
+  color: var(--text-subtle);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.fund-indicators__term {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.fund-indicators dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.fund-indicators__context {
+  display: block;
+  color: var(--text-subtle);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.fund-indicators__span {
+  color: var(--text-subtle);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+@container (min-width: 420px) {
+  .fund-indicators {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Na linha aberta da tabela de FIIs, em tela larga: os seis lado a lado (a
+   linha fica com a metade da altura). */
+@container (min-width: 1000px) {
+  .fund-indicators {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+/* O P/VP com a marca em 1: a régua de 0,5 a 1,5, o traço no meio (1) e o
+   ponto no valor. Cor neutra: a posição diz, não a cor. */
+.pvp {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.pvp__gauge {
+  position: relative;
+  display: inline-block;
+  width: 64px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+}
+
+.pvp__one {
+  position: absolute;
+  top: -3px;
+  left: 50%;
+  width: 2px;
+  height: 12px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--text-subtle);
+}
+
+.pvp__dot {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: var(--text);
+  box-shadow: 0 0 0 2px var(--surface-sunken);
+}

@@ -8,6 +8,7 @@ import type {
   CompareTable,
 } from "../api/compareTypes";
 import type { AssetClass } from "../api/types";
+import { defaultMarket } from "./referencesFixtures";
 
 /** O que o servidor falso responde em `/compare` e `/compare/returns` (dados fictícios). */
 let tableOverride: CompareTable | null = null;
@@ -113,8 +114,28 @@ export function sampleTable(keys: readonly string[]): CompareTable {
       direction: "lower",
       cells: assets.map((a, i) => (a.family !== "fund" ? missing("not_applicable") : known(3 + i))),
     });
+    rows.push({
+      id: "cash_share",
+      group: "fund",
+      unit: "percent",
+      direction: "none",
+      cells: assets.map((a, i) => (a.family !== "fund" ? missing("not_applicable") : known(6 + i))),
+    });
+    rows.push({
+      id: "liquidity_30d",
+      group: "fund",
+      unit: "money_compact",
+      direction: "higher",
+      cells: assets.map((a, i) => (a.family !== "fund" ? missing("not_applicable") : known(8_000_000 + 1_000_000 * i))),
+    });
   }
-  return { as_of: "2026-11-27", assets, rows: rows.map((row) => mark(row, assets)) };
+  const market = defaultMarket();
+  return {
+    as_of: "2026-11-27",
+    assets,
+    rows: rows.map((row) => mark(row, assets)),
+    rates: { cdi_12m: market.cdi_12m, real_rate: market.real_rate },
+  };
 }
 
 const DATES = Array.from({ length: 6 }, (_, i) => `2026-0${i + 1}-15`);

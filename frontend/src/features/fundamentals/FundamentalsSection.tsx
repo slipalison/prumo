@@ -5,6 +5,7 @@ import type {
   Figure,
   FundFundamentals,
   PeriodFigures,
+  Rates,
   YearCount,
 } from "../../api/fundamentalsTypes";
 import type { Asset } from "../../api/types";
@@ -15,6 +16,7 @@ import { formatDay, formatPercent } from "../../lib/format";
 import { formatIsoDate } from "../../lib/income";
 import type { Money } from "../../lib/money";
 import { useMoney } from "../../lib/privacy";
+import { FundMarketGrid, PriceToBook } from "./FundIndicators";
 import { Missing } from "./Missing";
 import { NOT_APPLICABLE_TEXT, UNSUPPORTED_TEXT, notApplicableReason } from "./fundamentalsText";
 import "./fundamentals.css";
@@ -144,7 +146,7 @@ function CompanyBody({ company, money }: { company: CompanyFundamentals; money: 
   );
 }
 
-function FundBody({ fund, asset, money }: { fund: FundFundamentals; asset: Asset; money: Money }) {
+function FundBody({ fund, asset, money, rates }: { fund: FundFundamentals; asset: Asset; money: Money; rates: Rates }) {
   // O P/VP acompanha o preço ao vivo da carteira; o do servidor é o da última leitura.
   const price = asset.price_source === "missing" ? null : asset.unit_price;
   const nav = fund.nav_per_share.value;
@@ -162,11 +164,7 @@ function FundBody({ fund, asset, money }: { fund: FundFundamentals; asset: Asset
         <div>
           <dt>P/VP</dt>
           <dd>
-            {priceToBook.value === null ? (
-              <Missing gap={priceToBook.gap} />
-            ) : (
-              priceToBook.value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-            )}
+            <PriceToBook figure={priceToBook} />
           </dd>
         </div>
         <div>
@@ -178,6 +176,18 @@ function FundBody({ fund, asset, money }: { fund: FundFundamentals; asset: Asset
           <dd>{reais(money, fund.net_assets)}</dd>
         </div>
       </dl>
+      {fund.market && (
+        <>
+          <span className="field__hint">Caixa do informe; mercado e proventos dos últimos pregões</span>
+          <FundMarketGrid
+            cashShare={fund.cash_share}
+            market={fund.market}
+            rates={rates}
+            money={money}
+            label={asset.symbol ?? asset.display_name}
+          />
+        </>
+      )}
     </>
   );
 }
@@ -208,7 +218,14 @@ export function FundamentalsSection({ asset }: FundamentalsSectionProps) {
     body = <CompanyBody company={entry.company} money={money} />;
     source = `${sourceLine(entry.company)}. EBITDA aproximado: EBIT + depreciação e amortização.`;
   } else if (entry.kind === "fund") {
-    body = <FundBody fund={entry.fund} asset={asset} money={money} />;
+    body = (
+      <FundBody
+        fund={entry.fund}
+        asset={asset}
+        money={money}
+        rates={query.data?.rates ?? { cdi_12m: null, real_rate: null }}
+      />
+    );
     source = fundSourceLine(entry.fund);
   } else {
     body = <p className="field__hint">{UNSUPPORTED_TEXT[entry.reason]}</p>;

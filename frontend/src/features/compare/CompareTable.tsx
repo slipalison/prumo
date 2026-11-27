@@ -15,6 +15,7 @@ import { cx } from "../../lib/cx";
 import { formatPercent } from "../../lib/format";
 import type { Money } from "../../lib/money";
 import { useMoney } from "../../lib/privacy";
+import { ratesText } from "../fundamentals/fundIndicatorsText";
 import { FINANCIAL_TEMPLATE_TEXT, NOT_APPLICABLE_TEXT } from "../fundamentals/fundamentalsText";
 import { DIRECTION_TEXT, REASON_TEXT, ROW_TEXT } from "./compareText";
 
@@ -100,14 +101,22 @@ function columnsOf(table: Table, money: Money): Array<DataColumn<CompareRow>> {
       label: "Indicador",
       rowHeader: true,
       width: "15rem",
-      cell: (row) => (
-        <span className="compare-row-label">
-          {ROW_TEXT[row.id].label}
-          <InfoTip label={`Sobre ${ROW_TEXT[row.id].label}`} align="start">
-            {ROW_TEXT[row.id].hint} {DIRECTION_TEXT[row.direction]}
-          </InfoTip>
-        </span>
-      ),
+      cell: (row) => {
+        // Ao lado do rendimento, o CDI líquido e o juro real: só contexto.
+        const context = row.id === "dividend_yield_12m" ? ratesText(table.rates) : null;
+        return (
+          <span className="compare-row-label">
+            <span>
+              {ROW_TEXT[row.id].label}
+              {context && <span className="compare-row-label__context">{context}</span>}
+            </span>
+            <InfoTip label={`Sobre ${ROW_TEXT[row.id].label}`} align="start">
+              {ROW_TEXT[row.id].hint} {DIRECTION_TEXT[row.direction]}
+              {context && " O CDI de 12 meses depois do IR de 15% e o juro real da NTN-B de referência ficam ao lado só como contexto."}
+            </InfoTip>
+          </span>
+        );
+      },
     },
     ...table.assets.map(
       (asset, index): DataColumn<CompareRow> => ({

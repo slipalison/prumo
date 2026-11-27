@@ -1,6 +1,7 @@
 // O teto de preço e as referências de preço, espelho de docs/api.md
 // (§ Teto de preço e § Referências de preço).
 
+import type { FundIndicators } from "./fundamentalsTypes";
 import type { AssetClass } from "./types";
 
 /** Um método de referência que pode ser o teto. Ações: Bazin, Graham, Pelas duas; FIIs: VP, Rendimento, Pelas duas. */
@@ -83,6 +84,8 @@ export type FundReference = ReferenceBase & {
   nav: RefValue;
   fund_yield: FundYieldRef;
   combined: RefValue;
+  /** O caixa, a liquidez, os CAGRs e o rendimento de 12 meses (a linha aberta da tabela). */
+  indicators: FundIndicators | null;
 };
 
 export type RealRate = {

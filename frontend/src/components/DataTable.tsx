@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { cx } from "../lib/cx";
 import { IconAlert, IconCheck, IconClose, IconInfo } from "./icons";
 
@@ -35,6 +35,13 @@ type DataTableProps<T> = {
   stack?: boolean;
   /** Classe por linha (para o estado da linha: atenção, desligada). */
   rowClassName?: (row: T) => string | undefined;
+  /**
+   * A linha aberta logo abaixo da linha (o detalhe que não cabe numa coluna):
+   * `null` quando a linha está fechada. Quem abre é um botão do chamador, com
+   * `aria-expanded` e `aria-controls` apontando para `detailId`.
+   */
+  detail?: (row: T) => ReactNode | null;
+  detailId?: (row: T) => string;
   className?: string;
 };
 
@@ -61,6 +68,8 @@ export function DataTable<T>({
   cozy = false,
   stack = true,
   rowClassName,
+  detail,
+  detailId,
   className,
 }: DataTableProps<T>) {
   const isEmpty = rows.length === 0 && empty !== undefined;
@@ -103,22 +112,32 @@ export function DataTable<T>({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={rowKey(row)} className={rowClassName?.(row)}>
-              {columns.map((column) => {
-                const classes = cx(ALIGN[column.align ?? "start"], column.wideOnly && "is-wide-only");
-                return column.rowHeader ? (
-                  <th key={column.key} scope="row" className={classes}>
-                    {column.cell(row)}
-                  </th>
-                ) : (
-                  <td key={column.key} className={classes} data-label={column.label}>
-                    {column.cell(row)}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
+          {rows.map((row) => {
+            const opened = detail?.(row) ?? null;
+            return (
+              <Fragment key={rowKey(row)}>
+                <tr className={cx(rowClassName?.(row), opened !== null && "is-open")}>
+                  {columns.map((column) => {
+                    const classes = cx(ALIGN[column.align ?? "start"], column.wideOnly && "is-wide-only");
+                    return column.rowHeader ? (
+                      <th key={column.key} scope="row" className={classes}>
+                        {column.cell(row)}
+                      </th>
+                    ) : (
+                      <td key={column.key} className={classes} data-label={column.label}>
+                        {column.cell(row)}
+                      </td>
+                    );
+                  })}
+                </tr>
+                {opened !== null && (
+                  <tr className="data-table__detail" id={detailId?.(row)}>
+                    <td colSpan={columns.length}>{opened}</td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>

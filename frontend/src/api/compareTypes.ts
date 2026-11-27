@@ -1,3 +1,4 @@
+import type { Rates } from "./fundamentalsTypes";
 import type { AssetClass } from "./types";
 
 /**
@@ -31,7 +32,14 @@ export type CompareRowId =
   | "market_cap"
   | "nav_per_share"
   | "vacancy"
-  | "net_assets";
+  | "net_assets"
+  | "cash_share"
+  | "liquidity_30d"
+  | "liquidity_90d"
+  | "dividend_cagr_3y"
+  | "dividend_cagr_5y"
+  | "price_cagr_3y"
+  | "price_cagr_5y";
 
 /** Por que uma célula não tem número: os motivos dos fundamentos e os do comparador. */
 export type CompareReason =
@@ -97,6 +105,8 @@ export type CompareTable = {
   as_of: string;
   assets: CompareAsset[];
   rows: CompareRow[];
+  /** O CDI de 12 meses e o juro real ao lado do rendimento: só contexto. */
+  rates: Rates;
 };
 
 export type ComparePeriod = "1m" | "3m" | "6m" | "ytd" | "12m" | "3y" | "5y" | "max";

@@ -700,6 +700,38 @@
   gap: var(--space-2);
 }
 
+/* O nome do FII abre a linha dos indicadores: parece o nome, com a seta. */
+.reference__expand {
+  min-height: 36px;
+  padding: 0 var(--space-1) 0 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.reference__expand:hover .reference__expand-icon {
+  color: var(--text);
+}
+
+.reference__expand-icon {
+  color: var(--text-subtle);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.reference__expand[aria-expanded="true"] .reference__expand-icon {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reference__expand-icon {
+    transition: none;
+  }
+}
+
 .reference__value {
   display: inline-flex;
   align-items: center;

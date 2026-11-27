@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { AssetFundamentals, CompanyFundamentals, FundFundamentals } from "../../api/fundamentalsTypes";
 import { MASK_BRL } from "../../lib/money";
 import { HIDE_VALUES_KEY } from "../../lib/privacy";
-import { samplePeriod, setFundamentals } from "../../test/fundamentalsHandlers";
+import { sampleFundMarket, samplePeriod, setFundamentals } from "../../test/fundamentalsHandlers";
 import { renderApp } from "../../test/render";
 import { server } from "../../test/server";
 import { GAP_TEXT, NOT_APPLICABLE_TEXT, UNSUPPORTED_TEXT } from "./fundamentalsText";
@@ -60,6 +60,9 @@ function fund(overrides: Partial<FundFundamentals> = {}): AssetFundamentals {
       price_to_book: { value: 0.9, gap: null },
       vacancy: { value: 0.15, gap: null },
       vacancy_reference_date: "2026-09-30",
+      total_assets: { value: 1_100_000_000, gap: null },
+      cash_share: { value: 0.064, gap: null },
+      market: sampleFundMarket(),
       synced_at: "2026-11-26T15:00:00Z",
       ...overrides,
     },
@@ -245,6 +248,46 @@ describe("Fundamentos na folha do ativo", () => {
     expect(value(section, "Patrimônio líquido")).toHaveTextContent(/R\$\s1\sbi/);
     await openSource(user, section);
     expect(section).toHaveTextContent("Fonte: CVM, informe mensal de 10/2026; vacância do trimestre encerrado em 30/09/2026 · conferido em 26/11/2026.");
+  });
+
+  it("FII: a régua do P/VP marca o 1, e caixa, liquidez e CAGRs ficam ao lado do CDI e do juro real", async () => {
+    setFundamentals([fund()]);
+    const { section } = await openSection(/KNRI11/, "KNRI11");
+    expect(await within(section).findByText("Caixa")).toBeInTheDocument();
+    // A régua diz onde a cotação está em relação ao VP, sem juízo.
+    expect(within(section).getByRole("img", { name: "P/VP 1,42: 42% acima do valor patrimonial" })).toBeInTheDocument();
+    expect(value(section, "Caixa")).toHaveTextContent("6,4% do ativo");
+    expect(value(section, "Liquidez média diária")).toHaveTextContent(/R\$\s8,4\smi/);
+    expect(value(section, "Liquidez média diária")).toHaveTextContent(/R\$\s7,9\smi em 90/);
+    expect(value(section, "Proventos por cota, CAGR")).toHaveTextContent("+5,2% a.a. 3 anos");
+    expect(value(section, "Proventos por cota, CAGR")).toHaveTextContent("+4,1% a.a. em 5 anos");
+    expect(value(section, "Cota, CAGR")).toHaveTextContent("−1,8% a.a. 3 anos");
+    expect(value(section, "Cota, CAGR")).toHaveTextContent("+1,2% a.a. em 5 anos");
+    const yieldValue = value(section, "Rendimento 12 meses");
+    expect(yieldValue).toHaveTextContent("9,3%");
+    expect(yieldValue).toHaveTextContent("CDI 12 meses líquido 12,1% · juro real 7,1%");
+  });
+
+  it("FII sem histórico de mercado lido: só os números do informe", async () => {
+    setFundamentals([
+      fund({
+        market: null,
+        price_to_book: { value: 0.9, gap: null },
+      }),
+    ]);
+    const { section } = await openSection(/KNRI11/, "KNRI11");
+    expect(await within(section).findByText("Vacância física")).toBeInTheDocument();
+    expect(within(section).queryByText("Liquidez média diária")).toBeNull();
+  });
+
+  it("FII com o olho fechado: a liquidez sai mascarada", async () => {
+    window.localStorage.setItem(HIDE_VALUES_KEY, "1");
+    setFundamentals([fund({ market: sampleFundMarket({ dividend_cagr_5y: { value: null, gap: "insufficient_history" } }) })]);
+    const { section } = await openSection(/KNRI11/, "KNRI11");
+    expect(await within(section).findByText("Liquidez média diária")).toBeInTheDocument();
+    expect(value(section, "Liquidez média diária")).toHaveTextContent(MASK_BRL);
+    expect(section.textContent).not.toMatch(/R\$\s*\d/);
+    expect(within(value(section, "Proventos por cota, CAGR")).getByText(GAP_TEXT.insufficient_history)).toBeInTheDocument();
   });
 
   it("FII de papel e sem cotas: o motivo no lugar do número", async () => {

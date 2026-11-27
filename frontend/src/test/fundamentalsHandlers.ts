@@ -1,20 +1,49 @@
 import { http, HttpResponse } from "msw";
-import type { AssetFundamentals, Figure, PeriodFigures } from "../api/fundamentalsTypes";
+import type { AssetFundamentals, Figure, FundMarket, PeriodFigures, Rates } from "../api/fundamentalsTypes";
+import { defaultMarket } from "./referencesFixtures";
 
 let assets: AssetFundamentals[] = [];
+let rates: Rates = sampleRates();
 
 /** O que o servidor falso devolve em `GET /fundamentals` (cada teste começa vazio). */
 export function setFundamentals(next: AssetFundamentals[]) {
   assets = next;
 }
 
-export function resetFundamentals() {
-  assets = [];
+/** As taxas ao lado do rendimento dos FIIs (`null` nas duas: sem taxa guardada). */
+export function setFundamentalsRates(next: Rates) {
+  rates = next;
 }
 
-export const fundamentalsHandlers = [http.get("/api/v1/fundamentals", () => HttpResponse.json({ assets }))];
+export function resetFundamentals() {
+  assets = [];
+  rates = sampleRates();
+}
+
+export const fundamentalsHandlers = [http.get("/api/v1/fundamentals", () => HttpResponse.json({ assets, rates }))];
 
 const known = (value: number): Figure => ({ value, gap: null });
+
+/** O CDI de 12 meses (14,20%; 12,07% líquido) e o juro real (7,12%) das referências fictícias. */
+export function sampleRates(): Rates {
+  const market = defaultMarket();
+  return { cdi_12m: market.cdi_12m, real_rate: market.real_rate };
+}
+
+/** O histórico de mercado de um FII fictício (números inventados). */
+export function sampleFundMarket(overrides: Partial<FundMarket> = {}): FundMarket {
+  return {
+    liquidity_30d: known(8_400_000),
+    liquidity_90d: known(7_900_000),
+    dividend_cagr_3y: known(0.052),
+    dividend_cagr_5y: known(0.041),
+    price_cagr_3y: known(-0.018),
+    price_cagr_5y: known(0.012),
+    dividend_yield_12m: known(0.0929),
+    dividends_12m: 13.2,
+    ...overrides,
+  };
+}
 
 /** Um período fictício de uma indústria (números inventados). */
 export function samplePeriod(overrides: Partial<PeriodFigures> = {}): PeriodFigures {

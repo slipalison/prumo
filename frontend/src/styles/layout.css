@@ -306,6 +306,23 @@
   height: var(--touch);
 }
 
+/* A linha aberta logo abaixo de uma linha (o detalhe que não cabe numa
+   coluna): altura livre, sem o fio entre as duas e sem o hover. */
+.data-table tbody tr.is-open > * {
+  border-bottom-color: transparent;
+}
+
+.data-table tbody tr.data-table__detail:hover {
+  background: none;
+}
+
+.data-table tbody tr.data-table__detail > td {
+  height: auto;
+  padding-top: 0;
+  padding-bottom: var(--space-3);
+  text-align: left;
+}
+
 .data-table .is-end {
   text-align: right;
 }

@@ -52,6 +52,31 @@ export const ROW_TEXT: Record<CompareRowId, { label: string; hint: string }> = {
     hint: "Área vaga sobre a área dos imóveis para renda, pelo informe trimestral mais novo. Fundo de papel não declara imóvel.",
   },
   net_assets: { label: "Patrimônio líquido do fundo", hint: "Pelo último informe mensal da CVM." },
+  cash_share: {
+    label: "Caixa",
+    hint: "Disponibilidades, títulos públicos e privados e fundos de renda fixa sobre o ativo total, pelo último informe mensal da CVM.",
+  },
+  liquidity_30d: {
+    label: "Liquidez média, 30 pregões",
+    hint: "Média do volume financeiro negociado por pregão (cotas × fechamento) nos últimos 30 pregões.",
+  },
+  liquidity_90d: {
+    label: "Liquidez média, 90 pregões",
+    hint: "Média do volume financeiro negociado por pregão nos últimos 90 pregões.",
+  },
+  dividend_cagr_3y: {
+    label: "Proventos por cota, CAGR 3 anos",
+    hint: "Crescimento anual composto da soma dos proventos por cota de 12 meses, de três anos atrás até hoje (desdobramentos ajustados).",
+  },
+  dividend_cagr_5y: {
+    label: "Proventos por cota, CAGR 5 anos",
+    hint: "O mesmo crescimento em cinco anos. Só com cinco anos inteiros de proventos conhecidos.",
+  },
+  price_cagr_3y: {
+    label: "Cota, CAGR 3 anos",
+    hint: "Crescimento anual composto da cota em três anos, sem os proventos, com desdobramentos e bonificações ajustados.",
+  },
+  price_cagr_5y: { label: "Cota, CAGR 5 anos", hint: "O mesmo crescimento da cota em cinco anos." },
 };
 
 /** Para onde o destaque olha, dito na dica de cada linha. */

@@ -12,7 +12,7 @@ import type { Plan } from "../api/types";
 import { sampleAlerts } from "../test/alertsHandlers";
 import { samplePlan, type StoredAsset } from "../test/fixtures";
 import type { AssetFundamentals } from "../api/fundamentalsTypes";
-import { samplePeriod } from "../test/fundamentalsHandlers";
+import { sampleFundMarket, samplePeriod, sampleRates } from "../test/fundamentalsHandlers";
 import { sampleCash } from "../test/incomeHandlers";
 import { demoAgendaHandlers } from "./demoAgenda";
 import { demoResults } from "../test/resultsHandlers";
@@ -388,6 +388,29 @@ function demoFundamentals(): AssetFundamentals[] {
         book_value_per_share: { value: 9.8, gap: null },
       },
     },
+    {
+      asset_id: "a-knri",
+      symbol: "KNRI11",
+      kind: "fund",
+      company: null,
+      reason: null,
+      fund: {
+        cnpj: "00.000.000/0001-91",
+        name: "FUNDO FICTICIO FII",
+        reference_date: "2026-10-01",
+        net_assets: { value: 984_000_000, gap: null },
+        shares: { value: 10_000_000, gap: null },
+        nav_per_share: { value: 98.4, gap: null },
+        price: 142,
+        price_to_book: { value: 1.44, gap: null },
+        vacancy: { value: 0.032, gap: null },
+        vacancy_reference_date: "2026-09-30",
+        total_assets: { value: 1_051_000_000, gap: null },
+        cash_share: { value: 0.064, gap: null },
+        market: sampleFundMarket(),
+        synced_at: "2026-11-26T15:00:00Z",
+      },
+    },
   ];
 }
 
@@ -412,7 +435,7 @@ export const demoHandlers: HttpHandler[] = [
   ...demoIncomeHistoryHandlers(),
   http.get("/api/v1/cash", () => HttpResponse.json(sampleCash())),
   http.get("/api/v1/results", () => HttpResponse.json({ assets: demoResults() })),
-  http.get("/api/v1/fundamentals", () => HttpResponse.json({ assets: demoFundamentals() })),
+  http.get("/api/v1/fundamentals", () => HttpResponse.json({ assets: demoFundamentals(), rates: sampleRates() })),
   http.get("/api/v1/alerts", () => HttpResponse.json(sampleAlerts())),
   http.get("/api/v1/objectives", () =>
     HttpResponse.json({

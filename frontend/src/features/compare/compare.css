@@ -130,6 +130,14 @@
   gap: var(--space-1);
 }
 
+/* O CDI líquido e o juro real sob o nome da linha do rendimento: só contexto. */
+.compare-row-label__context {
+  display: block;
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
 /* O destaque: neutro, sem cor de "bom" ou "ruim". O texto diz "maior" ou "menor". */
 .compare-mark {
   display: inline-flex;

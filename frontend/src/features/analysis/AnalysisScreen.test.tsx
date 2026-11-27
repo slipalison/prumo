@@ -5,6 +5,7 @@ import type { Analysis, RuleResult, RuleStatus } from "../../api/analysisTypes";
 import { analysisState, defaultAnalysis, result, scoreOf } from "../../test/analysisHandlers";
 import { renderApp } from "../../test/render";
 import { getDb, server } from "../../test/server";
+import { GAP_TEXT as GAP_TEXT_FUNDAMENTALS } from "../fundamentals/fundamentalsText";
 
 async function openAnalysis() {
   const rendered = renderApp("analise");
@@ -402,7 +403,7 @@ describe("tela Análise", () => {
     // FIIs: o tipo, VP, Rendimento e Pelas duas; nunca Bazin nem Graham.
     const funds = within(references.getByRole("table", { name: "FIIs" }));
     expect(funds.queryByRole("columnheader", { name: "Bazin" })).toBeNull();
-    const knri = funds.getByRole("rowheader", { name: "KNRI11" }).closest("tr") as HTMLElement;
+    const knri = funds.getByRole("rowheader", { name: /^KNRI11/ }).closest("tr") as HTMLElement;
     expect(cellOf(knri, "Tipo")).toHaveTextContent("Tijolo");
     expect(cellOf(knri, "VP")).toHaveTextContent(/R\$\s98,40/);
     expect(cellOf(knri, "Rendimento")).toHaveTextContent(/R\$\s137,21/);
@@ -415,18 +416,18 @@ describe("tela Análise", () => {
         /Tijolo: alvo do tijolo 7,12% \+ 2,5 p\.p\. = 9,62%; proventos 12m R\$\s13,20 ÷ 9,62% = R\$\s137,21\./,
       ),
     ).toBeInTheDocument();
-    const mxrf = funds.getByRole("rowheader", { name: "MXRF11" }).closest("tr") as HTMLElement;
+    const mxrf = funds.getByRole("rowheader", { name: /^MXRF11/ }).closest("tr") as HTMLElement;
     await user.click(within(mxrf).getByRole("button", { name: "Como sai: Rendimento de MXRF11" }));
     expect(within(mxrf).getByText(/alvo do papel: CDI 14,20% × 0,85 = 12,07% \+ 1,0 p\.p\. = 13,07%/)).toBeInTheDocument();
-    const hibr = funds.getByRole("rowheader", { name: "HIBR11" }).closest("tr") as HTMLElement;
+    const hibr = funds.getByRole("rowheader", { name: /^HIBR11/ }).closest("tr") as HTMLElement;
     expect(cellOf(hibr, "Tipo")).toHaveTextContent("Híbrido");
     await user.click(within(hibr).getByRole("button", { name: "Como sai: Rendimento de HIBR11" }));
     expect(within(hibr).getByText(/60% tijolo \(9,62%\) \+ 40% papel \(13,07%\) = 11,00%/)).toBeInTheDocument();
-    const foff = funds.getByRole("rowheader", { name: "FOFF11" }).closest("tr") as HTMLElement;
+    const foff = funds.getByRole("rowheader", { name: /^FOFF11/ }).closest("tr") as HTMLElement;
     await user.click(within(foff).getByRole("button", { name: "Como sai: Rendimento de FOFF11" }));
     expect(within(foff).getByText(/a carteira dos fundos de baixo não é conhecida/)).toBeInTheDocument();
     // Sem tipo: sem Rendimento, com o motivo para o leitor de tela.
-    const trxf = funds.getByRole("rowheader", { name: "TRXF11" }).closest("tr") as HTMLElement;
+    const trxf = funds.getByRole("rowheader", { name: /^TRXF11/ }).closest("tr") as HTMLElement;
     expect(cellOf(trxf, "Tipo")).toHaveTextContent("Sem tipo");
     expect(cellOf(trxf, "Rendimento")).toHaveTextContent("tipo do FII ainda desconhecido");
     expect(cellOf(trxf, "Rendimento")).not.toHaveTextContent(/R\$/);
@@ -437,6 +438,38 @@ describe("tela Análise", () => {
       references.getByText(/juro real 7,12% em 19\/11\/2026 \(Tesouro IPCA\+ com Juros Semestrais 2037\) \+ 2,5 p\.p\./),
     ).toBeInTheDocument();
     // Nada de "oportunidade" nem de "compre".
+    expect(document.body.textContent).not.toMatch(/oportunidade|compre|preço justo|upside/i);
+  });
+
+  it("o nome do FII abre a linha com o P/VP, o caixa, a liquidez e os CAGRs, e fecha de novo", async () => {
+    const { user } = await openAnalysis();
+    const references = card("Referências de preço");
+    const funds = within(references.getByRole("table", { name: "FIIs" }));
+    // Fechada por padrão: a tabela não cresce.
+    expect(funds.queryByText("Liquidez média diária")).toBeNull();
+    const toggle = funds.getByRole("button", { name: "KNRI11: caixa, liquidez e crescimento" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const detail = document.getElementById(toggle.getAttribute("aria-controls") ?? "") as HTMLElement;
+    expect(detail).not.toBeNull();
+    const term = (label: string) => within(detail).getByText(label).nextSibling as HTMLElement;
+    // R$ 142 ÷ R$ 98,40: a régua com a marca em 1, em palavras.
+    expect(within(detail).getByRole("img", { name: "P/VP 1,44: 44% acima do valor patrimonial" })).toBeInTheDocument();
+    expect(term("Caixa")).toHaveTextContent("6,4% do ativo");
+    expect(term("Liquidez média diária")).toHaveTextContent(/R\$\s8,4\smi/);
+    expect(term("Proventos por cota, CAGR")).toHaveTextContent("+5,2% a.a.");
+    expect(term("Cota, CAGR")).toHaveTextContent("−1,8% a.a.");
+    expect(term("Rendimento 12 meses")).toHaveTextContent("CDI 12 meses líquido 12,1% · juro real 7,1%");
+    // Sem informe da CVM: o caixa diz por quê; histórico curto, o CAGR também.
+    await user.click(funds.getByRole("button", { name: "TRXF11: caixa, liquidez e crescimento" }));
+    const trxf = document.getElementById("references-detail-a-trxf") as HTMLElement;
+    expect(within(trxf).getByText(GAP_TEXT_FUNDAMENTALS.not_reported)).toBeInTheDocument();
+    expect(within(trxf).getAllByText(GAP_TEXT_FUNDAMENTALS.insufficient_history).length).toBeGreaterThan(0);
+    // Fecha de novo.
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(document.getElementById("references-detail-a-knri")).toBeNull();
     expect(document.body.textContent).not.toMatch(/oportunidade|compre|preço justo|upside/i);
   });
 
@@ -468,7 +501,7 @@ describe("tela Análise", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     // A tabela mostra o teto novo: o valor de hoje e o método.
     const knri = within(references.getByRole("table", { name: "FIIs" }))
-      .getByRole("rowheader", { name: "KNRI11" })
+      .getByRole("rowheader", { name: /^KNRI11/ })
       .closest("tr") as HTMLElement;
     await waitFor(() => expect(cellOf(knri, "Seu teto")).toHaveTextContent(/R\$\s137,21\s*Rendimento/));
   });
@@ -514,7 +547,7 @@ describe("tela Análise", () => {
     const { user } = await openAnalysis();
     const references = card("Referências de preço");
     const funds = within(references.getByRole("table", { name: "FIIs" }));
-    const trxf = funds.getByRole("rowheader", { name: "TRXF11" }).closest("tr") as HTMLElement;
+    const trxf = funds.getByRole("rowheader", { name: /^TRXF11/ }).closest("tr") as HTMLElement;
     expect(cellOf(trxf, "Seu teto")).toHaveTextContent("Rendimento: sem valor");
     await user.click(within(trxf).getByRole("button", { name: "Por que o teto de TRXF11 está sem valor" }));
     expect(within(trxf).getByText(/tipo do FII ainda desconhecido\): TRXF11 fica fora do aporte/)).toBeInTheDocument();

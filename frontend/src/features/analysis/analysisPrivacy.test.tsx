@@ -76,7 +76,7 @@ describe("Análise com o olho fechado", () => {
     expect(cell(itsa, "Hoje")).toHaveTextContent("R$ ••••");
     await openTip(user, "Como sai: Bazin de ITSA4");
     expect(within(itsa).getByText(/Média de 4 anos de dividendos: R\$ •••• por cota ao ano/)).toBeInTheDocument();
-    const knri = references.getByRole("rowheader", { name: "KNRI11" }).closest("tr") as HTMLElement;
+    const knri = references.getByRole("rowheader", { name: /^KNRI11/ }).closest("tr") as HTMLElement;
     expect(cell(knri, "VP")).toHaveTextContent("R$ ••••");
     expect(cell(knri, "Rendimento")).toHaveTextContent("R$ ••••");
     await openTip(user, "Como sai: Rendimento de KNRI11");
