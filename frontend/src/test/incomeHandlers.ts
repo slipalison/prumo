@@ -1,6 +1,15 @@
 import { http, HttpResponse } from "msw";
 import type { Cash } from "../api/cashTypes";
-import type { IncomeEvent, IncomeMonth, IncomeSummary, PortfolioYield, YieldOnCost, YieldReport } from "../api/incomeTypes";
+import type {
+  IncomeEstimate,
+  IncomeEstimateAsset,
+  IncomeEvent,
+  IncomeMonth,
+  IncomeSummary,
+  PortfolioYield,
+  YieldOnCost,
+  YieldReport,
+} from "../api/incomeTypes";
 
 /** Os 12 meses que terminam em novembro de 2026, todos zerados. */
 export function emptyMonths(): IncomeMonth[] {
@@ -26,6 +35,38 @@ export function emptyYieldReport(): YieldReport {
   return { portfolio: noPortfolioYield(), assets: [] };
 }
 
+/**
+ * Um ativo FICTÍCIO da estimativa: o que não for dito vale como pela B3, sem
+ * JCP (líquido = bruto), sem média do habitual e sem a marca.
+ */
+export function estimateAsset(
+  fields: Pick<IncomeEstimateAsset, "asset_id" | "symbol" | "display_name" | "quantity" | "per_unit_12m" | "monthly"> &
+    Partial<IncomeEstimateAsset>,
+): IncomeEstimateAsset {
+  return {
+    source: "b3",
+    per_unit_12m_gross: fields.per_unit_12m,
+    monthly_gross: fields.monthly,
+    usual: null,
+    above_usual: false,
+    trailing_12m: fields.monthly * 12,
+    ...fields,
+  };
+}
+
+/** A estimativa de uma lista de ativos: os totais somam as linhas. */
+export function estimateOf(assets: IncomeEstimateAsset[], missing: string[] = []): IncomeEstimate {
+  const round2 = (value: number) => Math.round(value * 100) / 100;
+  return {
+    monthly: round2(assets.reduce((acc, a) => acc + a.monthly, 0)),
+    monthly_gross: round2(assets.reduce((acc, a) => acc + a.monthly_gross, 0)),
+    above_usual_monthly: round2(assets.filter((a) => a.above_usual).reduce((acc, a) => acc + a.monthly, 0)),
+    updated_at: "2026-11-25T11:00:00Z",
+    assets,
+    missing,
+  };
+}
+
 export function emptySummary(): IncomeSummary {
   return {
     today: "2026-11-25",
@@ -36,7 +77,7 @@ export function emptySummary(): IncomeSummary {
     by_payer: [],
     years: [],
     upcoming: [],
-    estimate: { monthly: 0, updated_at: null, assets: [], missing: [] },
+    estimate: { monthly: 0, monthly_gross: 0, above_usual_monthly: 0, updated_at: null, assets: [], missing: [] },
     yield_on_cost: noPortfolioYield(),
     goal: null,
   };
@@ -86,10 +127,21 @@ export function sampleSummary(): IncomeSummary {
     ],
     estimate: {
       monthly: 410.5,
+      monthly_gross: 422.5,
+      above_usual_monthly: 0,
       updated_at: "2026-11-25T11:00:00Z",
       assets: [
-        { asset_id: "a-knri", symbol: "KNRI11", display_name: "Kinea Renda Imobiliária", quantity: 10, per_unit_12m: 12.6, monthly: 10.5, trailing_12m: 126 },
-        { asset_id: "a-itsa", symbol: "ITSA4", display_name: "Itaúsa", quantity: 2500, per_unit_12m: 0.96, monthly: 200, trailing_12m: 2400 },
+        estimateAsset({ asset_id: "a-knri", symbol: "KNRI11", display_name: "Kinea Renda Imobiliária", quantity: 10, per_unit_12m: 12.6, monthly: 10.5 }),
+        estimateAsset({
+          asset_id: "a-itsa",
+          symbol: "ITSA4",
+          display_name: "Itaúsa",
+          quantity: 2500,
+          per_unit_12m: 0.96,
+          per_unit_12m_gross: 1.0176,
+          monthly: 200,
+          monthly_gross: 212,
+        }),
       ],
       missing: ["ZZZZ3"],
     },

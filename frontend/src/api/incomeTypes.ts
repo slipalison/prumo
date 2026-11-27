@@ -95,20 +95,48 @@ export type IncomeYear = {
   total: number;
 };
 
+/** De onde veio o valor por cota: os anúncios da B3 (JCP separado) ou o Yahoo (bruto, JCP junto). */
+export type IncomeEstimateSource = "b3" | "yahoo";
+
+/** A média anual do que o ativo costuma pagar (até 5 anos de histórico). */
+export type IncomeUsual = {
+  /** Quantos anos inteiros entraram (2 a 5). */
+  years: number;
+  /** Por cota, por ano, líquido (aproximado: usa a parte de JCP dos 12 meses). */
+  per_unit_year: number;
+  per_unit_year_gross: number;
+  /** Com a quantidade de hoje, por mês, líquido. */
+  monthly: number;
+  monthly_gross: number;
+};
+
 export type IncomeEstimateAsset = {
   asset_id: string;
   symbol: string | null;
   display_name: string;
   quantity: number;
+  source: IncomeEstimateSource;
+  /** O que a cota pagou em 12 meses, líquido do IR do JCP. */
   per_unit_12m: number;
+  per_unit_12m_gross: number;
+  /** Por mês com a quantidade de hoje, líquido. */
   monthly: number;
-  /** O que a posição teria rendido em 12 meses (bruto), com as cotas da data com de cada dividendo. */
+  monthly_gross: number;
+  /** `null` com menos de 2 anos de histórico. */
+  usual: IncomeUsual | null;
+  /** Os 12 meses passam de 1,5 × a média do habitual. */
+  above_usual: boolean;
+  /** O que a posição teria rendido em 12 meses, com as cotas da data com de cada provento (líquido pela B3, bruto pelo Yahoo). */
   trailing_12m: number | null;
 };
 
-/** A renda mensal estimada pelo histórico por cota — nunca é extrato. */
+/** A renda mensal estimada pelo que cada cota pagou — nunca é extrato. */
 export type IncomeEstimate = {
+  /** Líquido do IR do JCP. */
   monthly: number;
+  monthly_gross: number;
+  /** A parte de `monthly` que vem de ativos acima do habitual. */
+  above_usual_monthly: number;
   updated_at: string | null;
   assets: IncomeEstimateAsset[];
   missing: string[];

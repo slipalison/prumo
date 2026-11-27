@@ -1,5 +1,5 @@
 import type { IncomeEvent, IncomePayer, IncomeSummary } from "../api/incomeTypes";
-import { knownYield, sampleEvent, sampleSummary, unknownCostYield } from "../test/incomeHandlers";
+import { estimateAsset, estimateOf, knownYield, sampleEvent, sampleSummary, unknownCostYield } from "../test/incomeHandlers";
 
 /*
  * A Renda da demonstração com o que a tela tem de mais longo: 25 pagadores (o
@@ -77,19 +77,39 @@ export function demoIncomeSummary(): IncomeSummary {
   const list = upcoming();
   // Os meses passam a somar o que os pagadores somam: o meio da rosca e os números do topo batem.
   const scale = SUM / base.total_12m;
+  // Os bancos e a holding pagam JCP (o bruto é maior); três estão acima do
+  // habitual (antecipações); os dois últimos vêm do Yahoo; FII não tem JCP.
   const estimateAssets = Array.from({ length: 28 }, (_, index) => {
     const symbol = CODES[index] ?? `FIC${index}`;
     const monthly = round2(130 - index * 4.2);
     const quantity = 100 + index * 25;
-    return {
+    const reit = symbol.endsWith("11");
+    const gross = reit || index % 3 !== 0 ? monthly : round2(monthly / 0.9);
+    const yahoo = index >= 26;
+    const above = [1, 4, 9].includes(index);
+    const usualMonthly = round2(above ? monthly / 1.8 : monthly * (index % 2 === 0 ? 0.95 : 1.1));
+    return estimateAsset({
       asset_id: `a-demo-${index}`,
       symbol,
       display_name: symbol,
       quantity,
+      source: yahoo ? "yahoo" : "b3",
       per_unit_12m: round2((monthly * 12) / quantity),
+      per_unit_12m_gross: round2((gross * 12) / quantity),
       monthly,
-      trailing_12m: round2(monthly * 12),
-    };
+      monthly_gross: gross,
+      usual:
+        index === 20
+          ? null
+          : {
+              years: index === 15 ? 3 : 5,
+              per_unit_year: round2((usualMonthly * 12) / quantity),
+              per_unit_year_gross: round2((usualMonthly * 12 * (gross / monthly)) / quantity),
+              monthly: usualMonthly,
+              monthly_gross: round2(usualMonthly * (gross / monthly)),
+            },
+      above_usual: above,
+    });
   });
   return {
     ...base,
@@ -100,11 +120,6 @@ export function demoIncomeSummary(): IncomeSummary {
     by_payer: payers(),
     upcoming: list,
     upcoming_total: round2(list.reduce((acc, e) => acc + e.net, 0)),
-    estimate: {
-      monthly: round2(estimateAssets.reduce((acc, a) => acc + a.monthly, 0)),
-      updated_at: "2026-11-25T11:00:00Z",
-      assets: estimateAssets,
-      missing: [],
-    },
+    estimate: estimateOf(estimateAssets),
   };
 }

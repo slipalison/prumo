@@ -4,7 +4,8 @@ import { useMoney } from "../../lib/privacy";
 /**
  * O que o aporte soma de renda, no topo do resultado: "este aporte soma
  * ~R$ X/mês" e "sua renda vai de R$ A para R$ B". É estimativa, pelo que cada
- * cota pagou em 12 meses, e o rótulo diz isso. O plano não espera o provedor:
+ * cota pagou em 12 meses, líquida do IR do JCP (a mesma da Renda e da meta),
+ * e o rótulo diz isso. O plano não espera o provedor:
  * sem histórico em cache ainda, a estimativa fica indisponível.
  */
 export function PlanIncomeLine({ income }: { income: PlanIncome }) {
@@ -35,7 +36,7 @@ export function ItemIncome({ monthly }: { monthly: number | null }) {
   const money = useMoney();
   if (monthly === null || monthly <= 0) return null;
   return (
-    <span className="plan-card__income" title="Estimativa pelo que a cota pagou nos últimos 12 meses">
+    <span className="plan-card__income" title="Estimativa pelo que a cota pagou nos últimos 12 meses, líquida do IR do JCP">
       +~{money.brl(monthly)}/mês de renda
     </span>
   );

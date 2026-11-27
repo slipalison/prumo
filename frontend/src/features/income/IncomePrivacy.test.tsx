@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { MASK_BRL } from "../../lib/money";
 import { HIDE_VALUES_KEY } from "../../lib/privacy";
 import { samplePlan } from "../../test/fixtures";
-import { emptySummary, sampleCash, sampleEvent, sampleSummary } from "../../test/incomeHandlers";
+import { emptySummary, estimateAsset, estimateOf, sampleCash, sampleEvent, sampleSummary } from "../../test/incomeHandlers";
 import { renderApp } from "../../test/render";
 import { server } from "../../test/server";
 
@@ -107,17 +107,30 @@ describe("Renda com o olho fechado", () => {
   it("estimativa e lista de lançados também", async () => {
     window.localStorage.setItem(HIDE_VALUES_KEY, "1");
     const summary = emptySummary();
-    summary.estimate = {
-      monthly: 410.5,
-      updated_at: "2026-11-25T11:00:00Z",
-      assets: [{ asset_id: "a-knri", symbol: "KNRI11", display_name: "Kinea", quantity: 10, per_unit_12m: 12.6, monthly: 10.5, trailing_12m: 126 }],
-      missing: [],
-    };
+    summary.estimate = estimateOf([
+      estimateAsset({ asset_id: "a-knri", symbol: "KNRI11", display_name: "Kinea", quantity: 10, per_unit_12m: 12.6, monthly: 10.5 }),
+      estimateAsset({
+        asset_id: "a-abcd",
+        symbol: "ABCD4",
+        display_name: "Empresa Fictícia",
+        quantity: 120,
+        per_unit_12m: 1.825,
+        per_unit_12m_gross: 2,
+        monthly: 18.25,
+        monthly_gross: 20,
+        usual: { years: 5, per_unit_year: 1.095, per_unit_year_gross: 1.2, monthly: 10.95, monthly_gross: 12 },
+        above_usual: true,
+      }),
+    ]);
     server.use(http.get("/api/v1/income/summary", () => HttpResponse.json(summary)));
-    renderApp("renda");
+    const { user } = renderApp("renda");
     const estimate = await screen.findByRole("region", { name: "Estimativa da carteira de hoje" });
     expect(within(estimate).getByRole("table", { name: "Os ativos que mais rendem na estimativa" })).toBeInTheDocument();
-    expect(within(estimate).getByText(`~${MASK_BRL}`)).toBeInTheDocument();
+    // Líquido, bruto, média e o total de quem está acima do habitual: tudo mascarado.
+    expect(within(estimate).getAllByText(`~${MASK_BRL}`).length).toBeGreaterThan(2);
+    expect(within(estimate).getByText(`bruto ~${MASK_BRL} por mês`)).toBeInTheDocument();
+    expect(within(estimate).getByText(`~${MASK_BRL}/mês`)).toBeInTheDocument();
+    await user.click(within(estimate).getByRole("button", { name: "O que é acima do habitual" }));
     expectNoMoney();
   });
 });

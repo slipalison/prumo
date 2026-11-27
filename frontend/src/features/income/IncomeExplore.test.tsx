@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { IncomeSummary } from "../../api/incomeTypes";
 import { MASK_BRL } from "../../lib/money";
 import { HIDE_VALUES_KEY } from "../../lib/privacy";
-import { knownYield, sampleEvent, sampleSummary } from "../../test/incomeHandlers";
+import { estimateAsset, estimateOf, knownYield, sampleEvent, sampleSummary } from "../../test/incomeHandlers";
 import { renderApp } from "../../test/render";
 import { server } from "../../test/server";
 
@@ -28,21 +28,19 @@ function exploreSummary(): IncomeSummary {
     sampleEvent({ id: "u-1", asset_id: "a-1", symbol: "PAG1", pay_date: "2026-12-01", net: 22, status: "upcoming" }),
     sampleEvent({ id: "u-7", asset_id: "a-7", symbol: "PAG7", pay_date: "2026-12-02", net: 33, status: "upcoming" }),
   ];
-  summary.estimate = {
-    monthly: 100,
-    updated_at: "2026-11-25T11:00:00Z",
-    missing: [],
-    assets: Array.from({ length: 8 }, (_, i) => ({
-      asset_id: `e-${i}`,
-      symbol: `EST${i}`,
-      display_name: `Estimado ${i}`,
-      quantity: 10,
-      per_unit_12m: 1,
-      // Fora de ordem de propósito: a tela ordena pelo que mais rende.
-      monthly: [5, 40, 12, 30, 8, 20, 15, 10][i] ?? 0,
-      trailing_12m: 10,
-    })),
-  };
+  summary.estimate = estimateOf(
+    Array.from({ length: 8 }, (_, i) =>
+      estimateAsset({
+        asset_id: `e-${i}`,
+        symbol: `EST${i}`,
+        display_name: `Estimado ${i}`,
+        quantity: 10,
+        per_unit_12m: 1,
+        // Fora de ordem de propósito: a tela ordena pelo que mais rende.
+        monthly: [5, 40, 12, 30, 8, 20, 15, 10][i] ?? 0,
+      }),
+    ),
+  );
   return summary;
 }
 
@@ -186,21 +184,21 @@ describe("Quem pagou: filtrar os pagamentos por pagador", () => {
 });
 
 describe("Estimativa: todos os ativos", () => {
-  it("mostra os cinco que mais rendem e 'Ver todos' abre a lista inteira, ordenada", async () => {
+  it("mostra os quatro que mais rendem e 'Ver todos' abre a lista inteira, ordenada", async () => {
     const { user } = await openIncome();
     const estimate = screen.getByRole("region", { name: "Estimativa da carteira de hoje" });
-    // O texto da célula leva as iniciais do ícone (EST1 → "ESEST1").
-    const assets = (root: HTMLElement) => within(root).getAllByRole("rowheader").map((th) => th.textContent?.replace(/^ES(?=EST)/, ""));
-    expect(assets(within(estimate).getByRole("table"))).toEqual(["EST1", "EST3", "EST5", "EST6", "EST2"]);
+    // O texto da célula leva as iniciais do ícone (EST1 → "ESEST1") e a fonte ("B3").
+    const assets = (root: HTMLElement) => within(root).getAllByRole("rowheader").map((th) => th.textContent?.match(/EST\d/)?.[0]);
+    expect(assets(within(estimate).getByRole("table"))).toEqual(["EST1", "EST3", "EST5", "EST6"]);
 
     await user.click(within(estimate).getByRole("button", { name: "Ver todos os 8 ativos" }));
     const dialog = await screen.findByRole("dialog", { name: "Estimativa por ativo" });
     expect(assets(within(dialog).getByRole("table"))).toEqual(["EST1", "EST3", "EST5", "EST6", "EST2", "EST7", "EST4", "EST0"]);
     expect(within(dialog).getByText(/^~R\$\s40,00$/)).toBeInTheDocument();
-    expect(dialog).toHaveTextContent(/~R\$\s100,00 por mês, 8 ativos/);
+    expect(dialog).toHaveTextContent(/~R\$\s140,00 por mês, líquido, 8 ativos/);
   });
 
-  it("sem mais que cinco, não há o controle", async () => {
+  it("sem mais que quatro, não há o controle", async () => {
     const summary = exploreSummary();
     summary.estimate.assets = summary.estimate.assets.slice(0, 4);
     server.use(http.get("/api/v1/income/summary", () => HttpResponse.json(summary)), http.get("/api/v1/income", () => HttpResponse.json([])));

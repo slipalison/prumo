@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import type { IncomeEvent, IncomeSummary } from "../../api/incomeTypes";
-import { emptySummary, knownYield, sampleEvent, sampleSummary } from "../../test/incomeHandlers";
+import { emptySummary, estimateOf, knownYield, sampleEvent, sampleSummary } from "../../test/incomeHandlers";
 import { renderApp } from "../../test/render";
 import { getDb, server } from "../../test/server";
 
@@ -68,7 +68,7 @@ describe("Renda: sem proventos", () => {
 
   it("sem nada recebido, a renda mostrada é a estimativa e diz isso", async () => {
     const summary = emptySummary();
-    summary.estimate = { monthly: 410.5, updated_at: "2026-11-25T11:00:00Z", assets: [], missing: [] };
+    summary.estimate = { ...estimateOf([]), monthly: 410.5, monthly_gross: 440 };
     useSummary(summary);
     const { user } = await openIncome();
     const goal = await screen.findByRole("region", { name: "Meta de renda mensal" });
@@ -80,7 +80,7 @@ describe("Renda: sem proventos", () => {
 
   it("com o histórico ainda sendo buscado, a estimativa está indisponível", async () => {
     const summary = emptySummary();
-    summary.estimate = { monthly: 0, updated_at: null, assets: [], missing: ["KNRI11"] };
+    summary.estimate = { ...estimateOf([], ["KNRI11"]), updated_at: null };
     useSummary(summary);
     await openIncome();
     const estimate = await screen.findByRole("region", { name: "Estimativa da carteira de hoje" });
