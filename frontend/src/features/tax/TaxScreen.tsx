@@ -10,11 +10,12 @@ import { Skeleton } from "../../components/Skeleton";
 import { cx } from "../../lib/cx";
 import { FoldPanel } from "../income/FoldPanel";
 import { CarryforwardPanel } from "./CarryforwardPanel";
+import { CoveragePanel } from "./CoveragePanel";
 import { DeclarationPanel } from "./DeclarationPanel";
 import { ExemptionPanel } from "./ExemptionPanel";
 import { hasActivity } from "./monthActivity";
 import { MonthDetails, MonthsPanel } from "./MonthsPanel";
-import { NeverPanel, SkippedPanel } from "./SkippedPanel";
+import { SkippedPanel } from "./SkippedPanel";
 import { DISCLAIMER, DISCLAIMER_MORE } from "./taxText";
 import { useCarryforward, useIrpf, useTaxMonths } from "./useTax";
 import "./tax.css";
@@ -60,7 +61,7 @@ export function TaxScreen() {
     <Page className="tax">
       <PageHeader
         title="Imposto de renda"
-        info="Isentômetro, DARF de cada mês e o que vai para a declaração, a partir do seu livro de lançamentos e dos proventos."
+        info="Isentômetro, DARF de cada mês com o IR retido, prejuízo a compensar, multa e juros de DARF em atraso e o que vai para a declaração, a partir do seu livro de lançamentos e dos proventos."
         infoLabel="Sobre os impostos"
         actions={
           covered.length > 0 && (
@@ -118,7 +119,7 @@ export function TaxScreen() {
             <ExemptionPanel data={months.data} />
             {carry.data && <CarryforwardPanel carry={carry.data} />}
             {(months.data || irpf.data) && <SkippedPanel skipped={skipped} />}
-            <NeverPanel />
+            <CoveragePanel year={months.data.year} />
           </div>
         </Grid>
       ) : (

@@ -20,7 +20,13 @@
 //!    do mês em bolsa; a sobra passa para os meses seguintes só dentro do ano
 //!    (Lei 11.033/2004, art. 2, par. 7; P&R 714 e 715). A sobra de dezembro vai
 //!    para a declaração (ou pedido de restituição) e fica em
-//!    [`Assessment::withholding_left`].
+//!    [`Assessment::withholding_left`]. O retido do mês é o que a pessoa
+//!    informou (da nota ou do informe da corretora) ou, sem isso, o que a regra
+//!    manda a corretora reter ([`super::rules::WithholdingRule`]): 0,005% das
+//!    vendas em operação comum, dispensado quando a soma do mês fica em R$ 1,00
+//!    ou menos, e 1% do resultado positivo do day trade de cada dia, com as
+//!    perdas do mesmo dia compensadas. A regra supõe uma corretora só, como o
+//!    casamento do day trade.
 //! 5. **DARF** por código (6015 bolsa, 4600 cripto): abaixo de R$ 10 não se
 //!    paga; soma ao do mesmo código no mês seguinte e vence no prazo deste
 //!    último mês (Lei 9.430/1996, art. 68). Vencimento no último dia útil do
@@ -48,6 +54,9 @@ pub struct TaxInput<'a> {
     /// dele.
     pub since_year: i32,
     pub carryforward: Carryforward,
+    /// O IR retido na fonte em bolsa que a pessoa informou, por mês. Mês sem
+    /// valor usa a retenção pela regra.
+    pub informed_withholding: BTreeMap<YearMonth, Decimal>,
 }
 
 /// O que passa de um mês para o outro (e de um ano para o outro).
@@ -133,7 +142,18 @@ pub struct CapitalGainAssessment {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct WithholdingAssessment {
-    /// IR retido nas vendas do mês.
+    /// Base do 0,005%: o valor das vendas em operação comum em bolsa.
+    pub common_sales: Decimal,
+    /// O 0,005% pela regra (zero quando a soma do mês fica em R$ 1,00 ou
+    /// menos).
+    pub common_rule: Decimal,
+    /// Base do 1%: a soma dos dias em que o day trade deu lucro.
+    pub day_trade_gains: Decimal,
+    /// O 1% do day trade pela regra.
+    pub day_trade_rule: Decimal,
+    /// O que a pessoa informou para o mês; `None` usa a regra.
+    pub informed: Option<Decimal>,
+    /// IR retido do mês que entra na conta: o informado, senão a regra.
     pub withheld: Decimal,
     /// Sobra de meses anteriores do mesmo ano.
     pub carried_in: Decimal,
@@ -165,6 +185,9 @@ pub enum Notice {
     /// Ganho de capital acima da primeira faixa: a regra de somar alienações
     /// parciais do mesmo bem até o ano seguinte (P&R 574) não é aplicada.
     CapitalGainAboveFirstBracket,
+    /// O IR retido do mês saiu da regra (a pessoa não informou o da nota):
+    /// confira na nota de corretagem.
+    WithholdingByRule,
 }
 
 /// Apura todos os meses de `input.since_year` a `until_year`.
@@ -193,10 +216,6 @@ pub fn assess(input: &TaxInput<'_>, until_year: i32) -> Result<Assessment, TaxEr
             .or_default()
             .push(item);
     }
-    let mut withheld: BTreeMap<YearMonth, Decimal> = BTreeMap::new();
-    for item in &replay.withholdings {
-        *withheld.entry(YearMonth::of(item.date)).or_default() += item.amount;
-    }
 
     let mut state = input.carryforward.clone();
     let mut withholding_carry = Decimal::ZERO;
@@ -209,7 +228,7 @@ pub fn assess(input: &TaxInput<'_>, until_year: i32) -> Result<Assessment, TaxEr
                 period,
                 year_rules,
                 realized.get(&period).map_or(&[][..], Vec::as_slice),
-                withheld.get(&period).copied().unwrap_or_default(),
+                input.informed_withholding.get(&period).copied(),
                 &mut state,
                 &mut withholding_carry,
             )?;
@@ -230,7 +249,7 @@ fn assess_month(
     period: YearMonth,
     rules: &YearRules,
     realized: &[&Realized],
-    withheld: Decimal,
+    informed: Option<Decimal>,
     state: &mut Carryforward,
     withholding_carry: &mut Decimal,
 ) -> Result<MonthReport, TaxError> {
@@ -246,8 +265,19 @@ fn assess_month(
         .collect();
     let mut capital_gains = Decimal::ZERO;
     let mut capital_losses = Decimal::ZERO;
+    // Bases da retenção pela regra: vendas comuns em bolsa no mês e o
+    // resultado do day trade de cada dia.
+    let mut common_exchange_sales = Decimal::ZERO;
+    let mut day_trade_by_day: BTreeMap<Date, Decimal> = BTreeMap::new();
     for item in realized {
         let rule = rules.instrument(item.instrument)?;
+        if rule.regime == Regime::ExchangeNetGain {
+            if item.day_trade {
+                *day_trade_by_day.entry(item.date).or_default() += item.result();
+            } else {
+                common_exchange_sales += item.proceeds;
+            }
+        }
         if let Some(line) = sales.iter_mut().find(|s| s.instrument == item.instrument) {
             if item.day_trade {
                 line.day_trade_sales += item.proceeds;
@@ -364,6 +394,10 @@ fn assess_month(
     if first_bracket.is_some_and(|up_to| capital_base > up_to) {
         notices.push(Notice::CapitalGainAboveFirstBracket);
     }
+    let by_rule = withholding_by_rule(rules, common_exchange_sales, &day_trade_by_day);
+    if informed.is_none() && by_rule.total() > Decimal::ZERO {
+        notices.push(Notice::WithholdingByRule);
+    }
     for status in &mut exemptions {
         status.exempt_gain = cents(exempt_gains.get(&status.id).copied().unwrap_or_default());
     }
@@ -375,12 +409,17 @@ fn assess_month(
     } else {
         Decimal::ZERO
     };
-    let withheld = cents(withheld);
+    let withheld = cents(informed.unwrap_or_else(|| by_rule.total()));
     let available = withheld + carried_in;
     let used = available.min(exchange_tax);
     let carried_out = available - used;
     *withholding_carry = carried_out;
     let withholding = WithholdingAssessment {
+        common_sales: cents(common_exchange_sales),
+        common_rule: by_rule.common,
+        day_trade_gains: by_rule.day_trade_gains,
+        day_trade_rule: by_rule.day_trade,
+        informed,
         withheld,
         carried_in,
         used,
@@ -432,6 +471,50 @@ fn assess_month(
     })
 }
 
+/// A retenção que a regra manda a corretora fazer no mês.
+struct RuleWithholding {
+    common: Decimal,
+    day_trade_gains: Decimal,
+    day_trade: Decimal,
+}
+
+impl RuleWithholding {
+    fn total(&self) -> Decimal {
+        self.common + self.day_trade
+    }
+}
+
+/// 0,005% do valor das vendas comuns do mês, dispensado quando a soma fica em
+/// R$ 1,00 ou menos (IN RFB 1.585/2015, art. 63, par. 4 e 5); 1% do resultado
+/// positivo de cada dia de day trade, com as perdas do mesmo dia já
+/// compensadas (art. 65, par. 1, II, e par. 4). Cada valor em centavos.
+fn withholding_by_rule(
+    rules: &YearRules,
+    common_sales: Decimal,
+    day_trade_by_day: &BTreeMap<Date, Decimal>,
+) -> RuleWithholding {
+    let rule = &rules.withholding;
+    let common = cents(common_sales * rule.common_rate.value);
+    let common = if common <= rule.common_dispensed_up_to.value {
+        Decimal::ZERO
+    } else {
+        common
+    };
+    let positive: Vec<Decimal> = day_trade_by_day
+        .values()
+        .copied()
+        .filter(|result| *result > Decimal::ZERO)
+        .collect();
+    RuleWithholding {
+        common,
+        day_trade_gains: cents(positive.iter().copied().sum()),
+        day_trade: positive
+            .iter()
+            .map(|result| cents(*result * rule.day_trade_rate.value))
+            .sum(),
+    }
+}
+
 /// Compensa o prejuízo acumulado: devolve (prejuízo usado, base, prejuízo que
 /// sobra). Prejuízo só abate lucro; o prejuízo do mês soma no acumulado.
 fn compensate(result: Decimal, loss_before: Decimal) -> (Decimal, Decimal, Decimal) {
@@ -446,7 +529,7 @@ fn compensate(result: Decimal, loss_before: Decimal) -> (Decimal, Decimal, Decim
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::tax::positions::tests::{buy, sell, with_fees, with_withheld};
+    use crate::domain::tax::positions::tests::{buy, sell, with_fees};
     use crate::domain::tax::positions::Action;
     use proptest::prelude::*;
     use rust_decimal_macros::dec;
@@ -458,6 +541,21 @@ mod tests {
             operations,
             since_year: 2025,
             carryforward: Carryforward::default(),
+            informed_withholding: BTreeMap::new(),
+        }
+    }
+
+    /// O mesmo livro, com o IR retido informado por mês.
+    fn input_with<'a>(
+        operations: &'a [Operation],
+        informed: &[(i32, u8, Decimal)],
+    ) -> TaxInput<'a> {
+        TaxInput {
+            informed_withholding: informed
+                .iter()
+                .map(|&(year, month, amount)| (YearMonth { year, month }, amount))
+                .collect(),
+            ..input(operations)
         }
     }
 
@@ -507,7 +605,8 @@ mod tests {
     fn call_exercise_example_pays_15_percent() {
         // P&R 725, item 1: custo de R$ 110.000 (exercício + prêmio) e venda à
         // vista de R$ 130.000: ganho líquido de R$ 20.000. Acima de R$ 20 mil
-        // de vendas, 15% (P&R 706): R$ 3.000, DARF 6015 (P&R 730).
+        // de vendas, 15% (P&R 706): R$ 3.000. A corretora retém 0,005% da
+        // venda (P&R 706): R$ 6,50, que abatem o DARF 6015 (P&R 730).
         let operations = [
             buy(date!(2025 - 05 - 12), "KKKK3", Stock, dec!(10000), dec!(11)),
             sell(
@@ -524,10 +623,14 @@ mod tests {
         let common = pool(may, Pool::Common);
         assert_eq!(common.result, dec!(20000));
         assert_eq!(common.tax, dec!(3000));
+        assert_eq!(may.withholding.common_sales, dec!(130000));
+        assert_eq!(may.withholding.common_rule, dec!(6.50));
+        assert_eq!(may.withholding.withheld, dec!(6.50));
+        assert_eq!(may.notices, vec![Notice::WithholdingByRule]);
         let darf = darf(may, Regime::ExchangeNetGain);
         assert!(darf.payable);
         assert_eq!(darf.code, "6015");
-        assert_eq!(darf.amount, dec!(3000));
+        assert_eq!(darf.amount, dec!(2993.50));
         assert_eq!(darf.due_date, date!(2025 - 06 - 30));
     }
 
@@ -798,34 +901,29 @@ mod tests {
 
     #[test]
     fn withholding_is_deducted_and_carried_only_within_the_year() {
-        // Lei 11.033/2004, art. 2, par. 7; P&R 714 e 715.
+        // Lei 11.033/2004, art. 2, par. 7; P&R 714 e 715. O retido de cada mês
+        // é o que a pessoa leu na nota.
         let operations = [
             buy(date!(2025 - 01 - 06), "EEEE11", Etf, dec!(1000), dec!(100)),
             // Novembro: prejuízo, mas IR retido de R$ 3.
-            with_withheld(
-                sell(date!(2025 - 11 - 10), "EEEE11", Etf, dec!(100), dec!(90)),
-                dec!(3),
-            ),
+            sell(date!(2025 - 11 - 10), "EEEE11", Etf, dec!(100), dec!(90)),
             // Dezembro: lucro de R$ 2.000 menos R$ 1.000 de prejuízo = base de
             // R$ 1.000, IR de R$ 150, menos R$ 2 retidos e R$ 3 que sobraram.
-            with_withheld(
-                sell(date!(2025 - 12 - 10), "EEEE11", Etf, dec!(100), dec!(120)),
-                dec!(2),
-            ),
+            sell(date!(2025 - 12 - 10), "EEEE11", Etf, dec!(100), dec!(120)),
             // Janeiro de 2026: retido de R$ 4 sem imposto; sobra fica no ano.
-            with_withheld(
-                sell(date!(2026 - 01 - 12), "EEEE11", Etf, dec!(100), dec!(90)),
-                dec!(4),
-            ),
+            sell(date!(2026 - 01 - 12), "EEEE11", Etf, dec!(100), dec!(90)),
         ];
-        let assessment = assess(&input(&operations), 2026).unwrap();
+        let informed = [(2025, 11, dec!(3)), (2025, 12, dec!(2)), (2026, 1, dec!(4))];
+        let assessment = assess(&input_with(&operations, &informed), 2026).unwrap();
         let november = &month(&assessment, 2025, 11).withholding;
+        assert_eq!(november.informed, Some(dec!(3)));
         assert_eq!(november.carried_out, dec!(3));
         let december = month(&assessment, 2025, 12);
         assert_eq!(december.withholding.carried_in, dec!(3));
         assert_eq!(december.withholding.used, dec!(5));
         assert_eq!(pool(december, Pool::Common).base, dec!(1000));
         assert_eq!(darf(december, Regime::ExchangeNetGain).amount, dec!(145));
+        assert!(december.notices.is_empty());
         assert_eq!(assessment.withholding_left[&2025], dec!(0));
         let january = &month(&assessment, 2026, 1).withholding;
         assert_eq!(january.carried_in, dec!(0));
@@ -833,19 +931,104 @@ mod tests {
     }
 
     #[test]
-    fn withholding_reduces_the_darf() {
+    fn informed_withholding_replaces_the_rule() {
+        // R$ 12 mil vendidos: pela regra, R$ 0,60, dispensados (até R$ 1). A
+        // nota diz que a corretora reteve R$ 0,60: vale a nota.
         let operations = [
             buy(date!(2025 - 01 - 06), "EEEE11", Etf, dec!(1000), dec!(100)),
-            with_withheld(
-                sell(date!(2025 - 03 - 10), "EEEE11", Etf, dec!(100), dec!(120)),
-                dec!(0.60),
+            sell(date!(2025 - 03 - 10), "EEEE11", Etf, dec!(100), dec!(120)),
+        ];
+        let by_rule = assess(&input(&operations), 2025).unwrap();
+        let march = month(&by_rule, 2025, 3);
+        assert_eq!(march.withholding.common_rule, dec!(0));
+        assert_eq!(march.withholding.withheld, dec!(0));
+        assert_eq!(darf(march, Regime::ExchangeNetGain).amount, dec!(300));
+
+        let informed = assess(&input_with(&operations, &[(2025, 3, dec!(0.60))]), 2025).unwrap();
+        let march = month(&informed, 2025, 3);
+        assert_eq!(march.withholding.informed, Some(dec!(0.60)));
+        assert_eq!(march.withholding.used, dec!(0.60));
+        assert_eq!(darf(march, Regime::ExchangeNetGain).amount, dec!(299.40));
+        assert_eq!(informed.withholding_left[&2025], dec!(0));
+    }
+
+    #[test]
+    fn common_withholding_is_dispensed_up_to_one_real_in_the_month() {
+        // Lei 11.033/2004, art. 2, par. 1, IV, 4 e 5; IN RFB 1.585/2015, art.
+        // 63, par. 4 e 5: 0,005% do valor vendido, somadas as vendas do mês;
+        // R$ 1,00 ou menos não se retém. Day trade e cripto ficam fora.
+        let operations = [
+            buy(date!(2025 - 01 - 06), "AAAA3", Stock, dec!(10000), dec!(1)),
+            buy(
+                date!(2025 - 01 - 06),
+                "FFFF11",
+                RealEstateFund,
+                dec!(1000),
+                dec!(100),
+            ),
+            buy(date!(2025 - 01 - 06), "BTC", Crypto, dec!(1), dec!(100000)),
+            // Fevereiro: R$ 20 mil vendidos dão R$ 1,00, dispensado.
+            sell(date!(2025 - 02 - 03), "AAAA3", Stock, dec!(10000), dec!(2)),
+            // Março: duas vendas de R$ 15 mil (ação e FII) somam R$ 1,50; o
+            // day trade e a cripto não entram na base.
+            sell(
+                date!(2025 - 03 - 03),
+                "FFFF11",
+                RealEstateFund,
+                dec!(150),
+                dec!(100),
+            ),
+            buy(date!(2025 - 03 - 10), "AAAA3", Stock, dec!(15000), dec!(1)),
+            sell(date!(2025 - 03 - 10), "AAAA3", Stock, dec!(15000), dec!(1)),
+            buy(date!(2025 - 03 - 20), "AAAA3", Stock, dec!(15000), dec!(1)),
+            sell(date!(2025 - 03 - 21), "AAAA3", Stock, dec!(15000), dec!(1)),
+            sell(
+                date!(2025 - 03 - 21),
+                "BTC",
+                Crypto,
+                dec!(0.5),
+                dec!(100000),
             ),
         ];
         let assessment = assess(&input(&operations), 2025).unwrap();
-        let march = month(&assessment, 2025, 3);
-        assert_eq!(march.withholding.used, dec!(0.60));
-        assert_eq!(darf(march, Regime::ExchangeNetGain).amount, dec!(299.40));
-        assert_eq!(assessment.withholding_left[&2025], dec!(0.60) - dec!(0.60));
+        let february = &month(&assessment, 2025, 2).withholding;
+        assert_eq!(february.common_sales, dec!(20000));
+        assert_eq!(february.common_rule, dec!(0));
+        assert!(month(&assessment, 2025, 2).notices.is_empty());
+        let march = &month(&assessment, 2025, 3).withholding;
+        assert_eq!(march.common_sales, dec!(30000));
+        assert_eq!(march.common_rule, dec!(1.50));
+        assert_eq!(march.day_trade_rule, dec!(0));
+        assert_eq!(march.withheld, dec!(1.50));
+        // Sem imposto no mês, o retido passa para abril.
+        assert_eq!(march.used, dec!(0));
+        assert_eq!(march.carried_out, dec!(1.50));
+    }
+
+    #[test]
+    fn day_trade_withholding_is_one_percent_of_each_days_net_gain() {
+        // P&R 705 e 712; IN RFB 1.585/2015, art. 65, par. 1, II, e par. 4: 1%
+        // do resultado positivo do dia, com a perda de outro ativo no mesmo dia
+        // compensada; dia de prejuízo não retém nem desconta de outro dia.
+        let (first, second) = (date!(2025 - 06 - 02), date!(2025 - 06 - 03));
+        let operations = [
+            buy(first, "BBBB3", Stock, dec!(1000), dec!(10)),
+            sell(first, "BBBB3", Stock, dec!(1000), dec!(10.5)),
+            buy(first, "CCCC3", Stock, dec!(100), dec!(10)),
+            sell(first, "CCCC3", Stock, dec!(100), dec!(8)),
+            buy(second, "BBBB3", Stock, dec!(100), dec!(10)),
+            sell(second, "BBBB3", Stock, dec!(100), dec!(9)),
+        ];
+        let assessment = assess(&input(&operations), 2025).unwrap();
+        let june = month(&assessment, 2025, 6);
+        // Dia 2: 500 − 200 = 300 → R$ 3,00. Dia 3: −100, nada.
+        assert_eq!(june.withholding.day_trade_gains, dec!(300));
+        assert_eq!(june.withholding.day_trade_rule, dec!(3));
+        assert_eq!(june.withholding.common_rule, dec!(0));
+        let day_trade = pool(june, Pool::DayTrade);
+        assert_eq!(day_trade.result, dec!(200));
+        assert_eq!(day_trade.tax, dec!(40));
+        assert_eq!(darf(june, Regime::ExchangeNetGain).amount, dec!(37));
     }
 
     #[test]
@@ -854,10 +1037,11 @@ mod tests {
         let day = date!(2025 - 06 - 02);
         let operations = [
             buy(day, "BBBB3", Stock, dec!(1000), dec!(10)),
-            with_withheld(sell(day, "BBBB3", Stock, dec!(1000), dec!(11)), dec!(10)),
+            sell(day, "BBBB3", Stock, dec!(1000), dec!(11)),
         ];
         let assessment = assess(&input(&operations), 2025).unwrap();
         let june = month(&assessment, 2025, 6);
+        assert_eq!(june.withholding.day_trade_rule, dec!(10));
         assert_eq!(pool(june, Pool::DayTrade).tax, dec!(200));
         assert_eq!(darf(june, Regime::ExchangeNetGain).amount, dec!(190));
         assert_eq!(
@@ -1013,7 +1197,8 @@ mod tests {
         ("BTC", Crypto),
     ];
 
-    /// (dia desde 1/1/2025, ativo, compra?, quantidade, preço, taxa, retido)
+    /// (dia desde 1/1/2025, ativo, compra?, quantidade, preço, taxa, retido
+    /// informado no mês; zero = pela regra)
     type Step = (i64, usize, bool, u32, u32, u32, u32);
 
     fn steps() -> impl Strategy<Value = Vec<Step>> {
@@ -1031,11 +1216,13 @@ mod tests {
         )
     }
 
-    /// Monta lançamentos válidos: venda nunca passa da posição.
-    fn build(mut steps: Vec<Step>) -> Vec<Operation> {
+    /// Monta lançamentos válidos (venda nunca passa da posição) e o IR retido
+    /// informado em alguns meses.
+    fn build(mut steps: Vec<Step>) -> (Vec<Operation>, Vec<(i32, u8, Decimal)>) {
         steps.sort_by_key(|step| step.0);
         let mut held = [Decimal::ZERO; 6];
         let mut operations = Vec::new();
+        let mut informed: BTreeMap<YearMonth, Decimal> = BTreeMap::new();
         for (day, asset, is_buy, quantity, price, fees, withheld) in steps {
             let (symbol, instrument) = SYMBOLS[asset];
             let date = date!(2025 - 01 - 01) + time::Duration::days(day);
@@ -1054,25 +1241,28 @@ mod tests {
                     continue;
                 }
                 held[asset] -= quantity;
-                let withheld = if instrument == Crypto {
-                    Decimal::ZERO
-                } else {
-                    Decimal::new(i64::from(withheld), 2)
-                };
-                operations.push(with_withheld(
-                    with_fees(sell(date, symbol, instrument, quantity, price), fees),
-                    withheld,
+                if instrument != Crypto && withheld > 0 {
+                    *informed.entry(YearMonth::of(date)).or_default() +=
+                        Decimal::new(i64::from(withheld), 2);
+                }
+                operations.push(with_fees(
+                    sell(date, symbol, instrument, quantity, price),
+                    fees,
                 ));
             }
         }
-        operations
+        let informed = informed
+            .into_iter()
+            .map(|(period, amount)| (period.year, period.month, amount))
+            .collect();
+        (operations, informed)
     }
 
     proptest! {
         #[test]
         fn tax_is_never_negative_and_loss_only_offsets_gain(steps in steps()) {
-            let operations = build(steps);
-            let assessment = assess(&input(&operations), 2026).unwrap();
+            let (operations, informed) = build(steps);
+            let assessment = assess(&input_with(&operations, &informed), 2026).unwrap();
             for report in &assessment.months {
                 for pool in &report.pools {
                     prop_assert!(pool.tax >= Decimal::ZERO);
@@ -1099,8 +1289,8 @@ mod tests {
 
         #[test]
         fn every_exchange_result_is_taxed_or_exempt(steps in steps()) {
-            let operations = build(steps);
-            let assessment = assess(&input(&operations), 2026).unwrap();
+            let (operations, informed) = build(steps);
+            let assessment = assess(&input_with(&operations, &informed), 2026).unwrap();
             for report in &assessment.months {
                 let realized: Decimal = report
                     .sales

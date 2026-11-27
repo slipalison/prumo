@@ -1,7 +1,9 @@
 //! IR contra um Postgres de verdade: o instrumento fiscal padrão que a
 //! migração 0015 grava, um livro fictício pela API batendo com o domínio
 //! (`domain::tax`) mês a mês e na declaração, o DARF pago, o saldo de
-//! prejuízo informado e o dono.
+//! prejuízo informado, o IR retido informado, a multa e os juros do DARF em
+//! atraso com a Selic guardada, o CNPJ da fonte pagadora vindo da CVM, a
+//! tabela de regras e o dono.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod common;
@@ -309,7 +311,6 @@ fn expected_book() -> (Vec<OpeningPosition>, Vec<Operation>) {
         quantity,
         unit_price,
         fees,
-        withheld: Decimal::ZERO,
     };
     let stock = Instrument::Stock;
     let openings = vec![OpeningPosition {
@@ -398,6 +399,7 @@ fn expected_incomes() -> Vec<Income> {
             kind: IncomeKind::FundIncome,
             gross: dec!(10),
             withheld: dec!(0),
+            payer: None,
         },
         Income {
             pay_date: date!(2025 - 04 - 15),
@@ -405,6 +407,7 @@ fn expected_incomes() -> Vec<Income> {
             kind: IncomeKind::Dividend,
             gross: dec!(50),
             withheld: dec!(0),
+            payer: None,
         },
         Income {
             pay_date: date!(2025 - 06 - 16),
@@ -412,6 +415,7 @@ fn expected_incomes() -> Vec<Income> {
             kind: IncomeKind::InterestOnEquity,
             gross: dec!(100),
             withheld: dec!(15),
+            payer: None,
         },
     ]
 }
@@ -617,6 +621,7 @@ async fn ledger_feeds_the_months_and_the_irpf() {
         operations: &operations,
         since_year: 2025,
         carryforward: expected_carryforward(),
+        informed_withholding: Default::default(),
     };
     let domain = assess(&input, 2025).unwrap();
     let months = get(r, "/api/v1/tax/months?year=2025").await;
@@ -636,11 +641,19 @@ async fn ledger_feeds_the_months_and_the_irpf() {
     let may = &list[4];
     assert_eq!(may["pools"][0]["loss_before"], 1000.0);
     assert_eq!(may["pools"][0]["tax"], 2296.59);
-    assert_eq!(may["darfs"][0]["amount"], 2296.59);
+    // A corretora retém 0,005% dos R$ 24 mil vendidos (R$ 1,20), que abatem
+    // o DARF; sem o valor da nota, a conta usa a regra e avisa.
+    assert_eq!(may["withholding"]["common_sales"], 24000.0);
+    assert_eq!(may["withholding"]["common_rule"], 1.2);
+    assert_eq!(may["withholding"]["informed"], Value::Null);
+    assert_eq!(may["notices"], json!(["withholding_by_rule"]));
+    assert_eq!(may["darfs"][0]["amount"], 2295.39);
     assert_eq!(may["darfs"][0]["due_date"], "2025-06-30");
     let july = &list[6];
     assert_eq!(july["pools"][1]["pool"], "day_trade");
-    assert_eq!(july["darfs"][0]["amount"], 20.0);
+    // 20% de R$ 100 de day trade, menos o 1% retido (R$ 1).
+    assert_eq!(july["withholding"]["day_trade_rule"], 1.0);
+    assert_eq!(july["darfs"][0]["amount"], 19.0);
     assert_eq!(july["doubts"], json!(["day_trade_in_stock_exemption"]));
     let august = &list[7];
     assert_eq!(august["pools"][2]["loss_after"], 100.0);
@@ -740,12 +753,12 @@ async fn ledger_feeds_the_months_and_the_irpf() {
     )
     .await;
     assert_eq!(paid.status, StatusCode::OK, "{}", paid.text);
-    assert_eq!(paid.body["paid"]["amount"], 2296.59);
+    assert_eq!(paid.body["paid"]["amount"], 2295.39);
     assert_eq!(paid.body["paid"]["same_amount"], true);
     let months = get(r, "/api/v1/tax/months?year=2025").await;
     assert_eq!(
         months.body["months"][4]["darfs"][0]["paid"]["amount"],
-        2296.59
+        2295.39
     );
     assert_eq!(months.body["months"][3]["darfs"][0]["paid"], Value::Null);
     let nothing = post(
@@ -782,7 +795,7 @@ async fn ledger_feeds_the_months_and_the_irpf() {
     launch(r, json!({ "asset_id": wege, "kind": "sell", "trade_date": "2025-05-21", "quantity": 10, "unit_price": 80 })).await;
     let months = get(r, "/api/v1/tax/months?year=2025").await;
     let may = &months.body["months"][4]["darfs"][0];
-    assert_ne!(may["amount"], 2296.59);
+    assert_ne!(may["amount"], 2295.39);
     assert_eq!(may["paid"]["same_amount"], false);
 
     // ---- dono: a outra pessoa não vê nem mexe
@@ -875,4 +888,390 @@ async fn tax_instrument_is_chosen_on_the_asset_sheet() {
         months.body["skipped"][0]["reason"],
         "unsupported_instrument"
     );
+}
+
+/// Um livro curto: lucro de R$ 3.000 em ações em maio de 2025 (vendas de
+/// R$ 30 mil, DARF 6015 que vence em 30/06/2025).
+async fn may_2025_book(router: &axum::Router) -> String {
+    let id = create(
+        router,
+        json!({ "asset_class": "br_stocks", "symbol": "WEGE3", "quantity": 0 }),
+    )
+    .await;
+    launch(router, json!({ "asset_id": id, "kind": "buy", "trade_date": "2025-02-03", "quantity": 1000, "unit_price": 27 })).await;
+    launch(router, json!({ "asset_id": id, "kind": "sell", "trade_date": "2025-05-20", "quantity": 1000, "unit_price": 30 })).await;
+    id
+}
+
+#[tokio::test]
+async fn informed_withholding_replaces_the_rule() {
+    let db = database().await;
+    let dir = tempfile_dir::Dir::new();
+    let me = app(
+        &db.store,
+        "retido@prumo.test",
+        FakeQuotes::with_market(),
+        &dir.path(),
+    );
+    let other = app(
+        &db.store,
+        "outra-retido@prumo.test",
+        FakeQuotes::with_market(),
+        &dir.path(),
+    );
+    let r = &me.router;
+    may_2025_book(r).await;
+
+    // Pela regra: 0,005% de R$ 30 mil = R$ 1,50; DARF de 450 − 1,50.
+    let months = get(r, "/api/v1/tax/months?year=2025").await;
+    let may = &months.body["months"][4];
+    assert_eq!(may["withholding"]["common_rule"], 1.5);
+    assert_eq!(may["withholding"]["withheld"], 1.5);
+    assert_eq!(may["darfs"][0]["amount"], 448.5);
+
+    // A nota diz R$ 2,00: vale a nota, e o aviso some.
+    let saved = put(r, "/api/v1/tax/withholding/2025/5", json!({ "amount": 2 })).await;
+    assert_eq!(saved.status, StatusCode::OK, "{}", saved.text);
+    assert_eq!(
+        saved.body,
+        json!({ "year": 2025, "month": 5, "amount": 2.0 })
+    );
+    let months = get(r, "/api/v1/tax/months?year=2025").await;
+    let may = &months.body["months"][4];
+    assert_eq!(may["withholding"]["informed"], 2.0);
+    assert_eq!(may["withholding"]["withheld"], 2.0);
+    assert_eq!(may["withholding"]["common_rule"], 1.5);
+    assert_eq!(may["notices"], json!([]));
+    assert_eq!(may["darfs"][0]["amount"], 448.0);
+    // A outra pessoa continua pela regra.
+    let theirs = get(&other.router, "/api/v1/tax/months?year=2025").await;
+    assert_eq!(
+        theirs.body["months"][4]["withholding"]["informed"],
+        Value::Null
+    );
+
+    for (uri, body, status) in [
+        (
+            "/api/v1/tax/withholding/2025/5",
+            json!({ "amount": -1 }),
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+        (
+            "/api/v1/tax/withholding/2025/5",
+            json!({ "amount": 0.001 }),
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+        (
+            "/api/v1/tax/withholding/2025/5",
+            json!({ "value": 1 }),
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+        (
+            "/api/v1/tax/withholding/2031/5",
+            json!({ "amount": 1 }),
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+        (
+            "/api/v1/tax/withholding/2025/13",
+            json!({ "amount": 1 }),
+            StatusCode::NOT_FOUND,
+        ),
+    ] {
+        let reply = put(r, uri, body.clone()).await;
+        assert_eq!(reply.status, status, "{uri} {body}");
+    }
+
+    // Apagar volta para a regra; de novo, nada a apagar.
+    let their_delete = delete(&other.router, "/api/v1/tax/withholding/2025/5").await;
+    assert_eq!(their_delete.status, StatusCode::NOT_FOUND);
+    let cleared = delete(r, "/api/v1/tax/withholding/2025/5").await;
+    assert_eq!(cleared.status, StatusCode::NO_CONTENT);
+    let again = delete(r, "/api/v1/tax/withholding/2025/5").await;
+    assert_eq!(again.status, StatusCode::NOT_FOUND);
+    let months = get(r, "/api/v1/tax/months?year=2025").await;
+    assert_eq!(months.body["months"][4]["darfs"][0]["amount"], 448.5);
+}
+
+#[tokio::test]
+async fn late_darf_uses_the_stored_selic() {
+    let db = database().await;
+    let dir = tempfile_dir::Dir::new();
+    let me = app(
+        &db.store,
+        "atraso@prumo.test",
+        FakeQuotes::with_market(),
+        &dir.path(),
+    );
+    let r = &me.router;
+    may_2025_book(r).await;
+    // Selic de junho a setembro de 2025 (SGS 4390).
+    db.store
+        .upsert_tax_selic(&[
+            (date!(2025 - 06 - 01), dec!(1.10)),
+            (date!(2025 - 07 - 01), dec!(1.28)),
+            (date!(2025 - 08 - 01), dec!(1.16)),
+            (date!(2025 - 09 - 01), dec!(1.22)),
+        ])
+        .await
+        .unwrap();
+
+    // DARF de R$ 448,50 vencido em 30/06/2025 e pago em 15/09/2025: 77 dias
+    // (multa no teto de 20%) e juros de julho e agosto mais 1%.
+    let late = get(
+        r,
+        "/api/v1/tax/darfs/2025/5/late?code=6015&pay_on=2025-09-15",
+    )
+    .await;
+    assert_eq!(late.status, StatusCode::OK, "{}", late.text);
+    let body = &late.body;
+    assert_eq!(body["principal"], 448.5);
+    assert_eq!(body["due_date"], "2025-06-30");
+    assert_eq!(body["pay_date"], "2025-09-15");
+    assert_eq!(body["days_late"], 77);
+    assert_eq!(body["penalty_rate"], 0.2);
+    assert_eq!(body["penalty"], 89.7);
+    assert_eq!(
+        body["selic_months"],
+        json!([{ "year": 2025, "month": 7, "rate": 1.28 }, { "year": 2025, "month": 8, "rate": 1.16 }])
+    );
+    assert_eq!(body["payment_month_rate"], 0.01);
+    assert_eq!(body["interest_rate"], 0.0344);
+    assert_eq!(body["interest"], 15.43);
+    assert_eq!(body["total"], 553.63);
+    assert_eq!(body["missing_selic"], json!([]));
+    assert_eq!(body["rule"]["selic_series"]["value"], "4390");
+
+    // Pago em janeiro de 2026: falta a Selic de outubro a dezembro.
+    let unknown = get(
+        r,
+        "/api/v1/tax/darfs/2025/5/late?code=6015&pay_on=2026-01-10",
+    )
+    .await;
+    assert_eq!(unknown.status, StatusCode::OK);
+    assert_eq!(unknown.body["interest"], Value::Null);
+    assert_eq!(unknown.body["total"], Value::Null);
+    assert_eq!(unknown.body["missing_selic"].as_array().unwrap().len(), 3);
+
+    // Em dia: nada a mais.
+    let on_time = get(
+        r,
+        "/api/v1/tax/darfs/2025/5/late?code=6015&pay_on=2025-06-30",
+    )
+    .await;
+    assert_eq!(on_time.body["days_late"], 0);
+    assert_eq!(on_time.body["total"], 448.5);
+
+    for (uri, status, code) in [
+        (
+            "/api/v1/tax/darfs/2025/4/late?code=6015",
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "darf_not_due",
+        ),
+        (
+            "/api/v1/tax/darfs/2025/5/late?code=4600",
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "darf_not_due",
+        ),
+        (
+            "/api/v1/tax/darfs/2025/5/late?code=0190",
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "validation_failed",
+        ),
+        (
+            "/api/v1/tax/darfs/2025/5/late?code=6015&pay_on=15/09/2025",
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "validation_failed",
+        ),
+        (
+            "/api/v1/tax/darfs/2027/5/late?code=6015",
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "tax_year_not_covered",
+        ),
+    ] {
+        let reply = get(r, uri).await;
+        assert_eq!(reply.status, status, "{uri}: {}", reply.text);
+        assert_eq!(reply.body["code"], code, "{uri}");
+    }
+    let bad_month = get(r, "/api/v1/tax/darfs/2025/13/late?code=6015").await;
+    assert_eq!(bad_month.status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn payers_come_from_the_cvm_registry() {
+    let db = database().await;
+    let dir = tempfile_dir::Dir::new();
+    let me = app(
+        &db.store,
+        "cnpj@prumo.test",
+        FakeQuotes::with_market(),
+        &dir.path(),
+    );
+    let r = &me.router;
+    let pool = PgPool::connect(&db.url).await.unwrap();
+    // Cadastro fictício: o emissor WEGE com o código CVM 99901, e o fundo
+    // com a raiz KNRI no informe mensal (dois informes; vale o mais novo).
+    sqlx::query(
+        "insert into b3_issuer_cvm (issuer, cvm_code, fetched_at) values ('WEGE', 99901, now())",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "insert into cvm_companies (cvm_code, cnpj, name, status, updated_at)
+         values (99901, '00.000.000/0001-91', 'EMPRESA EXEMPLO S.A.', 'ATIVO', now())",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    for (cnpj, name, reference) in [
+        ("11111111000111", "FUNDO ANTIGO FII", "2024-12-01"),
+        ("22.222.222/0001-22", "FUNDO EXEMPLO FII", "2025-10-01"),
+    ] {
+        sqlx::query(
+            "insert into cvm_funds (cnpj, issuer, isin, name, reference_date, version, updated_at)
+             values ($1, 'KNRI', 'BRKNRICTF007', $2, $3::date, 1, now())",
+        )
+        .bind(cnpj)
+        .bind(name)
+        .bind(reference)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    let wege = create(
+        r,
+        json!({ "asset_class": "br_stocks", "symbol": "WEGE3", "quantity": 0 }),
+    )
+    .await;
+    let knri = create(
+        r,
+        json!({ "asset_class": "br_reits", "symbol": "KNRI11", "quantity": 0 }),
+    )
+    .await;
+    let other = create(
+        r,
+        json!({ "asset_class": "br_stocks", "symbol": "SEMC3", "quantity": 0 }),
+    )
+    .await;
+    for (asset, kind) in [(&wege, "buy"), (&knri, "buy"), (&other, "buy")] {
+        launch(r, json!({ "asset_id": asset, "kind": kind, "trade_date": "2025-01-10", "quantity": 100, "unit_price": 10 })).await;
+    }
+    for body in [
+        json!({ "asset_id": wege, "kind": "dividend", "pay_date": "2025-04-15", "amount_per_unit": 0.5, "quantity": 100 }),
+        json!({ "asset_id": wege, "kind": "jcp", "pay_date": "2025-06-16", "amount_per_unit": 1, "quantity": 100 }),
+        json!({ "asset_id": knri, "kind": "reit_income", "pay_date": "2025-02-14", "amount_per_unit": 1, "quantity": 100 }),
+        json!({ "asset_id": other, "kind": "dividend", "pay_date": "2025-04-15", "amount_per_unit": 0.1, "quantity": 100 }),
+    ] {
+        let reply = post(r, "/api/v1/income", body).await;
+        assert_eq!(reply.status, StatusCode::CREATED, "{}", reply.text);
+    }
+
+    let irpf = get(r, "/api/v1/tax/irpf/2025").await;
+    assert_eq!(irpf.status, StatusCode::OK, "{}", irpf.text);
+    let dividends = &irpf.body["exempt_income"][0]["by_payer"];
+    assert_eq!(dividends[0]["symbols"], json!(["SEMC3"]));
+    assert_eq!(dividends[0]["cnpj"], Value::Null);
+    assert_eq!(dividends[1]["symbols"], json!(["WEGE3"]));
+    assert_eq!(dividends[1]["cnpj"], "00.000.000/0001-91");
+    assert_eq!(dividends[1]["name"], "EMPRESA EXEMPLO S.A.");
+    assert_eq!(dividends[1]["payer_source"], "cvm_company");
+    assert_eq!(dividends[1]["net"], 50.0);
+    let fund = &irpf.body["exempt_income"][1]["by_payer"][0];
+    assert_eq!(fund["cnpj"], "22.222.222/0001-22");
+    assert_eq!(fund["name"], "FUNDO EXEMPLO FII");
+    assert_eq!(fund["payer_source"], "cvm_fund");
+    let jcp = &irpf.body["exclusive_income"][0]["by_payer"][0];
+    assert_eq!(jcp["cnpj"], "00.000.000/0001-91");
+    assert_eq!(jcp["withheld"], 15.0);
+    assert_eq!(jcp["net"], 85.0);
+}
+
+#[tokio::test]
+async fn rules_list_every_number_with_its_source() {
+    let db = database().await;
+    let dir = tempfile_dir::Dir::new();
+    let me = app(
+        &db.store,
+        "regras@prumo.test",
+        FakeQuotes::with_market(),
+        &dir.path(),
+    );
+    let rules = get(&me.router, "/api/v1/tax/rules/2026").await;
+    assert_eq!(rules.status, StatusCode::OK, "{}", rules.text);
+    let body = &rules.body;
+    assert_eq!(body["year"], 2026);
+    assert_eq!(body["covered_years"], json!([2025, 2026]));
+    let rate = |pool: &str| find(&body["pools"], "pool", pool)["rate"].clone();
+    assert_eq!(rate("common")["value"], 0.15);
+    assert_eq!(rate("day_trade")["value"], 0.2);
+    assert!(rate("day_trade")["source"]
+        .as_str()
+        .unwrap()
+        .contains("Lei 11.033/2004"));
+    let etf = find(&body["instruments"], "instrument", "etf");
+    assert_eq!(etf["exemption"], Value::Null);
+    assert_eq!(etf["common_pool"], "common");
+    assert_eq!(body["withholding"]["common_rate"]["value"], 0.00005);
+    assert_eq!(body["withholding"]["day_trade_rate"]["value"], 0.01);
+    assert_eq!(body["late_payment"]["daily_penalty"]["value"], 0.0033);
+    assert_eq!(body["late_payment"]["penalty_cap"]["value"], 0.2);
+    assert_eq!(body["interest_on_equity_rate"]["value"], 0.175);
+    assert_eq!(body["dividend_withholding"]["monthly_threshold"], 50000.0);
+    assert_eq!(body["exchange_darf_code"]["value"], "6015");
+    let earlier = get(&me.router, "/api/v1/tax/rules/2025").await;
+    assert_eq!(earlier.body["dividend_withholding"], Value::Null);
+    assert_eq!(earlier.body["interest_on_equity_rate"]["value"], 0.15);
+    let missing = get(&me.router, "/api/v1/tax/rules/2027").await;
+    assert_eq!(missing.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(missing.body["code"], "tax_year_not_covered");
+}
+
+#[tokio::test]
+async fn selic_sync_keeps_only_closed_months_and_skips_when_fresh() {
+    use prumo::tax_selic::TaxSelicSync;
+    use wiremock::matchers::{method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    // A série 4390 como o SGS respondeu em 27/11/2026: novembro vem
+    // acumulado até a véspera (0,87) e não pode entrar.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/dados/serie/bcdata.sgs.4390/dados"))
+        .and(query_param("dataInicial", "01/01/2025"))
+        .and(query_param("dataFinal", "27/11/2026"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            include_str!("fixtures/history/bcb_4390_selic.json"),
+            "application/json",
+        ))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let db = database().await;
+    let sync = TaxSelicSync::with_base(db.store.clone(), reqwest::Client::new(), &server.uri());
+    let today = date!(2026 - 11 - 27);
+    assert_eq!(sync.run_once(today).await.unwrap(), 22);
+    let selic = db.store.tax_selic().await.unwrap();
+    assert_eq!(selic.len(), 22);
+    let october = prumo::domain::tax::YearMonth {
+        year: 2026,
+        month: 10,
+    };
+    assert_eq!(selic[&october], dec!(1.07));
+    assert!(!selic.contains_key(&prumo::domain::tax::YearMonth {
+        year: 2026,
+        month: 11
+    }));
+    // Outubro já está: a segunda rodada nem vai à rede (o mock espera uma).
+    assert_eq!(sync.run_once(today).await.unwrap(), 0);
+
+    // Fonte fora do ar: erro na rodada, e o que estava guardado continua.
+    let down = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(503))
+        .mount(&down)
+        .await;
+    let failing = TaxSelicSync::with_base(db.store.clone(), reqwest::Client::new(), &down.uri());
+    assert!(failing.run_once(date!(2026 - 12 - 10)).await.is_err());
+    assert_eq!(db.store.tax_selic().await.unwrap().len(), 22);
 }

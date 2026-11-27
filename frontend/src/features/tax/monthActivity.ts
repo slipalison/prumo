@@ -6,6 +6,7 @@ export function hasActivity(month: TaxMonth): boolean {
     month.sales.some((s) => s.common_sales > 0 || s.day_trade_sales > 0) ||
     month.pools.some((p) => p.result !== 0) ||
     month.darfs.some((d) => d.total > 0) ||
+    month.withholding.informed !== null ||
     month.doubts.length > 0
   );
 }

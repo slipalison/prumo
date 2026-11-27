@@ -942,7 +942,22 @@ direita dele.
    "abaixo do mínimo, soma no mês seguinte". Se o valor mudou depois de
    marcado, a linha avisa. As regras do DARF (6015, 4600, vencimento, mínimo de
    dez reais) estão no ⓘ do painel. Embaixo, o prejuízo a compensar em 31/12.
-   No celular a tabela empilha, e o mês sem nada fica só com o nome.
+   No celular a tabela empilha, e o mês sem nada fica só com o nome. DARF
+   vencido e não pago leva o selo "Em atraso" (vermelho, com ícone e escrito) e
+   o botão **Multa e juros**, que abre uma `Sheet`: o dia do pagamento (campo
+   de data, abre em hoje), e numa lista de termos o imposto, a multa (a taxa e
+   a conta "0,33% × N dias, até 20%"), os juros (a taxa e a Selic de cada mês,
+   por extenso, "+ 1% no mês do pagamento") e o total; mês sem Selic é dito
+   ("Falta a Selic de novembro de 2026") e o total fica em traço; embaixo, o
+   que vai em cada campo do DARF e a fonte.
+   A coluna **Prejuízo a compensar** diz, mês a mês, o saldo de cada grupo
+   que teve prejuízo ("Fiagro R$ 100,00", ou "zerado"), e embaixo "compensou
+   R$ …" ou "mais R$ … no mês"; o cabeçalho quebra em duas linhas e, na coluna
+   mais estreita (iPad deitado), a linha do DARF quebra entre o código e o
+   valor, para as seis colunas caberem sem rolar de lado. Empilhada, a
+   situação toma a linha inteira. Embaixo da tabela, o prejuízo de 1º de
+   janeiro e o de 31/12. As regras do prejuízo (cada grupo só com o seu;
+   cripto não compensa) estão no ⓘ do painel.
 4. **Isentômetro** do mês de hoje (dezembro, num ano passado), na coluna da
    direita: o número grande das vendas de ações, "de R$ 20.000,00 isentos", a
    barra (a mesma `LimitBar` dos avisos, com o fio de prumo no limite e o
@@ -953,22 +968,35 @@ direita dele.
    Abaixo, o **Saldo de antes do Prumo**: o que foi informado (ou "a conta começa
    do zero em 1º de janeiro de 2025") e "Informar saldo"/"Editar saldo", que
    abre o ano (chips) e os seis campos de dinheiro em duas colunas, e os
-   recolheres **O que o Prumo não calculou** e **Nunca entra na conta**.
+   recolheres **O que o Prumo não calculou** e **O que o Prumo cobre** (a
+   contagem "10 calcula · 10 fora"; dentro, cada regra do ano em negrito, a
+   frase com os números da tabela do servidor e a fonte em letra miúda, e o que
+   fica fora — opções, termo, futuro, exterior, corretora… — com o porquê). Os
+   limites da regra vão por extenso ("20 mil reais"): é regra, não valor da
+   pessoa.
 5. **Declaração do ano** (painel de largura inteira): **Bens e Direitos** numa
    `DataTable` (ticker com o ícone, ficha com grupo, código e rótulo com acento,
    quantidade, situação em 31/12 pelo custo, preço médio) com **Copiar** por
-   linha; abaixo, em duas colunas, os rendimentos isentos (09, 99, 20, 05, com o
-   valor por pagador) e a tributação exclusiva (JCP, líquido, bruto e retido),
-   também em `DataTable`; e a renda variável do ano (DARF do ano e o prejuízo
-   que passa para o ano seguinte).
+   linha; abaixo, **Rendimentos** numa `DataTable` só, uma linha por fonte
+   pagadora em cada código (a ficha, "Isentos · Código 09" com o rótulo, e o
+   total do código quando há mais de uma fonte; o nome da fonte com o CNPJ e os
+   tickers embaixo, ou "CNPJ não encontrado na CVM"; o valor, líquido e
+   bruto/retido no JCP; "Copiar"), o lucro isento das próprias vendas (20, 05)
+   como "Lucro das suas vendas no ano" e nenhuma linha para código sem valor;
+   **Copiar o relatório** e os ⓘ azuis das dúvidas no título; no dividendo
+   acima de 50 mil reais de uma empresa no mês, a linha do mês com a retenção da
+   regra e a informada; e a renda variável do ano (DARF do ano e o prejuízo que
+   passa para o ano seguinte).
 6. **Como cada mês foi apurado** (recolhido, com a contagem dos meses que têm
    movimento): por mês, um `<details>` com as vendas, a apuração por grupo
    (resultado, prejuízo antes, compensado, base, alíquota, imposto, prejuízo
-   que fica), a cripto e as dúvidas daquele mês. **O que o Prumo não calculou**
-   (recolhido, com a contagem): cada item do livro ou dos proventos que ficou
-   fora, com ticker, data, valor e o motivo em uma frase. **Nunca entra na
-   conta** (recolhido): a lista fixa do que nunca entra (IR retido da nota,
-   corretora, opções, exterior…).
+   que fica), a cripto, o **IR retido na fonte** (o valor, "pela regra" com as
+   bases ou "informado da nota", o que abateu e o que passa; com a regra, o
+   lembrete "confira na nota"; "Informar o valor da nota" abre o campo de
+   dinheiro com Salvar e Cancelar, e "Voltar para a regra" desfaz) e as dúvidas
+   daquele mês. **O que o Prumo não calculou** (recolhido, com a contagem):
+   cada item do livro ou dos proventos que ficou fora, com ticker, data, valor
+   e o motivo em uma frase.
 7. **Pontos a confirmar com contador**: as dúvidas de `docs/ir.md` § 5 são um
    **ⓘ azul** (`DoubtTip`) ao lado do número ou do bloco que elas mexem (o
    isentômetro, os títulos da declaração); o nome do botão diz do que se trata
@@ -982,7 +1010,8 @@ que a escolha muda ("15% sobre o lucro, sem a isenção das ações…") e qual 
 padrão. Renda fixa por valor não tem a escolha.
 
 Com o olho fechado, todo R$ e toda quantidade da seção (isentômetro, tabela,
-apuração, declaração, não calculado, saldo) sai mascarado, inclusive no nome
+apuração, IR retido, prejuízo, multa e juros, declaração, fontes pagadoras, não
+calculado, saldo) sai mascarado, inclusive no nome
 acessível dos botões e da barra; percentuais, datas, códigos e tickers ficam. O
 "Copiar" leva o valor de verdade para a área de transferência: é o que a pessoa
 pediu, e a tela continua mascarada.

@@ -549,12 +549,13 @@ O que mudou:
 
 - O aviso de responsabilidade fica à vista em **uma linha** (o resto no ⓘ).
 - `Grid cols="main-aside"`: à esquerda os meses numa `DataTable` (situação com
-  `StatusPill`: "A pagar", "Pago"; marcar como pago por botão na linha); à
+  `StatusPill`: "A pagar", "Em atraso", "Pago"; marcar como pago e "Multa e
+  juros" por botão na linha) e, embaixo, o prejuízo a compensar mês a mês; à
   direita o ano (chips), o isentômetro e o saldo de antes do Prumo.
 - Declaração em `Grid cols={2}`: Bens e Direitos (tabela com "Copiar" na linha)
-  e rendimentos (tabelas por código). "Como cada mês foi apurado", "O que o
-  Prumo não calculou" e "Nunca entra na conta" ficam recolhidos, com a
-  contagem.
+  e rendimentos (tabelas por código), e os rendimentos por fonte pagadora em
+  largura inteira. "Como cada mês foi apurado", "O que o Prumo não calculou" e
+  "O que o Prumo cobre" ficam recolhidos, com a contagem.
 - Os "Pontos a confirmar com contador" continuam ao lado do número que mexem,
   mas como ⓘ azul (o padrão da tela), não caixa de três linhas.
 - Meta ≤ 2,0 (antes 4,3).
@@ -587,10 +588,18 @@ O que mudou, e onde o desenho do plano foi outro:
   patrimônio e rentabilidade lado a lado (196 px de gráfico, 270 px a partir de
   1500 px de conteúdo), Mês a mês embaixo.
 - **Impostos:** 1,81 em 1440×900 (meta 2,0). **Desvio:** o isentômetro, o saldo
-  de antes e os recolheres "O que o Prumo não calculou" e "Nunca entra na
-  conta" ficam na coluna da direita, ao lado dos meses, em vez de no fim da
+  de antes e os recolheres "O que o Prumo não calculou" e "O que o Prumo cobre"
+  (antes "Nunca entra na conta") ficam na coluna da direita, ao lado dos meses, em vez de no fim da
   tela; "Como cada mês foi apurado" fica recolhido embaixo da declaração.
   No celular o mês sem movimento mostra só o nome: 4,66 telas.
+  **Onda 3 (cobertura de IR):** a tabela dos meses ganhou a coluna do prejuízo
+  a compensar (o cabeçalho quebra em duas linhas e, abaixo de 670 px, a linha
+  do DARF quebra entre o código e o valor; empilhada, a situação toma a linha
+  inteira), e a declaração junta os rendimentos numa tabela por fonte pagadora.
+  Medido no modo de demonstração, nos dois temas, sem rolagem lateral nem texto
+  cortado: 2,18 telas em 1440×900, 1,96 no iPad deitado, 1,92 em pé e 5,16 no
+  celular (acima da meta de 2,0 no desktop: a tabela tem um dado a mais por
+  mês, e a calculadora do atraso e o IR retido ficam em folha e no recolher).
 - **Proventos automáticos:** dois painéis lado a lado (a chave e os eventos em
   ações; desligado, só a chave, em largura inteira) e "Como funciona" recolhido,
   em vez de três painéis em `Grid cols={3}`.

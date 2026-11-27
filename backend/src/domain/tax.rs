@@ -18,10 +18,14 @@
 //!    contra o limite de isenção, compensação do prejuízo por grupo, imposto,
 //!    IR retido, DARF (ou o acúmulo abaixo do mínimo) e vencimento;
 //! 3. [`irpf::annual_report`] fecha o ano: posição e custo em 31/12 para Bens e
-//!    Direitos, rendimentos isentos e de tributação exclusiva.
+//!    Direitos, rendimentos isentos e de tributação exclusiva por fonte
+//!    pagadora;
+//! 4. [`late::late_charge`] calcula a multa e os juros do DARF pago depois do
+//!    vencimento, com a Selic de cada mês.
 
 pub mod calendar;
 pub mod irpf;
+pub mod late;
 pub mod monthly;
 pub mod positions;
 pub mod rules;

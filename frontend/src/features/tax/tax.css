@@ -30,7 +30,8 @@
   gap: var(--gap-stack);
 }
 
-/* A coluna do lado: o isentômetro e o saldo de antes, um sobre o outro. */
+/* A coluna do lado: o isentômetro, o saldo de antes e os recolheres, um
+   sobre o outro. */
 .tax-side {
   display: flex;
   flex-direction: column;
@@ -138,11 +139,17 @@
 }
 
 /* A coluna de 2/3 ao lado do ano e do isentômetro tem de 627 px (iPad deitado) a
-   690 px (1440): as cinco colunas só cabem sem rolar de lado com o recheio
-   menor entre elas. */
+   690 px (1440): as seis colunas só cabem sem rolar de lado com o recheio
+   menor entre elas e o cabeçalho quebrando em duas linhas ("Prejuízo a
+   compensar"). */
 .tax-months th,
 .tax-months td {
   padding-inline: var(--space-2);
+}
+
+.tax-months thead th {
+  white-space: normal;
+  vertical-align: bottom;
 }
 
 /* Empilhada (celular), a célula vazia não ocupa linha: o mês sem nada fica só com o nome. */
@@ -151,11 +158,32 @@
   .tax-months tbody td:has(> .tax-empty:only-child) {
     display: none;
   }
+
+  /* A situação (selo e botões) toma a linha inteira: na coluna `auto` da grade
+     empilhada ela espremeria a outra até as palavras passarem por cima. */
+  .tax-months tbody td:last-child {
+    grid-column: 1 / -1;
+  }
 }
 
 .tax-line {
   display: block;
   white-space: nowrap;
+}
+
+/* Na coluna mais estreita (iPad deitado, 627 px), a linha do DARF quebra entre
+   o código e o valor para as seis colunas caberem; o valor em reais não se
+   parte (o espaço depois do R$ é inquebrável). */
+@container (max-width: 670px) {
+  .tax-months .tax-line {
+    white-space: normal;
+  }
+}
+
+/* O saldo de prejuízo de um grupo: quebra entre o nome e o valor para a
+   coluna caber estreita. */
+.tax-loss {
+  display: block;
 }
 
 .tax-line--muted {
@@ -265,7 +293,7 @@ ul.tax-facts {
 /* --- Fora da conta --- */
 
 .tax-skipped,
-.tax-never {
+.tax-coverage {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -274,18 +302,103 @@ ul.tax-facts {
   list-style: none;
 }
 
-.tax-skipped li {
+.tax-skipped li,
+.tax-coverage li {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
-.tax-never {
-  padding-left: var(--space-5);
-  list-style: disc;
+.tax-coverage li > span:not(.field__hint):not(.tax-source) {
   color: var(--text-muted);
   font-size: var(--text-md);
+  line-height: 1.45;
+}
+
+/* A fonte de uma regra: miúda, quebra em qualquer lugar (citação longa). */
+.tax-source {
+  margin: 0;
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.tax-subtitle__action {
+  margin-left: var(--space-2);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+/* --- IR retido do mês (dentro da apuração) --- */
+
+.tax-withholding {
+  display: flex;
+  flex-direction: column;
   gap: var(--space-1);
+}
+
+.tax-withholding p {
+  margin: 0;
+}
+
+.tax-withholding__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.tax-withholding__edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+/* --- DARF em atraso (folha) --- */
+
+.tax-late {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.tax-late p {
+  margin: 0;
+}
+
+.tax-late__lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.tax-late__lines > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.tax-late__lines dt {
+  min-width: 0;
+  color: var(--text);
+}
+
+.tax-late__lines dd {
+  margin: 0;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.tax-late__lines > .tax-late__total {
+  border-bottom: none;
+  font-weight: 650;
 }
 
 .tax-fold-text {

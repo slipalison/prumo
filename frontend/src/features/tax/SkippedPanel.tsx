@@ -1,7 +1,7 @@
 import type { Skipped } from "../../api/taxTypes";
 import { useMoney } from "../../lib/privacy";
 import { FoldPanel } from "../income/FoldPanel";
-import { isoDay, NEVER_CALCULATED, SKIP_TEXT } from "./taxText";
+import { isoDay, SKIP_TEXT } from "./taxText";
 
 /** O que ficou fora da conta, com o motivo de cada item; fechado, só a contagem. */
 export function SkippedPanel({ skipped }: { skipped: Skipped[] }) {
@@ -22,19 +22,6 @@ export function SkippedPanel({ skipped }: { skipped: Skipped[] }) {
           ))}
         </ul>
       )}
-    </FoldPanel>
-  );
-}
-
-/** O que o Prumo nunca calcula (docs/ir.md, seção 3), sempre listado, recolhido. */
-export function NeverPanel() {
-  return (
-    <FoldPanel title="Nunca entra na conta" count={NEVER_CALCULATED.length}>
-      <ul className="tax-never">
-        {NEVER_CALCULATED.map((text) => (
-          <li key={text}>{text}</li>
-        ))}
-      </ul>
     </FoldPanel>
   );
 }

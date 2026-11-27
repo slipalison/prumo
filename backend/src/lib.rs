@@ -31,6 +31,7 @@ pub mod risk;
 pub mod sectors;
 pub mod service;
 pub mod store;
+pub mod tax_selic;
 pub mod telegram;
 pub mod telemetry;
 pub mod treasury;
@@ -195,6 +196,9 @@ pub async fn run(config: Config) -> Result<(), StartError> {
             Arc::new(focus::OlindaFocus::new(http.clone())),
         ))
         .spawn(focus::CHECK_EVERY);
+        // A Selic do mês para os juros do DARF em atraso (SGS 4390).
+        Arc::new(tax_selic::TaxSelicSync::new(store.clone(), http.clone()))
+            .spawn(tax_selic::CHECK_EVERY);
         if config.quotes_stream {
             live.spawn(LIVE_FLUSH_EVERY, LIVE_TRACK_EVERY);
             tokio::spawn(YahooStreamer::default().run(live.symbols(), live.ticks()));

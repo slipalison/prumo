@@ -9,7 +9,10 @@
 //!   seguinte e o IR retido que sobrou.
 //!
 //! Os proventos entram como dado (o valor bruto e o retido que a empresa
-//! informa); o Prumo não deduz a retenção, só soma.
+//! informa); o Prumo não deduz a retenção, só soma. Cada rendimento sai por
+//! fonte pagadora, com o CNPJ e o nome que a declaração pede (do cadastro da
+//! CVM, quando o Prumo o tem): os tickers da mesma empresa (ON e PN) somam
+//! numa linha só, porque o CNPJ é o mesmo.
 
 use std::collections::BTreeMap;
 
@@ -18,7 +21,9 @@ use serde::{Deserialize, Serialize};
 use time::Date;
 
 use super::monthly::{assess, MonthReport, TaxInput};
-use super::rules::{rules_for, ExemptionId, IrpfCode, Pool, Regime, Sourced};
+use super::rules::{
+    dividend_withholding, rules_for, ExemptionId, IrpfCode, Pool, Regime, Sourced, YearRules,
+};
 use super::{cents, Instrument, TaxError};
 
 /// Tipo de provento.
@@ -33,6 +38,47 @@ pub enum IncomeKind {
     FundIncome,
 }
 
+/// De onde veio o CNPJ da fonte pagadora.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PayerSource {
+    /// Cadastro de companhias abertas da CVM (`cad_cia_aberta`), pelo código
+    /// CVM que a B3 informa para o emissor do ticker.
+    CvmCompany,
+    /// Informe mensal de FII da CVM, pela raiz do ISIN da cota (o mesmo
+    /// emissor do ticker).
+    CvmFund,
+}
+
+/// A fonte pagadora, como a declaração pede.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Payer {
+    /// `00.000.000/0001-00`.
+    pub cnpj: String,
+    /// Razão social, como está na CVM.
+    pub name: String,
+    pub source: PayerSource,
+}
+
+/// O CNPJ no formato da declaração (`00.000.000/0001-00`). A CVM já manda
+/// assim; só com os 14 dígitos sem máscara o Prumo põe a máscara. Outro
+/// formato volta como veio, sem espaço nas pontas.
+pub fn format_cnpj(text: &str) -> String {
+    let trimmed = text.trim();
+    let digits: String = trimmed.chars().filter(char::is_ascii_digit).collect();
+    if digits.len() != 14 || digits.len() != trimmed.len() {
+        return trimmed.to_owned();
+    }
+    format!(
+        "{}.{}.{}/{}-{}",
+        &digits[0..2],
+        &digits[2..5],
+        &digits[5..8],
+        &digits[8..12],
+        &digits[12..14]
+    )
+}
+
 /// Um provento recebido.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Income {
@@ -42,6 +88,8 @@ pub struct Income {
     pub kind: IncomeKind,
     pub gross: Decimal,
     pub withheld: Decimal,
+    /// CNPJ e nome da fonte pagadora; `None` quando o Prumo não achou na CVM.
+    pub payer: Option<Payer>,
 }
 
 /// Uma linha da ficha Bens e Direitos.
@@ -57,12 +105,32 @@ pub struct AssetLine {
     pub code_source: &'static str,
 }
 
-/// Quanto cada pagador somou numa linha de rendimento.
+/// Um mês em que a mesma empresa pagou dividendos acima do limite da
+/// retenção (a partir de 2026).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ThresholdMonth {
+    pub month: u8,
+    /// Dividendos da empresa no mês (bruto).
+    pub gross: Decimal,
+    /// 10% do total, pela regra (Lei 9.250/1995, art. 6-A).
+    pub withholding_by_rule: Decimal,
+    /// O retido que veio no provento.
+    pub withheld: Decimal,
+}
+
+/// Quanto cada fonte pagadora somou numa linha de rendimento.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PayerAmount {
-    pub symbol: String,
+    /// Os tickers que somaram (ON e PN da mesma empresa vão juntos).
+    pub symbols: Vec<String>,
+    /// CNPJ e nome; `None` quando o Prumo não achou na CVM.
+    pub payer: Option<Payer>,
     pub gross: Decimal,
     pub withheld: Decimal,
+    /// Bruto menos retido.
+    pub net: Decimal,
+    /// Meses com dividendos da empresa acima do limite da retenção.
+    pub above_threshold: Vec<ThresholdMonth>,
 }
 
 /// Uma linha das fichas de rendimentos.
@@ -163,8 +231,8 @@ pub fn annual_report(
     };
 
     let exempt_income = vec![
-        income_line(&codes.dividends, of_year(IncomeKind::Dividend)),
-        income_line(&codes.fund_income, of_year(IncomeKind::FundIncome)),
+        income_line(&rules, &codes.dividends, of_year(IncomeKind::Dividend)),
+        income_line(&rules, &codes.fund_income, of_year(IncomeKind::FundIncome)),
         gain_line(
             &codes.exempt_stock_gains,
             exempt_gain(ExemptionId::StockSales),
@@ -175,6 +243,7 @@ pub fn annual_report(
         ),
     ];
     let exclusive_income = vec![income_line(
+        &rules,
         &codes.interest_on_equity,
         of_year(IncomeKind::InterestOnEquity),
     )];
@@ -201,24 +270,74 @@ pub fn annual_report(
     })
 }
 
+/// Soma por fonte pagadora: pelo CNPJ quando o Prumo o tem, senão pelo
+/// ticker. Nos dividendos de ano com a retenção (2026 em diante), marca os
+/// meses em que a mesma empresa passou do limite.
 fn income_line<'a>(
+    rules: &YearRules,
     code: &Sourced<IrpfCode>,
     incomes: impl Iterator<Item = &'a Income>,
 ) -> IncomeLine {
-    let mut by_payer: BTreeMap<&str, (Decimal, Decimal)> = BTreeMap::new();
-    for income in incomes {
-        let entry = by_payer.entry(income.symbol.as_str()).or_default();
-        entry.0 += income.gross;
-        entry.1 += income.withheld;
+    #[derive(Default)]
+    struct Sum<'a> {
+        symbols: Vec<&'a str>,
+        payer: Option<&'a Payer>,
+        gross: Decimal,
+        withheld: Decimal,
+        dividends_by_month: BTreeMap<u8, (Decimal, Decimal)>,
     }
-    let by_payer: Vec<PayerAmount> = by_payer
-        .into_iter()
-        .map(|(symbol, (gross, withheld))| PayerAmount {
-            symbol: symbol.to_owned(),
-            gross: cents(gross),
-            withheld: cents(withheld),
+    let mut by_payer: BTreeMap<String, Sum<'a>> = BTreeMap::new();
+    for income in incomes {
+        let key = income.payer.as_ref().map_or_else(
+            || format!("ticker:{}", income.symbol),
+            |p| format!("cnpj:{}", p.cnpj),
+        );
+        let entry = by_payer.entry(key).or_default();
+        if !entry.symbols.contains(&income.symbol.as_str()) {
+            entry.symbols.push(income.symbol.as_str());
+        }
+        entry.payer = entry.payer.or(income.payer.as_ref());
+        entry.gross += income.gross;
+        entry.withheld += income.withheld;
+        if income.kind == IncomeKind::Dividend {
+            let month = entry
+                .dividends_by_month
+                .entry(u8::from(income.pay_date.month()))
+                .or_default();
+            month.0 += income.gross;
+            month.1 += income.withheld;
+        }
+    }
+    let mut by_payer: Vec<PayerAmount> = by_payer
+        .into_values()
+        .map(|sum| {
+            let mut symbols: Vec<String> = sum.symbols.iter().map(|s| (*s).to_owned()).collect();
+            symbols.sort();
+            let above_threshold = sum
+                .dividends_by_month
+                .into_iter()
+                .filter_map(|(month, (gross, withheld))| {
+                    let by_rule = dividend_withholding(rules, gross);
+                    (by_rule > Decimal::ZERO).then(|| ThresholdMonth {
+                        month,
+                        gross: cents(gross),
+                        withholding_by_rule: cents(by_rule),
+                        withheld: cents(withheld),
+                    })
+                })
+                .collect();
+            let (gross, withheld) = (cents(sum.gross), cents(sum.withheld));
+            PayerAmount {
+                symbols,
+                payer: sum.payer.cloned(),
+                gross,
+                withheld,
+                net: gross - withheld,
+                above_threshold,
+            }
         })
         .collect();
+    by_payer.sort_by(|a, b| a.symbols.cmp(&b.symbols));
     let gross: Decimal = by_payer.iter().map(|payer| payer.gross).sum();
     let withheld: Decimal = by_payer.iter().map(|payer| payer.withheld).sum();
     IncomeLine {
@@ -258,6 +377,7 @@ mod tests {
             operations,
             since_year: 2025,
             carryforward: Carryforward::default(),
+            informed_withholding: BTreeMap::new(),
         }
     }
 
@@ -274,6 +394,15 @@ mod tests {
             kind,
             gross,
             withheld,
+            payer: None,
+        }
+    }
+
+    fn company(cnpj: &str, name: &str) -> Payer {
+        Payer {
+            cnpj: cnpj.to_owned(),
+            name: name.to_owned(),
+            source: PayerSource::CvmCompany,
         }
     }
 
@@ -376,12 +505,102 @@ mod tests {
         assert_eq!(dividends.code.code, "09");
         assert_eq!(dividends.gross, dec!(200));
         assert_eq!(dividends.by_payer.len(), 1);
+        assert_eq!(dividends.by_payer[0].symbols, vec!["AAAA3"]);
+        assert_eq!(dividends.by_payer[0].payer, None);
         assert_eq!(report.exempt_income[1].gross, dec!(55.5));
         let jcp = &report.exclusive_income[0];
         assert_eq!(jcp.code.code, "10");
         assert_eq!(jcp.gross, dec!(100));
         assert_eq!(jcp.withheld, dec!(15));
         assert_eq!(jcp.net, dec!(85));
+    }
+
+    #[test]
+    fn cnpj_gets_the_mask_only_when_it_has_none() {
+        assert_eq!(format_cnpj("00000000000100"), "00.000.000/0001-00");
+        assert_eq!(format_cnpj(" 00.000.000/0001-00 "), "00.000.000/0001-00");
+        assert_eq!(format_cnpj("123"), "123");
+    }
+
+    #[test]
+    fn tickers_of_the_same_company_are_one_payer() {
+        // A declaração pede CNPJ e nome da fonte pagadora: ON e PN da mesma
+        // empresa (fictícia) são uma fonte só; sem CNPJ, fica pelo ticker.
+        let cnpj = "00.000.000/0001-00";
+        let incomes = [
+            Income {
+                payer: Some(company(cnpj, "EMPRESA EXEMPLO S.A.")),
+                ..income(
+                    date!(2025 - 03 - 14),
+                    "EXMP4",
+                    IncomeKind::Dividend,
+                    dec!(70),
+                    dec!(0),
+                )
+            },
+            Income {
+                payer: Some(company(cnpj, "EMPRESA EXEMPLO S.A.")),
+                ..income(
+                    date!(2025 - 03 - 14),
+                    "EXMP3",
+                    IncomeKind::Dividend,
+                    dec!(30),
+                    dec!(0),
+                )
+            },
+            income(
+                date!(2025 - 04 - 01),
+                "SEMC3",
+                IncomeKind::Dividend,
+                dec!(5),
+                dec!(0),
+            ),
+        ];
+        let report = annual_report(&input(&[], &[]), &incomes, 2025).unwrap();
+        let payers = &report.exempt_income[0].by_payer;
+        assert_eq!(payers.len(), 2);
+        assert_eq!(payers[0].symbols, vec!["EXMP3", "EXMP4"]);
+        assert_eq!(
+            payers[0].payer.as_ref().map(|p| p.cnpj.as_str()),
+            Some(cnpj)
+        );
+        assert_eq!(payers[0].gross, dec!(100));
+        assert_eq!(payers[1].symbols, vec!["SEMC3"]);
+        assert_eq!(payers[1].payer, None);
+    }
+
+    #[test]
+    fn dividends_above_50k_in_a_month_flag_the_2026_withholding() {
+        // Lei 9.250/1995, art. 6-A (Lei 15.270/2025); P&R 276: mais de R$ 50
+        // mil da mesma empresa no mês retém 10% do total, somados os
+        // pagamentos do mês. Em 2025 não há retenção.
+        let cnpj = "00.000.000/0001-00";
+        let big = |date, symbol, gross, withheld| Income {
+            payer: Some(company(cnpj, "EMPRESA EXEMPLO S.A.")),
+            ..income(date, symbol, IncomeKind::Dividend, gross, withheld)
+        };
+        let incomes = [
+            big(date!(2026 - 03 - 02), "EXMP3", dec!(30000), dec!(0)),
+            big(date!(2026 - 03 - 20), "EXMP4", dec!(30000), dec!(6000)),
+            big(date!(2026 - 05 - 04), "EXMP4", dec!(50000), dec!(0)),
+            big(date!(2025 - 03 - 02), "EXMP3", dec!(90000), dec!(0)),
+        ];
+        let report = annual_report(&input(&[], &[]), &incomes, 2026).unwrap();
+        let payer = &report.exempt_income[0].by_payer[0];
+        assert_eq!(payer.gross, dec!(110000));
+        assert_eq!(
+            payer.above_threshold,
+            vec![ThresholdMonth {
+                month: 3,
+                gross: dec!(60000),
+                withholding_by_rule: dec!(6000),
+                withheld: dec!(6000),
+            }]
+        );
+        let earlier = annual_report(&input(&[], &[]), &incomes, 2025).unwrap();
+        assert!(earlier.exempt_income[0].by_payer[0]
+            .above_threshold
+            .is_empty());
     }
 
     #[test]

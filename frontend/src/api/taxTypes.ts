@@ -84,7 +84,25 @@ export type PoolResult = {
 
 export type CapitalGain = { gains: number; losses: number; exempt: boolean; base: number; tax: number };
 
-export type Withholding = { withheld: number; carried_in: number; used: number; carried_out: number };
+/**
+ * IR retido na fonte do mês. Sem `informed`, vale a regra: 0,005% das vendas
+ * comuns (dispensado até 1 real no mês) mais 1% do lucro de cada dia de day trade.
+ */
+export type Withholding = {
+  common_sales: number;
+  common_rule: number;
+  day_trade_gains: number;
+  day_trade_rule: number;
+  /** O que a pessoa leu na nota; `null` = pela regra. */
+  informed: number | null;
+  /** O que entra na conta. */
+  withheld: number;
+  carried_in: number;
+  used: number;
+  carried_out: number;
+};
+
+export type Notice = "capital_gain_above_first_bracket" | "withholding_by_rule";
 
 export type Darf = {
   code: DarfCode;
@@ -109,7 +127,7 @@ export type TaxMonth = {
   capital_gain: CapitalGain;
   withholding: Withholding;
   darfs: Darf[];
-  notices: string[];
+  notices: Notice[];
   doubts: Doubt[];
 };
 
@@ -141,6 +159,23 @@ export type IrpfAsset = {
   code_source: string;
 };
 
+/** Um mês em que a mesma empresa pagou mais de 50 mil reais em dividendos (2026 em diante). */
+export type ThresholdMonth = { month: number; gross: number; withholding_by_rule: number; withheld: number };
+
+/** Uma fonte pagadora numa linha de rendimento, com o CNPJ do cadastro da CVM. */
+export type IncomePayer = {
+  /** ON e PN da mesma empresa vão juntos. */
+  symbols: string[];
+  /** `null`: o Prumo não achou na CVM. */
+  cnpj: string | null;
+  name: string | null;
+  payer_source: "cvm_company" | "cvm_fund" | null;
+  gross: number;
+  withheld: number;
+  net: number;
+  above_threshold: ThresholdMonth[];
+};
+
 export type IrpfIncome = {
   group: string;
   code: string;
@@ -149,7 +184,7 @@ export type IrpfIncome = {
   gross: number;
   withheld: number;
   net: number;
-  by_payer: Array<{ symbol: string; gross: number; withheld: number }>;
+  by_payer: IncomePayer[];
 };
 
 export type Irpf = {
@@ -183,3 +218,77 @@ export type Carryforward = CarryforwardValues & {
 };
 
 export type CarryforwardRequest = CarryforwardValues & { year: number };
+
+/** Um número da regra e a fonte dele. */
+export type Sourced<T = number> = { value: T; source: string };
+
+export type LatePaymentRule = {
+  /** 0,0033 = 0,33% ao dia. */
+  daily_penalty: Sourced;
+  penalty_cap: Sourced;
+  payment_month_interest: Sourced;
+  selic_series: Sourced<string>;
+};
+
+/** A tabela de regras de um ano (`GET /tax/rules/{year}`). */
+export type TaxRules = {
+  year: number;
+  reviewed_on: string;
+  covered_years: number[];
+  instruments: Array<{
+    instrument: Instrument;
+    regime: Regime;
+    common_pool: Pool | null;
+    day_trade_pool: Pool | null;
+    exemption: ExemptionId | null;
+    source: string;
+  }>;
+  pools: Array<{ pool: Pool; rate: Sourced }>;
+  exemptions: Array<{
+    id: ExemptionId;
+    limit: Sourced;
+    counted: Instrument[];
+    counts_day_trade: boolean;
+    counts_day_trade_source: string;
+  }>;
+  capital_gain_brackets: Array<{ up_to: number | null; rate: number }>;
+  capital_gain_brackets_source: string;
+  exchange_darf_code: Sourced<string>;
+  capital_gain_darf_code: Sourced<string>;
+  darf_minimum: Sourced;
+  withholding: {
+    common_rate: Sourced;
+    common_dispensed_up_to: Sourced;
+    day_trade_rate: Sourced;
+    carry_within_year_source: string;
+  };
+  late_payment: LatePaymentRule;
+  interest_on_equity_rate: Sourced;
+  dividend_withholding: { monthly_threshold: number; rate: number; source: string } | null;
+};
+
+export type SelicMonth = { year: number; month: number; rate: number | null };
+
+/** A multa e os juros de um DARF pago em `pay_date` (`GET /tax/darfs/{year}/{month}/late`). */
+export type LateCharge = {
+  code: DarfCode;
+  year: number;
+  month: number;
+  principal: number;
+  due_date: string;
+  pay_date: string;
+  days_late: number;
+  /** 0,2 = 20%. */
+  penalty_rate: number;
+  penalty: number;
+  selic_months: SelicMonth[];
+  payment_month_rate: number;
+  /** `null` quando falta a Selic de algum mês. */
+  interest_rate: number | null;
+  interest: number | null;
+  total: number | null;
+  missing_selic: SelicMonth[];
+  rule: LatePaymentRule;
+};
+
+export type InformedWithholding = { year: number; month: number; amount: number };

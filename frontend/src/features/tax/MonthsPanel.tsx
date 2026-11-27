@@ -1,12 +1,16 @@
+import { useId, useState } from "react";
 import { errorMessage } from "../../api/client";
-import type { Balance, CapitalGain, Darf, Pool, TaxMonth, TaxMonths } from "../../api/taxTypes";
+import type { Balance, CapitalGain, Darf, Pool, PoolResult, TaxMonth, TaxMonths } from "../../api/taxTypes";
 import { DataTable, StatusPill, type DataColumn } from "../../components/DataTable";
 import { Panel } from "../../components/Layout";
+import { MagneticButton } from "../../components/MagneticButton";
+import { MoneyInput } from "../../components/MoneyInput";
 import { useToast } from "../../components/toastContext";
 import { useMoney } from "../../lib/privacy";
 import { DoubtTip } from "./DoubtTip";
+import { LateChargeSheet } from "./LateChargeSheet";
 import { isoDay, monthName, POOL_LABEL, rateText, SHORT_INSTRUMENT } from "./taxText";
-import { useDarfPaid } from "./useTax";
+import { useDarfPaid, useInformedWithholding } from "./useTax";
 
 const stockSales = (month: TaxMonth) => {
   const line = month.sales.find((s) => s.instrument === "stock");
@@ -16,9 +20,15 @@ const stockSales = (month: TaxMonth) => {
 const monthTax = (month: TaxMonth) =>
   month.pools.reduce((sum, pool) => sum + pool.tax, 0) + month.capital_gain.tax;
 
-/** Mês sem venda, imposto nem DARF: só o nome, no celular. */
+/** O grupo teve prejuízo a compensar no mês (antes, depois ou usado). */
+const hasLoss = (p: PoolResult) => p.loss_before > 0 || p.loss_after > 0 || p.loss_used > 0;
+
+/** Mês sem venda, imposto, DARF nem prejuízo: só o nome, no celular. */
 const isQuiet = (month: TaxMonth) =>
-  stockSales(month) === 0 && monthTax(month) === 0 && month.darfs.every((d) => !d.payable && d.pending_after <= 0);
+  stockSales(month) === 0 &&
+  monthTax(month) === 0 &&
+  month.darfs.every((d) => !d.payable && d.pending_after <= 0) &&
+  !month.pools.some(hasLoss);
 
 /** Zero é traço: o número que não existe não ocupa a vista. */
 function Amount({ value }: { value: number }) {
@@ -27,13 +37,37 @@ function Amount({ value }: { value: number }) {
 }
 
 /**
+ * O prejuízo a compensar de cada grupo no fim do mês, com o que compensou
+ * lucro e o que entrou no mês. Só o grupo que teve prejuízo aparece.
+ */
+function LossCell({ month }: { month: TaxMonth }) {
+  const money = useMoney();
+  const pools = month.pools.filter(hasLoss);
+  if (pools.length === 0) return <span className="tax-empty">–</span>;
+  return (
+    <>
+      {pools.map((p) => (
+        <span key={p.pool} className="tax-loss">
+          {POOL_LABEL[p.pool]} {p.loss_after > 0 ? money.brl(p.loss_after) : "zerado"}
+          {p.loss_used > 0 && <span className="tax-line tax-line--muted">compensou {money.brl(p.loss_used)}</span>}
+          {p.result < 0 && <span className="tax-line tax-line--muted">mais {money.brl(-p.result)} no mês</span>}
+        </span>
+      ))}
+    </>
+  );
+}
+
+/**
  * Os doze meses do ano numa tabela: vendas de ações, imposto, DARF (com o
- * vencimento embaixo) e a situação (a pagar ou pago, com o botão que muda). O
- * que fica depois da tabela é o saldo que passa para o ano seguinte.
+ * vencimento embaixo), o prejuízo a compensar de cada grupo e a situação (a
+ * pagar, em atraso ou pago, com o botão que muda e a calculadora do atraso).
+ * O que fica depois da tabela é o saldo de 1º de janeiro e o que passa para o
+ * ano seguinte.
  */
 export function MonthsPanel({ data }: { data: TaxMonths }) {
   const money = useMoney();
   const pendingDarf = (data.closing.pending_darf.exchange_net_gain ?? 0) + (data.closing.pending_darf.capital_gain ?? 0);
+  const opening = (data.months[0]?.pools ?? []).filter((p) => p.loss_before > 0);
 
   const columns: DataColumn<TaxMonth>[] = [
     {
@@ -45,18 +79,22 @@ export function MonthsPanel({ data }: { data: TaxMonths }) {
     { key: "sales", label: "Vendas de ações", align: "end", cell: (month) => <Amount value={stockSales(month)} /> },
     { key: "tax", label: "Imposto do mês", align: "end", cell: (month) => <Amount value={monthTax(month)} /> },
     { key: "darf", label: "DARF", cell: (month) => <DarfCell month={month} /> },
+    { key: "loss", label: "Prejuízo a compensar", cell: (month) => <LossCell month={month} /> },
     {
       key: "status",
       label: "Situação",
-      cell: (month) => month.darfs.filter((d) => d.payable).map((darf) => <PaidToggle key={darf.code} month={month} darf={darf} />),
+      cell: (month) =>
+        month.darfs
+          .filter((d) => d.payable)
+          .map((darf) => <PaidToggle key={darf.code} month={month} darf={darf} today={data.today} />),
     },
   ];
 
   return (
     <Panel
       title={`Meses de ${data.year}`}
-      info="DARF 6015 (bolsa) e 4600 (cripto), com vencimento no último dia útil do mês seguinte. Abaixo de dez reais o DARF não se paga: o valor soma ao do mês seguinte."
-      infoLabel="Como o DARF é calculado"
+      info="DARF 6015 (bolsa) e 4600 (cripto), com vencimento no último dia útil do mês seguinte. Abaixo de dez reais o DARF não se paga: o valor soma ao do mês seguinte. O prejuízo só compensa lucro do mesmo grupo (ações, ETF e BDR; day trade; FII; Fiagro) e passa de um mês e de um ano para o outro, sem prazo; cripto não compensa."
+      infoLabel="Como o DARF e o prejuízo são calculados"
     >
       <DataTable
         caption={`DARF por mês em ${data.year}`}
@@ -67,6 +105,12 @@ export function MonthsPanel({ data }: { data: TaxMonths }) {
         className="tax-months"
       />
       <p className="tax-closing">
+        {opening.length > 0 && (
+          <>
+            Prejuízo a compensar em 1º de janeiro: {opening.map((p) => `${POOL_LABEL[p.pool]} ${money.brl(p.loss_before)}`).join(" · ")}
+            {" · "}
+          </>
+        )}
         Prejuízo a compensar em 31/12: <BalanceText balance={data.closing} empty="nenhum" />
         {pendingDarf > 0 && <> · DARF abaixo do mínimo ainda não pago: {money.brl(pendingDarf)}</>}
       </p>
@@ -96,11 +140,14 @@ function DarfCell({ month }: { month: TaxMonth }) {
   );
 }
 
-function PaidToggle({ month, darf }: { month: TaxMonth; darf: Darf }) {
+function PaidToggle({ month, darf, today }: { month: TaxMonth; darf: Darf; today: string }) {
   const change = useDarfPaid();
   const toast = useToast();
+  const [lateOpen, setLateOpen] = useState(false);
   const name = monthName(month.month);
   const paid = darf.paid !== null;
+  // Datas ISO comparam como texto. Pago, o atraso é história: sem calculadora.
+  const overdue = !paid && darf.due_date < today;
   const toggle = () =>
     change.mutate(
       { year: month.year, month: month.month, code: darf.code, paid: !paid },
@@ -116,7 +163,7 @@ function PaidToggle({ month, darf }: { month: TaxMonth; darf: Darf }) {
 
   return (
     <span className="tax-paid">
-      <StatusPill status={paid ? "ok" : "attention"}>{paid ? "Pago" : "A pagar"}</StatusPill>
+      <StatusPill status={paid ? "ok" : overdue ? "bad" : "attention"}>{paid ? "Pago" : overdue ? "Em atraso" : "A pagar"}</StatusPill>
       <button
         type="button"
         className="link-btn tax-paid__button"
@@ -127,6 +174,19 @@ function PaidToggle({ month, darf }: { month: TaxMonth; darf: Darf }) {
         {paid ? "Desmarcar" : "Marcar como pago"}
       </button>
       {darf.paid && !darf.paid.same_amount && <span className="tax-line--muted">o valor mudou depois de marcar: confira</span>}
+      {overdue && (
+        <>
+          <button
+            type="button"
+            className="link-btn tax-paid__button"
+            onClick={() => setLateOpen(true)}
+            aria-label={`Calcular multa e juros do DARF ${darf.code} de ${name}`}
+          >
+            Multa e juros
+          </button>
+          <LateChargeSheet month={month} darf={darf} today={today} open={lateOpen} onClose={() => setLateOpen(false)} />
+        </>
+      )}
     </span>
   );
 }
@@ -178,6 +238,7 @@ export function MonthDetails({ month }: { month: TaxMonth }) {
         </div>
       )}
       <CryptoLine gain={month.capital_gain} name={name} />
+      <WithholdingBlock month={month} />
       {exempt && exempt.exempt_gain > 0 && <p className="tax-facts">Lucro isento das ações no mês: {money.brl(exempt.exempt_gain)}</p>}
       {month.doubts.length > 0 && (
         <p className="tax-doubts">
@@ -198,5 +259,93 @@ function CryptoLine({ gain, name }: { gain: CapitalGain; name: string }) {
       Cripto: lucro de {money.brl(gain.gains)} e prejuízo de {money.brl(gain.losses)} nas vendas;{" "}
       {gain.exempt ? "mês isento." : `imposto de ${money.brl(gain.tax)}.`}
     </p>
+  );
+}
+
+/** Há retenção a mostrar: venda em bolsa, valor informado ou sobra que chegou. */
+const hasWithholding = (month: TaxMonth) => {
+  const w = month.withholding;
+  return w.common_sales > 0 || w.day_trade_gains > 0 || w.informed !== null || w.carried_in > 0;
+};
+
+/**
+ * O IR retido na fonte do mês: pela regra (0,005% das vendas comuns e 1% do
+ * lucro do dia em day trade) ou o que a pessoa leu na nota. Dá para informar o
+ * da nota e voltar para a regra.
+ */
+function WithholdingBlock({ month }: { month: TaxMonth }) {
+  const money = useMoney();
+  const inputId = useId();
+  const toast = useToast();
+  const change = useInformedWithholding();
+  const [editing, setEditing] = useState(false);
+  const w = month.withholding;
+  const [value, setValue] = useState(w.informed ?? w.withheld);
+  if (!hasWithholding(month)) return null;
+  const name = monthName(month.month);
+  const byRule = w.informed === null;
+  const ruleParts = [
+    ...(w.common_sales > 0
+      ? [w.common_rule > 0 ? `0,005% de ${money.brl(w.common_sales)} vendidos` : `0,005% de ${money.brl(w.common_sales)} vendidos fica abaixo de 1 real e é dispensado`]
+      : []),
+    ...(w.day_trade_gains > 0 ? [`1% de ${money.brl(w.day_trade_gains)} de lucro em day trade`] : []),
+  ];
+  const save = (amount: number | null) =>
+    change.mutate(
+      { year: month.year, month: month.month, amount },
+      {
+        onSuccess: () => {
+          setEditing(false);
+          toast({
+            tone: "success",
+            message: amount === null ? `IR retido de ${name} voltou para a regra.` : `IR retido de ${name} salvo.`,
+          });
+        },
+        onError: (error) => toast({ tone: "error", message: errorMessage(error) }),
+      },
+    );
+
+  return (
+    <div className="tax-withholding" role="group" aria-label={`IR retido na fonte em ${name}`}>
+      <p className="tax-facts">
+        IR retido na fonte: {money.brl(w.withheld)} {byRule ? "pela regra" : "informado da nota"}
+        {byRule && ruleParts.length > 0 && <> ({ruleParts.join("; ")})</>}.
+        {w.carried_in > 0 && <> Sobra de {money.brl(w.carried_in)} dos meses anteriores.</>}
+        {w.used > 0 && <> Abateu {money.brl(w.used)} do imposto.</>}
+        {w.carried_out > 0 && <> Passam {money.brl(w.carried_out)} para o mês seguinte.</>}
+      </p>
+      {month.notices.includes("withholding_by_rule") && (
+        <p className="field__hint">Sem o valor da nota, o Prumo usou o que a corretora deve reter: confira na nota de corretagem.</p>
+      )}
+      {editing ? (
+        <div className="tax-withholding__edit">
+          <MoneyInput id={inputId} label={`IR retido em ${name}, como na nota`} value={value} onChange={setValue} focusOnMount />
+          <MagneticButton onClick={() => save(value)} loading={change.isPending}>
+            Salvar
+          </MagneticButton>
+          <MagneticButton variant="ghost" magnetic={false} onClick={() => setEditing(false)}>
+            Cancelar
+          </MagneticButton>
+        </div>
+      ) : (
+        <p className="tax-withholding__actions">
+          <button
+            type="button"
+            className="link-btn"
+            onClick={() => {
+              setValue(w.informed ?? w.withheld);
+              setEditing(true);
+            }}
+          >
+            {byRule ? "Informar o valor da nota" : "Trocar o valor da nota"}
+          </button>
+          {!byRule && (
+            <button type="button" className="link-btn" onClick={() => save(null)} disabled={change.isPending}>
+              Voltar para a regra
+            </button>
+          )}
+        </p>
+      )}
+    </div>
   );
 }

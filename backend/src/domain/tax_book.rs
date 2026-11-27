@@ -30,7 +30,7 @@ use time::Date;
 use super::asset_class::AssetClass;
 use super::income::IncomeKind as PaymentKind;
 use super::ledger::{ledger_order, Entry, Kind};
-use super::tax::irpf::{AnnualReport, Income, IncomeKind};
+use super::tax::irpf::{AnnualReport, Income, IncomeKind, Payer};
 use super::tax::monthly::MonthReport;
 use super::tax::positions::{Action, OpeningPosition, Operation, QUANTITY_DECIMALS};
 use super::tax::rules::{ExemptionId, Pool};
@@ -401,7 +401,6 @@ fn convert(key: &str, instrument: Instrument, entries: &[Entry]) -> Result<Conve
                             quantity: entry.quantity,
                             unit_price: price(entry),
                             fees: fees(entry),
-                            withheld: Decimal::ZERO,
                         },
                     ));
                 }
@@ -438,7 +437,7 @@ fn fees(entry: &Entry) -> Decimal {
 // ------------------------------------------------------------- proventos --
 
 /// Um provento recebido, com o instrumento do ativo que pagou (`None` se o
-/// ativo já saiu da carteira).
+/// ativo já saiu da carteira) e a fonte pagadora que a CVM dá para ele.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Payment {
     pub payer: String,
@@ -447,6 +446,34 @@ pub struct Payment {
     pub pay_date: Date,
     pub gross: Decimal,
     pub withheld: Decimal,
+    /// CNPJ e nome da fonte pagadora (cadastro da CVM); `None` sem cadastro.
+    pub source: Option<Payer>,
+}
+
+/// De que cadastro da CVM sai o CNPJ de quem pagou o provento: companhia
+/// (dividendo e JCP) ou fundo (rendimento de FII e Fiagro). `None` para o que
+/// não vai à declaração como rendimento.
+pub fn payer_registry(payment: &Payment) -> Option<PayerRegistry> {
+    let fund = matches!(
+        payment.instrument,
+        Some(TaxInstrument::RealEstateFund | TaxInstrument::AgribusinessFund)
+    );
+    let company = matches!(payment.instrument, None | Some(TaxInstrument::Stock));
+    match payment.kind {
+        PaymentKind::Dividend | PaymentKind::ReitIncome if fund => Some(PayerRegistry::Fund),
+        PaymentKind::ReitIncome if payment.instrument.is_none() => Some(PayerRegistry::Fund),
+        PaymentKind::Dividend | PaymentKind::Jcp if company => Some(PayerRegistry::Company),
+        _ => None,
+    }
+}
+
+/// O cadastro da CVM de uma fonte pagadora.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PayerRegistry {
+    /// Companhia aberta (cadastro de companhias).
+    Company,
+    /// FII ou Fiagro (informe mensal).
+    Fund,
 }
 
 /// Os proventos do jeito que o IRPF recebe, e os que ficam fora.
@@ -478,6 +505,7 @@ pub fn incomes(payments: &[Payment]) -> (Vec<Income>, Vec<Skipped>) {
                 kind,
                 gross: payment.gross,
                 withheld: payment.withheld,
+                payer: payment.source.clone(),
             }),
             Err(reason) => skipped.push(Skipped {
                 subject: payment.payer.clone(),
@@ -550,10 +578,11 @@ pub fn annual_doubts(report: &AnnualReport) -> Vec<Doubt> {
     if report.withholding_left > Decimal::ZERO {
         doubts.push(Doubt::WithholdingLeftover);
     }
-    let dividends_withheld = report
-        .exempt_income
-        .iter()
-        .any(|line| line.code.code == "09" && line.withheld > Decimal::ZERO);
+    let dividends_withheld = report.exempt_income.iter().any(|line| {
+        line.code.code == "09"
+            && (line.withheld > Decimal::ZERO
+                || line.by_payer.iter().any(|p| !p.above_threshold.is_empty()))
+    });
     if dividends_withheld {
         doubts.push(Doubt::DividendWithholding);
     }
@@ -1101,6 +1130,7 @@ mod tests {
             pay_date: date!(2025 - 05 - 02),
             gross: dec!(100),
             withheld: Decimal::ZERO,
+            source: None,
         };
         let cases = [
             (
@@ -1170,6 +1200,63 @@ mod tests {
     }
 
     #[test]
+    fn payer_registry_follows_the_irpf_line() {
+        let payment = |kind, instrument| Payment {
+            payer: "X".into(),
+            kind,
+            instrument,
+            pay_date: date!(2025 - 05 - 02),
+            gross: dec!(100),
+            withheld: Decimal::ZERO,
+            source: None,
+        };
+        use PayerRegistry::{Company, Fund};
+        let cases = [
+            (
+                PaymentKind::Dividend,
+                Some(TaxInstrument::Stock),
+                Some(Company),
+            ),
+            (PaymentKind::Jcp, None, Some(Company)),
+            (
+                PaymentKind::ReitIncome,
+                Some(TaxInstrument::RealEstateFund),
+                Some(Fund),
+            ),
+            (
+                PaymentKind::Dividend,
+                Some(TaxInstrument::AgribusinessFund),
+                Some(Fund),
+            ),
+            (PaymentKind::ReitIncome, None, Some(Fund)),
+            (PaymentKind::Dividend, Some(TaxInstrument::Bdr), None),
+            (PaymentKind::Dividend, Some(TaxInstrument::Etf), None),
+            (PaymentKind::Amortization, Some(TaxInstrument::Stock), None),
+        ];
+        for (kind, instrument, expected) in cases {
+            assert_eq!(
+                payer_registry(&payment(kind, instrument)),
+                expected,
+                "{kind:?} {instrument:?}"
+            );
+        }
+        // O CNPJ vai junto para o rendimento da declaração.
+        let with_source = Payment {
+            source: Some(Payer {
+                cnpj: "00.000.000/0001-00".into(),
+                name: "EMPRESA EXEMPLO S.A.".into(),
+                source: crate::domain::tax::irpf::PayerSource::CvmCompany,
+            }),
+            ..payment(PaymentKind::Dividend, Some(TaxInstrument::Stock))
+        };
+        let (kept, _) = incomes(&[with_source]);
+        assert_eq!(
+            kept[0].payer.as_ref().map(|p| p.name.as_str()),
+            Some("EMPRESA EXEMPLO S.A.")
+        );
+    }
+
+    #[test]
     fn doubts_flag_the_numbers_they_touch() {
         let day = |m, d| {
             time::Date::from_calendar_date(2025, time::Month::try_from(m).unwrap(), d).unwrap()
@@ -1236,6 +1323,7 @@ mod tests {
             operations: &book.operations,
             since_year: 2025,
             carryforward: Carryforward::default(),
+            informed_withholding: Default::default(),
         };
         let assessment = assess(&input, 2025).unwrap();
         let doubts = |month: usize| month_doubts(&assessment.months[month - 1]);
@@ -1254,6 +1342,7 @@ mod tests {
             operations: &[],
             since_year: 2025,
             carryforward: Carryforward::default(),
+            informed_withholding: Default::default(),
         };
         let quiet = annual_report(&input, &[], 2026).unwrap();
         assert_eq!(annual_doubts(&quiet), vec![Doubt::IrpfCodes]);
@@ -1264,6 +1353,7 @@ mod tests {
                 kind: IncomeKind::Dividend,
                 gross: dec!(60000),
                 withheld: dec!(6000),
+                payer: None,
             },
             Income {
                 pay_date: date!(2026 - 03 - 02),
@@ -1271,6 +1361,7 @@ mod tests {
                 kind: IncomeKind::InterestOnEquity,
                 gross: dec!(100),
                 withheld: dec!(17.5),
+                payer: None,
             },
         ];
         let busy = annual_report(&input, &incomes, 2026).unwrap();

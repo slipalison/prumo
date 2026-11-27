@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { HIDE_VALUES_KEY } from "../../lib/privacy";
 import { renderApp } from "../../test/render";
 import { getDb, server } from "../../test/server";
-import { getTaxDb, sampleMonths } from "../../test/taxHandlers";
+import { getTaxDb, sampleIrpf, sampleMonths } from "../../test/taxHandlers";
 
 /** Qualquer R$ seguido de dígito é valor vazando. */
 const MONEY = /R\$\s*\d/;
@@ -88,9 +88,10 @@ describe("Impostos", () => {
     const { user } = await openTaxes();
     const table = screen.getByRole("table", { name: "DARF por mês em 2026" });
     const may = within(table).getByRole("row", { name: /^maio/ });
-    expect(may).toHaveTextContent(/6015 · R\$\s450,00/);
+    expect(may).toHaveTextContent(/6015 · R\$\s448,80/);
     expect(may).toHaveTextContent("30/06/2026");
-    expect(may).toHaveTextContent("A pagar");
+    // Vencido em 30/06 e não pago: em atraso, escrito (a cor só reforça).
+    expect(may).toHaveTextContent("Em atraso");
     const march = within(table).getByRole("row", { name: /^março/ });
     expect(march).toHaveTextContent("6015: abaixo do mínimo, soma no mês seguinte");
     const september = within(table).getByRole("row", { name: /^setembro/ });
@@ -103,7 +104,12 @@ describe("Impostos", () => {
     expect(await screen.findByText("DARF 6015 de maio marcado como pago.")).toBeInTheDocument();
     expect(requests("POST", "/api/v1/tax/darfs/2026/5/paid").at(-1)?.body).toEqual({ code: "6015" });
     await waitFor(() =>
-      expect(within(screen.getByRole("row", { name: /^maio/ })).getByRole("button", { name: /Desmarcar/ })).toBeInTheDocument(),
+      expect(
+        within(within(screen.getByRole("table", { name: "DARF por mês em 2026" })).getByRole("row", { name: /^maio/ })).getByRole(
+          "button",
+          { name: /Desmarcar/ },
+        ),
+      ).toBeInTheDocument(),
     );
 
     await user.click(within(april).getByRole("button", { name: "Desmarcar o DARF 6015 de abril" }));
@@ -168,12 +174,17 @@ describe("Impostos", () => {
     expect(writeText).toHaveBeenCalledWith(expect.stringMatching(/ITSA4 \(Ação ou unit\): 2\.500 unidades\. Grupo 03, código 01\. Situação em 31\/12: R\$\s25\.000,00/));
     expect(await screen.findByText("Linha de ITSA4 copiada.")).toBeInTheDocument();
 
-    const exempt = screen.getByRole("table", { name: "Rendimentos isentos" });
-    expect(within(exempt).getByRole("row", { name: /Código 09/ })).toHaveTextContent(/R\$\s300,00/);
-    expect(within(exempt).getByRole("row", { name: /Código 99/ })).toHaveTextContent("Outros: rendimentos de FII e Fiagro");
-    const exclusive = screen.getByRole("table", { name: "Tributação exclusiva" });
-    expect(exclusive).toHaveTextContent(/Líquido R\$\s165,00/);
-    expect(exclusive).toHaveTextContent(/bruto R\$\s200,00, retido R\$\s35,00/);
+    const income = screen.getByRole("table", { name: "Rendimentos por fonte pagadora" });
+    expect(within(income).getByRole("row", { name: /Código 09/ })).toHaveTextContent(/R\$\s300,00/);
+    expect(within(income).getByRole("row", { name: /Código 99/ })).toHaveTextContent("Outros: rendimentos de FII e Fiagro");
+    const gains = within(income).getByRole("row", { name: /Código 20/ });
+    expect(gains).toHaveTextContent("Lucro das suas vendas no ano");
+    expect(gains).toHaveTextContent(/R\$\s900,00/);
+    // Código sem valor no ano não ocupa linha.
+    expect(within(income).queryByRole("row", { name: /Código 05/ })).toBeNull();
+    const jcp = within(income).getByRole("row", { name: /Código 10/ });
+    expect(jcp).toHaveTextContent(/Líquido R\$\s165,00/);
+    expect(jcp).toHaveTextContent(/bruto R\$\s200,00, retido R\$\s35,00/);
     // As dúvidas jurídicas ficam num ⓘ azul ao lado do bloco que elas tocam.
     expect(await openTip(user, "Ponto a confirmar com contador: JCP levado pelo valor líquido")).toHaveTextContent(/O JCP foi levado pelo valor líquido/);
     expect(await openTip(user, "Ponto a confirmar com contador: códigos de Bens e Direitos e de rendimentos")).toHaveTextContent(
@@ -200,9 +211,264 @@ describe("Impostos", () => {
     expect(within(out).getByText("CDB Exemplo").closest("li")).toHaveTextContent(/Fora do IR do Prumo/);
     expect(within(out).getByText("KNRI11").closest("li")).toHaveTextContent(/10\/03\/2026 · R\$\s10,00/);
     expect(within(out).getByText("AAPL34").closest("li")).toHaveTextContent(/rendimento do exterior/);
-    const never = screen.getByRole("region", { name: "Nunca entra na conta" });
-    await user.click(within(never).getByText("Nunca entra na conta"));
-    expect(within(never).getByText(/IR retido na fonte da nota/)).toBeInTheDocument();
+  });
+
+  it("mostra o que o Prumo cobre, com a regra e a fonte, e o que fica fora com o porquê", async () => {
+    const { user } = await openTaxes();
+    const fold = screen.getByRole("region", { name: "O que o Prumo cobre" });
+    await waitFor(() => expect(fold).toHaveTextContent("10 calcula · 10 fora"));
+    await user.click(within(fold).getByText("O que o Prumo cobre"));
+    const covered = await within(fold).findByRole("list", { name: "O que o Prumo calcula em 2026" });
+    const dayTrade = within(covered).getByText("Day trade").closest("li");
+    expect(dayTrade).toHaveTextContent(/20%, sem a isenção das ações, com prejuízo em conta separada e 1% retido/);
+    expect(dayTrade).toHaveTextContent("Fonte: Lei de exemplo");
+    expect(within(covered).getByText("Ações e units").closest("li")).toHaveTextContent("até 20 mil reais");
+    expect(within(covered).getByText("ETF de renda variável e BDR").closest("li")).toHaveTextContent("sem a isenção das ações");
+    expect(within(covered).getByText("IR retido na fonte").closest("li")).toHaveTextContent(/0,005% das vendas comuns \(dispensado até 1 real no mês\)/);
+    expect(within(covered).getByText("DARF em atraso").closest("li")).toHaveTextContent(/0,33% ao dia, até 20%.*série 4390/);
+    expect(within(covered).getByText("Proventos na declaração").closest("li")).toHaveTextContent(
+      /JCP com 17,5% na fonte.*acima de 50 mil reais no mês com retenção de 10%/,
+    );
+    const out = within(fold).getByRole("list", { name: "O que o Prumo não calcula" });
+    expect(within(out).getByText("Opções, termo e futuro").closest("li")).toHaveTextContent(/só registra compra e venda à vista/);
+    expect(within(out).getByText("Corretora de cada negócio").closest("li")).toHaveTextContent(/Informe o retido da nota/);
+  });
+
+  it("a tabela de regras fora do ar não derruba a tela", async () => {
+    server.use(
+      http.get("/api/v1/tax/rules/:year", () =>
+        HttpResponse.json(
+          { title: "Erro interno", status: 500, code: "internal", detail: "x" },
+          { status: 500, headers: { "Content-Type": "application/problem+json" } },
+        ),
+      ),
+    );
+    const { user } = await openTaxes();
+    const fold = screen.getByRole("region", { name: "O que o Prumo cobre" });
+    await user.click(within(fold).getByText("O que o Prumo cobre"));
+    expect(await within(fold).findByText(/Algo deu errado do nosso lado/)).toBeInTheDocument();
+    expect(within(fold).getByRole("list", { name: "O que o Prumo não calcula" })).toBeInTheDocument();
+  });
+
+  it("mostra o prejuízo a compensar de cada grupo, mês a mês, na tabela dos meses", async () => {
+    await openTaxes();
+    const table = screen.getByRole("table", { name: "DARF por mês em 2026" });
+    expect(within(table).getByRole("columnheader", { name: "Prejuízo a compensar" })).toBeInTheDocument();
+    const august = within(table).getByRole("row", { name: /^agosto/ });
+    expect(august).toHaveTextContent(/Fiagro R\$\s100,00/);
+    expect(august).toHaveTextContent(/mais R\$\s100,00 no mês/);
+    expect(within(table).getByRole("row", { name: /^dezembro/ })).toHaveTextContent(/Fiagro R\$\s100,00/);
+    expect(within(table).getByRole("row", { name: /^julho/ })).not.toHaveTextContent("Fiagro");
+  });
+
+  it("compensa o prejuízo e mostra o saldo de 1º de janeiro", async () => {
+    server.use(
+      http.get("/api/v1/tax/months", () => {
+        const data = sampleMonths(2026);
+        for (const month of data.months) {
+          const common = month.pools[0];
+          if (common) Object.assign(common, { loss_before: month.month <= 5 ? 300 : 0, loss_after: month.month < 5 ? 300 : 0 });
+        }
+        Object.assign(data.months[4]?.pools[0] ?? {}, { loss_used: 300 });
+        return HttpResponse.json(data);
+      }),
+    );
+    await openTaxes();
+    expect(screen.getByText(/Prejuízo a compensar em 1º de janeiro/)).toHaveTextContent(/Ações, ETF e BDR R\$\s300,00/);
+    const may = within(screen.getByRole("table", { name: "DARF por mês em 2026" })).getByRole("row", { name: /^maio/ });
+    expect(may).toHaveTextContent("Ações, ETF e BDR zerado");
+    expect(may).toHaveTextContent(/compensou R\$\s300,00/);
+  });
+
+  it("calcula a multa e os juros do DARF em atraso pelo dia do pagamento", async () => {
+    const { user } = await openTaxes();
+    const may = within(screen.getByRole("table", { name: "DARF por mês em 2026" })).getByRole("row", { name: /^maio/ });
+    await user.click(within(may).getByRole("button", { name: "Calcular multa e juros do DARF 6015 de maio" }));
+    const sheet = await screen.findByRole("dialog", { name: "DARF 6015 de maio de 2026 em atraso" });
+    expect(sheet).toHaveTextContent("Venceu em 30/06/2026.");
+    // Hoje (25/11/2026): 148 dias, multa no teto; juros da Selic de julho a
+    // outubro mais 1%.
+    const lines = await within(sheet).findByLabelText("Conta do DARF em atraso");
+    expect(lines).toHaveTextContent(/Imposto \(principal\)R\$\s448,80/);
+    expect(lines).toHaveTextContent(/Multa de mora: 20%0,33% × 148 dias, até 20%R\$\s89,76/);
+    expect(lines).toHaveTextContent(/Juros de mora: 5,46%/);
+    expect(lines).toHaveTextContent(/julho de 2026 \(1,22%\) \+ agosto de 2026 \(1,09%\)/);
+    expect(lines).toHaveTextContent(/1% no mês do pagamento/);
+    expect(lines).toHaveTextContent(/R\$\s24,50/);
+    expect(lines).toHaveTextContent(/Total a pagar em 25\/11\/2026R\$\s563,06/);
+    expect(sheet).toHaveTextContent("No DARF: código 6015, período de apuração 05/2026, vencimento 30/06/2026");
+    expect(sheet).toHaveTextContent("Fonte: Lei de exemplo");
+
+    // Pago em janeiro de 2027: falta a Selic dos meses que não fecharam.
+    const date = within(sheet).getByLabelText("Dia do pagamento");
+    await user.clear(date);
+    await user.type(date, "2027-01-10");
+    expect(await within(sheet).findByText(/Falta a Selic de novembro de 2026, dezembro de 2026/)).toBeInTheDocument();
+    expect(within(sheet).getByLabelText("Conta do DARF em atraso")).toHaveTextContent(/Juros de mora: falta a Selic/);
+    expect(requests("GET", "/api/v1/tax/darfs/2026/5/late").at(-1)?.path).toContain("pay_on=2027-01-10");
+
+    // No dia do vencimento: nada a mais.
+    await user.clear(date);
+    await user.type(date, "2026-06-30");
+    expect(await within(sheet).findByText(/Pago até 30\/06\/2026, o DARF vai sem multa nem juros/)).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("DARF pago no mês do vencimento tem multa e ainda não tem juros", async () => {
+    server.use(
+      http.get("/api/v1/tax/darfs/:year/:month/late", () =>
+        HttpResponse.json({
+          code: "6015",
+          year: 2026,
+          month: 5,
+          principal: 100,
+          due_date: "2026-06-29",
+          pay_date: "2026-06-30",
+          days_late: 1,
+          penalty_rate: 0.0033,
+          penalty: 0.33,
+          selic_months: [],
+          payment_month_rate: 0,
+          interest_rate: 0,
+          interest: 0,
+          total: 100.33,
+          missing_selic: [],
+          rule: {
+            daily_penalty: { value: 0.0033, source: "x" },
+            penalty_cap: { value: 0.2, source: "x" },
+            payment_month_interest: { value: 0.01, source: "x" },
+            selic_series: { value: "4390", source: "x" },
+          },
+        }),
+      ),
+    );
+    const { user } = await openTaxes();
+    const may = within(screen.getByRole("table", { name: "DARF por mês em 2026" })).getByRole("row", { name: /^maio/ });
+    await user.click(within(may).getByRole("button", { name: "Calcular multa e juros do DARF 6015 de maio" }));
+    const sheet = await screen.findByRole("dialog");
+    expect(await within(sheet).findByText(/Pago no mês do vencimento: os juros ainda não começaram/)).toBeInTheDocument();
+  });
+
+  it("a calculadora mostra o erro do servidor", async () => {
+    server.use(
+      http.get("/api/v1/tax/darfs/:year/:month/late", () =>
+        HttpResponse.json(
+          { title: "Dados invalidos", status: 422, code: "validation_failed", detail: "A data do pagamento vai como AAAA-MM-DD." },
+          { status: 422, headers: { "Content-Type": "application/problem+json" } },
+        ),
+      ),
+    );
+    const { user } = await openTaxes();
+    const may = within(screen.getByRole("table", { name: "DARF por mês em 2026" })).getByRole("row", { name: /^maio/ });
+    await user.click(within(may).getByRole("button", { name: "Calcular multa e juros do DARF 6015 de maio" }));
+    const sheet = await screen.findByRole("dialog");
+    expect(await within(sheet).findByRole("alert")).toHaveTextContent("A data do pagamento vai como AAAA-MM-DD.");
+  });
+
+  it("mostra o IR retido pela regra e troca pelo valor da nota", async () => {
+    const { user } = await openTaxes();
+    const fold = screen.getByRole("region", { name: "Como cada mês foi apurado" });
+    await user.click(within(fold).getByText("Como cada mês foi apurado"));
+    await user.click(screen.getByText("Maio", { selector: "summary" }));
+    const block = screen.getByRole("group", { name: "IR retido na fonte em maio" });
+    expect(block).toHaveTextContent(/IR retido na fonte: R\$\s1,20 pela regra \(0,005% de R\$\s24\.000,00 vendidos\)/);
+    expect(block).toHaveTextContent(/Abateu R\$\s1,20 do imposto/);
+    expect(block).toHaveTextContent("confira na nota de corretagem");
+
+    await user.click(within(block).getByRole("button", { name: "Informar o valor da nota" }));
+    const field = within(block).getByLabelText("IR retido em maio, como na nota");
+    await user.clear(field);
+    await user.keyboard("200");
+    await user.click(within(block).getByRole("button", { name: "Salvar" }));
+    expect(await screen.findByText("IR retido de maio salvo.")).toBeInTheDocument();
+    expect(requests("PUT", "/api/v1/tax/withholding/2026/5").at(-1)?.body).toEqual({ amount: 2 });
+    const saved = await screen.findByRole("group", { name: "IR retido na fonte em maio" });
+    await waitFor(() => expect(saved).toHaveTextContent(/R\$\s2,00 informado da nota/));
+    expect(saved).not.toHaveTextContent("confira na nota de corretagem");
+
+    await user.click(within(saved).getByRole("button", { name: "Voltar para a regra" }));
+    expect(await screen.findByText("IR retido de maio voltou para a regra.")).toBeInTheDocument();
+    expect(requests("DELETE", "/api/v1/tax/withholding/2026/5")).toHaveLength(1);
+    expect(getTaxDb().withholding.size).toBe(0);
+  });
+
+  it("IR retido recusado mostra o motivo e o cancelar volta", async () => {
+    server.use(
+      http.put("/api/v1/tax/withholding/:year/:month", () =>
+        HttpResponse.json(
+          { title: "Dados invalidos", status: 422, code: "validation_failed", detail: "O IR retido vai em centavos." },
+          { status: 422, headers: { "Content-Type": "application/problem+json" } },
+        ),
+      ),
+    );
+    const { user } = await openTaxes();
+    await user.click(within(screen.getByRole("region", { name: "Como cada mês foi apurado" })).getByText("Como cada mês foi apurado"));
+    await user.click(screen.getByText("Maio", { selector: "summary" }));
+    const block = screen.getByRole("group", { name: "IR retido na fonte em maio" });
+    await user.click(within(block).getByRole("button", { name: "Informar o valor da nota" }));
+    await user.click(within(block).getByRole("button", { name: "Salvar" }));
+    expect(await screen.findByText(/O IR retido vai em centavos/)).toBeInTheDocument();
+    await user.click(within(block).getByRole("button", { name: "Cancelar" }));
+    expect(within(block).getByRole("button", { name: "Informar o valor da nota" })).toBeInTheDocument();
+  });
+
+  it("lista os rendimentos por fonte pagadora, com CNPJ, para copiar", async () => {
+    const { user } = await openTaxes();
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const table = await screen.findByRole("table", { name: "Rendimentos por fonte pagadora" });
+    const company = within(table).getByRole("row", { name: /EMPRESA EXEMPLO S\.A\./ });
+    expect(company).toHaveTextContent("CNPJ 00.000.000/0001-91 · ITSA4");
+    expect(company).toHaveTextContent("Código 10");
+    expect(company).toHaveTextContent(/Líquido R\$\s165,00/);
+    const fund = within(table).getByRole("row", { name: /FUNDO EXEMPLO FII/ });
+    expect(fund).toHaveTextContent("CNPJ 22.222.222/0001-22 · KNRI11");
+    expect(fund).toHaveTextContent(/R\$\s1\.200,00/);
+    const unknown = within(table).getAllByRole("row", { name: /ITSA4/ }).find((row) => row.textContent?.includes("CNPJ não encontrado"));
+    expect(unknown).toHaveTextContent("Código 09");
+
+    await user.click(within(company).getByRole("button", { name: "Copiar a linha de EMPRESA EXEMPLO S.A., código 10" }));
+    expect(writeText).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /^Rendimentos sujeitos à tributação exclusiva, código 10 \(Juros sobre capital próprio\): CNPJ 00\.000\.000\/0001-91, EMPRESA EXEMPLO S\.A\., R\$\s165,00 \(líquido; bruto R\$\s200,00, IR retido R\$\s35,00\)\.$/,
+      ),
+    );
+    expect(await screen.findByText("Linha de EMPRESA EXEMPLO S.A. copiada.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Copiar o relatório" }));
+    const report = (writeText.mock.calls.at(-1) as unknown as [string])[0];
+    expect(report.split("\n")).toHaveLength(4);
+    expect(report).toMatch(/código 20 \(Ganhos líquidos em operações no mercado à vista de ações até 20 mil reais no mês\): R\$\s900,00\./);
+    expect(report).toContain("CNPJ não encontrado (ITSA4)");
+    expect(report).toMatch(/Rendimentos isentos e não tributáveis, código 99 \(Outros: rendimentos de FII e Fiagro\): CNPJ 22\.222\.222\/0001-22, FUNDO EXEMPLO FII, R\$\s1\.200,00\./);
+    expect(await screen.findByText("Relatório de rendimentos copiado.")).toBeInTheDocument();
+  });
+
+  it("marca o mês em que a mesma empresa passou de 50 mil em dividendos", async () => {
+    server.use(
+      http.get("/api/v1/tax/irpf/:year", () => {
+        const data = sampleIrpf(2026);
+        const payer = data.exempt_income[0]?.by_payer[0];
+        if (payer) {
+          Object.assign(payer, {
+            cnpj: "00.000.000/0001-91",
+            name: "EMPRESA EXEMPLO S.A.",
+            gross: 60000,
+            withheld: 6000,
+            net: 54000,
+            above_threshold: [{ month: 3, gross: 60000, withholding_by_rule: 6000, withheld: 6000 }],
+          });
+        }
+        data.doubts = ["irpf_codes", "dividend_withholding"];
+        return HttpResponse.json(data);
+      }),
+    );
+    await openTaxes();
+    const table = await screen.findByRole("table", { name: "Rendimentos por fonte pagadora" });
+    const row = within(table).getByRole("row", { name: /Código 09.*EMPRESA EXEMPLO S\.A\./ });
+    expect(row).toHaveTextContent(
+      /Em março: R\$\s60\.000,00 da mesma empresa, acima do limite; retenção de 10% pela regra R\$\s6\.000,00, retido informado R\$\s6\.000,00\./,
+    );
   });
 
   it("troca de ano e mostra o erro claro de ano sem regra", async () => {
@@ -290,6 +556,16 @@ describe("Impostos", () => {
     const card = screen.getByRole("region", { name: "Saldo de antes do Prumo" });
     await user.click(within(card).getByRole("button", { name: "Informar saldo" }));
     for (const text of everythingHeard(card)) expect(text).not.toMatch(MONEY);
+
+    // A calculadora do atraso e o IR retido também ficam mascarados.
+    await user.click(within(may).getByRole("button", { name: "Calcular multa e juros do DARF 6015 de maio" }));
+    const sheet = await screen.findByRole("dialog");
+    await within(sheet).findByText(/Total a pagar/);
+    expect(sheet).toHaveTextContent("20%");
+    for (const text of everythingHeard(sheet)) expect(text).not.toMatch(MONEY);
+    await user.keyboard("{Escape}");
+    const withholding = screen.getByRole("group", { name: "IR retido na fonte em maio" });
+    expect(withholding).toHaveTextContent("0,005% de R$ •••• vendidos");
   });
 });
 

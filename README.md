@@ -156,12 +156,17 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   os desdobramentos. Só informação: retrato do passado, sem recomendação.
   Fórmulas e limites em [`docs/risco.md`](docs/risco.md).
 - **Impostos** — em Ajustes: o isentômetro do mês (vendas de ações contra os
-  R$ 20 mil), o DARF de cada mês (6015 e 4600) com vencimento e a marca de
-  pago, e a declaração do ano para copiar (Bens e Direitos pelo custo em 31/12,
-  isentos e JCP), tudo saído do livro e dos proventos. Cada ativo tem o
-  instrumento fiscal (ação, ETF, BDR, FII, Fiagro, cripto ou fora), com padrão
-  pela classe e pelo nome e editável na folha. O que não foi calculado aparece
-  com o motivo, e as dúvidas jurídicas como "ponto a confirmar com contador".
+  R$ 20 mil), o DARF de cada mês (6015 e 4600) com vencimento, a marca de pago
+  e o IR retido na fonte abatido (0,005% e 1% do day trade pela regra, ou o da
+  nota, que você informa), o prejuízo a compensar de cada grupo mês a mês, a
+  calculadora de multa e juros do DARF em atraso (Selic do Banco Central), e a
+  declaração do ano para copiar (Bens e Direitos pelo custo em 31/12, isentos e
+  JCP por fonte pagadora, com o CNPJ da CVM), tudo saído do livro e dos
+  proventos. Cada ativo tem o instrumento fiscal (ação, ETF, BDR, FII, Fiagro,
+  cripto ou fora), com padrão pela classe e pelo nome e editável na folha. A
+  tela diz o que o Prumo cobre (cada regra com a fonte) e o que fica fora
+  (opções, termo, futuro…) e por quê; o que não foi calculado aparece com o
+  motivo, e as dúvidas jurídicas como "ponto a confirmar com contador".
   É **estimativa**: não substitui o contador. Regras por ano (2025 e 2026),
   com a fonte, em [`docs/ir.md`](docs/ir.md).
 

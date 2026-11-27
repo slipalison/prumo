@@ -372,6 +372,12 @@ pub fn public_router(state: AppState, static_dir: &str) -> Router {
             "/tax/darfs/{year}/{month}/paid",
             post(tax::mark_paid).delete(tax::unmark_paid),
         )
+        .route("/tax/darfs/{year}/{month}/late", get(tax::late))
+        .route(
+            "/tax/withholding/{year}/{month}",
+            put(tax::put_withholding).delete(tax::delete_withholding),
+        )
+        .route("/tax/rules/{year}", get(tax::rules))
         .route(
             "/tax/carryforward",
             get(tax::get_carryforward).put(tax::put_carryforward),

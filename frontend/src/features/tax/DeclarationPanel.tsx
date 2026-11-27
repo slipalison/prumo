@@ -1,11 +1,12 @@
-import type { Irpf, IrpfAsset, IrpfIncome } from "../../api/taxTypes";
+import type { Irpf, IrpfAsset } from "../../api/taxTypes";
 import { AssetIcon } from "../../components/AssetIcon";
 import { DataTable, type DataColumn } from "../../components/DataTable";
-import { Grid, Panel } from "../../components/Layout";
+import { Panel } from "../../components/Layout";
 import { useToast } from "../../components/toastContext";
 import { useMoney } from "../../lib/privacy";
 import { DoubtTip } from "./DoubtTip";
 import { BalanceText } from "./MonthsPanel";
+import { IncomeReport } from "./IncomeReport";
 import { INSTRUMENT_LABEL, irpfLabel } from "./taxText";
 
 function assetText(asset: IrpfAsset, quantity: string, cost: string, average: string): string {
@@ -14,8 +15,9 @@ function assetText(asset: IrpfAsset, quantity: string, cost: string, average: st
 
 /**
  * A declaração do ano para copiar: Bens e Direitos (uma linha por ativo, com o
- * botão de copiar), os rendimentos isentos e de tributação exclusiva e o saldo
- * da renda variável. Cada dúvida jurídica fica no ⓘ azul do bloco que ela toca.
+ * botão de copiar), os rendimentos por fonte pagadora (isentos e de tributação
+ * exclusiva, com CNPJ) e o saldo da renda variável. Cada dúvida jurídica fica
+ * no ⓘ azul do bloco que ela toca.
  */
 export function DeclarationPanel({ irpf }: { irpf: Irpf }) {
   const money = useMoney();
@@ -35,22 +37,7 @@ export function DeclarationPanel({ irpf }: { irpf: Irpf }) {
         <AssetsTable assets={irpf.assets} />
       </section>
 
-      <Grid cols={2} alignStart>
-        <section className="tax-block">
-          <h3 className="tax-subtitle">
-            Rendimentos isentos e não tributáveis
-            {irpf.doubts.includes("dividend_withholding") && <DoubtTip doubt="dividend_withholding" />}
-          </h3>
-          <IncomeTable lines={irpf.exempt_income} label="Rendimentos isentos" />
-        </section>
-        <section className="tax-block">
-          <h3 className="tax-subtitle">
-            Rendimentos sujeitos à tributação exclusiva
-            {irpf.doubts.includes("interest_on_equity_net") && <DoubtTip doubt="interest_on_equity_net" />}
-          </h3>
-          <IncomeTable lines={irpf.exclusive_income} label="Tributação exclusiva" net />
-        </section>
-      </Grid>
+      <IncomeReport exempt={irpf.exempt_income} exclusive={irpf.exclusive_income} doubts={irpf.doubts} />
 
       <section className="tax-block">
         <h3 className="tax-subtitle">
@@ -139,42 +126,4 @@ function AssetsTable({ assets }: { assets: IrpfAsset[] }) {
       empty="Nenhuma posição em 31/12 dentro do IR do Prumo."
     />
   );
-}
-
-function IncomeTable({ lines, label, net = false }: { lines: IrpfIncome[]; label: string; net?: boolean }) {
-  const money = useMoney();
-  const columns: DataColumn<IrpfIncome>[] = [
-    { key: "code", label: "Código", rowHeader: true, cell: (line) => <span className="tax-code">Código {line.code}</span> },
-    {
-      key: "label",
-      label: "Rendimento",
-      cell: (line) => (
-        <>
-          <span className="tax-sheet">{irpfLabel(line.group, line.code, line.label)}</span>
-          {line.by_payer.length > 0 && (
-            <span className="tax-payers">
-              {line.by_payer.map((payer) => `${payer.symbol} ${money.brl(payer.gross - payer.withheld)}`).join(" · ")}
-            </span>
-          )}
-        </>
-      ),
-    },
-    {
-      key: "value",
-      label: "Valor",
-      align: "end",
-      cell: (line) =>
-        net ? (
-          <>
-            Líquido {money.brl(line.net)}
-            <span className="tax-payers">
-              (bruto {money.brl(line.gross)}, retido {money.brl(line.withheld)})
-            </span>
-          </>
-        ) : (
-          money.brl(line.net)
-        ),
-    },
-  ];
-  return <DataTable caption={label} columns={columns} rows={lines} rowKey={(line) => `${line.group}-${line.code}`} empty="Nada neste ano." />;
 }

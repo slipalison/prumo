@@ -11,19 +11,25 @@ O cálculo mora em `backend/src/domain/tax.rs` e `backend/src/domain/tax/`
 (domínio puro, sem banco nem rede). Esta página diz **que regra vale em cada
 ano, de onde ela vem** e o que o Prumo **não** calcula.
 
-- Fontes consultadas em **25/11/2026**.
+- Fontes consultadas em **25/11/2026**; as do IR retido pela regra, da multa e
+  dos juros do DARF em atraso e da Selic do mês (§§ 2.7 e 2.11), em
+  **27/11/2026**.
 - "P&R" é o **Perguntas e Respostas IRPF 2026** da Receita (v1.00, de
   23/04/2026; ano-calendário 2025), em
   [gov.br/receitafederal › Perguntas e respostas › DIRPF](https://www.gov.br/receitafederal/pt-br/centrais-de-conteudo/publicacoes/perguntas-e-respostas/dirpf/p-r-irpf-2026-v1-00-2026-04-23.pdf/view).
 - Leis no [planalto.gov.br](https://www.planalto.gov.br/); a IN RFB
   1.585/2015 em [normas.receita.fazenda.gov.br](http://normas.receita.fazenda.gov.br/sijut2consulta/link.action?idAto=67494).
+- "P&R PJ" é o **Perguntas e Respostas Pessoa Jurídica**, cap. XVIII
+  (Acréscimos Legais), da Receita, em
+  [gov.br/receitafederal › ECF](https://www.gov.br/receitafederal/pt-br/assuntos/orientacao-tributaria/declaracoes-e-demonstrativos/ecf/perguntas-e-respostas-pessoa-juridica-2021-arquivos/capitulo-xviii-acrescimos-legais-2021.pdf).
 
 ## 1. Como a regra fica no código
 
 - Cada ano-calendário é uma função em `domain/tax/rules.rs` (`year_2025`,
-  `year_2026`). Cada alíquota, limite, código de DARF e código da declaração
-  vem com a fonte ao lado (`Sourced { value, source }`), e a tela pode
-  mostrar a fonte.
+  `year_2026`). Cada alíquota, limite, código de DARF, código da declaração,
+  taxa do IR retido e acréscimo do DARF em atraso vem com a fonte ao lado
+  (`Sourced { value, source }`). `GET /tax/rules/{year}` devolve a tabela
+  inteira, e a tela mostra cada regra com a fonte ("O que o Prumo cobre").
 - **Ano sem regra cadastrada é erro** (`TaxError::NoRulesForYear`). O Prumo
   nunca usa a regra de outro ano em silêncio. Hoje a tabela cobre **2025 e
   2026**. Vendas de anos anteriores só formam o preço médio e não são
@@ -74,9 +80,14 @@ mudou de 2025 para 2026 foi o JCP e a retenção sobre dividendos altos (§ 2.9)
   e prejuízo comum só abate lucro comum (art. 64; P&R 709).
 - **IR retido de 1%** sobre o resultado positivo, pela corretora (Lei
   9.959/2000, art. 8º; P&R 712 e 713).
-- O Prumo identifica o day trade sozinho, pelo dia, ativo e instituição do
-  lançamento. FII e Fiagro também têm day trade (o casamento tira a compra do
-  preço médio), mas o resultado fica no grupo do próprio fundo, que já é 20%.
+- O Prumo identifica o day trade sozinho, pelo dia e pelo ativo do
+  lançamento (o livro não guarda a corretora: ver § 7.2). FII e Fiagro também
+  têm day trade (o casamento tira a compra do preço médio), mas o resultado
+  fica no grupo do próprio fundo, que já é 20%.
+- A base do 1% retido é o resultado positivo **de cada dia**, com a perda de
+  day trade do mesmo dia compensada (IN RFB 1.585/2015, art. 65, § 1º, II, e
+  § 4º; P&R 705). Dia de prejuízo não retém nada e não abate o lucro de outro
+  dia. Ver § 2.7 e a dúvida § 5.11.
 
 ### 2.3 FII e Fiagro
 
@@ -135,20 +146,43 @@ mudou de 2025 para 2026 foi o JCP e a retenção sobre dividendos altos (§ 2.9)
 - O prejuízo vale nos meses seguintes, sem prazo, e atravessa o ano: prejuízo
   de dezembro compensa em qualquer mês do ano seguinte (P&R 711).
 - Prejuízo não volta para meses anteriores (P&R 710).
+- A tela mostra o saldo de cada grupo **mês a mês**, na coluna "Prejuízo a
+  compensar" da tabela dos meses: o que sobra no fim do mês, o que compensou
+  lucro e o que entrou, mais o saldo de 1º de janeiro e o de 31/12. É o que
+  vai, mês a mês, no Demonstrativo de Renda Variável (P&R 711).
 
 ### 2.7 IR retido na fonte ("dedo-duro")
 
-- Operação comum em bolsa: retenção de **0,005%** sobre o valor da venda,
-  dispensada quando dá R$ 1,00 ou menos (ou seja, até R$ 20 mil vendidos).
-  Fonte: Lei 11.033/2004, art. 2º, §§ 1º e 4º; P&R 706.
-- Day trade: **1%** sobre o resultado (P&R 712).
+- **Operação comum em bolsa:** a corretora retém **0,005%** do valor de cada
+  venda no mercado à vista (ações, ETF, BDR, FII e Fiagro). A retenção do mês
+  é a **soma** das operações; se a soma dá **R$ 1,00 ou menos**, nada é
+  retido. Fonte: Lei 11.033/2004, art. 2º, § 1º, IV, e §§ 4º e 5º; IN RFB
+  1.585/2015, art. 63, IV, e §§ 4º e 5º; P&R 706.
+- **Day trade:** **1%** do resultado positivo de cada dia, com as perdas de
+  day trade do mesmo dia compensadas (Lei 9.959/2000, art. 8º; IN RFB
+  1.585/2015, art. 65, § 1º, II, e § 4º; P&R 705 e 712). O day trade não paga
+  os 0,005%.
+- Cripto não tem retenção (não é bolsa).
 - O retido **abate o imposto do mês** em bolsa (código 6015). O que sobra passa
   para os meses seguintes **só dentro do ano-calendário**. A sobra de dezembro
   não vai para o ano seguinte: a do 0,005% compensa na declaração anual, e a
   do day trade pode ser pedida em restituição. Fonte: Lei 11.033/2004, art. 2º,
-  § 7º; IN RFB 1.585/2015, art. 65, §§ 8º e 9º; P&R 714 e 715.
-- O Prumo recebe o retido que veio na nota (não calcula a retenção) e mostra a
-  sobra de dezembro no fechamento do ano.
+  § 7º; IN RFB 1.585/2015, art. 63, § 8º, e art. 65, §§ 8º e 9º; P&R 714 e 715.
+
+**De onde vem o valor.** O livro não guarda a nota de corretagem. Por mês:
+
+1. se a pessoa informou o IR retido do mês ("Informar o valor da nota", na
+   apuração do mês), vale o dela (`tax_withholding_informed`);
+2. senão, vale **a regra**: o que a corretora é obrigada a reter, pela conta
+   acima, com as vendas do próprio livro. O mês leva o aviso
+   `withholding_by_rule` ("confira na nota de corretagem").
+
+A regra supõe **uma corretora só**, como o casamento do day trade: a dispensa
+de R$ 1,00 e o day trade são por instituição, e com duas corretoras a conta
+pode dar um pouco diferente da nota. É por isso que o valor da nota, quando
+informado, substitui a regra. Exemplo (P&R 725, item 1): venda à vista de R$
+130.000,00 com ganho de R$ 20.000,00: imposto de R$ 3.000,00, retenção de R$
+6,50 (0,005%), DARF de R$ 2.993,50.
 
 ### 2.8 DARF
 
@@ -195,8 +229,13 @@ declaração (P&R 320).
     alíquota de até 10%. A base inclui os ganhos líquidos em bolsa; ficam de
     fora, entre outros, a poupança e os rendimentos de FII e Fiagro com pelo
     menos 100 cotistas e cotas só em bolsa.
-- O Prumo guarda a regra (limite e alíquota) e soma o retido informado. **Não
-  calcula o IRPF mínimo.**
+- Os pagamentos do mês da mesma empresa somam (P&R 276): o Prumo junta os
+  dividendos por **CNPJ** (ON e PN da mesma empresa são um pagador só, § 2.10)
+  e marca o mês que passou de R$ 50 mil, com os 10% que a regra manda reter e
+  o retido que veio no provento, lado a lado. A exceção do lucro de até 2025
+  aprovado até 31/12/2025 o Prumo não tem como saber: por isso a retenção da
+  regra é só mostrada, nunca somada.
+- **Não calcula o IRPF mínimo.**
 
 **O que caducou: MP 1.303/2025.**
 
@@ -245,6 +284,59 @@ mercado):
   de Ganhos – Renda Variável". O prejuízo a compensar em 31/12 fica para o ano
   seguinte (P&R 711 e 729).
 
+**Por fonte pagadora.** A ficha de rendimentos pede, em cada linha, o CNPJ e o
+nome de quem pagou. O Prumo soma cada código por fonte pagadora e preenche os
+dois do cadastro da CVM que ele já guarda para os fundamentos:
+
+- **companhia** (dividendo e JCP): o emissor do ticker (as quatro letras) dá o
+  código CVM que a B3 informa (`b3_issuer_cvm`), e o código dá o CNPJ e a razão
+  social no cadastro de companhias abertas (`cvm_companies`,
+  `cad_cia_aberta.csv`);
+- **FII e Fiagro** (rendimento): o informe mensal mais novo com a mesma raiz de
+  ISIN do ticker (`cvm_funds`, `inf_mensal_fii`), com o CNPJ do fundo (ou da
+  classe, depois da Resolução CVM 175).
+
+Tickers com o mesmo CNPJ somam numa linha só. Sem cadastro (ativo que nunca
+teve os fundamentos buscados, emissor fora da CVM), a linha sai pelo ticker,
+escrito "CNPJ não encontrado": confira no informe de rendimentos. Cada linha
+tem "Copiar" (ficha, código, CNPJ, nome e valor), e "Copiar o relatório" leva
+todas de uma vez.
+
+### 2.11 DARF pago em atraso: multa e juros
+
+- **Multa de mora:** **0,33% por dia** de atraso, contado do dia seguinte ao
+  vencimento até o dia do pagamento (dias corridos), com teto de **20%**.
+  Fonte: Lei 9.430/1996, art. 61, caput e §§ 1º e 2º; P&R PJ, cap. XVIII, 001.
+- **Juros de mora:** a **soma** da Selic de cada mês (a "acumulada
+  mensalmente": as taxas mensais somadas, não compostas), do mês seguinte ao do
+  vencimento até o mês anterior ao do pagamento, mais **1%** no mês do
+  pagamento, sobre o imposto **sem** a multa. Fonte: Lei 9.430/1996, art. 61,
+  § 3º, e art. 5º, § 3º; P&R 064; P&R PJ, cap. XVIII, 001.
+- Os juros só começam no primeiro dia do mês seguinte ao do vencimento: pago
+  ainda no mês do vencimento (o 6015 vence no último dia útil, então só sobra o
+  fim de semana ou o 31/12), há multa e **não há juros**.
+- O vencimento é o do DARF do mês; o DARF que somou meses abaixo do mínimo
+  vence no prazo do último deles (Lei 9.430/1996, art. 68, § 1º), que é o que
+  o Prumo já mostra.
+- **A Selic do mês:** série **4390** do SGS do Banco Central (Selic acumulada
+  no mês, % a.m.), em
+  `https://api.bcb.gov.br/dados/serie/bcdata.sgs.4390/dados?formato=json`. É a
+  taxa da tabela de acréscimos legais da Receita: o teste
+  `interest_matches_the_receita_table_for_july_2026` refaz a tabela de juros
+  para pagamento em julho de 2026 (vencimentos de janeiro de 2025 a junho de
+  2026, de 20,11% a 1,00%) somando a série, e bate em todos os meses.
+- O SGS publica o mês corrente acumulado até a véspera (em 27/11/2026, o de
+  novembro dizia 0,87%). O Prumo só guarda **mês fechado há 4 dias**
+  (`tax_selic_monthly`); mês que falta deixa os juros e o total **sem valor**,
+  com o mês dito, em vez de somar uma taxa pela metade.
+- A tarefa `tax_selic` roda a cada 6 horas e só vai à rede quando falta um mês
+  fechado (uma resposta de menos de 1 KB, de janeiro de 2025 até hoje). Falha
+  da fonte não derruba nada: o que está guardado continua valendo.
+- A calculadora fica na linha do mês, em DARF vencido ("Multa e juros"): a
+  pessoa escolhe o dia do pagamento e vê a conta e o que vai em cada campo do
+  DARF (código, período de apuração, vencimento, principal, multa e juros). É
+  estimativa; o Sicalc da Receita é quem emite.
+
 ## 3. O que o Prumo NÃO calcula
 
 - Opções, termo, futuro, swap e mercado de balcão fora de bolsa.
@@ -268,16 +360,21 @@ mercado):
 - Eventos societários além de desdobramento, grupamento e bonificação:
   incorporação, cisão, troca de ticker, amortização e devolução de capital,
   subscrição.
-- A retenção na fonte: o Prumo usa o IR retido informado na nota e não confere
-  se a corretora reteve certo.
+- A retenção na fonte da nota: sem o valor informado, o Prumo usa o que a
+  regra manda reter, como se fosse uma corretora só (§ 2.7). Não confere se a
+  corretora reteve certo.
+- A corretora de cada negócio: o day trade é casado como se tudo fosse numa
+  instituição só (§ 7.2).
 - As condições de isenção do rendimento de FII e Fiagro (100 cotistas, menos de
   10% das cotas): o Prumo supõe que valem.
 - IRPF mínimo (Lei 15.270/2025, art. 16-A) e a retenção de dividendos acima de
   R$ 50 mil: o Prumo guarda a regra, mas não apura o mínimo.
-- Multa e juros de DARF pago em atraso. A marca de "pago" é da pessoa, na
-  tela (§ 8), e não muda a conta.
+- O DARF pago de verdade: a marca de "pago" é da pessoa, na tela (§ 8), e não
+  muda a conta. A multa e os juros (§ 2.11) são calculados para o dia que a
+  pessoa escolhe, não lidos do DARF pago.
 - Declaração em conjunto, espólio e não residente.
-- CNPJ da fonte pagadora: a declaração pede o CNPJ, e o Prumo só tem o ticker.
+- CNPJ da fonte pagadora fora do cadastro da CVM (§ 2.10): a linha sai pelo
+  ticker, e a pessoa confere no informe de rendimentos.
 
 ## 4. Arredondamento
 
@@ -321,6 +418,12 @@ mercado):
    programa IRPF faz.
 10. **P&R 706** remete à "pergunta 682" para o IR retido no day trade. Parece
     um erro de numeração: o tema está na 712.
+11. **Base do 1% do day trade.** O art. 65, § 1º, II, da IN 1.585 fala no
+    resultado positivo "por dia, ativo e instituição"; o § 4º e a P&R 705
+    admitem compensar as perdas de day trade do mesmo dia. O Prumo calcula o 1%
+    sobre o resultado do dia com as perdas de todos os ativos compensadas.
+    Confirmar com a nota da corretora: o mês com IR retido pela regra já leva o
+    aviso "confira na nota", e o valor da nota, quando informado, vale no lugar.
 
 ## 6. Como ler a saída
 
@@ -332,7 +435,8 @@ mercado):
   - `pools`: resultado, prejuízo antes, usado e depois, base, alíquota e
     imposto de cada grupo;
   - `capital_gain`: a cripto;
-  - `withholding`: o IR retido;
+  - `withholding`: o IR retido, com as bases e o valor da regra (0,005% e
+    1%), o informado (se houver), o que abateu e o que sobra;
   - `darfs`: código, imposto, acumulado, se paga, valor, vencimento e o que
     fica para o mês seguinte;
   - `notices`: avisos.
@@ -342,6 +446,13 @@ mercado):
   - os meses do ano;
   - o prejuízo e o DARF pendente em 31/12;
   - a sobra de IR retido.
+- Cada linha de rendimento traz `by_payer`: os tickers, o CNPJ e o nome da
+  fonte pagadora (`Payer`, quando o Prumo achou na CVM), o bruto, o retido e o
+  líquido, e os meses de dividendo acima do limite da retenção de 2026.
+- `late::late_charge(regra, principal, vencimento, pagamento, selic)` devolve
+  os dias de atraso, a multa (taxa e valor), os meses de Selic somados, o 1% do
+  mês do pagamento, os juros e o total (sem valor quando falta a Selic de algum
+  mês).
 
 ## 7. Ligação com o livro
 
@@ -404,9 +515,10 @@ símbolo. Cada ticker é convertido na ordem do livro.
   livro), e 99 cotas viram 33, não 32,999….
 - **Dólar.** Preço e taxa de cada lançamento vão a reais pelo `fx_rate`
   gravado nele (o câmbio do dia do negócio).
-- **Corretora e IR retido.** O livro não guarda a corretora nem o IR retido da
-  nota: o day trade é casado como se fosse uma corretora só, e o DARF sai sem
-  abater o "dedo-duro" (fica um pouco maior que o real). A tela diz isso.
+- **Corretora e IR retido.** O livro não guarda a corretora nem a nota: o day
+  trade é casado como se fosse uma corretora só, e o IR retido do mês sai pela
+  regra (§ 2.7), com o aviso "confira na nota". A pessoa informa o retido da
+  nota por mês, e ele vale no lugar da regra.
 - Um evento que não fecha com a posição do dia (desdobramento sem posição,
   venda maior que a posição pela ordem do IR) tira o ticker da conta, com o
   motivo.
@@ -440,6 +552,10 @@ do IR, conferida em teste).
 - `tax_darf_payments` (0015): a marca de "paguei" por ano, mês e código, com o
   valor de quando a pessoa marcou. Se o livro muda depois, a tela avisa que o
   DARF de agora é outro valor. A marca não muda a conta.
+- `tax_withholding_informed` (0029): o IR retido do mês que a pessoa leu na
+  nota (ano, mês, valor). Sem linha, vale a regra.
+- `tax_selic_monthly` (0029): a Selic de cada mês fechado (SGS 4390), dado
+  público compartilhado entre as carteiras, para os juros do DARF em atraso.
 
 ## 8. A tela Impostos
 
@@ -449,14 +565,21 @@ Ajustes › Impostos (`#/ajustes/impostos`). Desenho em `docs/design.md` § 10.
 - O **isentômetro** do mês de hoje: vendas de ações contra o limite, com a
   barra, e quanto ainda cabe.
 - Os **meses do ano**: vendas de ações, imposto, DARF (código e valor),
-  vencimento e a marca de pago; abaixo do mínimo, "soma no mês seguinte". Cada
-  mês com movimento abre a apuração por grupo (resultado, prejuízo antes,
-  compensado, base, alíquota, imposto, prejuízo que fica) e a cripto.
-- A **declaração do ano**: Bens e Direitos com o custo em 31/12, rendimentos
-  isentos e de tributação exclusiva, com grupo e código, cada linha com
-  "Copiar".
+  vencimento e a marca de pago; abaixo do mínimo, "soma no mês seguinte". DARF
+  vencido e não pago fica "Em atraso", com "Multa e juros" (§ 2.11). Cada mês
+  com movimento abre a apuração por grupo (resultado, prejuízo antes,
+  compensado, base, alíquota, imposto, prejuízo que fica), a cripto e o IR
+  retido (pela regra ou da nota, com "Informar o valor da nota").
+- O **prejuízo a compensar** de cada grupo, mês a mês, numa coluna da mesma
+  tabela (§ 2.6).
+- A **declaração do ano**: Bens e Direitos com o custo em 31/12 e os
+  rendimentos isentos e de tributação exclusiva numa tabela só, uma linha por
+  fonte pagadora com ficha, código, CNPJ e nome (§ 2.10), cada linha com
+  "Copiar" e o relatório inteiro em "Copiar o relatório".
 - **O que não foi calculado**: o que saiu do livro e dos proventos, com o
-  motivo, e o que o Prumo nunca calcula (§ 3).
+  motivo.
+- **O que o Prumo cobre**: cada regra do ano com o número e a fonte (da tabela
+  do servidor) e o que fica fora (§ 3), com o porquê.
 - As **dúvidas do § 5** aparecem como "Ponto a confirmar com contador" ao lado
   do número que elas mexem: o day trade no isentômetro (5.1), o prejuízo de
   Fiagro (5.2), os códigos da declaração (5.3), a cripto por venda (5.4), o

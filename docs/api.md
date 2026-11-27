@@ -2435,17 +2435,20 @@ janeiro do ano seguinte.
         { "pool": "common", "result": 3000.0, "loss_before": 0.0, "loss_used": 0.0, "base": 3000.0, "rate": 0.15, "tax": 450.0, "loss_after": 0.0 }
       ],
       "capital_gain": { "gains": 0.0, "losses": 0.0, "exempt": true, "base": 0.0, "tax": 0.0 },
-      "withholding": { "withheld": 0.0, "carried_in": 0.0, "used": 0.0, "carried_out": 0.0 },
+      "withholding": {
+        "common_sales": 24000.0, "common_rule": 1.2, "day_trade_gains": 0.0, "day_trade_rule": 0.0,
+        "informed": null, "withheld": 1.2, "carried_in": 0.0, "used": 1.2, "carried_out": 0.0
+      },
       "darfs": [
         {
-          "code": "6015", "regime": "exchange_net_gain", "tax": 450.0, "pending_before": 0.0,
-          "total": 450.0, "payable": true, "amount": 450.0, "due_date": "2026-06-30",
+          "code": "6015", "regime": "exchange_net_gain", "tax": 448.8, "pending_before": 0.0,
+          "total": 448.8, "payable": true, "amount": 448.8, "due_date": "2026-06-30",
           "pending_after": 0.0,
-          "paid": { "amount": 450.0, "paid_at": "2026-06-20T12:00:00Z", "same_amount": true }
+          "paid": { "amount": 448.8, "paid_at": "2026-06-20T12:00:00Z", "same_amount": true }
         },
         { "code": "4600", "regime": "capital_gain", "tax": 0.0, "pending_before": 0.0, "total": 0.0, "payable": false, "amount": 0.0, "due_date": "2026-06-30", "pending_after": 0.0, "paid": null }
       ],
-      "notices": [],
+      "notices": ["withholding_by_rule"],
       "doubts": []
     }
   ],
@@ -2466,6 +2469,14 @@ janeiro do ano seguinte.
   mínimo); `pending_after` é o que passa para o mês seguinte. `paid` é a marca
   da pessoa, com o valor de quando marcou; `same_amount: false` diz que o livro
   mudou depois.
+- `withholding`: o IR retido do mês ([ir.md § 2.7](ir.md)). `common_sales` e
+  `day_trade_gains` são as bases; `common_rule` (0,005%, zero quando a soma do
+  mês fica em R$ 1,00 ou menos) e `day_trade_rule` (1% do lucro de cada dia),
+  o que a regra manda reter; `informed`, o que a pessoa informou da nota
+  (`null` = pela regra); `withheld`, o que entra na conta; `used`, o que abateu
+  do imposto; `carried_out`, o que passa para o mês seguinte do mesmo ano.
+- `notices`: `withholding_by_rule` (o IR retido saiu da regra: conferir na
+  nota) e `capital_gain_above_first_bracket` (cripto acima de R$ 5 milhões).
 - `doubts`: os pontos de `docs/ir.md` § 5 que mexem num número do mês
   (`day_trade_in_stock_exemption`, `agribusiness_separate_from_real_estate`,
   `crypto_per_sale`, `year_end`).
@@ -2493,7 +2504,11 @@ A declaração do ano-calendário.
   ],
   "exempt_income": [
     { "group": "isentos", "code": "09", "label": "Lucros e dividendos recebidos", "code_source": "…",
-      "gross": 50.0, "withheld": 0.0, "net": 50.0, "by_payer": [{ "symbol": "WEGE3", "gross": 50.0, "withheld": 0.0 }] }
+      "gross": 50.0, "withheld": 0.0, "net": 50.0,
+      "by_payer": [
+        { "symbols": ["WEGE3"], "cnpj": "00.000.000/0001-91", "name": "EMPRESA EXEMPLO S.A.",
+          "payer_source": "cvm_company", "gross": 50.0, "withheld": 0.0, "net": 50.0, "above_threshold": [] }
+      ] }
   ],
   "exclusive_income": [
     { "group": "exclusiva", "code": "10", "label": "Juros sobre capital proprio", "code_source": "…",
@@ -2515,6 +2530,13 @@ A declaração do ano-calendário.
   entra. `skipped` soma os do ano que ficam fora: `income_amortization`,
   `income_other`, `income_from_abroad` (dividendo de BDR),
   `income_out_of_scope`.
+- `by_payer`: uma linha por fonte pagadora ([ir.md § 2.10](ir.md)). `symbols`
+  são os tickers que somaram (ON e PN da mesma empresa vão juntos, pelo CNPJ);
+  `cnpj`, `name` e `payer_source` (`cvm_company`, cadastro de companhias abertas
+  da CVM; `cvm_fund`, informe mensal de FII) são `null` quando o Prumo não achou
+  o cadastro. `above_threshold` (dividendos, de 2026 em diante): cada mês em que
+  a mesma empresa pagou mais de R$ 50 mil, com `gross`, a retenção de 10% pela
+  regra (`withholding_by_rule`) e o `withheld` que veio no provento.
 - `doubts`: `irpf_codes`, `withholding_leftover`, `dividend_withholding`,
   `interest_on_equity_net`.
 
@@ -2531,6 +2553,68 @@ Responde `200` com o DARF (o objeto de `darfs`, com `paid`).
 
 `DELETE /api/v1/tax/darfs/{year}/{month}/paid?code=6015` tira a marca: `204`,
 ou `404` se não havia.
+
+### `GET /api/v1/tax/darfs/{year}/{month}/late?code=6015&pay_on=2025-09-15`
+
+A multa e os juros do DARF do mês se pago em `pay_on` (`AAAA-MM-DD`; sem ele,
+hoje em Brasília). Regra e fontes em [ir.md § 2.11](ir.md).
+
+```json
+{
+  "code": "6015", "year": 2025, "month": 5,
+  "principal": 448.5, "due_date": "2025-06-30", "pay_date": "2025-09-15",
+  "days_late": 77, "penalty_rate": 0.2, "penalty": 89.7,
+  "selic_months": [{ "year": 2025, "month": 7, "rate": 1.28 }, { "year": 2025, "month": 8, "rate": 1.16 }],
+  "payment_month_rate": 0.01, "interest_rate": 0.0344, "interest": 15.43, "total": 553.63,
+  "missing_selic": [],
+  "rule": {
+    "daily_penalty": { "value": 0.0033, "source": "Lei 9.430/1996, art. 61, …" },
+    "penalty_cap": { "value": 0.2, "source": "…" },
+    "payment_month_interest": { "value": 0.01, "source": "…" },
+    "selic_series": { "value": "4390", "source": "Banco Central, SGS 4390 …" }
+  }
+}
+```
+
+- Multa: `penalty_rate` = 0,33% × `days_late` (dias corridos depois do
+  vencimento), até 20%. Juros: a Selic de cada mês de `selic_months` (% no mês,
+  do mês seguinte ao vencimento até o anterior ao pagamento) somada, mais
+  `payment_month_rate` (1%; zero em dia ou pago no mês do vencimento), sobre o
+  `principal` sem a multa.
+- Mês sem Selic guardada (o mês ainda não fechou, ou a taxa não saiu) volta em
+  `selic_months` com `rate: null` e em `missing_selic`; aí `interest_rate`,
+  `interest` e `total` são `null`. A multa sai sempre.
+- Pago até o vencimento: `days_late: 0` e `total` = `principal`.
+- Só um DARF a pagar (`payable`): senão `422 darf_not_due`. `code` fora de
+  `6015`/`4600` ou `pay_on` fora do formato: `422 validation_failed`; mês fora
+  de 1–12: `404`; ano sem regra: `422 tax_year_not_covered`.
+
+### IR retido do mês: `/api/v1/tax/withholding/{year}/{month}`
+
+`PUT` grava o IR retido na fonte do mês como está na nota de corretagem (o
+0,005% das vendas mais o 1% do day trade), no lugar da regra:
+
+```json
+{ "amount": 2.0 }
+```
+
+Responde `200` com `{ "year": 2025, "month": 5, "amount": 2.0 }`. Valor em
+centavos e não negativo (`422`); ano sem regra: `422 tax_year_not_covered`; mês
+fora de 1–12: `404`.
+
+`DELETE` volta o mês para a regra: `204`, ou `404` se não havia valor.
+
+### `GET /api/v1/tax/rules/{year}`
+
+A tabela de regras do ano-calendário, cada número com a fonte
+(`{ "value": …, "source": "…" }`, a fonte sem acento): `instruments` (regime,
+grupos de compensação, isenção), `pools` (alíquota de cada grupo),
+`exemptions` (limite, o que soma, se o day trade soma), `capital_gain_brackets`,
+`exchange_darf_code`, `capital_gain_darf_code`, `darf_minimum`, `withholding`
+(`common_rate`, `common_dispensed_up_to`, `day_trade_rate`,
+`carry_within_year_source`), `late_payment` (o mesmo objeto `rule` do atraso),
+`interest_on_equity_rate` e `dividend_withholding` (`null` antes de 2026). Ano
+sem regra: `422 tax_year_not_covered`.
 
 ### Saldo de antes do Prumo: `/api/v1/tax/carryforward`
 

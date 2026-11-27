@@ -131,6 +131,36 @@ pub struct DividendWithholding {
     pub source: &'static str,
 }
 
+/// IR retido na fonte em bolsa, como a corretora deve reter. O Prumo usa isto
+/// quando a pessoa não informa o retido do mês (da nota de corretagem).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct WithholdingRule {
+    /// Sobre o valor das alienações em operação comum no mercado à vista
+    /// (0,005%), de ações, ETF, BDR, FII e Fiagro.
+    pub common_rate: Sourced<Decimal>,
+    /// A retenção do mês (somadas as operações) igual ou abaixo disto é
+    /// dispensada.
+    pub common_dispensed_up_to: Sourced<Decimal>,
+    /// Sobre o resultado positivo do day trade de cada dia, com as perdas do
+    /// mesmo dia compensadas (1%).
+    pub day_trade_rate: Sourced<Decimal>,
+}
+
+/// Acréscimos do DARF pago depois do vencimento.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LatePaymentRule {
+    /// Multa de mora por dia de atraso (0,33%), contada do dia seguinte ao
+    /// vencimento até o dia do pagamento.
+    pub daily_penalty: Sourced<Decimal>,
+    /// Teto da multa de mora (20%).
+    pub penalty_cap: Sourced<Decimal>,
+    /// Juros do mês do pagamento (1%), somados à Selic dos meses entre o
+    /// vencimento e o pagamento.
+    pub payment_month_interest: Sourced<Decimal>,
+    /// A série da Selic do mês (de onde vem cada taxa somada).
+    pub selic_series: Sourced<&'static str>,
+}
+
 /// Linhas das fichas de rendimentos da declaração.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct IncomeCodes {
@@ -174,6 +204,10 @@ pub struct YearRules {
     pub dividend_withholding: Option<DividendWithholding>,
     pub income_codes: IncomeCodes,
     pub crypto_codes: CryptoCodes,
+    /// O IR retido em bolsa pela regra (0,005% e 1% do day trade).
+    pub withholding: WithholdingRule,
+    /// Multa e juros do DARF em atraso.
+    pub late_payment: LatePaymentRule,
 }
 
 impl YearRules {
@@ -297,8 +331,15 @@ const SRC_WITHHOLDING_CARRY: &str =
     "Lei 11.033/2004, art. 2, par. 7; IN RFB 1.585/2015, art. 65, par. 8 e 9; P&R 714 e 715";
 const SRC_JCP_2025: &str = "Lei 9.249/1995, art. 9, par. 2 (redacao ate 2025); P&R 320";
 const SRC_JCP_2026: &str = "Lei 9.249/1995, art. 9, par. 2 (red. LC 224/2025, art. 8; efeitos desde 1/1/2026 pelo art. 14, III)";
-const SRC_DIVIDENDS_2026: &str =
-    "Lei 9.250/1995, art. 6-A (incl. Lei 15.270/2025, efeitos desde 1/1/2026 pelo art. 8)";
+const SRC_DIVIDENDS_2026: &str = "Lei 9.250/1995, art. 6-A (incl. Lei 15.270/2025, efeitos desde 1/1/2026 pelo art. 8); P&R 276 (o total do mes da mesma empresa)";
+const SRC_WITHHOLDING_COMMON: &str =
+    "Lei 11.033/2004, art. 2, par. 1, IV; IN RFB 1.585/2015, art. 63, IV; P&R 706";
+const SRC_WITHHOLDING_DISPENSED: &str = "Lei 11.033/2004, art. 2, par. 4 e 5; IN RFB 1.585/2015, art. 63, par. 4 e 5 (soma das operacoes do mes)";
+const SRC_WITHHOLDING_DAY_TRADE: &str = "Lei 9.959/2000, art. 8; IN RFB 1.585/2015, art. 65, caput, par. 1, II, e par. 4 (resultado positivo do dia, perdas do mesmo dia compensadas); P&R 705 e 712";
+const SRC_LATE_PENALTY: &str = "Lei 9.430/1996, art. 61, caput e par. 1 (do dia seguinte ao vencimento ate o dia do pagamento); Perguntas e Respostas PJ, cap. XVIII, 001";
+const SRC_LATE_CAP: &str = "Lei 9.430/1996, art. 61, par. 2";
+const SRC_LATE_INTEREST: &str = "Lei 9.430/1996, art. 61, par. 3, e art. 5, par. 3 (Selic acumulada mensalmente do mes seguinte ao vencimento ate o mes anterior ao pagamento, mais 1% no mes do pagamento, sobre o imposto sem a multa); P&R 064; Perguntas e Respostas PJ, cap. XVIII, 001";
+const SRC_SELIC_SERIES: &str = "Banco Central, SGS 4390 (Selic acumulada no mes, % a.m.): a mesma taxa da tabela de acrescimos legais da Receita";
 const SRC_INSTRUMENT_STOCK: &str =
     "Lei 11.033/2004, arts. 2 e 3, I; IN RFB 1.585/2015, arts. 56 a 59";
 const SRC_INSTRUMENT_ETF: &str =
@@ -496,6 +537,17 @@ fn exchange_and_crypto(
             stablecoin_symbols: &["USDT", "BRZ", "USDC", "BUSD", "TUSD", "DAI", "PAXG", "GUSD"],
             source: SRC_CRYPTO_CODES,
         },
+        withholding: WithholdingRule {
+            common_rate: sourced(pct(5, 5), SRC_WITHHOLDING_COMMON),
+            common_dispensed_up_to: sourced(Decimal::ONE, SRC_WITHHOLDING_DISPENSED),
+            day_trade_rate: sourced(pct(1, 2), SRC_WITHHOLDING_DAY_TRADE),
+        },
+        late_payment: LatePaymentRule {
+            daily_penalty: sourced(pct(33, 4), SRC_LATE_PENALTY),
+            penalty_cap: sourced(pct(20, 2), SRC_LATE_CAP),
+            payment_month_interest: sourced(pct(1, 2), SRC_LATE_INTEREST),
+            selic_series: sourced("4390", SRC_SELIC_SERIES),
+        },
     }
 }
 
@@ -597,6 +649,16 @@ mod tests {
             assert_eq!(rules.darf_code(Regime::ExchangeNetGain), "6015");
             assert_eq!(rules.darf_code(Regime::CapitalGain), "4600");
             assert_eq!(rules.darf_minimum.value, dec!(10));
+            // IR retido: 0,005% das vendas comuns (dispensado até R$ 1 no
+            // mês) e 1% do resultado positivo do day trade.
+            assert_eq!(rules.withholding.common_rate.value, dec!(0.00005));
+            assert_eq!(rules.withholding.common_dispensed_up_to.value, dec!(1));
+            assert_eq!(rules.withholding.day_trade_rate.value, dec!(0.01));
+            // Atraso: 0,33% ao dia até 20%, mais 1% no mês do pagamento.
+            assert_eq!(rules.late_payment.daily_penalty.value, dec!(0.0033));
+            assert_eq!(rules.late_payment.penalty_cap.value, dec!(0.20));
+            assert_eq!(rules.late_payment.payment_month_interest.value, dec!(0.01));
+            assert_eq!(rules.late_payment.selic_series.value, "4390");
             // Só ação tem a isenção de R$ 20 mil: ETF, BDR, FII e Fiagro não.
             for instrument in [
                 Instrument::Etf,

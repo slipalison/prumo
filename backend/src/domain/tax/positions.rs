@@ -19,6 +19,8 @@
 //!
 //! Venda acima da posição é erro: o Prumo não tem venda a descoberto.
 //! Valores sempre em reais (quem liga ao livro converte o que for em dólar).
+//! O IR retido na fonte não é do lançamento: é do mês, pela regra ou como a
+//! pessoa informa ([`super::monthly`]).
 
 use std::collections::BTreeMap;
 
@@ -40,8 +42,8 @@ pub struct Operation {
     pub action: Action,
 }
 
-/// O que o lançamento faz. Quantidades e preços positivos; taxas e IR retido
-/// não negativos.
+/// O que o lançamento faz. Quantidades e preços positivos; taxas não
+/// negativas.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     Buy {
@@ -54,9 +56,6 @@ pub enum Action {
         quantity: Decimal,
         unit_price: Decimal,
         fees: Decimal,
-        /// IR retido na fonte informado na nota (0,005% da operação comum ou
-        /// 1% do day trade).
-        withheld: Decimal,
     },
     /// Desdobramento (fator > 1) ou grupamento (fator < 1): a quantidade é
     /// multiplicada pelo fator e o custo total não muda. O produto sai
@@ -109,15 +108,6 @@ impl Realized {
     }
 }
 
-/// IR retido na fonte num dia.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct Withholding {
-    pub date: Date,
-    pub symbol: String,
-    pub instrument: Instrument,
-    pub amount: Decimal,
-}
-
 /// Posição de um ativo.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Holding {
@@ -142,7 +132,6 @@ impl Holding {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Replay {
     pub realized: Vec<Realized>,
-    pub withholdings: Vec<Withholding>,
     /// Posições abertas (quantidade > 0), por símbolo.
     pub holdings: BTreeMap<String, Holding>,
 }
@@ -193,18 +182,7 @@ pub fn replay(
                     quantity,
                     unit_price,
                     fees,
-                    withheld,
-                } => {
-                    if !withheld.is_zero() {
-                        out.withholdings.push(Withholding {
-                            date,
-                            symbol: operation.symbol.clone(),
-                            instrument: operation.instrument,
-                            amount: withheld,
-                        });
-                    }
-                    Leg::new(index, operation, Side::Sell, quantity, unit_price, fees)
-                }
+                } => Leg::new(index, operation, Side::Sell, quantity, unit_price, fees),
                 Action::Split { .. } | Action::Bonus { .. } => continue,
             };
             if operation.instrument == Instrument::Crypto {
@@ -248,28 +226,17 @@ fn validate(operation: &Operation) -> Result<(), TaxError> {
             quantity,
             unit_price,
             fees,
+        }
+        | Action::Sell {
+            quantity,
+            unit_price,
+            fees,
         } => {
             if quantity <= Decimal::ZERO {
                 return Err(invalid("quantidade precisa ser positiva"));
             }
             if unit_price < Decimal::ZERO || fees < Decimal::ZERO {
                 return Err(invalid("preco e taxas nao podem ser negativos"));
-            }
-        }
-        Action::Sell {
-            quantity,
-            unit_price,
-            fees,
-            withheld,
-        } => {
-            if quantity <= Decimal::ZERO {
-                return Err(invalid("quantidade precisa ser positiva"));
-            }
-            if unit_price < Decimal::ZERO || fees < Decimal::ZERO || withheld < Decimal::ZERO {
-                return Err(invalid("preco, taxas e IR retido nao podem ser negativos"));
-            }
-            if operation.instrument == Instrument::Crypto && !withheld.is_zero() {
-                return Err(invalid("cripto nao tem IR retido na fonte"));
             }
         }
         Action::Split { factor } => {
@@ -552,7 +519,6 @@ pub(crate) mod tests {
                 quantity,
                 unit_price: price,
                 fees: Decimal::ZERO,
-                withheld: Decimal::ZERO,
             },
         }
     }
@@ -561,13 +527,6 @@ pub(crate) mod tests {
         match &mut operation.action {
             Action::Buy { fees, .. } | Action::Sell { fees, .. } => *fees = value,
             Action::Split { .. } | Action::Bonus { .. } => {}
-        }
-        operation
-    }
-
-    pub(crate) fn with_withheld(mut operation: Operation, value: Decimal) -> Operation {
-        if let Action::Sell { withheld, .. } = &mut operation.action {
-            *withheld = value;
         }
         operation
     }
@@ -868,12 +827,12 @@ pub(crate) mod tests {
             replay(&[], &[negative_fee], END),
             Err(TaxError::InvalidOperation { .. })
         ));
-        let crypto_withholding = with_withheld(
-            sell(day, "BTC", Instrument::Crypto, dec!(1), dec!(10)),
-            dec!(1),
+        let negative_sale_fee = with_fees(
+            sell(day, "AAAA3", Instrument::Stock, dec!(1), dec!(10)),
+            dec!(-1),
         );
         assert!(matches!(
-            replay(&[], &[crypto_withholding], END),
+            replay(&[], &[negative_sale_fee], END),
             Err(TaxError::InvalidOperation { .. })
         ));
         let split_without_position = Operation {
@@ -977,31 +936,5 @@ pub(crate) mod tests {
             .average_price(),
             Decimal::ZERO
         );
-    }
-
-    #[test]
-    fn withholding_is_recorded_per_sale() {
-        let operations = [
-            buy(
-                date!(2025 - 01 - 10),
-                "AAAA3",
-                Instrument::Stock,
-                dec!(10),
-                dec!(10),
-            ),
-            with_withheld(
-                sell(
-                    date!(2025 - 02 - 10),
-                    "AAAA3",
-                    Instrument::Stock,
-                    dec!(10),
-                    dec!(12),
-                ),
-                dec!(0.01),
-            ),
-        ];
-        let replay = replay(&[], &operations, END).unwrap();
-        assert_eq!(replay.withholdings.len(), 1);
-        assert_eq!(replay.withholdings[0].amount, dec!(0.01));
     }
 }

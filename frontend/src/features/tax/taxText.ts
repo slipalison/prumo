@@ -91,17 +91,6 @@ export const DOUBT_SHORT: Record<Doubt, string> = {
   interest_on_equity_net: "JCP levado pelo valor líquido",
 };
 
-/** O que o Prumo nunca calcula (docs/ir.md § 3), sempre listado. */
-export const NEVER_CALCULATED: readonly string[] = [
-  "IR retido na fonte da nota (o “dedo-duro” e o 1% do day trade): o livro não guarda, e o DARF sai sem abater.",
-  "Corretora de cada negócio: o day trade é casado como se tudo fosse uma corretora só.",
-  "Opções, termo, futuro, aluguel de ações e ouro.",
-  "Renda fixa, Tesouro, ETF de renda fixa e investimentos no exterior (fora BDR).",
-  "Incorporação, cisão, troca de ticker e subscrição.",
-  "As condições de isenção do rendimento de FII e Fiagro (100 cotistas, menos de 10% das cotas): o Prumo supõe que valem.",
-  "IRPF mínimo e multa e juros de DARF pago em atraso.",
-];
-
 export const MONTH_NAMES = [
   "janeiro",
   "fevereiro",
@@ -127,9 +116,14 @@ export function isoDay(iso: string): string {
   return year && month && day ? `${day}/${month}/${year}` : iso;
 }
 
-/** `0.15` → `15%`; `0.175` → `17,5%`. */
+/** `0.15` → `15%`; `0.175` → `17,5%`; `0.00005` → `0,005%`. */
 export function rateText(rate: number): string {
-  return `${(rate * 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
+  return `${(rate * 100).toLocaleString("pt-BR", { maximumFractionDigits: 3 })}%`;
+}
+
+/** `{ year: 2026, month: 6 }` → `junho de 2026`. */
+export function periodName(year: number, month: number): string {
+  return `${monthName(month)} de ${year}`;
 }
 
 /** Rótulo com acento de cada linha da declaração (o servidor manda sem acento). */

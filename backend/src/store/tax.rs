@@ -2,7 +2,7 @@
 //! de cada ativo, o saldo de prejuízo de antes do Prumo e os DARFs pagos.
 //! Tudo filtra pelo dono.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use rust_decimal::Decimal;
 use sqlx::FromRow;
@@ -12,6 +12,8 @@ use uuid::Uuid;
 use super::{decode_error, Store, StoreError};
 use crate::domain::asset_class::AssetClass;
 use crate::domain::ledger::{Entry, Kind};
+use crate::domain::tax::irpf::{format_cnpj, Payer, PayerSource};
+use crate::domain::tax::YearMonth;
 use crate::domain::tax_book::{LedgerLine, TaxInstrument};
 
 /// O saldo que a pessoa traz de antes do primeiro ano apurado, como estava em
@@ -253,6 +255,154 @@ impl Store {
         })
     }
 
+    /// O IR retido que a pessoa informou, por mês (todos os anos).
+    pub async fn informed_withholding(
+        &self,
+        user: Uuid,
+    ) -> Result<BTreeMap<YearMonth, Decimal>, StoreError> {
+        let rows: Vec<(i32, i16, Decimal)> = sqlx::query_as(
+            "select year, month, amount from tax_withholding_informed where user_id = $1",
+        )
+        .bind(user)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter()
+            .map(|(year, month, amount)| {
+                let month = u8::try_from(month).map_err(|_| decode_error(&month.to_string()))?;
+                Ok((YearMonth { year, month }, amount))
+            })
+            .collect()
+    }
+
+    /// Grava (ou troca) o IR retido do mês que a pessoa leu na nota.
+    pub async fn set_informed_withholding(
+        &self,
+        user: Uuid,
+        period: YearMonth,
+        amount: Decimal,
+    ) -> Result<(), StoreError> {
+        sqlx::query(
+            "insert into tax_withholding_informed (user_id, year, month, amount)
+             values ($1, $2, $3, $4)
+             on conflict (user_id, year, month) do update set
+                amount = excluded.amount, updated_at = now()",
+        )
+        .bind(user)
+        .bind(period.year)
+        .bind(i16::from(period.month))
+        .bind(amount)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Volta o mês para a retenção pela regra. `false` se não havia valor.
+    pub async fn clear_informed_withholding(
+        &self,
+        user: Uuid,
+        period: YearMonth,
+    ) -> Result<bool, StoreError> {
+        let done = sqlx::query(
+            "delete from tax_withholding_informed where user_id = $1 and year = $2 and month = $3",
+        )
+        .bind(user)
+        .bind(period.year)
+        .bind(i16::from(period.month))
+        .execute(&self.pool)
+        .await?;
+        Ok(done.rows_affected() == 1)
+    }
+
+    /// A Selic de cada mês fechado já guardado (% no mês).
+    pub async fn tax_selic(&self) -> Result<BTreeMap<YearMonth, Decimal>, StoreError> {
+        let rows: Vec<(Date, Decimal)> =
+            sqlx::query_as("select month, rate from tax_selic_monthly order by month")
+                .fetch_all(&self.pool)
+                .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(month, rate)| (YearMonth::of(month), rate.normalize()))
+            .collect())
+    }
+
+    /// O último mês guardado.
+    pub async fn tax_selic_last_month(&self) -> Result<Option<Date>, StoreError> {
+        let (last,): (Option<Date>,) = sqlx::query_as("select max(month) from tax_selic_monthly")
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(last)
+    }
+
+    /// Grava (ou corrige) a Selic dos meses dados, datados no dia 1º, numa
+    /// transação sob o advisory lock da tabela (duas réplicas gravam uma de
+    /// cada vez; o resultado é o mesmo).
+    pub async fn upsert_tax_selic(&self, values: &[(Date, Decimal)]) -> Result<(), StoreError> {
+        if values.is_empty() {
+            return Ok(());
+        }
+        let months: Vec<Date> = values.iter().map(|(month, _)| *month).collect();
+        let rates: Vec<Decimal> = values.iter().map(|(_, rate)| *rate).collect();
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("select pg_advisory_xact_lock(hashtextextended($1::text, 0))")
+            .bind("tax_selic_monthly")
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query(
+            "insert into tax_selic_monthly (month, rate, fetched_at)
+             select m, r, now() from unnest($1::date[], $2::numeric[]) as t (m, r)
+             on conflict (month) do update set rate = excluded.rate, fetched_at = excluded.fetched_at",
+        )
+        .bind(&months)
+        .bind(&rates)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// CNPJ e razão social das fontes pagadoras, pelo emissor do ticker (as
+    /// quatro letras): companhias pelo código CVM que a B3 informa
+    /// (`b3_issuer_cvm` → `cvm_companies`), fundos pelo informe mensal mais
+    /// novo com a mesma raiz de ISIN (`cvm_funds`). Emissor sem cadastro não
+    /// volta.
+    pub async fn tax_payers(
+        &self,
+        companies: &[String],
+        funds: &[String],
+    ) -> Result<(HashMap<String, Payer>, HashMap<String, Payer>), StoreError> {
+        let mut by_company = HashMap::new();
+        if !companies.is_empty() {
+            let rows: Vec<(String, String, String)> = sqlx::query_as(
+                "select i.issuer, c.cnpj, c.name
+                   from b3_issuer_cvm i
+                   join cvm_companies c on c.cvm_code = i.cvm_code
+                  where i.issuer = any($1)",
+            )
+            .bind(companies)
+            .fetch_all(&self.pool)
+            .await?;
+            for (issuer, cnpj, name) in rows {
+                by_company.insert(issuer, payer(&cnpj, name, PayerSource::CvmCompany));
+            }
+        }
+        let mut by_fund = HashMap::new();
+        if !funds.is_empty() {
+            let rows: Vec<(String, String, String)> = sqlx::query_as(
+                "select distinct on (issuer) issuer, cnpj, name
+                   from cvm_funds
+                  where issuer = any($1)
+                  order by issuer, reference_date desc, version desc, cnpj",
+            )
+            .bind(funds)
+            .fetch_all(&self.pool)
+            .await?;
+            for (issuer, cnpj, name) in rows {
+                by_fund.insert(issuer, payer(&cnpj, name, PayerSource::CvmFund));
+            }
+        }
+        Ok((by_company, by_fund))
+    }
+
     /// Tira a marca de pago. `false` se não havia.
     pub async fn unmark_darf_paid(
         &self,
@@ -271,5 +421,13 @@ impl Store {
         .execute(&self.pool)
         .await?;
         Ok(done.rows_affected() == 1)
+    }
+}
+
+fn payer(cnpj: &str, name: String, source: PayerSource) -> Payer {
+    Payer {
+        cnpj: format_cnpj(cnpj),
+        name: name.trim().to_owned(),
+        source,
     }
 }
