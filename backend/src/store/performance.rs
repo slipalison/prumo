@@ -182,12 +182,26 @@ impl Store {
     /// `domain::price_check`) não entra, e o guardado que a chegada revela
     /// ruim sai (`screen_closes`). Devolve, em ordem, as datas que entraram de
     /// fato: pedir de novo um trecho já guardado não suja a série de ninguém.
+    ///
+    /// Grava como veio, sem a regra do pregão aberto: é para dado já assentado
+    /// (testes, carga). Quem grava o que a fonte acabou de dizer usa
+    /// [`Store::record_prices`].
     pub async fn insert_prices(
         &self,
         symbol: &str,
         closes: &Series,
     ) -> Result<Vec<Date>, StoreError> {
         let closes = self.screen_closes(symbol, closes).await?;
+        self.insert_closes(symbol, &closes).await
+    }
+
+    /// A gravação crua (o filtro já passou): `on conflict do nothing`, e as
+    /// datas que entraram de fato, em ordem.
+    pub(super) async fn insert_closes(
+        &self,
+        symbol: &str,
+        closes: &Series,
+    ) -> Result<Vec<Date>, StoreError> {
         if closes.is_empty() {
             return Ok(Vec::new());
         }

@@ -29,10 +29,11 @@ use crate::domain::net_worth::{self, Bridge, FlowPoint};
 use crate::domain::performance::{
     self as rules, Accrued, MonthCell, Period, QuotaPoint, Versus, Window, YearRow,
 };
+use crate::domain::price_check;
 use crate::domain::retro::{self, AssetHistory, Series, Start};
 use crate::domain::risk;
 use crate::domain::treasury::Bond;
-use crate::history::{HistoryError, HistoryProvider, IndexCode};
+use crate::history::{HistoryError, HistoryProvider, IndexCode, IBOV_SYMBOL};
 use crate::quotes::fx_symbol;
 use crate::service::{self, AssetView, PriceSource};
 use crate::store::{DirtySeries, Snapshot, Store, StoreError};
@@ -103,6 +104,15 @@ pub struct RebuildReport {
     pub prices: usize,
 }
 
+/// Se a sincronia pede de novo os últimos dias para corrigir o que a fonte
+/// mudou: só a tarefa diária (a reconstrução, que roda a qualquer hora, só
+/// pede o que falta).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Revise {
+    Recent,
+    No,
+}
+
 /// O que um símbolo precisa de histórico: desde quando e de quem é.
 #[derive(Debug, Default)]
 struct Need {
@@ -163,7 +173,7 @@ impl Performance {
         let today = local_date(now);
         let mut report = JobReport {
             ran: true,
-            prices: self.sync_prices(now).await?,
+            prices: self.sync_prices(now, Revise::Recent).await?,
             ..JobReport::default()
         };
         // O cache inteiro conferido: fechamento ruim que entrou antes de a volta
@@ -188,7 +198,7 @@ impl Performance {
                 tracing::error!(error = %error, "objetivos atingidos nao apurados");
             }
         }
-        report.indexes = self.sync_indexes(today).await?;
+        report.indexes = self.sync_indexes(now, Revise::Recent).await?;
         Ok(report)
     }
 
@@ -261,7 +271,7 @@ impl Performance {
             ran: true,
             // O preço antigo que chegar agora marca quem o tem; a lista de
             // sujos é lida depois, já com essas marcas.
-            prices: self.sync_prices(now).await?,
+            prices: self.sync_prices(now, Revise::No).await?,
             ..RebuildReport::default()
         };
         for dirty in self.store.dirty_series(now - REBUILD_SETTLE).await? {
@@ -278,7 +288,7 @@ impl Performance {
         }
         if report.users > 0 {
             // A série pode ter passado a começar mais cedo.
-            self.sync_indexes(today).await?;
+            self.sync_indexes(now, Revise::No).await?;
         }
         Ok(report)
     }
@@ -309,7 +319,7 @@ impl Performance {
     /// que já foi pedido; para a frente, depois do último dia guardado. Preço
     /// que chega para um dia que já passou marca como suja, dali em diante, a
     /// série de quem tem o ativo. Devolve quantos dias entraram.
-    async fn sync_prices(&self, now: OffsetDateTime) -> Result<usize, StoreError> {
+    async fn sync_prices(&self, now: OffsetDateTime, revise: Revise) -> Result<usize, StoreError> {
         let today = local_date(now);
         let risk_from = risk::history_start(today);
         let mut needs: BTreeMap<String, Need> = BTreeMap::new();
@@ -374,9 +384,11 @@ impl Performance {
                 }
                 continue;
             }
-            stored += self.sync_symbol(&symbol, from, &need.holders, now).await?;
+            stored += self
+                .sync_symbol(&symbol, from, &need.holders, now, revise)
+                .await?;
         }
-        stored += self.sync_bonds(bonds, today).await?;
+        stored += self.sync_bonds(bonds, now).await?;
         Ok(stored)
     }
 
@@ -386,6 +398,7 @@ impl Performance {
         from: Date,
         holders: &BTreeSet<Uuid>,
         now: OffsetDateTime,
+        revise: Revise,
     ) -> Result<usize, StoreError> {
         let today = local_date(now);
         let covered = self.store.price_covered_from(symbol).await?;
@@ -400,6 +413,13 @@ impl Performance {
                     ranges.push((from, covered - Duration::days(1), true));
                 }
                 let next = last.map_or(covered, |l| l + Duration::days(1));
+                // Na tarefa diária, os últimos dias são pedidos de novo: o que a
+                // fonte corrigiu (e o dia que entrou antes de fechar, se algum
+                // dia entrou) é acertado por `record_prices`.
+                let next = match revise {
+                    Revise::Recent => next.min(price_check::revise_from(now)),
+                    Revise::No => next,
+                };
                 ranges.push((next.max(from), today, false));
             }
         }
@@ -429,7 +449,7 @@ impl Performance {
                     self.store
                         .save_price_splits(symbol, start, &splits, now)
                         .await?;
-                    let inserted = self.store.insert_prices(symbol, &closes).await?;
+                    let inserted = self.store.record_prices(symbol, &closes, now).await?;
                     stored += inserted.len();
                     if backward {
                         self.store.set_price_coverage(symbol, start).await?;
@@ -458,8 +478,9 @@ impl Performance {
     async fn sync_bonds(
         &self,
         bonds: BTreeMap<Bond, BondNeed>,
-        today: Date,
+        now: OffsetDateTime,
     ) -> Result<usize, StoreError> {
+        let today = local_date(now);
         if bonds.is_empty() {
             return Ok(0);
         }
@@ -474,7 +495,7 @@ impl Performance {
         let mut stored = 0;
         for (bond, need) in bonds {
             let series: Series = history.get(&bond).cloned().unwrap_or_default();
-            let inserted = self.store.insert_prices(&need.symbol, &series).await?;
+            let inserted = self.store.record_prices(&need.symbol, &series, now).await?;
             stored += inserted.len();
             self.store
                 .set_price_coverage(&need.symbol, need.from)
@@ -493,7 +514,8 @@ impl Performance {
     /// datas dele são os pregões). Sem nenhuma foto, só o CDI: os 12 meses
     /// dele são o alvo do FII de papel (`domain::market_rates`), então ele
     /// cobre sempre pelo menos [`CDI_LOOKBACK_DAYS`], com ou sem carteira.
-    async fn sync_indexes(&self, today: Date) -> Result<usize, StoreError> {
+    async fn sync_indexes(&self, now: OffsetDateTime, revise: Revise) -> Result<usize, StoreError> {
+        let today = local_date(now);
         let first = self
             .store
             .first_snapshot_date()
@@ -516,16 +538,33 @@ impl Performance {
             };
             // O que falta antes do que já está guardado (a série pode passar a
             // começar mais cedo) e depois dele.
+            // Na tarefa diária, os últimos dias de novo (o upsert corrige).
             let ranges = match self.store.index_bounds(code).await? {
                 None => vec![(start, today)],
-                Some((first, last)) => vec![
-                    (start, first - Duration::days(1)),
-                    (last + Duration::days(1), today),
-                ],
+                Some((first, last)) => {
+                    let next = last + Duration::days(1);
+                    let next = match revise {
+                        Revise::Recent if !code.monthly() => {
+                            next.min(price_check::revise_from(now))
+                        }
+                        _ => next,
+                    };
+                    vec![(start, first - Duration::days(1)), (next, today)]
+                }
             };
             for (from, to) in ranges.into_iter().filter(|(from, to)| from <= to) {
                 match self.history.index(code, from, to).await {
                     Ok(values) => {
+                        // Índice da B3 (Ibovespa, IFIX) do pregão aberto não
+                        // entra: é o valor do meio do dia, não o fechamento. O
+                        // horário de fechamento é o da B3, o mesmo do Ibovespa.
+                        let values: Series = values
+                            .into_iter()
+                            .filter(|(date, _)| {
+                                !matches!(code, IndexCode::Ibov | IndexCode::Ifix)
+                                    || price_check::settled(IBOV_SYMBOL, *date, now)
+                            })
+                            .collect();
                         stored += values.len();
                         self.store.upsert_index(code, &values).await?;
                     }

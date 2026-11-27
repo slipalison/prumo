@@ -228,6 +228,12 @@ conferência desde o começo do histórico é pedido uma vez de ponta a ponta. S
 a data que **entrou** de fato em `price_history` suja a série de quem tem o
 ativo (pedir de novo um trecho já guardado não refaz nada).
 
+**Pregão aberto e revisão.** A barra de hoje de um ativo de bolsa só é gravada
+depois das 19h de Brasília (câmbio e cripto, nunca no dia corrente; o preço do
+Tesouro de hoje, sim), e a tarefa diária pede de novo os últimos 7 dias e
+corrige o fechamento que a fonte mudou, refazendo a série de quem tem o ativo.
+Regra em [`risco.md`](risco.md#o-pregão-aberto-e-a-revisão-da-fonte).
+
 **Fechamento ruim da fonte** (um trecho de 1 a 5 pregões a 2× ou à metade do
 preço de antes, que volta a até 20% dele, sem desdobramento): não entra em
 `price_history`, e o que já estava guardado sai (na entrada, quando a volta

@@ -12,10 +12,11 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use axum::http::StatusCode;
 use common::*;
+use prumo::domain::price_check::revise_from;
 use prumo::domain::risk::history_start;
 use prumo::domain::treasury::Bond;
 use prumo::history::{HistoryError, HistoryProvider, IndexCode, Series};
-use prumo::performance::{local_date, Performance, JOB_LOCK_KEY};
+use prumo::performance::{local_date, Performance, BRASILIA, JOB_LOCK_KEY};
 use prumo::quotes::Quote;
 use prumo::treasury::history::TreasuryHistory;
 use prumo::treasury::FeedError;
@@ -90,6 +91,12 @@ impl TreasuryHistory for FakeBonds {
     }
 }
 
+/// 19h30 de Brasília no dia: depois do fechamento.
+fn evening(date: Date) -> OffsetDateTime {
+    date.with_time(time::macros::time!(19:30))
+        .assume_offset(BRASILIA)
+}
+
 /// Leva todos os lançamentos do ativo para `date`: o cadastro de hoje vira um
 /// saldo inicial no dia que o teste simula.
 async fn backdate(router: &axum::Router, asset_id: &str, date: Date) {
@@ -153,9 +160,11 @@ async fn daily_job_is_idempotent_and_separates_flow_from_return(
     assert_eq!(cdb.status, StatusCode::CREATED, "{}", cdb.text);
 
     // Dois fechamentos: ontem (dia 1) e agora (dia 2).
+    // As rodadas da tarefa são às 19h30 de Brasília: o fechamento do dia já é
+    // o do dia (antes disso a barra de hoje não é gravada, `price_check`).
     let now = OffsetDateTime::now_utc();
-    let day1_at = now - Duration::days(1);
-    let day1 = local_date(day1_at);
+    let day1 = local_date(now) - Duration::days(1);
+    let day1_at = evening(day1);
     let history = Arc::new(FakeHistory::default());
     history.set_close("KNRI11.SA", day1, dec!(142));
     history.indexes.lock().unwrap().insert(
@@ -217,8 +226,8 @@ async fn daily_job_is_idempotent_and_separates_flow_from_return(
     assert_eq!(edited.status, StatusCode::OK, "{}", edited.text);
 
     // Depois do aporte: ele cai na janela desta foto.
-    let at = OffsetDateTime::now_utc();
-    let day2 = local_date(at);
+    let day2 = local_date(OffsetDateTime::now_utc());
+    let at = evening(day2);
     history.set_close("KNRI11.SA", day2, dec!(150));
     job.run_daily(at).await.unwrap();
     job.run_daily(at + Duration::seconds(1)).await.unwrap();
@@ -231,13 +240,14 @@ async fn daily_job_is_idempotent_and_separates_flow_from_return(
     assert_eq!(rows[1].3, expected);
 
     // Incremental: o primeiro pedido começa no começo da janela mais longa
-    // do risco (antes do lançamento mais antigo); a segunda rodada do dia 1
-    // não pede nada, e a do dia 2 só o dia novo.
+    // do risco (antes do lançamento mais antigo); cada rodada seguinte da
+    // tarefa diária só pede os últimos dias de novo (a revisão da fonte).
     let requests = history.requests.lock().unwrap().clone();
     let knri_requests: Vec<_> = requests.iter().filter(|r| r.0 == "KNRI11.SA").collect();
-    assert_eq!(knri_requests.len(), 2, "{knri_requests:?}");
+    assert_eq!(knri_requests.len(), 4, "{knri_requests:?}");
     assert_eq!(knri_requests[0].1, history_start(day1));
-    assert_eq!(knri_requests[1].1, day1 + Duration::days(1));
+    assert_eq!(knri_requests[1].1, revise_from(day1_at));
+    assert!(knri_requests[2..].iter().all(|r| r.1 == revise_from(at)));
     let symbol = ["KNRI11.SA".to_owned()];
     assert_eq!(
         db.store.closes_on(&symbol, day1).await.unwrap()["KNRI11.SA"],

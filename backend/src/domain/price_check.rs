@@ -11,7 +11,8 @@
 
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
-use time::Date;
+use time::macros::{offset, time};
+use time::{Date, Duration, OffsetDateTime, Time, UtcOffset};
 
 /// O salto que abre o trecho suspeito: o fechamento chega ao dobro (ou mais)
 /// ou à metade (ou menos) do último fechamento bom. Quedas fortes de verdade
@@ -22,6 +23,49 @@ pub const SPIKE_FACTOR: f64 = 2.0;
 pub const RETURN_FACTOR: f64 = 1.2;
 /// O trecho tem de 1 a 5 pregões; mais longo que isso, é o preço de verdade.
 pub const MAX_RUN: usize = 5;
+
+/// O relógio do Prumo (Brasília, sem horário de verão desde 2019).
+const BRASILIA: UtcOffset = offset!(-3);
+/// A partir de quando, em Brasília, a barra de hoje de um ativo de bolsa já é o
+/// fechamento: a B3 fecha às 17h ou às 18h (acompanha o horário de verão dos
+/// EUA), a bolsa americana às 17h ou 18h de Brasília, mais o leilão de
+/// fechamento e o atraso da fonte. É também o horário da tarefa diária.
+pub const SETTLED_AT: Time = time!(19:00);
+/// Quantos dias para trás a tarefa diária pede de novo e corrige o que a fonte
+/// mudou (revisão de um fechamento recente): uns 5 pregões.
+pub const REVISE_DAYS: Duration = Duration::days(7);
+
+/// Que barra é: de bolsa (pregão com hora para fechar), de 24 horas (câmbio
+/// `…=X`, cripto `…-USD`: o dia só fecha à meia-noite) ou o preço publicado do
+/// Tesouro (`TD-…`, divulgado uma vez por dia, já definitivo).
+fn round_the_clock(symbol: &str) -> bool {
+    symbol.ends_with("=X") || symbol.ends_with("-USD")
+}
+
+/// Se o valor de `symbol` na data `date` já é o fechamento daquele dia, com o
+/// relógio em `now`. Dia passado (em Brasília), sim; dia futuro, não; o dia de
+/// hoje: o preço do Tesouro, sim (publicado e definitivo); câmbio e cripto,
+/// nunca (o dia ainda corre); ativo de bolsa, só a partir de [`SETTLED_AT`].
+/// Gravar a barra de um pregão aberto deixava o preço do meio do dia no lugar
+/// do fechamento, para sempre (`docs/risco.md`).
+pub fn settled(symbol: &str, date: Date, now: OffsetDateTime) -> bool {
+    let local = now.to_offset(BRASILIA);
+    let today = local.date();
+    if date != today {
+        return date < today;
+    }
+    if symbol.starts_with("TD-") {
+        return true;
+    }
+    !round_the_clock(symbol) && local.time() >= SETTLED_AT
+}
+
+/// Desde quando um fechamento já guardado ainda pode ser corrigido pela fonte
+/// (os últimos [`REVISE_DAYS`] até hoje, em Brasília). Antes disso o cache não
+/// muda: guarda o preço como era.
+pub fn revise_from(now: OffsetDateTime) -> Date {
+    now.to_offset(BRASILIA).date() - REVISE_DAYS
+}
 
 fn ratio(value: Decimal, base: Decimal) -> Option<f64> {
     if base <= Decimal::ZERO || value <= Decimal::ZERO {
@@ -147,6 +191,30 @@ mod tests {
         // Volta longe do nível de antes (−30%): não é a volta de um erro.
         assert!(bad_closes(&series(&[dec!(100), dec!(1), dec!(70)]), &[]).is_empty());
         assert!(bad_closes(&[], &[]).is_empty());
+    }
+
+    #[test]
+    fn todays_bar_waits_for_the_close() {
+        use time::macros::datetime;
+        let today = date!(2026 - 11 - 27);
+        // 15h em Brasília (18h UTC): pregão aberto, nada de hoje.
+        let afternoon = datetime!(2026-11-27 18:00 UTC);
+        assert!(!settled("KNRI11.SA", today, afternoon));
+        assert!(settled("KNRI11.SA", today - Duration::days(1), afternoon));
+        // 19h em Brasília: o de bolsa já fechou; câmbio e cripto ainda não.
+        let evening = datetime!(2026-11-27 22:00 UTC);
+        assert!(settled("KNRI11.SA", today, evening));
+        assert!(settled("^BVSP", today, evening));
+        assert!(settled("AAPL", today, evening));
+        assert!(!settled("USDBRL=X", today, evening));
+        assert!(!settled("BTC-USD", today, evening));
+        // O preço do Tesouro de hoje é o publicado.
+        assert!(settled("TD-IPCA-20350515", today, afternoon));
+        // 01h30 UTC de sábado ainda é sexta em Brasília: sexta fechou, sábado é futuro.
+        let late = datetime!(2026-11-28 01:30 UTC);
+        assert!(settled("USDBRL=X", today - Duration::days(1), late));
+        assert!(settled("KNRI11.SA", today, late));
+        assert!(!settled("KNRI11.SA", today + Duration::days(1), late));
     }
 
     proptest! {

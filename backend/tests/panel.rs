@@ -95,8 +95,12 @@ async fn panel_end_to_end() {
 
     // O fechamento de ontem (140) é diferente da cotação do momento (142).
     let now = OffsetDateTime::now_utc();
-    let yesterday_at = now - Duration::days(1);
-    let yesterday = local_date(yesterday_at);
+    let yesterday = local_date(now) - Duration::days(1);
+    // A tarefa de ontem roda depois do fechamento (19h30 de Brasília): antes
+    // disso a barra do dia ainda não é o fechamento e não é gravada.
+    let yesterday_at = yesterday
+        .with_time(time::macros::time!(19:30))
+        .assume_offset(prumo::performance::BRASILIA);
     let history = std::sync::Arc::new(FakeHistory::default());
     history
         .closes

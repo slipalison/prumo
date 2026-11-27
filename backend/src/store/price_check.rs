@@ -7,11 +7,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use rust_decimal::Decimal;
-use time::{Date, Duration};
+use time::{Date, Duration, OffsetDateTime};
 use uuid::Uuid;
 
 use super::{Store, StoreError};
-use crate::domain::price_check::bad_closes;
+use crate::domain::price_check::{bad_closes, revise_from, settled};
 use crate::history::Series;
 
 /// Quanto do que já está guardado, antes e depois dos fechamentos que chegam,
@@ -20,6 +20,67 @@ use crate::history::Series;
 const NEIGHBOURS: Duration = Duration::days(20);
 
 impl Store {
+    /// O caminho de gravação do que a fonte acabou de dizer, para todo mundo
+    /// (sincronia diária, reconstrução, comparador, Tesouro):
+    ///
+    /// - só entra o que já é fechamento ([`settled`]): a barra de um pregão
+    ///   ainda aberto (o preço do meio do dia) não é gravada;
+    /// - o fechamento ruim da fonte fica de fora ([`Store::screen_closes`]);
+    /// - data nova entra; o fechamento já guardado dos últimos dias
+    ///   ([`revise_from`]) que a fonte mudou é corrigido, e a série de quem tem
+    ///   o ativo é marcada para refazer desde ele. Antes disso o guardado não
+    ///   muda.
+    ///
+    /// Devolve as datas novas, em ordem.
+    pub async fn record_prices(
+        &self,
+        symbol: &str,
+        closes: &Series,
+        now: OffsetDateTime,
+    ) -> Result<Vec<Date>, StoreError> {
+        let closed: Series = closes
+            .iter()
+            .filter(|(date, _)| settled(symbol, *date, now))
+            .copied()
+            .collect();
+        let open = closes.len() - closed.len();
+        if open > 0 {
+            tracing::debug!(symbol = %symbol, open, "barra de pregao aberto nao gravada");
+        }
+        let screened = self.screen_closes(symbol, &closed).await?;
+        let inserted = self.insert_closes(symbol, &screened).await?;
+        let since = revise_from(now);
+        let recent: Series = screened
+            .into_iter()
+            .filter(|(date, _)| *date >= since && inserted.binary_search(date).is_err())
+            .collect();
+        if !recent.is_empty() {
+            let dates: Vec<Date> = recent.iter().map(|(d, _)| *d).collect();
+            let values: Vec<Decimal> = recent.iter().map(|(_, v)| *v).collect();
+            let changed: Vec<(Date,)> = sqlx::query_as(
+                "update price_history p set close = round(t.c, 8)
+                   from unnest($2::date[], $3::numeric[]) as t (d, c)
+                  where p.symbol = $1 and p.date = t.d and p.close <> round(t.c, 8)
+                 returning p.date",
+            )
+            .bind(symbol)
+            .bind(&dates)
+            .bind(&values)
+            .fetch_all(&self.pool)
+            .await?;
+            if let Some(first) = changed.iter().map(|(d,)| *d).min() {
+                tracing::info!(
+                    symbol = %symbol,
+                    revised = changed.len(),
+                    since = %first,
+                    "fechamentos recentes corrigidos pela fonte"
+                );
+                self.mark_symbol_holders(symbol, first).await?;
+            }
+        }
+        Ok(inserted)
+    }
+
     /// Os fechamentos que chegam e podem entrar. Cada um é conferido junto com
     /// os guardados em volta (o guardado vale na mesma data, como no `on
     /// conflict do nothing`): o que faz parte de um trecho ruim fica de fora,
@@ -132,6 +193,12 @@ impl Store {
             since = %since,
             "fechamentos ruins guardados apagados"
         );
+        self.mark_symbol_holders(symbol, since).await
+    }
+
+    /// Marca como suja, desde `since`, a série de quem tem um ativo cotado por
+    /// `symbol` (o símbolo da fonte: `KNRI11.SA`, `AAPL`, `TD-…`).
+    async fn mark_symbol_holders(&self, symbol: &str, since: Date) -> Result<(), StoreError> {
         let holders: Vec<Uuid> = self
             .held_symbols()
             .await?

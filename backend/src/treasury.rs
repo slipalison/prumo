@@ -529,11 +529,14 @@ impl TreasurySync {
             .filter(|(market, _)| *market == Market::Treasury)
             .map(|(_, symbol)| symbol)
             .collect();
+        // O caminho comum de gravação: o preço publicado de hoje entra, e o de um
+        // dia recente que a fonte corrigiu é acertado (com a série refeita).
         for price in prices.iter().filter(|p| held.contains(&p.bond.symbol())) {
             self.store
-                .insert_prices(
+                .record_prices(
                     &price.bond.symbol(),
                     &vec![(price.base_date, price.redemption_price)],
+                    now,
                 )
                 .await?;
         }

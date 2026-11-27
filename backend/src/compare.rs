@@ -22,10 +22,11 @@ use crate::domain::compare::{
 };
 use crate::domain::fundamentals::{AssetFundamentals, Figure, Unsupported};
 use crate::domain::performance::months_before;
+use crate::domain::price_check::settled;
 use crate::domain::retro;
 use crate::domain::sector::reference_key;
 use crate::domain::tax_book::TaxInstrument;
-use crate::history::{HistoryError, HistoryProvider, IndexCode};
+use crate::history::{HistoryError, HistoryProvider, IndexCode, Series, IBOV_SYMBOL};
 use crate::income::{payer_symbol, IncomeService};
 use crate::performance::{default_currency, local_date, series as portfolio_series};
 use crate::quotes::fx_symbol;
@@ -224,7 +225,9 @@ async fn try_ensure_prices(
             // Os eventos antes dos preços: o filtro de fechamento ruim de
             // `insert_prices` não confunde um desdobramento com erro da fonte.
             store.save_price_splits(symbol, from, &splits, now).await?;
-            store.insert_prices(symbol, &closes).await?;
+            // O caminho comum: sem a barra do pregão aberto, sem fechamento
+            // ruim, corrigindo os últimos dias que a fonte mudou.
+            store.record_prices(symbol, &closes, now).await?;
             store.set_price_coverage(symbol, from).await?;
         }
         Err(HistoryError::NotFound) => {
@@ -242,12 +245,17 @@ async fn try_ensure_prices(
 /// Garante os índices desde `from`: o que falta antes do que está guardado (a
 /// carteira pode ser mais nova que a janela pedida) e, se a tarefa diária não
 /// os mantém, o que falta depois.
-async fn ensure_indexes(sources: &Sources<'_>, codes: &[IndexCode], from: Date, today: Date) {
+async fn ensure_indexes(
+    sources: &Sources<'_>,
+    codes: &[IndexCode],
+    from: Date,
+    now: OffsetDateTime,
+) {
     for code in codes {
         let Some((_, floor)) = INDEX_FLOORS.iter().find(|(c, _)| c == code) else {
             continue;
         };
-        if let Err(error) = try_ensure_index(sources, *code, from.max(*floor), today).await {
+        if let Err(error) = try_ensure_index(sources, *code, from.max(*floor), now).await {
             tracing::warn!(index = code.as_str(), error = %error, "indice do comparador nao guardado");
         }
     }
@@ -257,8 +265,9 @@ async fn try_ensure_index(
     sources: &Sources<'_>,
     code: IndexCode,
     from: Date,
-    today: Date,
+    now: OffsetDateTime,
 ) -> Result<(), StoreError> {
+    let today = local_date(now);
     let slack = Duration::days(INDEX_SLACK_DAYS);
     let ranges = match sources.store.index_bounds(code).await? {
         None => vec![(from, today)],
@@ -275,7 +284,14 @@ async fn try_ensure_index(
     };
     for (start, end) in ranges {
         match sources.history.index(code, start, end).await {
-            Ok(values) => sources.store.upsert_index(code, &values).await?,
+            Ok(values) => {
+                // O Ibovespa do pregão aberto não entra (valor do meio do dia).
+                let values: Series = values
+                    .into_iter()
+                    .filter(|(date, _)| code != IndexCode::Ibov || settled(IBOV_SYMBOL, *date, now))
+                    .collect();
+                sources.store.upsert_index(code, &values).await?;
+            }
             Err(error) => {
                 tracing::warn!(index = code.as_str(), error = %error, "indice nao baixado");
             }
@@ -751,7 +767,7 @@ pub async fn curves(
     if request.total_return {
         ensure_dividends(sources, subjects, now).await;
     }
-    ensure_indexes(sources, &request.benchmarks, fetch_from, today).await;
+    ensure_indexes(sources, &request.benchmarks, fetch_from, now).await;
 
     let closes = store.price_series(&wanted, fetch_from, today).await?;
     let splits = store.price_splits(&symbols).await?;

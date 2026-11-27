@@ -15,6 +15,7 @@ use axum::http::StatusCode;
 use common::*;
 use prumo::dividends::{DividendEvent, DividendHistory};
 use prumo::domain::performance::Quota;
+use prumo::domain::price_check::revise_from;
 use prumo::domain::risk::{history_start, RiskWindow};
 use prumo::history::{HistoryError, HistoryProvider, IndexCode, Series};
 use prumo::performance::{local_date, Performance};
@@ -542,9 +543,142 @@ async fn price_sync_keeps_splits_and_the_long_history() {
         dec!(101)
     );
 
-    // Rodar de novo no mesmo dia não pede nada: as duas listas estão completas.
-    job.run_daily(now + Duration::minutes(1)).await.unwrap();
-    assert_eq!(history.requests.lock().unwrap().len(), requests.len());
+    // Rodar de novo no mesmo dia não refaz a conferência longa (as duas listas
+    // estão completas): pede o que falta e, no mínimo, os últimos dias de novo
+    // (a revisão da fonte).
+    let again = now + Duration::minutes(1);
+    job.run_daily(again).await.unwrap();
+    let all = history.requests.lock().unwrap().clone();
+    let later = &all[requests.len()..];
+    assert_eq!(later.len(), 2, "{later:?}");
+    assert!(later
+        .iter()
+        .all(|r| r.1 > from && r.1 <= revise_from(again) && r.2 == today));
+}
+
+/// A barra de um pregão aberto não vira fechamento: a tarefa das 15h (de um
+/// dia útil) não grava o dia; a das 19h grava. E a fonte que corrige um
+/// fechamento recente é ouvida: a rodada seguinte pede de novo os últimos dias
+/// e corrige, com a série de quem tem o ativo marcada desde a data corrigida
+/// (fora dos últimos dias, o guardado não muda). Fictício: um FII genérico.
+#[tokio::test]
+async fn an_open_session_waits_for_the_close_and_recent_revisions_land() {
+    let db = database().await;
+    let dir = tempfile_dir::Dir::new();
+    let email = "pregao-aberto@exemplo.com";
+    let quotes = FakeQuotes::with_market();
+    quotes
+        .prices
+        .lock()
+        .unwrap()
+        .insert("FICT11.SA".to_owned(), (dec!(80), "BRL", "Fundo ficticio"));
+    let app = app(&db.store, email, quotes, &dir.path());
+    let created = post(
+        &app.router,
+        "/api/v1/assets",
+        json!({ "asset_class": "br_reits", "symbol": "FICT11", "quantity": 10 }),
+    )
+    .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.text);
+    let user = db.store.ensure_user(email).await.unwrap();
+    let symbol = "FICT11.SA";
+    let symbols = [symbol.to_owned()];
+    // Quarta, 25/11/2026, e os dois pregões antes dela.
+    let day = Date::from_calendar_date(2026, time::Month::November, 25).unwrap();
+    let history = Arc::new(SplitHistory::default());
+    history.closes.lock().unwrap().insert(
+        symbol.to_owned(),
+        vec![
+            (day - Duration::days(2), dec!(80)),
+            (day - Duration::days(1), dec!(81)),
+            (day, dec!(82)),
+        ],
+    );
+    let job = Performance::new(db.store.clone(), history.clone());
+    let at = |date: Date, hour: u8, minute: u8| {
+        date.with_time(time::Time::from_hms(hour, minute, 0).unwrap())
+            .assume_offset(prumo::performance::BRASILIA)
+    };
+
+    // 15h: o pregão ainda corre; o de ontem entra, o de hoje não.
+    job.run_daily(at(day, 15, 0)).await.unwrap();
+    assert_eq!(
+        db.store
+            .closes_on(&symbols, day - Duration::days(1))
+            .await
+            .unwrap()[symbol],
+        dec!(81)
+    );
+    assert!(db.store.closes_on(&symbols, day).await.unwrap().is_empty());
+    // 19h05: fechou; o de hoje entra.
+    job.run_daily(at(day, 19, 5)).await.unwrap();
+    assert_eq!(
+        db.store.closes_on(&symbols, day).await.unwrap()[symbol],
+        dec!(82)
+    );
+
+    // A fonte corrige o fechamento de ontem: a tarefa do dia seguinte acerta.
+    history.closes.lock().unwrap().insert(
+        symbol.to_owned(),
+        vec![
+            (day - Duration::days(2), dec!(80)),
+            (day - Duration::days(1), dec!(81.5)),
+            (day, dec!(82)),
+        ],
+    );
+    job.run_daily(at(day + Duration::days(1), 19, 5))
+        .await
+        .unwrap();
+    assert_eq!(
+        db.store
+            .closes_on(&symbols, day - Duration::days(1))
+            .await
+            .unwrap()[symbol],
+        dec!(81.5)
+    );
+
+    // A correção marca a série de quem tem o ativo desde a data corrigida; a
+    // de um dia fora da janela de revisão não muda nada.
+    if let Some(dirty) = db.store.dirty_since(user).await.unwrap() {
+        db.store.clear_dirty(&dirty).await.unwrap();
+    }
+    let evening = at(day + Duration::days(1), 20, 0);
+    db.store
+        .record_prices(symbol, &vec![(day, dec!(82.3))], evening)
+        .await
+        .unwrap();
+    assert_eq!(
+        db.store.closes_on(&symbols, day).await.unwrap()[symbol],
+        dec!(82.3)
+    );
+    assert_eq!(
+        db.store.dirty_since(user).await.unwrap().unwrap().since,
+        day
+    );
+    let old = day - Duration::days(20);
+    db.store
+        .insert_prices(symbol, &vec![(old, dec!(70))])
+        .await
+        .unwrap();
+    db.store
+        .record_prices(symbol, &vec![(old, dec!(71))], evening)
+        .await
+        .unwrap();
+    assert_eq!(
+        db.store.closes_on(&symbols, old).await.unwrap()[symbol],
+        dec!(70)
+    );
+    // Câmbio e cripto: o dia corrente nunca entra, nem às 20h.
+    let fx = db
+        .store
+        .record_prices(
+            "USDBRL=X",
+            &vec![(day + Duration::days(1), dec!(5.4))],
+            evening,
+        )
+        .await
+        .unwrap();
+    assert!(fx.is_empty());
 }
 
 /// A 0032 sobre um banco com série (as de antes dela aplicadas, carteira

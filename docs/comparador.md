@@ -57,7 +57,9 @@ por dia (`price_split_checks`), numa só chamada que também completa o preço.
 `HistoryProvider::closes_and_splits` tem implementação padrão sem eventos. A
 sincronia de preços do Desempenho também grava os eventos e a conferência de
 todo ativo com livro, todo dia ([`risco.md`](risco.md)): o ativo da carteira
-já chega conferido.
+já chega conferido. O preço que o comparador busca passa pelo mesmo caminho de
+gravação (`record_prices`): a barra do pregão aberto não entra e os últimos
+dias que a fonte corrigiu são acertados.
 
 ## Limites
 

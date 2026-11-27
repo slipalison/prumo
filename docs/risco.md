@@ -86,6 +86,32 @@ Onde age:
 - Os desdobramentos do pedido são gravados **antes** dos preços (na sincronia e
   no comparador), para o filtro não confundir um evento com erro.
 
+## O pregão aberto e a revisão da fonte
+
+Toda gravação do que a fonte acabou de dizer passa por `Store::record_prices`
+(sincronia diária, reconstrução, busca do comparador e o preço do dia do
+Tesouro):
+
+- **Só fechamento entra** (`domain::price_check::settled`): dia passado (em
+  Brasília), sim; o dia de hoje, só depois das **19h** para ativo de bolsa (B3 e
+  EUA fecham às 17h ou 18h de Brasília, mais o leilão de fechamento e o atraso
+  da fonte); câmbio (`…=X`) e cripto (`…-USD`) nunca no dia corrente (o dia só
+  fecha à meia-noite); o preço do Tesouro de hoje, sim (publicado uma vez por
+  dia, definitivo). Antes disso, a sincronia que rodasse às 17h (deploy,
+  reconstrução, comparador) gravava o preço do meio do pregão como fechamento,
+  e o `on conflict do nothing` o deixava lá para sempre. O Ibovespa segue a
+  mesma regra antes do `upsert` de `index_history`.
+- **Os últimos dias são revistos**: a tarefa diária pede de novo, para cada
+  símbolo, os últimos **7 dias** (uns 5 pregões; a reconstrução, que roda a
+  qualquer hora, só pede o que falta). O fechamento já guardado nesses dias que
+  a fonte mudou é corrigido, e a série de quem tem o ativo é marcada para
+  refazer desde a data corrigida. Antes disso, o guardado não muda: o cache
+  guarda o preço como era. Os índices diários também são pedidos de novo nos
+  últimos dias (o `upsert` corrige).
+
+As duas coisas juntas: a primeira impede o erro; a segunda conserta o que a
+fonte revisar depois (e o que tenha entrado antes desta regra).
+
 ## Pregões e alinhamento
 
 As datas de pregão são as datas do Ibovespa mais as de qualquer fechamento de
