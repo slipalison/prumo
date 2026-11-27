@@ -99,7 +99,7 @@ impl Subject {
             score_override: None,
             listed_on_b3: self.listed_on_b3,
             treasury: false,
-            max_price: None,
+            ceiling: crate::domain::ceiling::CeilingChoice::None,
             tax_instrument: TaxInstrument::default_for(
                 self.class,
                 self.listed_on_b3,

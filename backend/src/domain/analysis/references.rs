@@ -7,10 +7,13 @@
 //!   cota pagaria o rendimento-alvo se repetisse a média.
 //! - **Graham**: `√(22,5 × LPA × VPA)`. Precisa do lucro (LPA) e do patrimônio
 //!   (VPA) por ação, que vêm dos fundamentos da CVM; sem eles, fica de fora.
-//! - **Pelas duas** ([`combined_ceiling`]): o menor dos dois, o valor que a tela
-//!   oferece como teto.
+//! - **Pelas duas** ([`combined_ceiling`]): o menor dos dois.
+//!
+//! Valem para ações. Os FIIs têm as próprias referências (valor patrimonial e
+//! rendimento contra o juro de mercado), em [`super::fund_references`].
 
 use rust_decimal::{Decimal, MathematicalOps};
+use serde::Serialize;
 use time::Date;
 
 use crate::domain::allocation::round_cents;
@@ -105,42 +108,116 @@ pub fn company_per_share(metrics: &CompanyMetrics) -> Option<(Decimal, Decimal)>
         .zip(metrics.book_value_per_share.value())
 }
 
-/// As duas referências de preço de um ativo, as que existem.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct PriceReferences {
-    pub bazin: Option<Bazin>,
-    pub graham: Option<Decimal>,
+/// Por que uma referência de preço (ou o teto que segue um método) está sem
+/// valor. O código vai na API; o texto que a pessoa lê é da tela.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReferenceGap {
+    /// Sem provento por cota no período (nunca buscado, ou não pagou).
+    NoDividends,
+    /// Sem os dados da CVM de que a conta precisa (lucro e patrimônio por
+    /// ação, ou o valor patrimonial da cota).
+    NoFundamentals,
+    /// Lucro por ação zero ou negativo: a raiz do Graham não existe.
+    Loss,
+    /// Patrimônio por ação (ou por cota) zero ou negativo.
+    NegativeEquity,
+    /// O tipo do FII (tijolo, papel, híbrido, fundo de fundos) não é conhecido.
+    UnknownFundType,
+    /// FII híbrido sem a composição da carteira, que pondera o alvo.
+    NoComposition,
+    /// Falta a taxa de mercado do alvo (juro real do Tesouro ou CDI de 12 meses).
+    NoMarketRate,
+    /// O alvo de rendimento saiu zero ou negativo (juro real negativo sem
+    /// prêmio): não há preço que o pague.
+    NonPositiveTarget,
+    /// "Pelas duas" sem nenhuma das duas.
+    NoReference,
 }
 
-impl PriceReferences {
-    /// Se o ativo tem ao menos uma das duas.
-    pub fn any(&self) -> bool {
-        self.bazin.is_some() || self.graham.is_some()
+impl ReferenceGap {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ReferenceGap::NoDividends => "no_dividends",
+            ReferenceGap::NoFundamentals => "no_fundamentals",
+            ReferenceGap::Loss => "loss",
+            ReferenceGap::NegativeEquity => "negative_equity",
+            ReferenceGap::UnknownFundType => "unknown_fund_type",
+            ReferenceGap::NoComposition => "no_composition",
+            ReferenceGap::NoMarketRate => "no_market_rate",
+            ReferenceGap::NonPositiveTarget => "non_positive_target",
+            ReferenceGap::NoReference => "no_reference",
+        }
     }
 }
 
-/// As referências de um ativo a partir do que já está guardado: o histórico de
+/// As duas referências de preço de uma ação, cada uma com o valor ou o motivo
+/// de não haver.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PriceReferences {
+    pub bazin: Result<Bazin, ReferenceGap>,
+    pub graham: Result<Decimal, ReferenceGap>,
+}
+
+impl PriceReferences {
+    /// Se a ação tem ao menos uma das duas.
+    pub fn any(&self) -> bool {
+        self.bazin.is_ok() || self.graham.is_ok()
+    }
+
+    /// "Pelas duas" ([`combined_ceiling`]): o menor dos dois valores, ou o que
+    /// existir.
+    pub fn combined(&self) -> Result<Decimal, ReferenceGap> {
+        combined_ceiling(self.bazin.ok().map(|b| b.price), self.graham.ok())
+            .ok_or(ReferenceGap::NoReference)
+    }
+}
+
+/// O Graham de um ativo pelos fundamentos, ou o motivo de não haver: sem
+/// fundamentos de companhia (ou sem as ações, que dão o "por ação"), lucro não
+/// positivo ou patrimônio não positivo.
+pub fn graham_reference(fundamentals: Option<&AssetFundamentals>) -> Result<Decimal, ReferenceGap> {
+    let Some(AssetFundamentals::Company(metrics)) = fundamentals else {
+        return Err(ReferenceGap::NoFundamentals);
+    };
+    let (Some(earnings), Some(book)) = (
+        metrics.earnings_per_share.value(),
+        metrics.book_value_per_share.value(),
+    ) else {
+        return Err(ReferenceGap::NoFundamentals);
+    };
+    if earnings <= Decimal::ZERO {
+        return Err(ReferenceGap::Loss);
+    }
+    if book <= Decimal::ZERO {
+        return Err(ReferenceGap::NegativeEquity);
+    }
+    graham(earnings, book).ok_or(ReferenceGap::NoFundamentals)
+}
+
+/// As referências de uma ação a partir do que já está guardado: o histórico de
 /// dividendos por cota (em reais; `None` se nunca foi buscado) e os
-/// fundamentos. A Análise e o aviso do aporte chamam esta mesma conta.
+/// fundamentos. A Análise, o aviso do aporte e o teto que segue o método
+/// chamam esta mesma conta.
 pub fn price_references(
     dividends: Option<&[DividendPoint]>,
     fundamentals: Option<&AssetFundamentals>,
     today: Date,
     target_yield: Decimal,
 ) -> PriceReferences {
-    let bazin = dividends.and_then(|points| bazin(points, today, target_yield));
-    // O Graham pede lucro e patrimônio por ação, os dois positivos.
-    let graham = match fundamentals {
-        Some(AssetFundamentals::Company(metrics)) => company_per_share(metrics),
-        _ => None,
+    let bazin = dividends
+        .and_then(|points| bazin(points, today, target_yield))
+        .ok_or(ReferenceGap::NoDividends);
+    PriceReferences {
+        bazin,
+        graham: graham_reference(fundamentals),
     }
-    .and_then(|(earnings, book)| graham(earnings, book));
-    PriceReferences { bazin, graham }
 }
 
 /// O teto pelas duas referências: o **menor** dos valores que existem. Abaixo
 /// dele, o preço passa nos dois critérios (dividendos e lucro com patrimônio);
-/// a média deixaria passar um preço acima de um deles. Com uma só, é ela.
+/// a média deixaria passar um preço acima de um deles. Com uma só, é ela. A
+/// mesma regra vale para o VP e o Rendimento dos FIIs.
 pub fn combined_ceiling(bazin: Option<Decimal>, graham: Option<Decimal>) -> Option<Decimal> {
     match (bazin, graham) {
         (Some(bazin), Some(graham)) => Some(bazin.min(graham)),
@@ -298,17 +375,19 @@ mod tests {
             TODAY,
             dec!(6),
         );
-        assert_eq!(both.bazin.map(|b| b.price), Some(dec!(10)));
-        assert_eq!(both.graham, Some(dec!(30)));
+        assert_eq!(both.bazin.map(|b| b.price), Ok(dec!(10)));
+        assert_eq!(both.graham, Ok(dec!(30)));
+        assert_eq!(both.combined(), Ok(dec!(10)));
         assert!(both.any());
         // A mesma conta que as funções soltas: nada de segunda fórmula.
-        assert_eq!(both.bazin, bazin(&points, TODAY, dec!(6)));
-        assert_eq!(both.graham, graham(dec!(4), dec!(10)));
+        assert_eq!(both.bazin.ok(), bazin(&points, TODAY, dec!(6)));
+        assert_eq!(both.graham.ok(), graham(dec!(4), dec!(10)));
         // Só o Bazin: sem fundamentos, ou fundamentos sem lucro e patrimônio.
         for fundamentals in [None, Some(company(None, Some(dec!(10))))] {
             let only = price_references(Some(&points), fundamentals.as_ref(), TODAY, dec!(6));
-            assert_eq!(only.graham, None);
-            assert_eq!(only.bazin.map(|b| b.price), Some(dec!(10)));
+            assert_eq!(only.graham, Err(ReferenceGap::NoFundamentals));
+            assert_eq!(only.bazin.map(|b| b.price), Ok(dec!(10)));
+            assert_eq!(only.combined(), Ok(dec!(10)));
         }
         // Só o Graham: dividendo nunca buscado ou sem pagamento.
         for dividends in [None, Some(&[][..])] {
@@ -318,26 +397,50 @@ mod tests {
                 TODAY,
                 dec!(6),
             );
-            assert_eq!(only.bazin, None);
-            assert_eq!(only.graham, Some(dec!(30)));
+            assert_eq!(only.bazin, Err(ReferenceGap::NoDividends));
+            assert_eq!(only.graham, Ok(dec!(30)));
+            assert_eq!(only.combined(), Ok(dec!(30)));
         }
     }
 
     #[test]
-    fn no_reference_means_none_and_loss_makes_no_graham() {
+    fn each_missing_reference_says_why() {
+        let none = price_references(None, None, TODAY, dec!(6));
+        assert_eq!(none.bazin, Err(ReferenceGap::NoDividends));
+        assert_eq!(none.graham, Err(ReferenceGap::NoFundamentals));
+        assert_eq!(none.combined(), Err(ReferenceGap::NoReference));
+        assert!(!none.any());
+        // Prejuízo (LPA negativo ou zero): a raiz não existe.
+        for eps in [dec!(-1), dec!(0)] {
+            let loss = company(Some(eps), Some(dec!(10)));
+            assert_eq!(graham_reference(Some(&loss)), Err(ReferenceGap::Loss));
+        }
+        let negative = company(Some(dec!(2)), Some(dec!(-3)));
         assert_eq!(
-            price_references(None, None, TODAY, dec!(6)),
-            PriceReferences::default()
-        );
-        assert!(!PriceReferences::default().any());
-        // Prejuízo (LPA negativo) e fundo: a raiz não existe.
-        let loss = company(Some(dec!(-1)), Some(dec!(10)));
-        assert_eq!(
-            price_references(None, Some(&loss), TODAY, dec!(6)).graham,
-            None
+            graham_reference(Some(&negative)),
+            Err(ReferenceGap::NegativeEquity)
         );
         let unsupported = AssetFundamentals::Unsupported(Unsupported::NotListedOnB3);
-        assert!(!price_references(None, Some(&unsupported), TODAY, dec!(6)).any());
+        assert_eq!(
+            graham_reference(Some(&unsupported)),
+            Err(ReferenceGap::NoFundamentals)
+        );
+        for gap in [
+            ReferenceGap::NoDividends,
+            ReferenceGap::NoFundamentals,
+            ReferenceGap::Loss,
+            ReferenceGap::NegativeEquity,
+            ReferenceGap::UnknownFundType,
+            ReferenceGap::NoComposition,
+            ReferenceGap::NoMarketRate,
+            ReferenceGap::NonPositiveTarget,
+            ReferenceGap::NoReference,
+        ] {
+            assert_eq!(
+                serde_json::to_value(gap).unwrap(),
+                serde_json::Value::String(gap.as_str().to_owned())
+            );
+        }
     }
 
     #[test]

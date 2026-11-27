@@ -432,7 +432,7 @@ mod tests {
             score_override: None,
             listed_on_b3,
             treasury: false,
-            max_price: None,
+            ceiling: crate::domain::ceiling::CeilingChoice::None,
             tax_instrument: crate::domain::tax_book::TaxInstrument::Stock,
             tax_instrument_custom: false,
         }

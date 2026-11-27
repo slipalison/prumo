@@ -11,10 +11,12 @@ use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use super::dto::*;
+use super::references::ceiling_choice;
 use super::{treasury, ApiJson, ApiPath, ApiQuery, AppState, CurrentUser};
-use crate::analysis;
+use crate::ceiling;
 use crate::domain::allocation::{round_cents, Targets, FULL_BP};
 use crate::domain::asset_class::{normalize_symbol, AssetClass, Checklist, Market, UnitKind};
+use crate::domain::ceiling::CeilingChoice;
 use crate::domain::income::today_in_brazil;
 use crate::domain::ledger::{check_for_unit, Kind};
 use crate::domain::treasury::Bond;
@@ -91,8 +93,6 @@ fn b3_listing(class: AssetClass, requested: Option<bool>) -> ApiResult<bool> {
     }
 }
 
-const NO_CEILING_BY_VALUE: &str =
-    "Renda fixa por valor nao tem preco por unidade; o teto de preco nao se aplica.";
 const NO_OPENING: &str = "Sem quantidade nao ha custo de entrada para informar.";
 
 /// O nome de um ativo cotado quando nem o usuário nem a cotação dão um: o
@@ -105,10 +105,16 @@ fn checklist(value: &str) -> ApiResult<Checklist> {
     Checklist::parse(value).ok_or_else(ApiError::not_found)
 }
 
+/// O dia de hoje em Brasília.
+fn today() -> time::Date {
+    today_in_brazil(time::OffsetDateTime::now_utc())
+}
+
 async fn asset_response(state: &AppState, user: Uuid, id: Uuid) -> ApiResult<AssetDto> {
     let view = service::portfolio(&state.store, user).await?;
+    let ceilings = ceiling::resolve_ceilings(&state.store, user, &view, today()).await?;
     view.asset(id)
-        .map(AssetDto::from)
+        .map(|a| AssetDto::new(a, ceilings.get(&id).copied().unwrap_or_default()))
         .ok_or_else(ApiError::not_found)
 }
 
@@ -128,7 +134,9 @@ pub async fn portfolio(
     user: CurrentUser,
 ) -> ApiResult<Json<PortfolioDto>> {
     let view = service::portfolio(&state.store, user.id).await?;
-    Ok(Json(PortfolioDto::from(&view)))
+    // O teto de hoje de quem escolheu um método (sem nenhum, nada a mais é lido).
+    let ceilings = ceiling::resolve_ceilings(&state.store, user.id, &view, today()).await?;
+    Ok(Json(PortfolioDto::new(&view, &ceilings)))
 }
 
 pub async fn set_goals(
@@ -200,9 +208,8 @@ pub async fn create_asset(
                     "Renda fixa nao tem preco por unidade; informe o valor.",
                 ));
             }
-            if body.max_price.is_some() {
-                return Err(ApiError::validation(NO_CEILING_BY_VALUE));
-            }
+            // Sem preço por unidade, o teto não se aplica: a escolha recusa.
+            ceiling_choice(body.ceiling.as_ref(), class, market)?;
             cost = match body.invested {
                 None => OpeningCost::Unknown,
                 Some(_) if amount.is_zero() => {
@@ -219,7 +226,7 @@ pub async fn create_asset(
                 score_override,
                 listed_on_b3,
                 treasury,
-                max_price: None,
+                ceiling: CeilingChoice::None,
             }
         }
         UnitKind::Whole | UnitKind::Fractional | UnitKind::Hundredth => {
@@ -242,10 +249,7 @@ pub async fn create_asset(
                 .manual_price
                 .map(|p| positive("O preco manual", p))
                 .transpose()?;
-            let max_price = body
-                .max_price
-                .map(|p| positive("O teto de preco", p))
-                .transpose()?;
+            let ceiling = ceiling_choice(body.ceiling.as_ref(), class, market)?;
             if body.invested.is_some() {
                 return Err(ApiError::validation(
                     "Ativo com cotacao tem preco medio (average_price), nao valor aplicado.",
@@ -282,7 +286,7 @@ pub async fn create_asset(
                 score_override,
                 listed_on_b3,
                 treasury,
-                max_price,
+                ceiling,
             }
         }
     };
@@ -349,9 +353,11 @@ pub async fn update_asset(
             "Renda fixa nao tem preco por unidade; informe o valor.",
         ));
     }
-    if kind == UnitKind::Value && body.max_price.is_some_and(|p| p.is_some()) {
-        return Err(ApiError::validation(NO_CEILING_BY_VALUE));
-    }
+    let ceiling = body
+        .ceiling
+        .as_ref()
+        .map(|request| ceiling_choice(request.as_ref(), asset.asset_class, market))
+        .transpose()?;
     let patch = AssetPatch {
         listed_on_b3: body.listed_on_b3.map(|_| listed_on_b3),
         quantity,
@@ -368,10 +374,7 @@ pub async fn update_asset(
             .score_override
             .map(|s| s.map(score_value).transpose())
             .transpose()?,
-        max_price: body
-            .max_price
-            .map(|p| p.map(|v| positive("O teto de preco", v)).transpose())
-            .transpose()?,
+        ceiling,
         tax_instrument: body.tax_instrument,
     };
     state
@@ -470,10 +473,10 @@ pub async fn plan(
     let amount = non_negative("O valor do aporte", body.amount)?;
     let (plan, view) = service::plan(&state.store, user.id, amount).await?;
     // Só o cache: o plano não espera o provedor de dividendos.
-    let today = today_in_brazil(time::OffsetDateTime::now_utc());
+    let today = today();
     let income = state.income.estimate(&view, today).await;
     // O aviso de quem está sem teto: só o que já está guardado, nunca a rede.
-    let references = analysis::plan_references(&state.store, user.id, &plan, &view, today).await?;
+    let references = ceiling::plan_references(&state.store, user.id, &plan, &view, today).await?;
     Ok(Json(
         PlanDto::new(&plan, &view)
             .with_income(&income)

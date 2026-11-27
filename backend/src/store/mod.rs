@@ -28,18 +28,21 @@ use uuid::Uuid;
 
 use crate::domain::allocation::{round_cents, Targets};
 use crate::domain::asset_class::{AssetClass, Checklist, Market, UnitKind};
+use crate::domain::ceiling::{CeilingChoice, CeilingMethod};
 use crate::domain::defaults;
 use crate::domain::ledger::{check_for_unit, Kind, LedgerError};
 use crate::domain::tax_book::TaxInstrument;
 use crate::live::Tick;
 use crate::quotes::Quote;
 
+mod market_rates;
 mod performance;
 mod price_check;
 mod retro;
 mod treasury;
 
 pub use alerts::{AchievedObjective, AlertSettings};
+pub use analysis::{ReferenceSettings, SettingsChange};
 pub use b3_import::{Applied, CreatedAsset};
 pub use performance::{JobLock, Snapshot, SnapshotPoint};
 pub use retro::{DirtySeries, HeldSymbol};
@@ -91,8 +94,9 @@ pub struct Asset {
     /// Título do Tesouro Direto: o símbolo é a chave do título e o preço vem da
     /// tabela diária do Tesouro. Só em Renda Fixa.
     pub treasury: bool,
-    /// Teto de preço da pessoa, em reais: acima dele o ativo fica fora do aporte.
-    pub max_price: Option<Decimal>,
+    /// O teto de preço que a pessoa escolheu: nenhum, um método de referência
+    /// ou um valor próprio (`domain::ceiling`).
+    pub ceiling: CeilingChoice,
     /// O que o ativo é para o IR (`docs/ir.md`, ligação com o livro).
     pub tax_instrument: TaxInstrument,
     /// A pessoa escolheu o instrumento; sem escolha, ele segue o padrão.
@@ -125,7 +129,7 @@ pub struct NewAsset {
     pub score_override: Option<u8>,
     pub listed_on_b3: bool,
     pub treasury: bool,
-    pub max_price: Option<Decimal>,
+    pub ceiling: CeilingChoice,
 }
 
 /// Campos ausentes ficam como estão; `Some(None)` limpa.
@@ -136,7 +140,8 @@ pub struct AssetPatch {
     pub display_name: Option<String>,
     pub manual_price: Option<Option<Decimal>>,
     pub score_override: Option<Option<u8>>,
-    pub max_price: Option<Option<Decimal>>,
+    /// A escolha nova do teto (`CeilingChoice::None` tira o teto).
+    pub ceiling: Option<CeilingChoice>,
     /// `Some(None)` volta ao padrão.
     pub tax_instrument: Option<Option<TaxInstrument>>,
 }
@@ -213,6 +218,7 @@ struct AssetRow {
     listed_on_b3: bool,
     treasury: bool,
     max_price: Option<Decimal>,
+    ceiling_method: Option<String>,
     tax_instrument: String,
     tax_instrument_custom: bool,
 }
@@ -258,7 +264,7 @@ struct ContributionItemRow {
 /// aceita SQL estático (`&'static str`), e a lista é a única parte repetida.
 macro_rules! asset_columns {
     () => {
-        "id, asset_class, symbol, display_name, quantity, manual_price, score_override, listed_on_b3, treasury, max_price,          tax_instrument, tax_instrument_custom"
+        "id, asset_class, symbol, display_name, quantity, manual_price, score_override, listed_on_b3, treasury, max_price, ceiling_method, tax_instrument, tax_instrument_custom"
     };
 }
 
@@ -270,6 +276,31 @@ pub use ledger::{
 
 fn decode_error(what: &str) -> sqlx::Error {
     sqlx::Error::Decode(format!("valor desconhecido no banco: {what}").into())
+}
+
+/// A escolha do teto pelas duas colunas (`ceiling_method`, `max_price`); o
+/// banco garante que as duas não coexistem.
+fn ceiling_choice(
+    method: Option<&str>,
+    max_price: Option<Decimal>,
+) -> Result<CeilingChoice, sqlx::Error> {
+    match (method, max_price) {
+        (None, None) => Ok(CeilingChoice::None),
+        (None, Some(value)) => Ok(CeilingChoice::Manual(value.normalize())),
+        (Some(method), None) => CeilingMethod::parse(method)
+            .map(CeilingChoice::Method)
+            .ok_or_else(|| decode_error(method)),
+        (Some(method), Some(_)) => Err(decode_error(method)),
+    }
+}
+
+/// As duas colunas de uma escolha de teto: o método e o valor próprio.
+fn ceiling_columns(choice: CeilingChoice) -> (Option<&'static str>, Option<Decimal>) {
+    match choice {
+        CeilingChoice::None => (None, None),
+        CeilingChoice::Method(method) => (Some(method.as_str()), None),
+        CeilingChoice::Manual(value) => (None, Some(value)),
+    }
 }
 
 impl TryFrom<AssetRow> for Asset {
@@ -287,7 +318,7 @@ impl TryFrom<AssetRow> for Asset {
             score_override: row.score_override.and_then(|s| u8::try_from(s).ok()),
             listed_on_b3: row.listed_on_b3,
             treasury: row.treasury,
-            max_price: row.max_price.map(|p| p.normalize()),
+            ceiling: ceiling_choice(row.ceiling_method.as_deref(), row.max_price)?,
             tax_instrument: TaxInstrument::parse(&row.tax_instrument)
                 .ok_or_else(|| decode_error(&row.tax_instrument))?,
             tax_instrument_custom: row.tax_instrument_custom,
@@ -494,6 +525,7 @@ impl Store {
             None if current.tax_instrument_custom => (current.tax_instrument, true),
             None => (default, false),
         };
+        let (ceiling_method, ceiling_value) = ceiling_columns(patch.ceiling.unwrap_or_default());
         let row: AssetRow = sqlx::query_as(concat!(
             "update assets set
                 display_name = coalesce($3, display_name),
@@ -501,6 +533,7 @@ impl Store {
                 score_override = case when $6 then $7 else score_override end,
                 listed_on_b3 = coalesce($8, listed_on_b3),
                 max_price = case when $9 then $10 else max_price end,
+                ceiling_method = case when $9 then $13 else ceiling_method end,
                 tax_instrument = $11,
                 tax_instrument_custom = $12,
                 updated_at = now()
@@ -517,10 +550,11 @@ impl Store {
         .bind(patch.score_override.is_some())
         .bind(patch.score_override.flatten().map(i16::from))
         .bind(patch.listed_on_b3)
-        .bind(patch.max_price.is_some())
-        .bind(patch.max_price.flatten())
+        .bind(patch.ceiling.is_some())
+        .bind(ceiling_value)
         .bind(tax_instrument.as_str())
         .bind(tax_instrument_custom)
+        .bind(ceiling_method)
         .fetch_one(&mut *tx)
         .await?;
         tx.commit().await?;
@@ -968,8 +1002,8 @@ async fn insert_asset_row(
     new: &NewAsset,
 ) -> Result<Asset, StoreError> {
     let result: Result<AssetRow, sqlx::Error> = sqlx::query_as(concat!(
-        "insert into assets (id, user_id, asset_class, symbol, display_name, quantity, manual_price, score_override, listed_on_b3, treasury, max_price, tax_instrument)
-         values ($1, $2, $3, $4, $5, 0, $6, $7, $8, $9, $10, $11) returning ",
+        "insert into assets (id, user_id, asset_class, symbol, display_name, quantity, manual_price, score_override, listed_on_b3, treasury, max_price, tax_instrument, ceiling_method)
+         values ($1, $2, $3, $4, $5, 0, $6, $7, $8, $9, $10, $11, $12) returning ",
         asset_columns!(),
         ""
     ))
@@ -982,7 +1016,7 @@ async fn insert_asset_row(
     .bind(new.score_override.map(i16::from))
     .bind(new.listed_on_b3)
     .bind(new.treasury)
-    .bind(new.max_price)
+    .bind(ceiling_columns(new.ceiling).1)
     .bind(
         TaxInstrument::default_for(
             new.asset_class,
@@ -992,6 +1026,7 @@ async fn insert_asset_row(
         )
         .as_str(),
     )
+    .bind(ceiling_columns(new.ceiling).0)
     .fetch_one(&mut **tx)
     .await;
     match result {

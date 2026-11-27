@@ -24,6 +24,7 @@ mod performance;
 mod price_references;
 mod profit;
 mod projection;
+pub(crate) mod references;
 mod results;
 mod risk;
 pub(crate) mod tax;
@@ -296,6 +297,7 @@ pub fn public_router(state: AppState, static_dir: &str) -> Router {
             "/assets/{id}",
             patch(handlers::update_asset).delete(handlers::delete_asset),
         )
+        .route("/assets/{id}/references", get(references::asset_references))
         .route(
             "/checklists/{checklist}/questions",
             post(handlers::add_question),

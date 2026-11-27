@@ -32,7 +32,9 @@
 use rust_decimal::{Decimal, RoundingStrategy};
 use uuid::Uuid;
 
+use super::analysis::references::ReferenceGap;
 use super::asset_class::{AssetClass, UnitKind};
+use super::ceiling::{Ceiling, CeilingMethod, CeilingSource};
 
 #[cfg(test)]
 mod legacy;
@@ -62,9 +64,10 @@ pub struct Holding {
     /// bitcoin da B3 é cota inteira dentro de Criptomoedas).
     pub unit: UnitKind,
     pub score: u8,
-    /// Teto de preço da pessoa, em reais por unidade. Acima dele o ativo fica
-    /// fora deste aporte.
-    pub max_price: Option<Decimal>,
+    /// O teto de preço de hoje, pela escolha da pessoa (`domain::ceiling`).
+    /// Acima dele, ou com o método escolhido sem valor, o ativo fica fora deste
+    /// aporte.
+    pub ceiling: Ceiling,
 }
 
 impl Holding {
@@ -72,9 +75,28 @@ impl Holding {
         self.unit_price.filter(|p| *p > Decimal::ZERO)
     }
 
+    /// O teto em reais por unidade, quando há um com valor.
+    fn max_price(&self) -> Option<Decimal> {
+        self.ceiling.value()
+    }
+
     /// Tem nota e preço, mas o preço passou do teto da pessoa.
     fn above_ceiling(&self) -> bool {
-        matches!((self.price(), self.max_price), (Some(price), Some(max)) if price > max)
+        matches!((self.price(), self.max_price()), (Some(price), Some(max)) if price > max)
+    }
+
+    /// A pessoa escolheu um método de teto que hoje está sem valor.
+    fn ceiling_unavailable(&self) -> Option<(CeilingMethod, ReferenceGap)> {
+        match self.ceiling {
+            Ceiling::Unavailable { method, reason } => Some((method, reason)),
+            _ => None,
+        }
+    }
+
+    /// O teto tira o ativo deste aporte: o preço passou dele, ou o método
+    /// escolhido está sem valor.
+    fn blocked_by_ceiling(&self) -> bool {
+        self.above_ceiling() || self.ceiling_unavailable().is_some()
     }
 
     /// Tem fatia na composição-alvo: nota e preço. O teto não tira a fatia.
@@ -82,9 +104,9 @@ impl Holding {
         self.score > 0 && self.price().is_some()
     }
 
-    /// Recebe neste aporte: tem fatia e o preço de hoje está até o teto.
+    /// Recebe neste aporte: tem fatia e o teto não o tira.
     fn is_eligible(&self) -> bool {
-        self.has_slice() && !self.above_ceiling()
+        self.has_slice() && !self.blocked_by_ceiling()
     }
 }
 
@@ -153,6 +175,9 @@ pub enum BlockReason {
     Unpriced,
     /// Os ativos com nota e preço estão todos acima do teto de preço da pessoa.
     AboveCeiling,
+    /// Os ativos com nota e preço estão fora pelo teto, e ao menos um porque o
+    /// método de teto que a pessoa escolheu está sem valor hoje.
+    CeilingUnavailable,
     /// Os ativos que receberiam já estão no limite de concentração.
     ConcentrationLimit,
 }
@@ -164,6 +189,7 @@ impl BlockReason {
             BlockReason::Unrated => "unrated",
             BlockReason::Unpriced => "unpriced",
             BlockReason::AboveCeiling => "above_ceiling",
+            BlockReason::CeilingUnavailable => "ceiling_unavailable",
             BlockReason::ConcentrationLimit => "concentration_limit",
         }
     }
@@ -191,6 +217,16 @@ pub enum Notice {
         label: String,
         price: Decimal,
         max_price: Decimal,
+        /// Valor próprio ou o método que deu o teto.
+        source: CeilingSource,
+    },
+    /// O método de teto que a pessoa escolheu está sem valor hoje: o ativo fica
+    /// fora deste aporte até voltar a ter (nunca cai para "sem teto").
+    AssetCeilingUnavailable {
+        asset_id: Uuid,
+        label: String,
+        method: CeilingMethod,
+        reason: ReferenceGap,
     },
     /// O limite de concentração mudou o plano: `assets` pararam nele (o que
     /// iria para eles foi para os outros da classe), e `amount` ficou sem
@@ -680,6 +716,11 @@ fn notices(targets: Targets, classes: &[ClassState; 7], holdings: &[Holding]) ->
             } else if state.candidates {
                 // Tem quem receberia, mas todos já estão no limite.
                 BlockReason::ConcentrationLimit
+            } else if members
+                .iter()
+                .any(|h| h.score > 0 && h.price().is_some() && h.ceiling_unavailable().is_some())
+            {
+                BlockReason::CeilingUnavailable
             } else if members.iter().any(|h| h.score > 0 && h.above_ceiling()) {
                 BlockReason::AboveCeiling
             } else if members.iter().any(|h| h.score > 0) {
@@ -696,15 +737,25 @@ fn notices(targets: Targets, classes: &[ClassState; 7], holdings: &[Holding]) ->
         }
     }
     for holding in holdings.iter().filter(|h| h.score > 0) {
-        if let (true, Some(price), Some(max_price)) =
-            (holding.above_ceiling(), holding.price(), holding.max_price)
-        {
-            out.push(Notice::AssetAboveCeiling {
-                asset_id: holding.asset_id,
-                label: holding.label.clone(),
-                price,
-                max_price,
-            });
+        match (holding.ceiling, holding.price()) {
+            (Ceiling::Price { source, value }, Some(price)) if price > value => {
+                out.push(Notice::AssetAboveCeiling {
+                    asset_id: holding.asset_id,
+                    label: holding.label.clone(),
+                    price,
+                    max_price: value,
+                    source,
+                });
+            }
+            (Ceiling::Unavailable { method, reason }, _) => {
+                out.push(Notice::AssetCeilingUnavailable {
+                    asset_id: holding.asset_id,
+                    label: holding.label.clone(),
+                    method,
+                    reason,
+                });
+            }
+            _ => {}
         }
     }
     let without_price: Vec<String> = holdings
@@ -825,7 +876,7 @@ mod tests {
             unit_price: price,
             unit: class.native_market().unit_kind(),
             score,
-            max_price: None,
+            ceiling: Ceiling::None,
         }
     }
 
@@ -1251,7 +1302,7 @@ mod tests {
             holding(BrStocks, "BOA3", dec!(500), Some(dec!(20)), 4),
         ];
         let mut capped = free.clone();
-        capped[0].max_price = Some(dec!(30));
+        capped[0].ceiling = manual(dec!(30));
         assert!(capped[0].above_ceiling() && !capped[0].is_eligible());
         assert_eq!(ideal_class_percents(&capped), ideal_class_percents(&free));
         assert_eq!(ideal_class_percents(&capped)[0].round_dp(2), dec!(66.67));
@@ -1309,9 +1360,16 @@ mod tests {
         assert_eq!(ClassStatus::NoTarget.as_str(), "no_target");
     }
 
+    fn manual(value: Decimal) -> Ceiling {
+        Ceiling::Price {
+            source: CeilingSource::Manual,
+            value,
+        }
+    }
+
     fn with_ceiling(holding: Holding, max_price: Decimal) -> Holding {
         Holding {
-            max_price: Some(max_price),
+            ceiling: manual(max_price),
             ..holding
         }
     }
@@ -1378,6 +1436,7 @@ mod tests {
             label: "CARA3".into(),
             price: dec!(32.50),
             max_price: dec!(30),
+            source: CeilingSource::Manual,
         }));
         // Preço igual ao teto ainda compra.
         let at = vec![with_ceiling(
@@ -1393,6 +1452,91 @@ mod tests {
             .notices
             .iter()
             .any(|n| matches!(n, Notice::AssetAboveCeiling { .. })));
+    }
+
+    /// O teto pelo Graham de uma ação com prejuízo fica sem valor: a ação sai
+    /// do aporte com o motivo, em vez de cair calada para "sem teto".
+    #[test]
+    fn a_method_ceiling_without_value_sits_out_with_the_method_and_the_reason() {
+        use AssetClass::*;
+        let unavailable = Ceiling::Unavailable {
+            method: CeilingMethod::Graham,
+            reason: ReferenceGap::Loss,
+        };
+        let holdings = vec![
+            Holding {
+                ceiling: unavailable,
+                ..holding(BrStocks, "PREJ3", dec!(500), Some(dec!(10)), 8)
+            },
+            holding(BrStocks, "BOA3", dec!(500), Some(dec!(20)), 4),
+        ];
+        let mut targets = Targets::default();
+        targets.set(BrStocks, FULL_BP);
+        let first = plan(dec!(1000), targets, &holdings, Limits::default());
+        assert_money_adds_up(&first);
+        assert!(item(&first, &holdings, "PREJ3").is_none());
+        // Fora da divisão, PREJ3 ocupa o espaço dele, como o ativo acima do teto.
+        assert_eq!(
+            item(&first, &holdings, "BOA3").map(|i| i.quantity),
+            Some(dec!(50))
+        );
+        assert!(first.notices.contains(&Notice::AssetCeilingUnavailable {
+            asset_id: holdings[0].asset_id,
+            label: "PREJ3".into(),
+            method: CeilingMethod::Graham,
+            reason: ReferenceGap::Loss,
+        }));
+        // O ideal não muda: o teto é filtro deste aporte, não da carteira.
+        assert_eq!(
+            ideal_class_percents(&holdings),
+            ideal_class_percents(&[
+                holding(BrStocks, "PREJ3", dec!(500), Some(dec!(10)), 8),
+                holdings[1].clone()
+            ])
+        );
+
+        // Sozinha na classe, a classe fica bloqueada pelo teto sem valor.
+        let alone = vec![
+            holdings[0].clone(),
+            holding(FixedIncome, "Tesouro", dec!(500), Some(Decimal::ONE), 5),
+        ];
+        let mut half = Targets::default();
+        half.set(BrStocks, 5000);
+        half.set(FixedIncome, 5000);
+        let blocked = plan(dec!(1000), half, &alone, Limits::default());
+        assert_eq!(
+            reason_of(&blocked, BrStocks),
+            Some(BlockReason::CeilingUnavailable)
+        );
+        assert_eq!(class(&blocked, BrStocks).status, ClassStatus::Blocked);
+        assert_eq!(
+            BlockReason::CeilingUnavailable.as_str(),
+            "ceiling_unavailable"
+        );
+    }
+
+    #[test]
+    fn a_method_ceiling_with_value_works_like_a_manual_one() {
+        use AssetClass::*;
+        let by_method = |value| Ceiling::Price {
+            source: CeilingSource::Method(CeilingMethod::Bazin),
+            value,
+        };
+        let holdings = vec![Holding {
+            ceiling: by_method(dec!(30)),
+            ..holding(BrStocks, "CARA3", dec!(500), Some(dec!(32.50)), 8)
+        }];
+        let mut targets = Targets::default();
+        targets.set(BrStocks, FULL_BP);
+        let plan = plan(dec!(1000), targets, &holdings, Limits::default());
+        assert!(plan.items.is_empty());
+        assert!(plan.notices.contains(&Notice::AssetAboveCeiling {
+            asset_id: holdings[0].asset_id,
+            label: "CARA3".into(),
+            price: dec!(32.50),
+            max_price: dec!(30),
+            source: CeilingSource::Method(CeilingMethod::Bazin),
+        }));
     }
 
     #[test]
@@ -1667,17 +1811,33 @@ mod tests {
         }
 
         /// Teto de preço em metade dos ativos com cotação, ora abaixo, ora
-        /// acima do preço (de 50% a 150% dele).
+        /// acima do preço (de 50% a 150% dele), às vezes pelo método e às
+        /// vezes com o método sem valor.
         fn arb_holding_with_ceiling() -> impl Strategy<Value = Holding> {
-            (arb_holding(), prop::option::weighted(0.5, 50u32..150)).prop_map(|(h, factor)| {
-                let max_price = match (h.unit, h.price(), factor) {
-                    (UnitKind::Value, _, _) | (_, None, _) | (_, _, None) => None,
-                    (_, Some(price), Some(f)) => {
-                        Some((price * Decimal::from(f) / HUNDRED).round_dp(2).max(CENT))
-                    }
-                };
-                Holding { max_price, ..h }
-            })
+            (
+                arb_holding(),
+                prop::option::weighted(0.5, 50u32..150),
+                prop::bool::weighted(0.3),
+                prop::bool::weighted(0.15),
+            )
+                .prop_map(|(h, factor, by_method, unavailable)| {
+                    let ceiling = match (h.unit, h.price(), factor) {
+                        (UnitKind::Value, _, _) | (_, None, _) | (_, _, None) => Ceiling::None,
+                        _ if unavailable => Ceiling::Unavailable {
+                            method: CeilingMethod::Graham,
+                            reason: ReferenceGap::Loss,
+                        },
+                        (_, Some(price), Some(f)) => Ceiling::Price {
+                            source: if by_method {
+                                CeilingSource::Method(CeilingMethod::Combined)
+                            } else {
+                                CeilingSource::Manual
+                            },
+                            value: (price * Decimal::from(f) / HUNDRED).round_dp(2).max(CENT),
+                        },
+                    };
+                    Holding { ceiling, ..h }
+                })
         }
 
         /// Limite de 1% a 100%, às vezes desligado.
@@ -1704,11 +1864,17 @@ mod tests {
                 prop_assert!(item.value > Decimal::ZERO);
                 // Com teto, nenhum ativo acima do teto recebe.
                 prop_assert!(
-                    h.max_price.is_none_or(|max| item.unit_price <= max),
+                    h.max_price().is_none_or(|max| item.unit_price <= max),
                     "{} acima do teto recebeu: {} > {:?}",
                     h.label,
                     item.unit_price,
-                    h.max_price
+                    h.max_price()
+                );
+                // Teto pelo método sem valor: o ativo nunca recebe.
+                prop_assert!(
+                    h.ceiling_unavailable().is_none(),
+                    "{} com teto sem valor recebeu",
+                    h.label
                 );
             }
             assert_classes_never_pass_their_target(plan, targets, holdings, amount)

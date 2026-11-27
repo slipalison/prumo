@@ -5,7 +5,9 @@
 //! taxa de cada título em cada dia, de 2004 até a última divulgação — uns 15 MB.
 //! O Prumo lê o arquivo em fluxo, linha a linha, e guarda só o mais recente de
 //! cada título que ainda não venceu: a cotação de resgate (`PU Venda Manha`, o
-//! preço a que o Tesouro recompra o título da pessoa).
+//! preço a que o Tesouro recompra o título da pessoa) e a taxa de compra
+//! (`Taxa Compra Manha`). Da taxa dos títulos IPCA+ sai o juro real de
+//! referência dos FIIs de tijolo ([`crate::domain::market_rates`]).
 //!
 //! O Tesouro divulga uma vez por dia útil e o preço não muda fora disso, então
 //! o Prumo baixa a tabela no máximo uma vez a cada [`MAX_AGE`]. A explicação e
@@ -27,6 +29,7 @@ use time::macros::offset;
 use time::{Date, OffsetDateTime, Time, UtcOffset};
 
 use crate::domain::asset_class::Market;
+use crate::domain::market_rates::{is_real_rate_bond, pick_real_rate, RealRate};
 use crate::domain::treasury::{unique_names, Bond, BondKind};
 use crate::live::LiveQuotes;
 use crate::quotes::Quote;
@@ -65,6 +68,22 @@ pub struct BondPrice {
     /// `PU Venda Manha`: quanto o Tesouro paga por um título inteiro.
     pub redemption_price: Decimal,
     pub base_date: Date,
+    /// `Taxa Compra Manha`, em % ao ano: a taxa de quem compra o título no dia.
+    /// Só existe quando o título está à venda (`PU Compra Manha` maior que
+    /// zero) e as duas colunas estão no arquivo.
+    pub buy_rate: Option<Decimal>,
+}
+
+impl BondPrice {
+    /// A taxa do dia como juro real, nos títulos IPCA+.
+    pub fn real_rate(&self) -> Option<RealRate> {
+        let percent = self.buy_rate?;
+        is_real_rate_bond(self.bond.kind).then_some(RealRate {
+            bond: self.bond,
+            percent,
+            base_date: self.base_date,
+        })
+    }
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -94,6 +113,8 @@ struct Columns {
     maturity: usize,
     base_date: usize,
     redemption: usize,
+    /// A taxa e o preço de compra: opcionais (sem eles, só não há taxa).
+    buy_rate: Option<(usize, usize)>,
     widest: usize,
 }
 
@@ -128,11 +149,14 @@ impl Columns {
         let maturity = find("data vencimento")?;
         let base_date = find("data base")?;
         let redemption = find("pu venda manha")?;
+        let optional = |wanted: &str| names.iter().position(|n| n == wanted);
+        let buy_rate = optional("taxa compra manha").zip(optional("pu compra manha"));
         Ok(Self {
             title,
             maturity,
             base_date,
             redemption,
+            buy_rate,
             widest: [title, maturity, base_date, redemption]
                 .into_iter()
                 .max()
@@ -177,7 +201,8 @@ pub struct Parsed {
 pub struct PriceBoard {
     today: Date,
     columns: Option<Columns>,
-    latest: BTreeMap<Bond, (Date, Decimal)>,
+    /// Título → (data-base, preço de resgate, taxa de compra).
+    latest: BTreeMap<Bond, (Date, Decimal, Option<Decimal>)>,
     unknown_titles: BTreeSet<String>,
     unreadable_rows: usize,
 }
@@ -227,11 +252,21 @@ impl PriceBoard {
         if maturity < self.today || price <= Decimal::ZERO {
             return Ok(());
         }
+        // A taxa de compra só vale no dia em que o título está à venda.
+        let buy_rate = columns.buy_rate.and_then(|(rate, buy_price)| {
+            let offered = fields
+                .get(buy_price)
+                .and_then(|f| parse_price(f))
+                .is_some_and(|p| p > Decimal::ZERO);
+            offered
+                .then(|| fields.get(rate).and_then(|f| parse_price(f)))
+                .flatten()
+        });
         let bond = Bond::new(kind, maturity);
         match self.latest.get(&bond) {
-            Some((date, _)) if *date >= base_date => {}
+            Some((date, _, _)) if *date >= base_date => {}
             _ => {
-                self.latest.insert(bond, (base_date, price));
+                self.latest.insert(bond, (base_date, price, buy_rate));
             }
         }
         Ok(())
@@ -254,11 +289,14 @@ impl PriceBoard {
             prices: self
                 .latest
                 .into_iter()
-                .map(|(bond, (base_date, redemption_price))| BondPrice {
-                    bond,
-                    redemption_price,
-                    base_date,
-                })
+                .map(
+                    |(bond, (base_date, redemption_price, buy_rate))| BondPrice {
+                        bond,
+                        redemption_price,
+                        base_date,
+                        buy_rate,
+                    },
+                )
                 .collect(),
             unknown_titles: self.unknown_titles,
             unreadable_rows: self.unreadable_rows,
@@ -428,6 +466,9 @@ pub enum SyncError {
 pub struct SyncReport {
     pub bonds: usize,
     pub pruned: u64,
+    /// O juro real de referência que a rodada gravou, se a tabela trouxe um
+    /// título IPCA+ com taxa.
+    pub real_rate: Option<RealRate>,
 }
 
 /// A data de hoje em Brasília.
@@ -497,9 +538,17 @@ impl TreasurySync {
                 .await?;
         }
         let pruned = self.store.prune_treasury(&symbols).await?;
+        // O juro real de referência dos FIIs de tijolo: a NTN-B mais perto de
+        // 10 anos, do dia mais novo. Tabela sem IPCA+ com taxa: o de ontem fica.
+        let rates: Vec<RealRate> = prices.iter().filter_map(BondPrice::real_rate).collect();
+        let real_rate = pick_real_rate(&rates);
+        if let Some(rate) = &real_rate {
+            self.store.save_real_rate(rate, now).await?;
+        }
         let report = SyncReport {
             bonds: symbols.len(),
             pruned,
+            real_rate,
         };
         self.live.announce(symbols.into_iter().collect());
         Ok(report)
@@ -586,6 +635,63 @@ mod tests {
             Some((dec!(20305.65), date!(2026 - 11 - 19)))
         );
         assert_eq!(parsed.prices.len(), 1);
+    }
+
+    #[test]
+    fn keeps_the_buy_rate_of_the_newest_row_when_the_bond_is_on_sale() {
+        let parsed = parse_csv(
+            &csv(&[
+                "Tesouro IPCA+ com Juros Semestrais;15/05/2037;26/11/2026;7,60;7,72;4275,56;4237,24;4237,24",
+                "Tesouro IPCA+ com Juros Semestrais;15/05/2037;25/11/2026;7,71;7,83;4240,26;4202,32;4202,32",
+                // Fora de venda para compra no dia (PU de compra zerado): sem taxa.
+                "Tesouro IPCA+;15/05/2035;26/11/2026;7,73;7,85;0,00;2531,74;2531,74",
+                "Tesouro Selic;01/03/2029;26/11/2026;0,05;0,06;20320,65;20305,65;20305,65",
+            ]),
+            TODAY,
+        )
+        .unwrap();
+        let find = |kind, maturity| {
+            parsed
+                .prices
+                .iter()
+                .find(|p| p.bond == Bond::new(kind, maturity))
+                .unwrap()
+        };
+        let ntnb = find(BondKind::IpcaPlusWithCoupons, date!(2037 - 05 - 15));
+        assert_eq!(ntnb.buy_rate, Some(dec!(7.60)));
+        assert_eq!(
+            ntnb.real_rate(),
+            Some(RealRate {
+                bond: ntnb.bond,
+                percent: dec!(7.60),
+                base_date: date!(2026 - 11 - 26)
+            })
+        );
+        assert_eq!(
+            find(BondKind::IpcaPlus, date!(2035 - 05 - 15)).buy_rate,
+            None
+        );
+        // Selic tem taxa, mas não é juro real.
+        let selic = find(BondKind::Selic, date!(2029 - 03 - 01));
+        assert_eq!(selic.buy_rate, Some(dec!(0.05)));
+        assert_eq!(selic.real_rate(), None);
+        let rates: Vec<RealRate> = parsed
+            .prices
+            .iter()
+            .filter_map(BondPrice::real_rate)
+            .collect();
+        assert_eq!(pick_real_rate(&rates).map(|r| r.bond), Some(ntnb.bond));
+    }
+
+    #[test]
+    fn without_the_buy_columns_the_price_is_still_read() {
+        let text = "Tipo Titulo;Data Vencimento;Data Base;PU Venda Manha
+                    Tesouro IPCA+;15/05/2035;19/11/2026;2500,95
+";
+        let parsed = parse_csv(text, TODAY).unwrap();
+        assert_eq!(parsed.prices.len(), 1);
+        assert_eq!(parsed.prices[0].buy_rate, None);
+        assert_eq!(parsed.prices[0].redemption_price, dec!(2500.95));
     }
 
     #[test]

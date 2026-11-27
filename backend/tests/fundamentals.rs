@@ -376,7 +376,7 @@ async fn asset(store: &Store, user: Uuid, class: AssetClass, symbol: Option<&str
                 score_override: None,
                 listed_on_b3: listed,
                 treasury: false,
-                max_price: None,
+                ceiling: prumo::domain::ceiling::CeilingChoice::None,
             },
         )
         .await

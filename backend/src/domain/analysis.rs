@@ -22,6 +22,7 @@
 //!
 //! Tudo aqui é puro: recebe fatos já prontos e devolve resultados.
 
+pub mod fund_references;
 pub mod highlights;
 pub mod profile;
 pub mod quality;
@@ -53,7 +54,7 @@ pub const MIN_YIELD_HISTORY_MONTHS: i32 = 12;
 pub const MIN_GROWTH_HISTORY_MONTHS: i32 = 24;
 /// O tipo de FII que protege da inflação (o mesmo texto que a fonte da CVM
 /// grava em `sector_reference`).
-const BRICK_SECTOR: &str = "Tijolo";
+const BRICK_SECTOR: &str = super::sector::FundType::Brick.label();
 
 /// Maior limite aceito para as regras de contagem.
 /// Percentual do valor que precisa passar nas regras de Qualidade, de fábrica.

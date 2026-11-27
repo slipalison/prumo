@@ -462,6 +462,10 @@ impl AlertService {
                 rules::class_drifts(&shares, limit, view.total_value <= Decimal::ZERO)
             }
             AlertKind::PriceBelowCeiling => {
+                // O teto de hoje, pela escolha da pessoa: o mesmo do plano. O
+                // método sem valor hoje não tem preço para comparar.
+                let ceilings =
+                    crate::ceiling::resolve_ceilings(&self.store, user, view, today).await?;
                 let assets: Vec<CeilingAsset> = view
                     .assets
                     .iter()
@@ -469,7 +473,7 @@ impl AlertService {
                         asset_id: a.asset.id,
                         label: a.label(),
                         price: a.unit_price,
-                        ceiling: a.asset.max_price,
+                        ceiling: ceilings.get(&a.asset.id).and_then(|c| c.value()),
                     })
                     .collect();
                 rules::below_ceiling(&assets)

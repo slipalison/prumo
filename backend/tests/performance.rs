@@ -257,7 +257,10 @@ async fn daily_job_is_idempotent_and_separates_flow_from_return(
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(cdi_from, day1 - Duration::days(10));
+    // O CDI é pedido desde 400 dias antes de hoje (os 12 meses dele são o alvo
+    // do FII de papel), mesmo com a primeira foto de ontem; o falso só tem 20
+    // dias, que entram todos.
+    assert_eq!(cdi_from, day1 + Duration::days(1) - Duration::days(19));
     assert_eq!(cdi_to, day1 + Duration::days(1));
     // O Ibovespa é pedido desde o começo da janela mais longa do risco.
     let ibov_from = requests
@@ -267,6 +270,11 @@ async fn daily_job_is_idempotent_and_separates_flow_from_return(
         .min()
         .unwrap();
     assert_eq!(ibov_from, history_start(day1));
+    let first_cdi = requests
+        .iter()
+        .find(|r| r.0 == "cdi")
+        .expect("o CDI foi pedido");
+    assert!(first_cdi.1 <= day1 - Duration::days(365), "{first_cdi:?}");
     assert!(db
         .store
         .index_bounds(IndexCode::Ipca)

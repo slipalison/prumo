@@ -437,32 +437,67 @@ async fn quality_attention_and_graham_contract() {
     close(&point("low_revenue_growth")["percent"], 0.0);
 
     // Graham: lucro por ação 1,80 e patrimônio por ação 10 => √(22,5 × 1,8 × 10).
-    let references = body["references"]["items"].as_array().unwrap();
-    let fort_ref = references.iter().find(|r| r["label"] == "FORT3").unwrap();
-    close(&fort_ref["graham"], 20.12);
-    assert_eq!(fort_ref["bazin"], Value::Null);
+    let stocks = body["references"]["stocks"].as_array().unwrap();
+    let fort_ref = stocks.iter().find(|r| r["label"] == "FORT3").unwrap();
+    close(&fort_ref["graham"]["value"], 20.12);
+    assert_eq!(fort_ref["bazin"]["value"], Value::Null);
+    assert_eq!(fort_ref["bazin"]["gap"], "no_dividends");
     // Só o Graham: o teto pelas duas é ele.
-    close(&fort_ref["ceiling"], 20.12);
+    close(&fort_ref["combined"]["value"], 20.12);
     close(&fort_ref["unit_price"], 40.0);
-    let frac_ref = references.iter().find(|r| r["label"] == "FRAC3").unwrap();
-    close(&frac_ref["graham"], 6.71);
-    // O botão de aplicar como teto é o PATCH do ativo, e o teto volta na análise.
+    let frac_ref = stocks.iter().find(|r| r["label"] == "FRAC3").unwrap();
+    close(&frac_ref["graham"]["value"], 6.71);
+    // FIIs: o VP do informe mensal (P/VP 1), 100 e 10 por cota; sem tipo da
+    // CVM, sem Rendimento. Ação dos EUA fica fora das duas tabelas.
+    let funds = body["references"]["funds"].as_array().unwrap();
+    let knri_ref = funds.iter().find(|r| r["label"] == "KNRI11").unwrap();
+    close(&knri_ref["nav"]["value"], 100.0);
+    assert_eq!(knri_ref["fund_yield"]["gap"], "unknown_fund_type");
+    close(&knri_ref["combined"]["value"], 100.0);
+    let mxrf_ref = funds.iter().find(|r| r["label"] == "MXRF11").unwrap();
+    close(&mxrf_ref["nav"]["value"], 10.0);
+    assert!(stocks.iter().chain(funds).all(|r| r["label"] != "AAPL"));
+    // Valor próprio e método passam pelo mesmo PATCH, e o teto volta na análise.
     let applied = patch(
         &app.router,
         &format!("/api/v1/assets/{fort}"),
-        json!({ "max_price": 20.12 }),
+        json!({ "ceiling": { "method": "manual", "value": 20.12 } }),
     )
     .await;
     assert_eq!(applied.status, StatusCode::OK, "{}", applied.text);
     let body = analysis(&app).await;
-    let fort_ref = body["references"]["items"]
+    let fort_ref = body["references"]["stocks"]
         .as_array()
         .unwrap()
         .iter()
         .find(|r| r["label"] == "FORT3")
         .unwrap()
         .clone();
-    close(&fort_ref["max_price"], 20.12);
+    assert_eq!(fort_ref["ceiling"]["method"], "manual");
+    close(&fort_ref["ceiling"]["value"], 20.12);
+    let graham = patch(
+        &app.router,
+        &format!("/api/v1/assets/{fort}"),
+        json!({ "ceiling": { "method": "graham" } }),
+    )
+    .await;
+    assert_eq!(graham.status, StatusCode::OK, "{}", graham.text);
+    assert_eq!(graham.body["ceiling"]["method"], "graham");
+    close(&graham.body["ceiling"]["value"], 20.12);
+    // FII não tem Graham: o método é recusado, com 4xx.
+    let knri_id = knri_ref["asset_id"].as_str().unwrap();
+    let refused = patch(
+        &app.router,
+        &format!("/api/v1/assets/{knri_id}"),
+        json!({ "ceiling": { "method": "graham" } }),
+    )
+    .await;
+    assert_eq!(
+        refused.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{}",
+        refused.text
+    );
 
     // O limite é da pessoa: com 60%, o ROE (66,67%) passa; a regra sem limite não aceita um.
     let tuned = put(
@@ -497,7 +532,8 @@ async fn quality_attention_and_graham_contract() {
         empty["attention"],
         json!({ "assessed": 0, "without_data": 0, "items": [] })
     );
-    assert_eq!(empty["references"]["items"], json!([]));
+    assert_eq!(empty["references"]["stocks"], json!([]));
+    assert_eq!(empty["references"]["funds"], json!([]));
 }
 
 fn app_for(db: &Database, dir: &tempfile_dir::Dir, email: &str) -> TestApp {
@@ -559,6 +595,15 @@ async fn plan_of(app: &TestApp, amount: u32) -> (Value, std::time::Duration) {
     let took = started.elapsed();
     assert_eq!(reply.status, StatusCode::OK, "{}", reply.text);
     (reply.body, took)
+}
+
+/// O valor do chip de `method` nas referências de um item do plano.
+fn chip(references: &Value, method: &str) -> Option<f64> {
+    references
+        .as_array()?
+        .iter()
+        .find(|c| c["method"] == method)
+        .and_then(|c| c["value"].as_f64())
 }
 
 /// O plano sem o aviso: o que o motor decidiu, para comparar.
@@ -624,7 +669,7 @@ async fn the_plan_shows_references_only_for_assets_without_a_ceiling() {
             "asset_class": class, "symbol": symbol, "quantity": 0, "score_override": score
         });
         if let Some(ceiling) = ceiling {
-            body["max_price"] = json!(ceiling);
+            body["ceiling"] = json!({ "method": "manual", "value": ceiling });
         }
         let created = post(&app.router, "/api/v1/assets", body).await;
         assert_eq!(created.status, StatusCode::CREATED, "{}", created.text);
@@ -635,34 +680,35 @@ async fn the_plan_shows_references_only_for_assets_without_a_ceiling() {
     // Sem teto e com as duas referências: o Bazin dos dividendos e o Graham dos
     // fundamentos (os mesmos números da Análise), cada um por si.
     let fort = &plan_item(&plan, "FORT3")["price_references"];
-    close(&fort["bazin"], 20.0);
-    close(&fort["graham"], 20.12);
+    assert_eq!(chip(fort, "bazin"), Some(20.0));
+    assert_eq!(chip(fort, "graham"), Some(20.12));
     // Só o Graham: sem dividendo guardado.
     let frac = &plan_item(&plan, "FRAC3")["price_references"];
-    assert_eq!(frac["bazin"], Value::Null);
-    close(&frac["graham"], 6.71);
-    // Com teto, o critério já é o da pessoa: nenhum aviso, mesmo com Bazin.
+    assert_eq!(chip(frac, "bazin"), None);
+    assert_eq!(chip(frac, "graham"), Some(6.71));
+    // Com teto, o critério já é o da pessoa: nenhum aviso.
     assert_eq!(plan_item(&plan, "KNRI11")["price_references"], Value::Null);
-    // Fundo sem dividendo guardado e cripto: sem nenhuma referência.
-    assert_eq!(plan_item(&plan, "MXRF11")["price_references"], Value::Null);
+    // FII sem teto: o VP do informe mensal, nunca Bazin nem Graham. Cripto:
+    // sem nenhuma referência.
+    let mxrf = &plan_item(&plan, "MXRF11")["price_references"];
+    assert_eq!(chip(mxrf, "nav"), Some(10.0));
+    assert_eq!(chip(mxrf, "bazin"), None);
     assert_eq!(plan_item(&plan, "BTC")["price_references"], Value::Null);
 
     // O que a Análise mostra para os mesmos ativos é o mesmo número.
     let body = analysis(&app).await;
-    for (symbol, bazin, graham) in [("FORT3", 20.0, 20.12), ("FRAC3", 0.0, 6.71)] {
-        let reference = body["references"]["items"]
+    for (symbol, bazin, graham) in [("FORT3", Some(20.0), 20.12), ("FRAC3", None, 6.71)] {
+        let reference = body["references"]["stocks"]
             .as_array()
             .unwrap()
             .iter()
             .find(|r| r["label"] == symbol)
             .unwrap();
         let shown = &plan_item(&plan, symbol)["price_references"];
-        close(&reference["graham"], graham);
-        close(&shown["graham"], graham);
-        if bazin > 0.0 {
-            close(&reference["bazin"]["price"], bazin);
-            close(&shown["bazin"], bazin);
-        }
+        close(&reference["graham"]["value"], graham);
+        assert_eq!(chip(shown, "graham"), Some(graham));
+        assert_eq!(reference["bazin"]["value"].as_f64(), bazin);
+        assert_eq!(chip(shown, "bazin"), bazin);
     }
 
     // O rendimento-alvo é o da pessoa: com 8%, o Bazin cai para R$ 15.
@@ -674,9 +720,9 @@ async fn the_plan_shows_references_only_for_assets_without_a_ceiling() {
     .await;
     assert_eq!(tuned.status, StatusCode::OK, "{}", tuned.text);
     let (eight, _) = plan_of(&app, 10_000).await;
-    close(
-        &plan_item(&eight, "FORT3")["price_references"]["bazin"],
-        15.0,
+    assert_eq!(
+        chip(&plan_item(&eight, "FORT3")["price_references"], "bazin"),
+        Some(15.0)
     );
     assert_eq!(numbers(&eight), numbers(&plan));
 
@@ -686,7 +732,7 @@ async fn the_plan_shows_references_only_for_assets_without_a_ceiling() {
         let raised = patch(
             &app.router,
             &format!("/api/v1/assets/{id}"),
-            json!({ "max_price": 1_000_000 }),
+            json!({ "ceiling": { "method": "manual", "value": 1_000_000 } }),
         )
         .await;
         assert_eq!(raised.status, StatusCode::OK, "{}", raised.text);
@@ -704,13 +750,13 @@ async fn the_plan_shows_references_only_for_assets_without_a_ceiling() {
     let cleared = patch(
         &app.router,
         &format!("/api/v1/assets/{}", ids["KNRI11"]),
-        json!({ "max_price": null }),
+        json!({ "ceiling": null }),
     )
     .await;
     assert_eq!(cleared.status, StatusCode::OK, "{}", cleared.text);
     let (again, _) = plan_of(&app, 10_000).await;
-    close(
-        &plan_item(&again, "KNRI11")["price_references"]["bazin"],
-        15.0,
+    assert_eq!(
+        chip(&plan_item(&again, "KNRI11")["price_references"], "nav"),
+        Some(100.0)
     );
 }

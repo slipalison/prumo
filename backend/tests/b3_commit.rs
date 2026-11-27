@@ -660,7 +660,7 @@ async fn nothing_is_written_when_the_preview_is_stale_blocked_or_fails() {
                 score_override: None,
                 listed_on_b3: true,
                 treasury: false,
-                max_price: None,
+                ceiling: prumo::domain::ceiling::CeilingChoice::None,
             },
         )
         .await
@@ -828,7 +828,7 @@ async fn corporate_events_and_the_existing_book() {
                 score_override: None,
                 listed_on_b3: true,
                 treasury: false,
-                max_price: None,
+                ceiling: prumo::domain::ceiling::CeilingChoice::None,
             },
         )
         .await

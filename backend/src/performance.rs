@@ -23,6 +23,7 @@ use time::{Date, Duration, OffsetDateTime, Time, UtcOffset};
 use uuid::Uuid;
 
 use crate::domain::asset_class::{AssetClass, Market, UnitKind};
+use crate::domain::market_rates::CDI_LOOKBACK_DAYS;
 use crate::domain::monthly_stats::{self, Beat, MonthStats};
 use crate::domain::net_worth::{self, Bridge, FlowPoint};
 use crate::domain::performance::{
@@ -489,14 +490,23 @@ impl Performance {
     /// Baixa o que falta de cada índice, desde um pouco antes da primeira
     /// foto; o Ibovespa, também desde o começo da janela mais longa do risco
     /// (a volatilidade e a queda dele ficam ao lado das da carteira, e as
-    /// datas dele são os pregões). Sem nenhuma foto, não baixa nada.
+    /// datas dele são os pregões). Sem nenhuma foto, só o CDI: os 12 meses
+    /// dele são o alvo do FII de papel (`domain::market_rates`), então ele
+    /// cobre sempre pelo menos [`CDI_LOOKBACK_DAYS`], com ou sem carteira.
     async fn sync_indexes(&self, today: Date) -> Result<usize, StoreError> {
-        let Some(first) = self.store.first_snapshot_date().await? else {
-            return Ok(0);
-        };
-        let start = first - Duration::days(INDEX_LOOKBACK_DAYS);
+        let first = self
+            .store
+            .first_snapshot_date()
+            .await?
+            .map(|first| first - Duration::days(INDEX_LOOKBACK_DAYS));
+        let cdi_floor = today - Duration::days(CDI_LOOKBACK_DAYS);
         let mut stored = 0;
         for code in IndexCode::ALL {
+            let start = match (code, first) {
+                (IndexCode::Cdi, first) => first.map_or(cdi_floor, |f| f.min(cdi_floor)),
+                (_, Some(first)) => first,
+                (_, None) => continue,
+            };
             let start = if code.monthly() {
                 start.replace_day(1).unwrap_or(start)
             } else if code == IndexCode::Ibov {

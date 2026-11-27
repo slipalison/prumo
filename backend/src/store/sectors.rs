@@ -3,10 +3,11 @@
 
 use std::collections::HashMap;
 
+use rust_decimal::Decimal;
 use time::OffsetDateTime;
 
 use super::{decode_error, Store, StoreError};
-use crate::domain::sector::{SectorInfo, SectorSource};
+use crate::domain::sector::{FundComposition, SectorInfo, SectorSource};
 use crate::sectors::SectorEntry;
 
 /// O que a última rodada deixou sobre uma fonte.
@@ -106,6 +107,15 @@ impl Store {
         let subsectors: Vec<Option<&str>> =
             entries.iter().map(|e| e.subsector.as_deref()).collect();
         let segments: Vec<Option<&str>> = entries.iter().map(|e| e.segment.as_deref()).collect();
+        let share = |pick: fn(&FundComposition) -> Decimal| -> Vec<Option<Decimal>> {
+            entries
+                .iter()
+                .map(|e| e.composition.as_ref().map(pick))
+                .collect()
+        };
+        let brick = share(|c| c.brick);
+        let paper = share(|c| c.paper);
+        let funds = share(|c| c.funds);
 
         let mut tx = self.pool.begin().await?;
         sqlx::query("delete from sector_reference where source = $1")
@@ -113,10 +123,12 @@ impl Store {
             .execute(&mut *tx)
             .await?;
         sqlx::query(
-            "insert into sector_reference (source, code, sector, subsector, segment, updated_at)
-             select $1, code, sector, subsector, segment, $6
-               from unnest($2::text[], $3::text[], $4::text[], $5::text[])
-                    as e (code, sector, subsector, segment)",
+            "insert into sector_reference
+                    (source, code, sector, subsector, segment, brick_share, paper_share, funds_share, updated_at)
+             select $1, code, sector, subsector, segment, brick, paper, funds, $6
+               from unnest($2::text[], $3::text[], $4::text[], $5::text[],
+                           $7::numeric[], $8::numeric[], $9::numeric[])
+                    as e (code, sector, subsector, segment, brick, paper, funds)",
         )
         .bind(source.as_str())
         .bind(&codes)
@@ -124,6 +136,9 @@ impl Store {
         .bind(&subsectors)
         .bind(&segments)
         .bind(at)
+        .bind(&brick)
+        .bind(&paper)
+        .bind(&funds)
         .execute(&mut *tx)
         .await?;
         sqlx::query(
@@ -177,5 +192,31 @@ impl Store {
             );
         }
         Ok(found)
+    }
+
+    /// A composição da carteira dos FIIs (código do emissor → frações), dos
+    /// que a CVM classificou com ela.
+    pub async fn fund_compositions(
+        &self,
+        codes: &[String],
+    ) -> Result<HashMap<String, FundComposition>, StoreError> {
+        if codes.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let rows: Vec<(String, Decimal, Decimal, Decimal)> = sqlx::query_as(
+            "select code, brick_share, paper_share, funds_share
+               from sector_reference
+              where source = $1 and code = any($2) and brick_share is not null",
+        )
+        .bind(SectorSource::CvmReits.as_str())
+        .bind(codes)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|(code, brick, paper, funds)| {
+                Some((code, FundComposition::from_shares(brick, paper, funds)?))
+            })
+            .collect())
     }
 }

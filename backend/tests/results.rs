@@ -341,7 +341,7 @@ async fn holding(
                 score_override: None,
                 listed_on_b3: true,
                 treasury: false,
-                max_price: None,
+                ceiling: prumo::domain::ceiling::CeilingChoice::None,
             },
         )
         .await

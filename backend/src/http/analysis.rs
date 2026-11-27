@@ -18,19 +18,24 @@ use uuid::Uuid;
 
 use super::dto::optional_decimal;
 use super::health::{number, sources_dto, RuleChange, SectorSourceDto, WarningDto};
+use super::references::{MarketDto, ReferencesDto};
 use super::{ApiJson, AppState, CurrentUser};
 use crate::analysis::{self as service, AnalysisReport};
+use crate::ceiling::ReferenceContext;
+use crate::domain::analysis::fund_references::validate_premium;
 use crate::domain::analysis::highlights::{Mover, Ranking};
 use crate::domain::analysis::profile::{self, Mix};
 use crate::domain::analysis::quality::{Attention, Point, Profile};
-use crate::domain::analysis::references::{combined_ceiling, validate_bazin_yield, Bazin};
+use crate::domain::analysis::references::validate_bazin_yield;
 use crate::domain::analysis::{
     AnalysisConfig, Detail, Dimension, DimensionReport, Direction, RuleId, RuleResult, Score,
     Status,
 };
 use crate::domain::asset_class::AssetClass;
 use crate::domain::health::{RuleSetting, Unit};
+use crate::domain::income::today_in_brazil;
 use crate::error::{ApiError, ApiResult};
+use crate::store::SettingsChange;
 
 fn day(date: Date) -> String {
     date.format(format_description!("[year]-[month]-[day]"))
@@ -395,54 +400,6 @@ pub struct HighlightsDto {
     pub since_purchase: RankingDto,
 }
 
-#[derive(Debug, Serialize)]
-pub struct BazinDto {
-    /// A referência, em reais por cota.
-    #[serde(with = "number")]
-    pub price: Decimal,
-    /// Dividendo anual médio por cota, em reais.
-    #[serde(with = "number")]
-    pub annual_average: Decimal,
-    /// Quantos anos de 12 meses entraram na média.
-    pub years: u32,
-}
-
-impl From<Bazin> for BazinDto {
-    fn from(b: Bazin) -> Self {
-        Self {
-            price: b.price,
-            annual_average: b.annual_average,
-            years: b.years,
-        }
-    }
-}
-
-#[derive(Debug, Serialize)]
-pub struct ReferenceDto {
-    pub asset_id: Uuid,
-    pub label: String,
-    pub asset_class: AssetClass,
-    #[serde(with = "number::option")]
-    pub unit_price: Option<Decimal>,
-    /// O teto de preço que a pessoa pôs no ativo.
-    #[serde(with = "number::option")]
-    pub max_price: Option<Decimal>,
-    pub bazin: Option<BazinDto>,
-    #[serde(with = "number::option")]
-    pub graham: Option<Decimal>,
-    /// O teto pelas duas: o menor de Bazin e Graham, ou o que existir.
-    #[serde(with = "number::option")]
-    pub ceiling: Option<Decimal>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ReferencesDto {
-    /// O rendimento-alvo do Bazin, em % ao ano.
-    #[serde(with = "number")]
-    pub bazin_yield: Decimal,
-    pub items: Vec<ReferenceDto>,
-}
-
 /// Um ponto de atenção, curto e factual. O `kind` diz qual.
 #[derive(Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -563,46 +520,33 @@ impl AnalysisDto {
                 price_12m: RankingDto::from(&report.highlights.price_12m),
                 since_purchase: RankingDto::from(&report.highlights.since_purchase),
             },
-            references: ReferencesDto {
-                bazin_yield: report.references.bazin_yield,
-                items: report
-                    .references
-                    .items
-                    .iter()
-                    .map(|item| ReferenceDto {
-                        asset_id: item.asset_id,
-                        label: item.label.clone(),
-                        asset_class: item.asset_class,
-                        unit_price: item.unit_price,
-                        max_price: item.max_price,
-                        bazin: item.bazin.map(BazinDto::from),
-                        graham: item.graham,
-                        ceiling: combined_ceiling(item.bazin.map(|b| b.price), item.graham),
-                    })
-                    .collect(),
-            },
+            references: ReferencesDto::from(&report.references),
             unclassified_count: report.unclassified_count,
             sources,
         }
     }
 }
 
-/// A configuração: as regras e o rendimento-alvo do Bazin.
+/// A configuração: as regras, o rendimento-alvo do Bazin e os prêmios dos
+/// FIIs, com as taxas de mercado de hoje (o que os prêmios somam).
 #[derive(Debug, Serialize)]
 pub struct ConfigDto {
     pub rules: Vec<RuleDto>,
     #[serde(with = "number")]
     pub bazin_yield: Decimal,
+    /// Os prêmios da pessoa, os padrões, as taxas e os alvos de hoje.
+    pub market: MarketDto,
 }
 
 impl ConfigDto {
-    fn new(config: &AnalysisConfig, bazin_yield: Decimal) -> Self {
+    fn new(config: &AnalysisConfig, ctx: &ReferenceContext) -> Self {
         Self {
             rules: RuleId::ALL
                 .into_iter()
                 .map(|rule| RuleDto::new(rule, config.get(rule)))
                 .collect(),
-            bazin_yield,
+            bazin_yield: ctx.bazin_yield,
+            market: MarketDto::from(ctx),
         }
     }
 }
@@ -616,6 +560,11 @@ pub struct ConfigRequest {
     pub rules: BTreeMap<RuleId, RuleChange>,
     #[serde(default, deserialize_with = "optional_decimal")]
     pub bazin_yield: Option<Decimal>,
+    /// Prêmios do rendimento-alvo dos FIIs, em pontos percentuais.
+    #[serde(default, deserialize_with = "optional_decimal")]
+    pub brick_premium: Option<Decimal>,
+    #[serde(default, deserialize_with = "optional_decimal")]
+    pub paper_premium: Option<Decimal>,
 }
 
 // --------------------------------------------------------------- handlers --
@@ -636,10 +585,19 @@ pub async fn analysis(
     Ok(Json(AnalysisDto::new(&report, sources_dto(&sources))))
 }
 
+async fn config_response(state: &AppState, user: uuid::Uuid) -> ApiResult<ConfigDto> {
+    let config = state.store.analysis_config(user).await?;
+    let ctx = crate::ceiling::context(
+        &state.store,
+        user,
+        today_in_brazil(OffsetDateTime::now_utc()),
+    )
+    .await?;
+    Ok(ConfigDto::new(&config, &ctx))
+}
+
 pub async fn rules(State(state): State<AppState>, user: CurrentUser) -> ApiResult<Json<ConfigDto>> {
-    let config = state.store.analysis_config(user.id).await?;
-    let bazin_yield = state.store.bazin_yield(user.id).await?;
-    Ok(Json(ConfigDto::new(&config, bazin_yield)))
+    Ok(Json(config_response(&state, user.id).await?))
 }
 
 pub async fn save_rules(
@@ -647,9 +605,13 @@ pub async fn save_rules(
     user: CurrentUser,
     ApiJson(body): ApiJson<ConfigRequest>,
 ) -> ApiResult<Json<ConfigDto>> {
-    if body.rules.is_empty() && body.bazin_yield.is_none() {
+    if body.rules.is_empty()
+        && body.bazin_yield.is_none()
+        && body.brick_premium.is_none()
+        && body.paper_premium.is_none()
+    {
         return Err(ApiError::validation(
-            "Informe ao menos uma regra ou o rendimento-alvo do Bazin.",
+            "Informe ao menos uma regra, o rendimento-alvo do Bazin ou um premio dos FIIs.",
         ));
     }
     let current = state.store.analysis_config(user.id).await?;
@@ -677,20 +639,23 @@ pub async fn save_rules(
             },
         ));
     }
-    let bazin_yield = body
-        .bazin_yield
-        .map(|value| {
-            validate_bazin_yield(value)
-                .map_err(|detail| ApiError::validation(format!("bazin_yield: {detail}")))
-        })
-        .transpose()?;
+    let checked = |name: &str,
+                   value: Option<Decimal>,
+                   check: fn(Decimal) -> Result<Decimal, String>| {
+        value
+            .map(|v| check(v).map_err(|detail| ApiError::validation(format!("{name}: {detail}"))))
+            .transpose()
+    };
+    let settings = SettingsChange {
+        bazin_yield: checked("bazin_yield", body.bazin_yield, validate_bazin_yield)?,
+        brick_premium: checked("brick_premium", body.brick_premium, validate_premium)?,
+        paper_premium: checked("paper_premium", body.paper_premium, validate_premium)?,
+    };
     state
         .store
-        .save_analysis(user.id, &changes, bazin_yield)
+        .save_analysis(user.id, &changes, settings)
         .await?;
-    let config = state.store.analysis_config(user.id).await?;
-    let bazin_yield = state.store.bazin_yield(user.id).await?;
-    Ok(Json(ConfigDto::new(&config, bazin_yield)))
+    Ok(Json(config_response(&state, user.id).await?))
 }
 
 #[cfg(test)]
@@ -703,8 +668,16 @@ mod tests {
 
     #[test]
     fn the_rule_list_has_every_rule_with_its_default_and_direction() {
-        let response = ConfigDto::new(&AnalysisConfig::default(), dec!(6));
+        let ctx = ReferenceContext {
+            bazin_yield: dec!(6),
+            premiums: crate::domain::analysis::fund_references::Premiums::default(),
+            rates: crate::domain::analysis::fund_references::MarketRates::default(),
+        };
+        let response = ConfigDto::new(&AnalysisConfig::default(), &ctx);
         let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(json["market"]["brick_premium"], 2.5);
+        assert_eq!(json["market"]["paper_premium"], 1.0);
+        assert!(json["market"]["real_rate"].is_null());
         let rules = json["rules"].as_array().unwrap();
         assert_eq!(rules.len(), 33);
         assert_eq!(rules[0]["rule"], "max_asset");
@@ -868,10 +841,12 @@ mod tests {
         assert!(serde_json::from_str::<ConfigRequest>(r#"{"nota": 1}"#).is_err());
         assert!(serde_json::from_str::<ConfigRequest>(r#"{"rules": {"nota_final": {}}}"#).is_err());
         let ok: ConfigRequest = serde_json::from_str(
-            r#"{"rules": {"min_abroad": {"threshold": 12.5}}, "bazin_yield": 7}"#,
+            r#"{"rules": {"min_abroad": {"threshold": 12.5}}, "bazin_yield": 7, "brick_premium": 3, "paper_premium": 0.5}"#,
         )
         .unwrap();
         assert_eq!(ok.rules.len(), 1);
         assert_eq!(ok.bazin_yield, Some(dec!(7)));
+        assert_eq!(ok.brick_premium, Some(dec!(3)));
+        assert_eq!(ok.paper_premium, Some(dec!(0.5)));
     }
 }

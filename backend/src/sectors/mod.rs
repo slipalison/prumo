@@ -21,7 +21,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use time::OffsetDateTime;
 
-use crate::domain::sector::SectorSource;
+use crate::domain::sector::{FundComposition, SectorSource};
 use crate::store::sectors::SyncState;
 use crate::store::Store;
 
@@ -33,6 +33,9 @@ pub struct SectorEntry {
     pub sector: String,
     pub subsector: Option<String>,
     pub segment: Option<String>,
+    /// Só nos FIIs (CVM): o que a carteira do fundo tem, que pondera o alvo de
+    /// rendimento do híbrido.
+    pub composition: Option<FundComposition>,
 }
 
 #[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]

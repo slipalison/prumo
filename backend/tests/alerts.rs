@@ -534,7 +534,7 @@ async fn the_daily_digest_only_says_what_is_new() {
     let ceiling = patch(
         &ana.app.router,
         &format!("/api/v1/assets/{wege}"),
-        json!({ "max_price": 60 }),
+        json!({ "ceiling": { "method": "manual", "value": 60 } }),
     )
     .await;
     assert_eq!(ceiling.status, StatusCode::OK, "{}", ceiling.text);

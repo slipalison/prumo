@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use crate::domain::allocation::{self, class_index, percent, round_cents, Holding, Plan, Targets};
 use crate::domain::asset_class::{AssetClass, Market, UnitKind};
+use crate::domain::ceiling::Ceiling;
 use crate::domain::income::today_in_brazil;
 use crate::domain::ledger::{self, Performance, Position};
 use crate::domain::profit::{total_profit, AssetProfit, TotalProfit};
@@ -91,8 +92,9 @@ impl AssetView {
         }
     }
 
-    /// O ativo como o motor do aporte o enxerga.
-    fn holding(&self) -> Holding {
+    /// O ativo como o motor do aporte o enxerga, com o teto de hoje
+    /// (`crate::ceiling`).
+    fn holding(&self, ceiling: Ceiling) -> Holding {
         Holding {
             asset_id: self.asset.id,
             asset_class: self.asset.asset_class,
@@ -101,7 +103,7 @@ impl AssetView {
             unit_price: self.unit_price,
             unit: self.asset.market().unit_kind(),
             score: self.score,
-            max_price: self.asset.max_price,
+            ceiling,
         }
     }
 }
@@ -285,13 +287,14 @@ pub async fn portfolio(store: &Store, user: Uuid) -> Result<PortfolioView, Store
         let i = class_index(view.asset.asset_class);
         class_values[i] += view.current_value;
         class_counts[i] += 1;
-        // Como o motor vê: nota, preço e preço até o teto da pessoa.
-        class_eligible[i] |= view.score > 0
-            && view.unit_price.is_some_and(|p| {
-                p > Decimal::ZERO && view.asset.max_price.is_none_or(|max| p <= max)
-            });
+        // Nota e preço: quem tem fatia na composição-alvo. O teto fica de fora,
+        // como no ideal: ele depende das referências do dia, que só o plano
+        // resolve, e aparece por ativo e no plano.
+        class_eligible[i] |= view.score > 0 && view.unit_price.is_some_and(|p| p > Decimal::ZERO);
     }
-    let holdings: Vec<Holding> = views.iter().map(AssetView::holding).collect();
+    // O ideal não depende do teto (filtro de compra do aporte, não da
+    // composição-alvo).
+    let holdings: Vec<Holding> = views.iter().map(|v| v.holding(Ceiling::None)).collect();
     let ideal = allocation::ideal_class_percents(&holdings);
     for (view, ideal) in views.iter_mut().zip(ideal) {
         view.class_percent = percent(
@@ -341,14 +344,21 @@ pub async fn portfolio(store: &Store, user: Uuid) -> Result<PortfolioView, Store
     })
 }
 
-/// O plano para `amount` e a carteira de onde ele saiu.
+/// O plano para `amount` e a carteira de onde ele saiu. O teto de cada ativo
+/// é o de hoje, pela escolha da pessoa (`crate::ceiling::resolve_ceilings`).
 pub async fn plan(
     store: &Store,
     user: Uuid,
     amount: Decimal,
 ) -> Result<(Plan, PortfolioView), StoreError> {
     let view = portfolio(store, user).await?;
-    let holdings: Vec<Holding> = view.assets.iter().map(AssetView::holding).collect();
+    let today = today_in_brazil(OffsetDateTime::now_utc());
+    let ceilings = crate::ceiling::resolve_ceilings(store, user, &view, today).await?;
+    let holdings: Vec<Holding> = view
+        .assets
+        .iter()
+        .map(|a| a.holding(ceilings.get(&a.asset.id).copied().unwrap_or_default()))
+        .collect();
     let limits = store.allocation_limits(user).await?;
     let plan = allocation::plan(amount, view.targets, &holdings, limits);
     Ok((plan, view))
@@ -513,7 +523,7 @@ mod tests {
             score_override: None,
             listed_on_b3: class.native_market() == Market::B3,
             treasury: false,
-            max_price: None,
+            ceiling: crate::domain::ceiling::CeilingChoice::None,
             tax_instrument: crate::domain::tax_book::TaxInstrument::Stock,
             tax_instrument_custom: false,
         }

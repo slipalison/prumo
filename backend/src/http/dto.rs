@@ -13,10 +13,13 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use super::income::PlanIncomeDto;
-use super::price_references::PriceReferencesDto;
+use super::price_references::PriceReferenceDto;
 use super::profit::ProfitDto;
+use super::references::{source_name, CeilingDto, CeilingRequest};
 use crate::domain::allocation::{ClassOutcome, Notice, Plan};
+use crate::domain::analysis::references::ReferenceGap;
 use crate::domain::asset_class::{AssetClass, Checklist};
+use crate::domain::ceiling::{Ceiling, CeilingMethod};
 use crate::domain::scoring::ScoreSource;
 use crate::domain::tax_book::TaxInstrument;
 use crate::service::{AssetView, ClassView, PortfolioView};
@@ -123,8 +126,10 @@ pub struct CreateAssetRequest {
     /// a que `GET /symbols` devolve).
     #[serde(default)]
     pub treasury: Option<bool>,
-    #[serde(default, deserialize_with = "optional_decimal")]
-    pub max_price: Option<Decimal>,
+    /// O teto de preço (`docs/api.md` § Teto de preço). Ausente ou `null` =
+    /// sem teto: ativo novo nasce sem teto, a não ser que a pessoa escolha um.
+    #[serde(default)]
+    pub ceiling: Option<CeilingRequest>,
     /// Preço médio de entrada, em reais (por unidade). Sem ele, o saldo
     /// inicial fica de custo desconhecido.
     #[serde(default, deserialize_with = "optional_decimal")]
@@ -151,8 +156,10 @@ pub struct UpdateAssetRequest {
     pub answers: Option<HashMap<Uuid, Option<bool>>>,
     #[serde(default)]
     pub listed_on_b3: Option<bool>,
-    #[serde(default, deserialize_with = "patch_decimal")]
-    pub max_price: Option<Option<Decimal>>,
+    /// A escolha do teto: ausente fica como está, `null` tira o teto,
+    /// `{"method": "graham"}` ou `{"method": "manual", "value": 30.5}`.
+    #[serde(default, deserialize_with = "patch_value")]
+    pub ceiling: Option<Option<CeilingRequest>>,
     /// Instrumento fiscal; `null` volta ao padrão.
     #[serde(default, deserialize_with = "patch_value")]
     pub tax_instrument: Option<Option<TaxInstrument>>,
@@ -268,8 +275,8 @@ pub struct AssetDto {
     pub unit_price: Option<Decimal>,
     #[serde(with = "decimal_out::option")]
     pub manual_price: Option<Decimal>,
-    #[serde(with = "decimal_out::option")]
-    pub max_price: Option<Decimal>,
+    /// O teto de preço escolhido, com o valor de hoje; `null` = sem teto.
+    pub ceiling: Option<CeilingDto>,
     pub currency: String,
     pub price_source: &'static str,
     #[serde(with = "time::serde::rfc3339::option")]
@@ -305,8 +312,9 @@ pub struct AssetDto {
     pub tax_instrument_default: TaxInstrument,
 }
 
-impl From<&AssetView> for AssetDto {
-    fn from(a: &AssetView) -> Self {
+impl AssetDto {
+    /// O ativo com o teto de hoje (`crate::ceiling::resolve_ceilings`).
+    pub fn new(a: &AssetView, ceiling: Ceiling) -> Self {
         Self {
             id: a.asset.id,
             asset_class: a.asset.asset_class,
@@ -317,7 +325,7 @@ impl From<&AssetView> for AssetDto {
             quantity: a.asset.quantity,
             unit_price: a.unit_price,
             manual_price: a.asset.manual_price,
-            max_price: a.asset.max_price,
+            ceiling: CeilingDto::of(ceiling),
             currency: a.currency.clone(),
             price_source: a.price_source.as_str(),
             quote_updated_at: a.quote_updated_at,
@@ -377,13 +385,18 @@ pub struct PortfolioDto {
     pub checklists: ChecklistsDto,
 }
 
-impl From<&PortfolioView> for PortfolioDto {
-    fn from(p: &PortfolioView) -> Self {
+impl PortfolioDto {
+    /// A carteira com o teto de hoje de cada ativo.
+    pub fn new(p: &PortfolioView, ceilings: &HashMap<Uuid, Ceiling>) -> Self {
         Self {
             total_value: p.total_value,
             quotes_updated_at: p.quotes_updated_at,
             classes: p.classes.iter().map(ClassDto::from).collect(),
-            assets: p.assets.iter().map(AssetDto::from).collect(),
+            assets: p
+                .assets
+                .iter()
+                .map(|a| AssetDto::new(a, ceilings.get(&a.asset.id).copied().unwrap_or_default()))
+                .collect(),
             profit: ProfitDto::from(&p.profit),
             checklists: ChecklistsDto::from_questions(&p.questions),
         }
@@ -478,9 +491,10 @@ pub struct PlanItemDto {
     /// Renda mensal que o item soma, estimada (`null` sem histórico do ativo).
     #[serde(with = "decimal_out::option")]
     pub estimated_monthly_income: Option<Decimal>,
-    /// As referências de Bazin e de Graham, só informativas: presente quando o
-    /// ativo não tem teto e há ao menos uma. `null` nos demais.
-    pub price_references: Option<PriceReferencesDto>,
+    /// As referências públicas do ativo (Bazin e Graham nas ações, VP e
+    /// Rendimento nos FIIs), só informativas: presente quando o ativo não tem
+    /// teto e há ao menos uma. `null` nos demais.
+    pub price_references: Option<Vec<PriceReferenceDto>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -533,6 +547,14 @@ pub enum NoticeDto {
         unit_price: Decimal,
         #[serde(with = "decimal_out")]
         max_price: Decimal,
+        /// `manual` (valor próprio) ou o método que deu o teto.
+        method: &'static str,
+    },
+    AssetCeilingUnavailable {
+        asset_id: Uuid,
+        symbol: String,
+        method: CeilingMethod,
+        reason: ReferenceGap,
     },
     ConcentrationLimit {
         #[serde(with = "decimal_out")]
@@ -568,11 +590,24 @@ impl From<&Notice> for NoticeDto {
                 label,
                 price,
                 max_price,
+                source,
             } => NoticeDto::AssetAboveCeiling {
                 asset_id: *asset_id,
                 symbol: label.clone(),
                 unit_price: *price,
                 max_price: *max_price,
+                method: source_name(*source),
+            },
+            Notice::AssetCeilingUnavailable {
+                asset_id,
+                label,
+                method,
+                reason,
+            } => NoticeDto::AssetCeilingUnavailable {
+                asset_id: *asset_id,
+                symbol: label.clone(),
+                method: *method,
+                reason: *reason,
             },
             Notice::ConcentrationLimit {
                 max_percent,
@@ -754,11 +789,29 @@ mod tests {
         assert_eq!(value.manual_price, Some(Some(dec!(9.5))));
         assert_eq!(value.score_override, Some(Some(7)));
         assert_eq!(value.quantity, Some(dec!(3)));
-        let ceiling: UpdateAssetRequest = serde_json::from_str(r#"{"max_price": 30.5}"#).unwrap();
-        assert_eq!(ceiling.max_price, Some(Some(dec!(30.5))));
-        let cleared: UpdateAssetRequest = serde_json::from_str(r#"{"max_price": null}"#).unwrap();
-        assert_eq!(cleared.max_price, Some(None));
-        assert_eq!(absent.max_price, None);
+        let ceiling: UpdateAssetRequest =
+            serde_json::from_str(r#"{"ceiling": {"method": "manual", "value": 30.5}}"#).unwrap();
+        assert_eq!(
+            ceiling.ceiling,
+            Some(Some(CeilingRequest {
+                method: "manual".into(),
+                value: Some(dec!(30.5))
+            }))
+        );
+        let by_method: UpdateAssetRequest =
+            serde_json::from_str(r#"{"ceiling": {"method": "graham"}}"#).unwrap();
+        assert_eq!(
+            by_method.ceiling,
+            Some(Some(CeilingRequest {
+                method: "graham".into(),
+                value: None
+            }))
+        );
+        let cleared: UpdateAssetRequest = serde_json::from_str(r#"{"ceiling": null}"#).unwrap();
+        assert_eq!(cleared.ceiling, Some(None));
+        assert_eq!(absent.ceiling, None);
+        // O campo antigo não existe mais: quem o mandar recebe erro, não um teto ignorado.
+        assert!(serde_json::from_str::<UpdateAssetRequest>(r#"{"max_price": 30}"#).is_err());
         let etf: UpdateAssetRequest = serde_json::from_str(r#"{"tax_instrument": "etf"}"#).unwrap();
         assert_eq!(etf.tax_instrument, Some(Some(TaxInstrument::Etf)));
         let back: UpdateAssetRequest = serde_json::from_str(r#"{"tax_instrument": null}"#).unwrap();
@@ -799,6 +852,7 @@ mod tests {
             label: "XPTO3".into(),
             price: dec!(32.5),
             max_price: dec!(30),
+            source: crate::domain::ceiling::CeilingSource::Method(CeilingMethod::Bazin),
         }))
         .unwrap();
         assert_eq!(json["code"], "asset_above_ceiling");
@@ -806,6 +860,17 @@ mod tests {
         assert_eq!(json["symbol"], "XPTO3");
         assert_eq!(json["unit_price"], 32.5);
         assert_eq!(json["max_price"], 30.0);
+        assert_eq!(json["method"], "bazin");
+        let json = serde_json::to_value(NoticeDto::from(&Notice::AssetCeilingUnavailable {
+            asset_id: id,
+            label: "XPTO3".into(),
+            method: CeilingMethod::Graham,
+            reason: ReferenceGap::Loss,
+        }))
+        .unwrap();
+        assert_eq!(json["code"], "asset_ceiling_unavailable");
+        assert_eq!(json["method"], "graham");
+        assert_eq!(json["reason"], "loss");
         let json = serde_json::to_value(NoticeDto::from(&Notice::ConcentrationLimit {
             max_percent: dec!(15),
             assets: vec![(id, "XPTO3".into())],

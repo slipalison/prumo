@@ -59,6 +59,7 @@ fn entry(code: &str, sector: &str, subsector: Option<&str>, segment: Option<&str
         sector: sector.to_owned(),
         subsector: subsector.map(str::to_owned),
         segment: segment.map(str::to_owned),
+        composition: None,
     }
 }
 

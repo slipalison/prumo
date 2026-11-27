@@ -103,6 +103,25 @@ async fn treasury_bonds_from_the_table_to_the_plan() {
     // A rodada grava 12 títulos; a segunda, dentro do prazo, não baixa nada.
     let report = sync.sync(NOW).await.unwrap();
     assert_eq!((report.bonds, report.pruned), (12, 0));
+    // O juro real de referência: a NTN-B mais perto de 10 anos da data-base
+    // (19/11/2036). No recorte, a de 2032 (a de 2055 está mais longe), à taxa
+    // de compra de 7,77%.
+    let real = report.real_rate.expect("o recorte tem NTN-B");
+    assert_eq!(real.bond.symbol(), "TD-IPCAJS-20320815");
+    assert_eq!(real.percent, dec!(7.77));
+    assert_eq!(real.base_date, time::macros::date!(2026 - 11 - 19));
+    assert_eq!(db.store.real_rate().await.unwrap(), Some(real));
+    let rules = get(&app.router, "/api/v1/analysis/rules").await;
+    assert_eq!(rules.status, StatusCode::OK, "{}", rules.text);
+    let market = &rules.body["market"];
+    assert_eq!(market["real_rate"]["percent"], 7.77);
+    assert_eq!(market["real_rate"]["base_date"], "2026-11-19");
+    assert_eq!(
+        market["real_rate"]["bond"],
+        "Tesouro IPCA+ com Juros Semestrais 2032"
+    );
+    // 7,77% + 2,5 p.p.
+    assert_eq!(market["brick_target"], 10.27);
     let requests_after_first = server.received_requests().await.unwrap().len();
     assert_eq!(requests_after_first, 2, "package_show e o csv");
     assert!(sync

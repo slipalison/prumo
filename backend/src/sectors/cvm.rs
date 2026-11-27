@@ -23,7 +23,9 @@
 //! cotas de FII, e chama de tipo o que tem dois terços ou mais dessa soma —
 //! o mesmo corte de dois terços que a B3 usa para holdings. Sem nenhum tipo
 //! com dois terços, é híbrido. Caixa e títulos públicos ficam fora da conta.
-//! A regra é do Prumo, não da CVM, e está em `docs/saude.md`.
+//! A regra é do Prumo, não da CVM, e está em `docs/saude.md`. As três frações
+//! (a composição) também ficam guardadas: o alvo de rendimento do híbrido é
+//! ponderado por elas (`docs/analise.md`).
 
 use std::collections::HashMap;
 use std::io::{Cursor, Read};
@@ -34,16 +36,16 @@ use rust_decimal::Decimal;
 use time::OffsetDateTime;
 
 use super::{download, SectorEntry, SectorError, SectorFeed};
-use crate::domain::sector::SectorSource;
+use crate::domain::sector::{FundComposition, FundType, SectorSource};
 
 const DEFAULT_BASE: &str = "https://dados.cvm.gov.br";
 /// Teto de cada CSV descompactado (o de 2026 tem ~5 MB).
 const MAX_CSV: u64 = 128 * 1024 * 1024;
 
-pub const BRICK: &str = "Tijolo";
-pub const PAPER: &str = "Papel";
-pub const FUND_OF_FUNDS: &str = "Fundo de fundos";
-pub const HYBRID: &str = "Híbrido";
+pub const BRICK: &str = FundType::Brick.label();
+pub const PAPER: &str = FundType::Paper.label();
+pub const FUND_OF_FUNDS: &str = FundType::FundOfFunds.label();
+pub const HYBRID: &str = FundType::Hybrid.label();
 
 pub struct CvmFunds {
     http: reqwest::Client,
@@ -185,9 +187,11 @@ fn latest_by_fund(rows: Vec<HashMap<String, String>>) -> HashMap<String, HashMap
     latest
 }
 
-/// Tijolo, papel, fundo de fundos ou híbrido, pelo balanço. `None` quando o
-/// fundo não tem nada nessas três contas (fundo novo, sem carteira ainda).
-pub fn fund_kind(balance: &HashMap<String, String>) -> Option<&'static str> {
+/// O tipo e a composição de um fundo pelo balanço: o que há em imóveis (e em
+/// sociedades de atividades imobiliárias), em recebíveis e em cotas de FII.
+/// `None` quando o fundo não tem nada nessas três contas (fundo novo, sem
+/// carteira ainda).
+pub fn fund_profile(balance: &HashMap<String, String>) -> Option<(FundType, FundComposition)> {
     let sum = |names: &[&str]| -> Decimal { names.iter().map(|n| amount(balance, n)).sum() };
     let brick = sum(&[
         "Direitos_Bens_Imoveis",
@@ -207,16 +211,23 @@ pub fn fund_kind(balance: &HashMap<String, String>) -> Option<&'static str> {
     if base <= Decimal::ZERO {
         return None;
     }
+    let composition = FundComposition::from_amounts(brick, paper, funds)?;
     let two_thirds = |part: Decimal| part * Decimal::from(3) >= base * Decimal::from(2);
-    Some(if two_thirds(brick) {
-        BRICK
+    let kind = if two_thirds(brick) {
+        FundType::Brick
     } else if two_thirds(paper) {
-        PAPER
+        FundType::Paper
     } else if two_thirds(funds) {
-        FUND_OF_FUNDS
+        FundType::FundOfFunds
     } else {
-        HYBRID
-    })
+        FundType::Hybrid
+    };
+    Some((kind, composition))
+}
+
+/// Tijolo, papel, fundo de fundos ou híbrido, pelo balanço ([`fund_profile`]).
+pub fn fund_kind(balance: &HashMap<String, String>) -> Option<&'static str> {
+    fund_profile(balance).map(|(kind, _)| kind.label())
 }
 
 /// As quatro letras do emissor a partir do ISIN da cota (`BRKNRICTF007` → `KNRI`).
@@ -250,7 +261,7 @@ pub fn parse_archive(bytes: &[u8], year: i32) -> Result<Vec<SectorEntry>, Sector
         let Some(code) = isin_root(field(row, "Codigo_ISIN")) else {
             continue;
         };
-        let Some(kind) = balances.get(cnpj).and_then(fund_kind) else {
+        let Some((kind, composition)) = balances.get(cnpj).and_then(fund_profile) else {
             continue;
         };
         let segment = Some(field(row, "Segmento_Atuacao").to_owned()).filter(|s| !s.is_empty());
@@ -264,9 +275,10 @@ pub fn parse_archive(bytes: &[u8], year: i32) -> Result<Vec<SectorEntry>, Sector
                 reference,
                 SectorEntry {
                     code,
-                    sector: kind.to_owned(),
+                    sector: kind.label().to_owned(),
                     subsector: None,
                     segment,
+                    composition: Some(composition),
                 },
             ),
         );
@@ -315,6 +327,53 @@ mod tests {
             by_code(&entries, "VISC").segment.as_deref(),
             Some("Shoppings")
         );
+    }
+
+    #[test]
+    fn the_composition_of_each_fund_is_kept_and_sums_to_one() {
+        let entries = parse_archive(SAMPLE, 2026).unwrap();
+        for entry in &entries {
+            let mix = entry
+                .composition
+                .expect("todo fundo classificado tem composicao");
+            assert_eq!(
+                mix.brick + mix.paper + mix.funds,
+                Decimal::ONE,
+                "{}",
+                entry.code
+            );
+        }
+        // O tipo e a composição concordam: dois terços ou mais no tipo.
+        let two_thirds = Decimal::from(2) / Decimal::from(3);
+        let knri = by_code(&entries, "KNRI").composition.unwrap();
+        assert!(
+            knri.brick >= two_thirds.round_dp(6) - Decimal::new(1, 6),
+            "{knri:?}"
+        );
+        let kncr = by_code(&entries, "KNCR").composition.unwrap();
+        assert!(
+            kncr.paper >= two_thirds.round_dp(6) - Decimal::new(1, 6),
+            "{kncr:?}"
+        );
+        let knre = by_code(&entries, "KNRE").composition.unwrap();
+        assert!(knre.brick < two_thirds && knre.paper < two_thirds && knre.funds < two_thirds);
+    }
+
+    #[test]
+    fn the_profile_gives_the_type_and_the_shares() {
+        let (kind, mix) = fund_profile(&balance(&[
+            ("Direitos_Bens_Imoveis", "500"),
+            ("CRI", "300"),
+            ("FII", "200"),
+            ("Disponibilidades", "9000"),
+        ]))
+        .unwrap();
+        assert_eq!(kind, FundType::Hybrid);
+        assert_eq!(
+            (mix.brick, mix.paper, mix.funds),
+            (Decimal::new(5, 1), Decimal::new(3, 1), Decimal::new(2, 1))
+        );
+        assert_eq!(fund_profile(&HashMap::new()), None);
     }
 
     #[test]

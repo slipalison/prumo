@@ -38,7 +38,7 @@ use crate::domain::income::estimate::{
 };
 use crate::domain::income::DividendPoint;
 use crate::quotes::fx_symbol;
-use crate::service::PortfolioView;
+use crate::service::{AssetView, PortfolioView};
 use crate::store::{CachedDividends, Store};
 
 /// Quanto tempo o histórico guardado vale antes de buscar de novo. Dividendo
@@ -174,163 +174,8 @@ impl IncomeService {
         view: &PortfolioView,
         today: Date,
     ) -> PortfolioIncome {
-        let now = OffsetDateTime::now_utc();
-        let ledgers = match user {
-            Some(user) => self
-                .store
-                .entries_by_asset(user)
-                .await
-                .unwrap_or_else(|error| {
-                    tracing::error!(error = %error, "livro ilegivel para a estimativa");
-                    HashMap::new()
-                }),
-            None => HashMap::new(),
-        };
-        let payers: Vec<Payer> = view
-            .assets
-            .iter()
-            .filter_map(|a| {
-                let provider_symbol = payer_symbol(a.asset.market(), a.asset.symbol.as_deref())?;
-                Some(Payer {
-                    asset_id: a.asset.id,
-                    class: a.asset.asset_class,
-                    market: a.asset.market(),
-                    quantity: a.asset.quantity,
-                    provider_symbol,
-                })
-            })
-            .collect();
-        let b3_candidates: Vec<(Uuid, AssetClass, String)> = view
-            .assets
-            .iter()
-            .filter(|a| b3_sourced(a.asset.market(), a.asset.asset_class))
-            .filter_map(|a| Some((a.asset.id, a.asset.asset_class, a.asset.symbol.clone()?)))
-            .collect();
-        let b3 = self
-            .store
-            .b3_income_sources(&b3_candidates, b3_window_start(today))
-            .await
-            .unwrap_or_else(|error| {
-                tracing::error!(error = %error, "anuncios da B3 ilegiveis para a estimativa");
-                HashMap::new()
-            });
-        let symbols: Vec<String> = payers
-            .iter()
-            .map(|p| p.provider_symbol.clone())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect();
-        let cache = self
-            .store
-            .dividend_cache(&symbols)
-            .await
-            .unwrap_or_else(|error| {
-                tracing::error!(error = %error, "cache de dividendos ilegivel");
-                HashMap::new()
-            });
-        let currencies: Vec<String> = cache
-            .values()
-            .filter(|c| c.currency != "BRL")
-            .map(|c| fx_symbol(&c.currency))
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect();
-        let fx = self.store.quotes(&currencies).await.unwrap_or_default();
-
-        let mut income = PortfolioIncome {
-            payers: payers.len(),
-            ..PortfolioIncome::default()
-        };
-        let mut missing = BTreeSet::new();
-        for payer in payers {
-            // O histórico do Yahoo, em reais: a reserva da B3 e o histórico longo
-            // da média do habitual.
-            let yahoo = cache.get(&payer.provider_symbol).and_then(|cached| {
-                let rate = if cached.currency == "BRL" {
-                    Some(Decimal::ONE)
-                } else {
-                    fx.get(&fx_symbol(&cached.currency)).map(|q| q.price)
-                }?;
-                let points: Vec<DividendPoint> = cached
-                    .events
-                    .iter()
-                    .map(|e| DividendPoint {
-                        ex_date: e.ex_date,
-                        amount: e.amount,
-                    })
-                    .collect();
-                Some((points, rate, cached.fetched_at))
-            });
-            let announced = b3.get(&payer.asset_id);
-            let source = pick_source(announced.map(|a| a.fetched_at), yahoo.is_some(), now);
-            // O imposto retido lá fora (30% nos EUA) sai do líquido do Yahoo.
-            let foreign = foreign_withholding_rate(payer.market);
-            let history = yahoo
-                .as_ref()
-                .map(|(points, rate, _)| yahoo_unit_payments(points, *rate, foreign))
-                .unwrap_or_default();
-            let entries = ledgers.get(&payer.asset_id).map_or(&[][..], Vec::as_slice);
-            let (source, payments, fetched_at, trailing) = match (source, announced, &yahoo) {
-                (Some(EstimateSource::B3), Some(announced), _) => (
-                    EstimateSource::B3,
-                    b3_unit_payments(&announced.cash, &announced.stock, payer.class, today),
-                    announced.fetched_at,
-                    user.map(|_| {
-                        b3_trailing_income(&announced.cash, payer.class, entries, today)
-                            .map(|total| total.net)
-                    }),
-                ),
-                (Some(_), _, Some((points, rate, fetched_at))) => (
-                    EstimateSource::Yahoo,
-                    history.clone(),
-                    *fetched_at,
-                    user.map(|_| {
-                        trailing_income(points, today, entries)
-                            .map(|gross| round_cents(gross * rate * (Decimal::ONE - foreign)))
-                    }),
-                ),
-                // Nem a B3 nem o Yahoo têm o ativo (ou falta o câmbio).
-                _ => {
-                    missing.insert(payer.provider_symbol);
-                    continue;
-                }
-            };
-            let trailing_12m = trailing.and_then(|result| match result {
-                Ok(total) => Some(total),
-                Err(error) => {
-                    tracing::error!(error = %error, "livro nao fecha na estimativa");
-                    None
-                }
-            });
-            let estimate = asset_estimate(source, &payments, &history, payer.quantity, today);
-            income.monthly_total += estimate.monthly.net;
-            income.monthly_total_gross += estimate.monthly.gross;
-            if estimate.above_usual {
-                income.above_usual_monthly += estimate.monthly.net;
-            }
-            income.updated_at = Some(
-                income
-                    .updated_at
-                    .map_or(fetched_at, |at| at.min(fetched_at)),
-            );
-            income.assets.insert(
-                payer.asset_id,
-                AssetIncome {
-                    asset_id: payer.asset_id,
-                    estimate,
-                    trailing_12m,
-                    payments: payments
-                        .into_iter()
-                        .filter(|p| in_window(p.ex_date, today))
-                        .collect(),
-                },
-            );
-        }
-        income.missing = missing
-            .into_iter()
-            .map(|s| s.trim_end_matches(".SA").to_owned())
-            .collect();
-        income
+        let assets: Vec<&AssetView> = view.assets.iter().collect();
+        estimate_assets(&self.store, user, &assets, today).await
     }
 
     /// Busca no provedor, e guarda, o histórico dos símbolos (do provedor,
@@ -459,4 +304,169 @@ impl IncomeService {
                 .insert(symbol.to_owned(), Instant::now());
         }
     }
+}
+
+/// A estimativa de `assets`, só com o banco (os anúncios da B3 e o cache do
+/// Yahoo). É a conta de [`IncomeService::estimate`]; as referências de preço dos
+/// FIIs (`crate::ceiling`) leem daqui os proventos por cota de 12 meses, para a
+/// renda e o Rendimento contarem o mesmo ano. Com `user`, calcula também o
+/// `trailing_12m` pelo livro.
+pub async fn estimate_assets(
+    store: &Store,
+    user: Option<Uuid>,
+    assets: &[&AssetView],
+    today: Date,
+) -> PortfolioIncome {
+    let now = OffsetDateTime::now_utc();
+    let ledgers = match user {
+        Some(user) => store
+            .entries_by_asset(user)
+            .await
+            .unwrap_or_else(|error| {
+                tracing::error!(error = %error, "livro ilegivel para a estimativa");
+                HashMap::new()
+            }),
+        None => HashMap::new(),
+    };
+    let payers: Vec<Payer> = assets
+        .iter()
+        .filter_map(|a| {
+            let provider_symbol = payer_symbol(a.asset.market(), a.asset.symbol.as_deref())?;
+            Some(Payer {
+                asset_id: a.asset.id,
+                class: a.asset.asset_class,
+                market: a.asset.market(),
+                quantity: a.asset.quantity,
+                provider_symbol,
+            })
+        })
+        .collect();
+    let b3_candidates: Vec<(Uuid, AssetClass, String)> = assets
+        .iter()
+        .filter(|a| b3_sourced(a.asset.market(), a.asset.asset_class))
+        .filter_map(|a| Some((a.asset.id, a.asset.asset_class, a.asset.symbol.clone()?)))
+        .collect();
+    let b3 = store
+        .b3_income_sources(&b3_candidates, b3_window_start(today))
+        .await
+        .unwrap_or_else(|error| {
+            tracing::error!(error = %error, "anuncios da B3 ilegiveis para a estimativa");
+            HashMap::new()
+        });
+    let symbols: Vec<String> = payers
+        .iter()
+        .map(|p| p.provider_symbol.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let cache = store
+        .dividend_cache(&symbols)
+        .await
+        .unwrap_or_else(|error| {
+            tracing::error!(error = %error, "cache de dividendos ilegivel");
+            HashMap::new()
+        });
+    let currencies: Vec<String> = cache
+        .values()
+        .filter(|c| c.currency != "BRL")
+        .map(|c| fx_symbol(&c.currency))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let fx = store.quotes(&currencies).await.unwrap_or_default();
+
+    let mut income = PortfolioIncome {
+        payers: payers.len(),
+        ..PortfolioIncome::default()
+    };
+    let mut missing = BTreeSet::new();
+    for payer in payers {
+        // O histórico do Yahoo, em reais: a reserva da B3 e o histórico longo
+        // da média do habitual.
+        let yahoo = cache.get(&payer.provider_symbol).and_then(|cached| {
+            let rate = if cached.currency == "BRL" {
+                Some(Decimal::ONE)
+            } else {
+                fx.get(&fx_symbol(&cached.currency)).map(|q| q.price)
+            }?;
+            let points: Vec<DividendPoint> = cached
+                .events
+                .iter()
+                .map(|e| DividendPoint {
+                    ex_date: e.ex_date,
+                    amount: e.amount,
+                })
+                .collect();
+            Some((points, rate, cached.fetched_at))
+        });
+        let announced = b3.get(&payer.asset_id);
+        let source = pick_source(announced.map(|a| a.fetched_at), yahoo.is_some(), now);
+        // O imposto retido lá fora (30% nos EUA) sai do líquido do Yahoo.
+        let foreign = foreign_withholding_rate(payer.market);
+        let history = yahoo
+            .as_ref()
+            .map(|(points, rate, _)| yahoo_unit_payments(points, *rate, foreign))
+            .unwrap_or_default();
+        let entries = ledgers.get(&payer.asset_id).map_or(&[][..], Vec::as_slice);
+        let (source, payments, fetched_at, trailing) = match (source, announced, &yahoo) {
+            (Some(EstimateSource::B3), Some(announced), _) => (
+                EstimateSource::B3,
+                b3_unit_payments(&announced.cash, &announced.stock, payer.class, today),
+                announced.fetched_at,
+                user.map(|_| {
+                    b3_trailing_income(&announced.cash, payer.class, entries, today)
+                        .map(|total| total.net)
+                }),
+            ),
+            (Some(_), _, Some((points, rate, fetched_at))) => (
+                EstimateSource::Yahoo,
+                history.clone(),
+                *fetched_at,
+                user.map(|_| {
+                    trailing_income(points, today, entries)
+                        .map(|gross| round_cents(gross * rate * (Decimal::ONE - foreign)))
+                }),
+            ),
+            // Nem a B3 nem o Yahoo têm o ativo (ou falta o câmbio).
+            _ => {
+                missing.insert(payer.provider_symbol);
+                continue;
+            }
+        };
+        let trailing_12m = trailing.and_then(|result| match result {
+            Ok(total) => Some(total),
+            Err(error) => {
+                tracing::error!(error = %error, "livro nao fecha na estimativa");
+                None
+            }
+        });
+        let estimate = asset_estimate(source, &payments, &history, payer.quantity, today);
+        income.monthly_total += estimate.monthly.net;
+        income.monthly_total_gross += estimate.monthly.gross;
+        if estimate.above_usual {
+            income.above_usual_monthly += estimate.monthly.net;
+        }
+        income.updated_at = Some(
+            income
+                .updated_at
+                .map_or(fetched_at, |at| at.min(fetched_at)),
+        );
+        income.assets.insert(
+            payer.asset_id,
+            AssetIncome {
+                asset_id: payer.asset_id,
+                estimate,
+                trailing_12m,
+                payments: payments
+                    .into_iter()
+                    .filter(|p| in_window(p.ex_date, today))
+                    .collect(),
+            },
+        );
+    }
+    income.missing = missing
+        .into_iter()
+        .map(|s| s.trim_end_matches(".SA").to_owned())
+        .collect();
+    income
 }

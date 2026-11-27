@@ -252,7 +252,7 @@ async fn apply_asset(
                 score_override: None,
                 listed_on_b3: plan.listed_on_b3,
                 treasury: plan.treasury,
-                max_price: None,
+                ceiling: crate::domain::ceiling::CeilingChoice::None,
             };
             (Some(insert_asset_row(tx, user, &new).await?), true)
         }

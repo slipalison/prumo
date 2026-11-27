@@ -10,6 +10,7 @@ pub mod analysis;
 pub mod auth;
 pub mod b3_xlsx;
 pub mod brapi;
+pub mod ceiling;
 pub mod compare;
 pub mod config;
 pub mod dividends;

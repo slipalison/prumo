@@ -14,8 +14,12 @@ use axum::http::StatusCode;
 use common::*;
 use prumo::dividends::{DividendEvent, DividendHistory};
 use prumo::domain::income::{today_in_brazil, YearMonth};
+use prumo::domain::market_rates::RealRate;
+use prumo::domain::sector::{FundComposition, FundType, SectorSource};
+use prumo::domain::treasury::{Bond, BondKind};
 use prumo::history::{HistoryError, HistoryProvider, IndexCode, Series};
 use prumo::performance::{local_date, Performance};
+use prumo::sectors::SectorEntry;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde_json::{json, Value};
@@ -243,7 +247,8 @@ async fn an_empty_portfolio_has_nothing_to_warn_about(db: &Database, dir: &tempf
     assert_eq!(body["highlights"]["price_12m"]["best"], json!([]));
     assert_eq!(body["highlights"]["since_purchase"]["worst"], json!([]));
     assert_eq!(body["references"]["bazin_yield"], 6.0);
-    assert_eq!(body["references"]["items"], json!([]));
+    assert_eq!(body["references"]["stocks"], json!([]));
+    assert_eq!(body["references"]["funds"], json!([]));
     assert_eq!(body["sources"].as_array().unwrap().len(), 2);
 }
 
@@ -535,37 +540,19 @@ async fn losses_highlights_and_the_loss_rule(db: &Database, dir: &tempfile_dir::
     close(&best["change_percent"], 170.14);
 }
 
-async fn price_references_follow_the_dividend_history(db: &Database, dir: &tempfile_dir::Dir) {
-    let app = person(db, dir, "bazin@prumo.test");
-    let knri = add_asset(
-        &app,
-        json!({ "asset_class": "br_reits", "symbol": "KNRI11", "quantity": 10 }),
-    )
-    .await;
-    add_asset(
-        &app,
-        json!({ "asset_class": "br_stocks", "symbol": "WEGE3", "quantity": 10 }),
-    )
-    .await;
+/// Os dividendos de `symbol` no cache do Yahoo: `amount` por cota, `back` dias atrás.
+async fn dividends(db: &Database, symbol: &str, events: &[(i64, Decimal)]) {
     let today = today_in_brazil(OffsetDateTime::now_utc());
-    // Três janelas de 12 meses: 3,00, 2,40 e 1,80 por cota (média 2,40). O
-    // dividendo de 1,20, de quase 4 anos atrás, mostra que o papel já pagava
-    // antes da 3ª janela (ela entra inteira) e cai numa 4ª que não entra.
-    let events = [
-        (100, dec!(3.0)),
-        (465, dec!(2.4)),
-        (830, dec!(1.8)),
-        (1200, dec!(1.2)),
-    ]
-    .into_iter()
-    .map(|(back, amount)| DividendEvent {
-        ex_date: today - Duration::days(back),
-        amount,
-    })
-    .collect::<Vec<_>>();
+    let events = events
+        .iter()
+        .map(|(back, amount)| DividendEvent {
+            ex_date: today - Duration::days(*back),
+            amount: *amount,
+        })
+        .collect::<Vec<_>>();
     db.store
         .save_dividends(
-            "KNRI11.SA",
+            symbol,
             &DividendHistory {
                 currency: "BRL".into(),
                 events,
@@ -574,50 +561,272 @@ async fn price_references_follow_the_dividend_history(db: &Database, dir: &tempf
         )
         .await
         .unwrap();
+}
 
+/// O tipo e a composição de três FIIs fictícios, como a fonte da CVM grava, o
+/// juro real de uma NTN-B e 400 dias de CDI a 0,05% ao dia.
+async fn seed_fund_market(db: &Database) {
+    let fund = |code: &str, kind: FundType, mix: (Decimal, Decimal, Decimal)| SectorEntry {
+        code: code.to_owned(),
+        sector: kind.label().to_owned(),
+        subsector: None,
+        segment: None,
+        composition: FundComposition::from_amounts(mix.0, mix.1, mix.2),
+    };
+    db.store
+        .replace_sector_reference(
+            SectorSource::CvmReits,
+            &[
+                fund("KNRI", FundType::Brick, (dec!(90), dec!(10), dec!(0))),
+                fund("MXRF", FundType::Paper, (dec!(5), dec!(95), dec!(0))),
+                fund("KNRE", FundType::Hybrid, (dec!(50), dec!(30), dec!(20))),
+            ],
+            OffsetDateTime::now_utc(),
+        )
+        .await
+        .unwrap();
+    let today = today_in_brazil(OffsetDateTime::now_utc());
+    db.store
+        .save_real_rate(
+            &RealRate {
+                bond: Bond::new(BondKind::IpcaPlusWithCoupons, today + Duration::days(3650)),
+                percent: dec!(7.12),
+                base_date: today - Duration::days(1),
+            },
+            OffsetDateTime::now_utc(),
+        )
+        .await
+        .unwrap();
+    db.store
+        .upsert_index(
+            IndexCode::Cdi,
+            &daily(today - Duration::days(400), today, |_| dec!(0.05)),
+        )
+        .await
+        .unwrap();
+}
+
+fn reference<'a>(list: &'a Value, label: &str) -> &'a Value {
+    list.as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["label"] == label)
+        .unwrap_or_else(|| panic!("{label} sem referencia: {list}"))
+}
+
+async fn price_references_follow_the_dividend_history(db: &Database, dir: &tempfile_dir::Dir) {
+    let app = person(db, dir, "bazin@prumo.test");
+    let wege = add_asset(
+        &app,
+        json!({ "asset_class": "br_stocks", "symbol": "WEGE3", "quantity": 10 }),
+    )
+    .await;
+    let knri = add_asset(
+        &app,
+        json!({ "asset_class": "br_reits", "symbol": "KNRI11", "quantity": 10 }),
+    )
+    .await;
+    add_asset(
+        &app,
+        json!({ "asset_class": "br_reits", "symbol": "MXRF11", "quantity": 10 }),
+    )
+    .await;
+    add_asset(
+        &app,
+        json!({ "asset_class": "br_reits", "symbol": "KNRE11", "quantity": 0 }),
+    )
+    .await;
+    let btc = add_asset(
+        &app,
+        json!({ "asset_class": "crypto", "symbol": "BTC", "quantity": 1 }),
+    )
+    .await;
+    // Três janelas de 12 meses: 3,00, 2,40 e 1,80 por cota (média 2,40). O
+    // dividendo de 1,20, de quase 4 anos atrás, mostra que o papel já pagava
+    // antes da 3ª janela (ela entra inteira) e cai numa 4ª que não entra.
+    dividends(
+        db,
+        "WEGE3.SA",
+        &[
+            (100, dec!(3.0)),
+            (465, dec!(2.4)),
+            (830, dec!(1.8)),
+            (1200, dec!(1.2)),
+        ],
+    )
+    .await;
+    // Os FIIs: R$ 13,20, R$ 1,30 e R$ 9,00 por cota em 12 meses.
+    dividends(
+        db,
+        "KNRI11.SA",
+        &[(40, dec!(6.60)), (200, dec!(6.60)), (500, dec!(9))],
+    )
+    .await;
+    dividends(db, "MXRF11.SA", &[(20, dec!(1.30))]).await;
+    dividends(db, "KNRE11.SA", &[(60, dec!(9))]).await;
+
+    // Sem tipo da CVM nem taxa: o FII fica sem Rendimento, com o motivo, e
+    // nunca com Bazin.
+    let body = analysis(&app).await;
+    let knri_before = reference(&body["references"]["funds"], "KNRI11");
+    assert_eq!(knri_before["fund_yield"]["gap"], "unknown_fund_type");
+    assert!(knri_before.get("bazin").is_none(), "{knri_before}");
+
+    seed_fund_market(db).await;
     let body = analysis(&app).await;
     let references = &body["references"];
     assert_eq!(references["bazin_yield"], 6.0);
-    let items = references["items"].as_array().unwrap();
-    // WEGE3 não tem dividendo guardado: sem referência.
-    assert_eq!(items.len(), 1);
-    assert_eq!(items[0]["label"], "KNRI11");
-    assert_eq!(items[0]["bazin"]["years"], 3);
-    close(&items[0]["bazin"]["annual_average"], 2.4);
+    // Cripto não tem referência: fica fora das duas tabelas.
+    assert_eq!(references["stocks"].as_array().unwrap().len(), 1);
+    assert_eq!(references["funds"].as_array().unwrap().len(), 3);
+    let stock = reference(&references["stocks"], "WEGE3");
+    assert_eq!(stock["bazin"]["years"], 3);
+    close(&stock["bazin"]["annual_average"], 2.4);
     // 2,40 ÷ 6% = 40.
-    assert_eq!(items[0]["bazin"]["price"], 40.0);
-    assert_eq!(items[0]["graham"], Value::Null);
+    assert_eq!(stock["bazin"]["value"], 40.0);
+    assert_eq!(
+        stock["graham"],
+        json!({ "value": null, "gap": "no_fundamentals" })
+    );
     // Só o Bazin: o teto pelas duas é ele.
-    assert_eq!(items[0]["ceiling"], 40.0);
-    assert_eq!(items[0]["max_price"], Value::Null);
-    close(&items[0]["unit_price"], 142.0);
+    assert_eq!(stock["combined"]["value"], 40.0);
+    assert_eq!(stock["ceiling"], Value::Null);
+    close(&stock["unit_price"], 50.0);
 
-    // O rendimento-alvo é da pessoa: com 8%, a referência cai para 30.
+    // As taxas, com data e fonte.
+    let market = &references["market"];
+    assert_eq!(market["real_rate"]["percent"], 7.12);
+    assert_eq!(market["real_rate"]["source"], "tesouro_transparente");
+    assert!(market["real_rate"]["bond"]
+        .as_str()
+        .unwrap()
+        .starts_with("Tesouro IPCA+ com Juros Semestrais"));
+    assert_eq!(market["cdi_12m"]["source"], "bcb_sgs_12");
+    let cdi = market["cdi_12m"]["percent"].as_f64().unwrap();
+    let net = market["cdi_12m"]["net_percent"].as_f64().unwrap();
+    // 0,05% ao dia por um ano: uns 20%; o líquido é 85% disso.
+    assert!((20.0..20.1).contains(&cdi), "{cdi}");
+    close(
+        &market["cdi_12m"]["net_percent"],
+        (cdi * 0.85 * 100.0).round() / 100.0,
+    );
+    close(&market["brick_target"], 9.62);
+    close(&market["paper_target"], net + 1.0);
+
+    // Tijolo: 7,12% + 2,5 p.p. = 9,62%; R$ 13,20 ÷ 9,62% = R$ 137,21.
+    let knri_ref = reference(&references["funds"], "KNRI11");
+    assert_eq!(knri_ref["fund_type"], "brick");
+    close(&knri_ref["fund_yield"]["dividends_12m"], 13.2);
+    close(&knri_ref["fund_yield"]["target"]["percent"], 9.62);
+    close(&knri_ref["fund_yield"]["value"], 137.21);
+    // Sem fundamentos da CVM: sem VP, e "pelas duas" é o Rendimento.
+    assert_eq!(
+        knri_ref["nav"],
+        json!({ "value": null, "gap": "no_fundamentals" })
+    );
+    close(&knri_ref["combined"]["value"], 137.21);
+    // Papel: o CDI líquido + 1,0 p.p.
+    let mxrf = reference(&references["funds"], "MXRF11");
+    assert_eq!(mxrf["fund_type"], "paper");
+    let paper = net + 1.0;
+    close(&mxrf["fund_yield"]["target"]["percent"], paper);
+    close(&mxrf["fund_yield"]["value"], 1.30 * 100.0 / paper);
+    // Híbrido: 50% imóveis, 30% recebíveis e 20% cotas => 60% tijolo e 40% papel.
+    let knre = reference(&references["funds"], "KNRE11");
+    assert_eq!(knre["fund_type"], "hybrid");
+    assert_eq!(
+        knre["composition"],
+        json!({ "brick": 0.5, "paper": 0.3, "funds": 0.2 })
+    );
+    assert_eq!(knre["fund_yield"]["target"]["brick_weight"], 0.6);
+    assert_eq!(knre["fund_yield"]["target"]["paper_weight"], 0.4);
+    let hybrid = ((0.6 * 9.62 + 0.4 * paper) * 100.0).round() / 100.0;
+    close(&knre["fund_yield"]["target"]["percent"], hybrid);
+    close(&knre["fund_yield"]["value"], 9.0 * 100.0 / hybrid);
+
+    // O rendimento-alvo e os prêmios são da pessoa.
     let tuned = put(
         &app.router,
         "/api/v1/analysis/rules",
-        json!({ "bazin_yield": 8 }),
+        json!({ "bazin_yield": 8, "brick_premium": 3 }),
     )
     .await;
     assert_eq!(tuned.status, StatusCode::OK, "{}", tuned.text);
     assert_eq!(tuned.body["bazin_yield"], 8.0);
+    assert_eq!(tuned.body["market"]["brick_premium"], 3.0);
+    assert_eq!(tuned.body["market"]["paper_premium"], 1.0);
+    close(&tuned.body["market"]["brick_target"], 10.12);
+    for bad in [
+        json!({ "brick_premium": 20.01 }),
+        json!({ "paper_premium": -1 }),
+        json!({ "paper_premium": 1.234 }),
+    ] {
+        let reply = put(&app.router, "/api/v1/analysis/rules", bad.clone()).await;
+        assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY, "{bad}");
+    }
     let body = analysis(&app).await;
-    assert_eq!(body["references"]["items"][0]["bazin"]["price"], 30.0);
+    assert_eq!(
+        reference(&body["references"]["stocks"], "WEGE3")["bazin"]["value"],
+        30.0
+    );
+    // 7,12% + 3 p.p. = 10,12%; R$ 13,20 ÷ 10,12% = R$ 130,43.
+    close(
+        &reference(&body["references"]["funds"], "KNRI11")["fund_yield"]["value"],
+        130.43,
+    );
 
-    // O botão "usar como meu teto" é o PATCH que o ativo já tem.
-    let applied = patch(
+    // O teto escolhido acompanha o método: grava-se o método, o valor é o de hoje.
+    let by_method = patch(
         &app.router,
-        &format!("/api/v1/assets/{knri}"),
-        json!({ "max_price": 30 }),
+        &format!("/api/v1/assets/{wege}"),
+        json!({ "ceiling": { "method": "bazin" } }),
     )
     .await;
-    assert_eq!(applied.status, StatusCode::OK, "{}", applied.text);
+    assert_eq!(by_method.status, StatusCode::OK, "{}", by_method.text);
+    assert_eq!(
+        by_method.body["ceiling"],
+        json!({ "method": "bazin", "value": 30.0, "unavailable_reason": null })
+    );
     let body = analysis(&app).await;
-    assert_eq!(body["references"]["items"][0]["max_price"], 30.0);
+    assert_eq!(
+        reference(&body["references"]["stocks"], "WEGE3")["ceiling"]["value"],
+        30.0
+    );
+    // Sem fundamentos, o teto pelo VP fica sem valor, com o motivo; nunca "sem teto".
+    let nav = patch(
+        &app.router,
+        &format!("/api/v1/assets/{knri}"),
+        json!({ "ceiling": { "method": "nav" } }),
+    )
+    .await;
+    assert_eq!(nav.status, StatusCode::OK, "{}", nav.text);
+    assert_eq!(
+        nav.body["ceiling"],
+        json!({ "method": "nav", "value": null, "unavailable_reason": "no_fundamentals" })
+    );
+    let portfolio = get(&app.router, "/api/v1/portfolio").await;
+    let knri_row = find(&portfolio.body["assets"], "symbol", "KNRI11");
+    assert_eq!(knri_row["ceiling"]["unavailable_reason"], "no_fundamentals");
 
-    // Outra pessoa não vê o rendimento-alvo nem o teto desta.
+    // A escolha da folha do ativo lê as mesmas referências, de um ativo só.
+    let one = get(&app.router, &format!("/api/v1/assets/{knri}/references")).await;
+    assert_eq!(one.status, StatusCode::OK, "{}", one.text);
+    assert_eq!(one.body["stocks"], json!([]));
+    assert_eq!(one.body["funds"].as_array().unwrap().len(), 1);
+    close(&one.body["funds"][0]["fund_yield"]["value"], 130.43);
+    assert_eq!(one.body["funds"][0]["ceiling"]["method"], "nav");
+    let crypto = get(&app.router, &format!("/api/v1/assets/{btc}/references")).await;
+    assert_eq!(crypto.status, StatusCode::OK);
+    assert_eq!(crypto.body["stocks"], json!([]));
+    assert_eq!(crypto.body["funds"], json!([]));
+
+    // Outra pessoa não vê o rendimento-alvo, os prêmios, o teto nem o ativo.
     let other = person(db, dir, "bazin-outra@prumo.test");
-    assert_eq!(analysis(&other).await["references"]["bazin_yield"], 6.0);
+    let theirs = analysis(&other).await;
+    assert_eq!(theirs["references"]["bazin_yield"], 6.0);
+    assert_eq!(theirs["references"]["market"]["brick_premium"], 2.5);
+    let foreign = get(&other.router, &format!("/api/v1/assets/{knri}/references")).await;
+    assert_eq!(foreign.status, StatusCode::NOT_FOUND);
 }
 
 async fn configuration_is_validated_shared_with_health_and_owned(
@@ -1081,7 +1290,10 @@ async fn migration_0021_keeps_the_saved_rules_and_accepts_the_new_ones() {
     // Quem nunca mexeu nas regras novas as vê ligadas, com o limite de fábrica.
     assert!(config.get(RuleId::MinAbroad).enabled);
     assert_eq!(config.get(RuleId::MinAbroad).threshold, Some(dec!(10)));
-    assert_eq!(store.bazin_yield(user).await.unwrap(), dec!(7.5));
+    assert_eq!(
+        store.reference_settings(user).await.unwrap().bazin_yield,
+        dec!(7.5)
+    );
     let health = store.health_config(user).await.unwrap();
     assert!(!health.get(prumo::domain::health::RuleId::MaxAsset).enabled);
 }
