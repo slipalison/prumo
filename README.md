@@ -167,6 +167,7 @@ Documentos:
 - [`docs/icones.md`](docs/icones.md) — logos dos ativos: fonte (brapi), como ligar, segurança do SVG e licença
 - [`docs/fundamentos.md`](docs/fundamentos.md) — fundamentos da CVM: fontes, contas, fórmulas, limites e o contrato
 - [`docs/desempenho.md`](docs/desempenho.md) — rentabilidade por cotas, índices e fontes
+- [`docs/comparador.md`](docs/comparador.md) — comparar até 5 ativos: indicadores lado a lado e rentabilidade comparada
 - [`deploy/README.md`](deploy/README.md) — como o app chega ao cluster
 
 ## Rodar na máquina

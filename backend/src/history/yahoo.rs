@@ -131,6 +131,31 @@ impl YahooHistory {
         to: Date,
         now: OffsetDateTime,
     ) -> Result<Series, HistoryError> {
+        Ok(self.closes_and_splits_at(symbol, from, to, now).await?.0)
+    }
+
+    /// Os fechamentos reais (como em [`YahooHistory::closes`]) e os
+    /// desdobramentos do mesmo pedido, com a data do evento e o fator (cotas
+    /// novas por cota antiga). O comparador guarda os eventos para medir o
+    /// retorno de um ativo na base de hoje.
+    pub async fn closes_and_splits(
+        &self,
+        symbol: &str,
+        from: Date,
+        to: Date,
+    ) -> Result<(Series, Vec<(Date, Decimal)>), HistoryError> {
+        self.closes_and_splits_at(symbol, from, to, OffsetDateTime::now_utc())
+            .await
+    }
+
+    /// [`YahooHistory::closes_and_splits`] com o relógio dado (para teste).
+    pub async fn closes_and_splits_at(
+        &self,
+        symbol: &str,
+        from: Date,
+        to: Date,
+        now: OffsetDateTime,
+    ) -> Result<(Series, Vec<(Date, Decimal)>), HistoryError> {
         let unavailable = |e: &dyn std::fmt::Display| HistoryError::Unavailable(e.to_string());
         // Margem de um dia nas pontas: a data do pregão é no fuso da bolsa.
         let period1 = (from - time::Duration::days(1)).midnight().assume_utc();
@@ -223,7 +248,7 @@ impl YahooHistory {
                 Some((date, factor))
             })
             .collect();
-        Ok(unadjust_splits(&out, &splits))
+        Ok((unadjust_splits(&out, &splits), splits))
     }
 }
 

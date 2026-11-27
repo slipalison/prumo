@@ -393,6 +393,15 @@ estão em [layout.md](layout.md).
   restaurar padrão.
 - A regra da nota ("cada sim soma 1, cada não tira 1…") fica no ⓘ do título.
 
+### 5.1 Comparar ativos (`#/analise/comparar`)
+
+Link "Comparar ativos" no topo da Análise. Painel de escolha (chips removíveis,
+busca de ticker, ativos da carteira ao alcance de um toque), tabela lado a lado
+em blocos (em comum, empresas, fundos) e rentabilidade comparada (chips de
+período, duas chaves, linhas com cor e tracejado próprios). O destaque é um
+selo neutro com a palavra "maior" ou "menor"; nunca verde ou vermelho. Reais
+passam pelo olho de ocultar valores. Método em `docs/comparador.md`.
+
 ### 5. Análise (tela de topo) e suas regras (seção de Ajustes)
 
 A Análise (`#/analise`) fica na barra principal, entre Desempenho e Ajustes. Ela

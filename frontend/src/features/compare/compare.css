@@ -1,0 +1,182 @@
+/*
+ * Comparar ativos. As cores dos cinco ativos partem das da paleta de gráficos
+ * (docs/design.md) e saem de tons que não repetem os da carteira, do CDI e do
+ * Ibovespa; cada linha tem também o próprio tracejado, e a legenda diz o nome.
+ */
+:root {
+  --cmp-1: #2cb5a0;
+  --cmp-2: #e0569f;
+  --cmp-3: #8fb63a;
+  --cmp-4: #e8734a;
+  --cmp-5: #9aa6bd;
+}
+
+[data-theme="light"] {
+  --cmp-1: #12897a;
+  --cmp-2: #c23a85;
+  --cmp-3: #5f8a16;
+  --cmp-4: #c9521f;
+  --cmp-5: #5d6a85;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --cmp-1: #12897a;
+    --cmp-2: #c23a85;
+    --cmp-3: #5f8a16;
+    --cmp-4: #c9521f;
+    --cmp-5: #5d6a85;
+  }
+}
+
+.compare {
+  display: grid;
+  gap: var(--gap-stack);
+}
+
+.compare-picker {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.compare-picker__chosen,
+.compare-picker__offers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.compare-picker__search {
+  max-width: 28rem;
+}
+
+.compare-picker__held {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.compare-picker__notice {
+  color: var(--text-muted);
+}
+
+.compare-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 40px;
+  padding: 0 var(--space-1) 0 var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  background: var(--surface-sunken);
+}
+
+.compare-chip__symbol {
+  font-weight: 700;
+}
+
+.compare-chip__name {
+  max-width: 11rem;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compare-chip__remove {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: var(--text-muted);
+}
+
+.compare-chip__remove:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.compare-offer {
+  min-height: 36px;
+  padding: 0 var(--space-3);
+}
+
+.compare-offer:disabled {
+  opacity: 0.45;
+}
+
+.compare-table {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.compare-table.is-refreshing,
+.compare-curves.is-refreshing {
+  opacity: 0.7;
+  transition: opacity var(--dur-fast);
+}
+
+.compare-table__group {
+  margin: 0 0 var(--space-2);
+}
+
+.compare-row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* O destaque: neutro, sem cor de "bom" ou "ruim". O texto diz "maior" ou "menor". */
+.compare-mark {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  padding: 1px var(--space-2);
+  border-radius: var(--r-sm);
+  background: var(--surface-hover);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+.compare-mark__tag {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.compare-controls {
+  display: grid;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.compare-controls__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-5);
+}
+
+.compare-switch {
+  gap: var(--space-3);
+  padding: 0;
+}
+
+.compare-curves {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.compare-legend__item {
+  flex-wrap: wrap;
+}
+
+.compare__error {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}

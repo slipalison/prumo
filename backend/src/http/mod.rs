@@ -5,6 +5,7 @@ mod allocation;
 mod analysis;
 mod b3_import;
 mod cash;
+mod compare;
 pub mod dto;
 mod fundamentals;
 mod handlers;
@@ -52,6 +53,7 @@ use crate::auth::Authenticator;
 use crate::dividends::DividendProvider;
 use crate::error::ApiError;
 use crate::fundamentals::FundamentalsService;
+use crate::history::{DisabledHistory, HistoryProvider};
 use crate::icons::IconService;
 use crate::income::IncomeService;
 use crate::service::QuoteService;
@@ -73,6 +75,8 @@ pub struct AppState {
     pub alerts: Arc<AlertService>,
     pub icons: Arc<IconService>,
     pub fundamentals: Arc<FundamentalsService>,
+    /// As séries públicas que o comparador busca sob demanda.
+    pub history: Arc<dyn HistoryProvider>,
     pub info: Arc<BuildInfo>,
     pub metrics: Option<PrometheusHandle>,
     users: Arc<RwLock<HashMap<String, Uuid>>>,
@@ -96,6 +100,7 @@ impl AppState {
             alerts: Arc::new(AlertService::disabled(store.clone())),
             icons: Arc::new(IconService::disabled(store.clone())),
             fundamentals: Arc::new(FundamentalsService::disabled(store.clone())),
+            history: Arc::new(DisabledHistory),
             store,
             auth,
             quotes,
@@ -139,6 +144,13 @@ impl AppState {
     /// tarefa diária e para a busca de ativo novo).
     pub fn with_fundamentals_service(mut self, fundamentals: Arc<FundamentalsService>) -> Self {
         self.fundamentals = fundamentals;
+        self
+    }
+
+    /// Usa a fonte de séries históricas (o comparador busca o preço de um
+    /// ativo fora da carteira na hora; sem ela, só vale o que está no cache).
+    pub fn with_history_provider(mut self, history: Arc<dyn HistoryProvider>) -> Self {
+        self.history = history;
         self
     }
 
@@ -315,6 +327,8 @@ pub fn public_router(state: AppState, static_dir: &str) -> Router {
         .route("/income/auto", get(income_auto::get).put(income_auto::save))
         .route("/cash", get(cash::show))
         .route("/fundamentals", get(fundamentals::list))
+        .route("/compare", get(compare::indicators))
+        .route("/compare/returns", get(compare::returns))
         .route(
             "/income/goal",
             get(income::get_goal)

@@ -1,0 +1,56 @@
+# Comparador de ativos
+
+Tela `#/analise/comparar` (link no topo da Análise). Escolha de até 5 ativos,
+da carteira ou da busca de ticker (a mesma do cadastro), guardada no endereço
+(`?ativos=PETR4,VALE3`): dá para voltar e para mandar o link. Contrato em
+`docs/api.md` (§ Comparador). Não recomenda nada.
+
+## Tabela lado a lado
+
+Só indicadores que o Prumo já calcula: os fundamentos da CVM (`fundamentos.md`),
+o DY de 12 meses, o P/L e o P/VP (preço sobre LPA e VPA, ou sobre o valor
+patrimonial por cota), o tipo do fundo pelo balanço e o setor da B3.
+
+- **Destaque neutro.** Cada indicador tem uma direção fixa (maior ou menor valor
+  da linha), dita na dica da tela. Marca só entre ativos do mesmo tipo (empresa
+  com empresa, fundo com fundo) e só com 2+ valores. Não há ranking, nota nem
+  palavra de juízo; o marcador diz "maior" ou "menor" em texto.
+- **"—" com o motivo.** Indicador que não existe: `not_applicable` (tipo errado),
+  gap da CVM, `no_price_history`, `short_history`, `no_dividend_history`...
+- **Ativo fora da carteira.** Preço histórico e proventos vêm do Yahoo na hora e
+  ficam no cache (`price_history`, `dividend_history`). Fundamentos só se já
+  estiverem no banco; senão `not_tracked`. Nunca dispara a CVM.
+- DY = proventos brutos com data ex nos últimos 365 dias ÷ preço. Retorno de
+  12 meses = preço, sem proventos, ajustado por desdobramento.
+
+## Rentabilidade comparada
+
+Curvas normalizadas em 0% na data base (último fechamento em ou antes do início
+do período; série que começa depois abre em 0% no próprio começo). Períodos de
+1 mês a máximo (no máximo, do primeiro dado dos ativos).
+
+- **Com proventos** (retorno total): o provento bruto entra na data ex e é
+  reinvestido no preço do dia. JCP vem junto com o dividendo (fonte Yahoo).
+  Sem a chave, só o preço.
+- **Igualar o início**: todas as curvas partem da data em que todas existem.
+- **Carteira**: a cota do Desempenho, que **sempre** inclui os proventos
+  recebidos; a tela avisa quando a chave está desligada.
+- **Índices**: CDI (acumulado das taxas diárias) e Ibovespa. O que faltar antes
+  da primeira foto da carteira é buscado na hora (BCB e Yahoo) e guardado em
+  `index_history`.
+- Ativo em dólar ou cripto vai a reais pelo câmbio `USDBRL=X` de cada dia.
+
+## Desdobramentos (migração 0030)
+
+`price_history` guarda o fechamento **real** do dia. Para medir retorno de um
+ativo que desdobrou, o comparador guarda os eventos do Yahoo (`price_splits`) e
+divide o preço de antes pelo fator. Cada símbolo é conferido no máximo uma vez
+por dia (`price_split_checks`), numa só chamada que também completa o preço.
+`HistoryProvider::closes_and_splits` tem implementação padrão sem eventos.
+
+## Limites
+
+- Fonte única de preço e provento (Yahoo): dado pode faltar ou vir atrasado.
+- Dividendos do Yahoo são brutos e sem data de pagamento.
+- O primeiro pedido de um ativo novo demora o que o Yahoo demorar (até 15 s por
+  símbolo, em paralelo); os seguintes saem do cache.

@@ -123,7 +123,7 @@ pub struct IncomeService {
 }
 
 /// O símbolo no provedor de um ativo que paga provento, ou `None`.
-fn payer_symbol(market: Market, symbol: Option<&str>) -> Option<String> {
+pub(crate) fn payer_symbol(market: Market, symbol: Option<&str>) -> Option<String> {
     if !matches!(market, Market::B3 | Market::Us) {
         return None;
     }

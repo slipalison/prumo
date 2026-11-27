@@ -9,6 +9,7 @@ pub mod analysis;
 pub mod auth;
 pub mod b3_xlsx;
 pub mod brapi;
+pub mod compare;
 pub mod config;
 pub mod dividends;
 pub mod domain;
@@ -135,18 +136,19 @@ pub async fn run(config: Config) -> Result<(), StartError> {
             Arc::new(DevAuthenticator::new(email.clone()))
         }
     };
+    let (history, bonds): (Arc<dyn HistoryProvider>, Arc<dyn TreasuryHistory>) =
+        if config.quotes_enabled {
+            (
+                Arc::new(PublicHistory::new(http.clone())),
+                Arc::new(TransparenteFeed::new(http.clone())),
+            )
+        } else {
+            (Arc::new(DisabledHistory), Arc::new(DisabledTreasuryHistory))
+        };
     if let Some(at) = config.snapshot_at {
-        let (history, bonds): (Arc<dyn HistoryProvider>, Arc<dyn TreasuryHistory>) =
-            if config.quotes_enabled {
-                (
-                    Arc::new(PublicHistory::new(http.clone())),
-                    Arc::new(TransparenteFeed::new(http.clone())),
-                )
-            } else {
-                (Arc::new(DisabledHistory), Arc::new(DisabledTreasuryHistory))
-            };
         let performance = Arc::new(
-            performance::Performance::new(store.clone(), history).with_treasury_history(bonds),
+            performance::Performance::new(store.clone(), Arc::clone(&history))
+                .with_treasury_history(bonds),
         );
         Arc::clone(&performance).spawn(at);
         // A série refeita quando o livro muda no passado (importação da B3,
@@ -251,7 +253,8 @@ pub async fn run(config: Config) -> Result<(), StartError> {
     .with_income_service(income)
     .with_alerts_service(alerts)
     .with_icon_service(icons)
-    .with_fundamentals_service(fundamentals);
+    .with_fundamentals_service(fundamentals)
+    .with_history_provider(history);
     let public = http::public_router(state.clone(), &config.static_dir);
     let operational = http::operational_router(state.clone());
 

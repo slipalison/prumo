@@ -259,6 +259,26 @@ async fn yahoo_undoes_the_split_adjustment() {
     assert!(period2 > now.unix_timestamp(), "{period2}");
 }
 
+/// O comparador guarda os desdobramentos do mesmo pedido: a data do evento e o
+/// fator (4 para 1 = 4), os mesmos que desfazem o ajuste dos fechamentos.
+#[tokio::test]
+async fn yahoo_returns_the_splits_with_the_closes() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v8/finance/chart/AAPL"))
+        .and(query_param("events", "split"))
+        .respond_with(json(200, AAPL_SPLIT))
+        .mount(&server)
+        .await;
+    let provider = PublicHistory::with_bases(reqwest::Client::new(), &server.uri(), &server.uri());
+    let (closes, splits) = provider
+        .closes_and_splits("AAPL", date!(2020 - 08 - 27), date!(2020 - 08 - 31))
+        .await
+        .unwrap();
+    assert_eq!(closes.len(), 3);
+    assert_eq!(splits, vec![(date!(2020 - 08 - 31), dec!(4))]);
+}
+
 /// O provedor público junta os dois: índice do SGS e Ibovespa do Yahoo.
 #[tokio::test]
 async fn public_history_routes_each_index() {

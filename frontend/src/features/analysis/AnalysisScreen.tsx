@@ -9,6 +9,8 @@ import { Skeleton } from "../../components/Skeleton";
 import { CLASS_META } from "../../lib/assetClasses";
 import { attentionText } from "../../lib/analysisText";
 import { formatRelative, plural } from "../../lib/format";
+import { parseSection, useHash } from "../../lib/route";
+import { CompareScreen } from "../compare/CompareScreen";
 import { AttentionCard } from "./AttentionCard";
 import { DimensionCard } from "./DimensionCard";
 import { DimensionScores } from "./DimensionScores";
@@ -29,6 +31,12 @@ import { useAnalysis } from "./useAnalysis";
  * no fim, pontos de atenção, destaques, referências de preço e as fontes.
  */
 export function AnalysisScreen() {
+  // `#/analise/comparar`: o comparador de ativos mora no mesmo endereço-mãe.
+  const section = parseSection(useHash());
+  return section === "comparar" ? <CompareScreen /> : <AnalysisReport />;
+}
+
+function AnalysisReport() {
   const analysis = useAnalysis();
 
   return (
@@ -44,9 +52,14 @@ export function AnalysisScreen() {
           </>
         }
         actions={
-          <a className="link-btn" href="#/ajustes/analise">
-            Ajustar as regras
-          </a>
+          <>
+            <a className="link-btn" href="#/analise/comparar">
+              Comparar ativos
+            </a>
+            <a className="link-btn" href="#/ajustes/analise">
+              Ajustar as regras
+            </a>
+          </>
         }
       />
 

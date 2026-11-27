@@ -96,6 +96,18 @@ pub trait HistoryProvider: Send + Sync {
     /// Fechamento diário de um símbolo do Yahoo (`KNRI11.SA`, `AAPL`,
     /// `USDBRL=X`), de `from` a `to`, inclusive.
     async fn closes(&self, symbol: &str, from: Date, to: Date) -> Result<Series, HistoryError>;
+
+    /// Os fechamentos de [`HistoryProvider::closes`] e os desdobramentos
+    /// (data do evento e fator: cotas novas por cota antiga) do mesmo pedido.
+    /// Quem não informa desdobramento devolve a lista vazia.
+    async fn closes_and_splits(
+        &self,
+        symbol: &str,
+        from: Date,
+        to: Date,
+    ) -> Result<(Series, Vec<(Date, Decimal)>), HistoryError> {
+        Ok((self.closes(symbol, from, to).await?, Vec::new()))
+    }
 }
 
 /// As fontes públicas de verdade: o SGS do Banco Central e o `chart` do Yahoo.
@@ -131,6 +143,15 @@ impl HistoryProvider for PublicHistory {
 
     async fn closes(&self, symbol: &str, from: Date, to: Date) -> Result<Series, HistoryError> {
         self.yahoo.closes(symbol, from, to).await
+    }
+
+    async fn closes_and_splits(
+        &self,
+        symbol: &str,
+        from: Date,
+        to: Date,
+    ) -> Result<(Series, Vec<(Date, Decimal)>), HistoryError> {
+        self.yahoo.closes_and_splits(symbol, from, to).await
     }
 }
 

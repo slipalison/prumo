@@ -3,6 +3,7 @@ import { cleanup } from "@testing-library/react";
 import { MotionGlobalConfig } from "motion/react";
 import { afterAll, afterEach, beforeAll, vi } from "vitest";
 import { resetAnalysis } from "./analysisHandlers";
+import { resetCompare } from "./compareHandlers";
 import { FakeEventSource } from "./eventSource";
 import { resetFundamentals } from "./fundamentalsHandlers";
 import { resetIcons } from "./iconsHandlers";
@@ -30,6 +31,7 @@ afterEach(() => {
   resetIcons();
   resetPanel();
   resetAnalysis();
+  resetCompare();
   resetFundamentals();
   resetTaxDb();
   window.localStorage.clear();

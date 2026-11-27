@@ -2635,3 +2635,48 @@ A CSP da página (`img-src 'self' data:`) não muda: a imagem é do mesmo domín
 
 `GET /healthz` (processo de pé), `GET /readyz` (`select 1` no Postgres),
 `GET /metrics` (Prometheus). Na porta pública (8080) as três respondem 404.
+
+## Comparador
+
+Compara até 5 ativos lado a lado. A escolha é uma lista separada por vírgula:
+`PETR4` (o ativo da carteira, ou o palpite do ticker digitado na mão), ou
+`KNRI11:br_reits`, `AAPL:intl_stocks`, `AAPL34:intl_stocks:b3` (classe escrita;
+`:b3` para BDR/ETF numa classe de fora da B3). Renda fixa e Tesouro dão `422`,
+assim como lista vazia, mais de 5 itens e símbolo ou classe inválidos. Método,
+fontes e limites em `docs/comparador.md`.
+
+### `GET /api/v1/compare?assets=PETR4,KNRI11:br_reits`
+
+Resposta: `{ as_of, assets, rows }`.
+
+- `assets[]`: `key` (a escolha como veio), `symbol`, `name`, `asset_class`,
+  `in_portfolio`, `family` (`company`, `fund`, `other`), `currency`, `price`.
+- `rows[]`: `id` (`price`, `return_12m`, `dividend_yield_12m`, `price_to_book`,
+  `segment`, `price_to_earnings`, `roe`, `net_margin`, `ebitda_margin`,
+  `net_debt_to_ebitda`, `net_debt_to_equity`, `revenue_cagr`, `earnings_cagr`,
+  `earnings_per_share`, `book_value_per_share`, `market_cap`, `nav_per_share`,
+  `vacancy`, `net_assets`), `group` (`general`, `company`, `fund`), `unit`
+  (`multiple`, `percent` já em %, `money`, `money_compact`, `text`),
+  `direction` (`higher`, `lower`, `none`: de que lado fica o destaque) e `cells`,
+  uma por ativo na ordem de `assets`.
+- célula: `value`, `text` (setor ou tipo), `reason` (por que não há número:
+  `not_applicable`, `not_tracked`, `no_price`, `no_price_history`,
+  `short_history`, `no_dividend_history`, `no_sector`, `no_sector_source`, os
+  motivos de `GET /fundamentals`) e `mark` (`max`/`min`: o extremo da linha **entre
+  ativos do mesmo tipo**, só com 2 ou mais valores; empate marca todos).
+- Linha em que nenhum ativo se aplica não vem.
+
+Preço e proventos do ativo de fora da carteira são buscados na hora (no máximo
+uma conferência por símbolo por dia). Fundamentos só vêm se já estiverem no
+banco: o comparador nunca dispara a busca da CVM.
+
+### `GET /api/v1/compare/returns?assets=…&period=12m&total_return=false&align_start=false&portfolio=true&benchmarks=cdi,ibov`
+
+`period`: `1m`, `3m`, `6m`, `ytd`, `12m` (padrão), `3y`, `5y`, `max`.
+`benchmarks`: `cdi`, `ibov` (vazio = nenhum). Resposta: `{ period, total_return,
+align_start, from, to, dates, series }`. `series[]`: `key`, `kind` (`asset`,
+`portfolio`, `index`), `name`, `values` (retorno acumulado em %, uma por data de
+`dates`; `null` antes de a curva existir), `return_percent`, `starts_on`,
+`reason` (`no_price_history`, `no_series`, `no_index_data`), `includes_income`,
+`converted_to_brl`. Cada curva abre em 0% na data base; `align_start` parte da
+data em que todas existem.

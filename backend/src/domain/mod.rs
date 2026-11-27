@@ -7,6 +7,7 @@ pub mod asset_class;
 pub mod b3_import;
 pub mod b3_plan;
 pub mod cash;
+pub mod compare;
 pub mod defaults;
 pub mod entitlement;
 pub mod fundamentals;

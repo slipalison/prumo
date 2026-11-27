@@ -525,7 +525,7 @@ impl Performance {
 }
 
 /// A moeda de um símbolo antes de ele ter cotação guardada.
-fn default_currency(market: Market) -> &'static str {
+pub(crate) fn default_currency(market: Market) -> &'static str {
     match market {
         Market::Us | Market::Crypto => "USD",
         Market::B3 | Market::Treasury | Market::Manual => "BRL",
