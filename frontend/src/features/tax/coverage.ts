@@ -77,41 +77,43 @@ export function coveredItems(rules: TaxRules): CoveredItem[] {
       source: `${rules.capital_gain_brackets_source}; ${crypto.limit.source}`,
     });
   }
-  items.push({
-    id: "losses",
-    title: "Prejuízo a compensar",
-    detail: "Por grupo (ações, ETF e BDR; day trade; FII; Fiagro), mês a mês e de um ano para o outro, sem prazo.",
-    source: "P&R 709 a 711; IN RFB 1.585/2015, arts. 37 e 64",
-  });
-  items.push({
-    id: "withholding",
-    title: "IR retido na fonte",
-    detail: `${rateText(w.common_rate.value)} das vendas comuns (dispensado até ${reaisText(w.common_dispensed_up_to.value)} no mês) e ${rateText(w.day_trade_rate.value)} do day trade, abatidos do DARF; a sobra passa para os meses seguintes do mesmo ano. Sem o valor da nota, vale a regra.`,
-    source: `${w.common_rate.source}; ${w.common_dispensed_up_to.source}; ${w.carry_within_year_source}`,
-  });
-  items.push({
-    id: "darf",
-    title: "DARF",
-    detail: `${rules.exchange_darf_code.value} (bolsa) e ${rules.capital_gain_darf_code.value} (cripto), no último dia útil do mês seguinte; abaixo de ${reaisText(rules.darf_minimum.value)}, soma no mês seguinte.`,
-    source: `${rules.exchange_darf_code.source}; ${rules.darf_minimum.source}`,
-  });
-  items.push({
-    id: "late",
-    title: "DARF em atraso",
-    detail: `Multa de ${rateText(late.daily_penalty.value)} ao dia, até ${rateText(late.penalty_cap.value)}, e juros da Selic de cada mês (série ${late.selic_series.value} do Banco Central) mais ${rateText(late.payment_month_interest.value)} no mês do pagamento.`,
-    source: `${late.daily_penalty.source}; ${late.payment_month_interest.source}; ${late.selic_series.source}`,
-  });
   const dividends = rules.dividend_withholding;
-  items.push({
-    id: "income",
-    title: "Proventos na declaração",
-    detail: `Dividendos e rendimentos de FII como isentos; JCP com ${rateText(rules.interest_on_equity_rate.value)} na fonte, em tributação exclusiva${
-      dividends
-        ? `; dividendo de uma mesma empresa acima de ${reaisText(dividends.monthly_threshold)} no mês com retenção de ${rateText(dividends.rate)}`
-        : ""
-    }. Por fonte pagadora, com o CNPJ do cadastro da CVM.`,
-    source: `${rules.interest_on_equity_rate.source}${dividends ? `; ${dividends.source}` : ""}`,
-  });
+  const dividendsDetail = dividends
+    ? `; dividendo de uma mesma empresa acima de ${reaisText(dividends.monthly_threshold)} no mês com retenção de ${rateText(dividends.rate)}`
+    : "";
+  const dividendsSource = dividends ? `; ${dividends.source}` : "";
+  items.push(
+    {
+      id: "losses",
+      title: "Prejuízo a compensar",
+      detail: "Por grupo (ações, ETF e BDR; day trade; FII; Fiagro), mês a mês e de um ano para o outro, sem prazo.",
+      source: "P&R 709 a 711; IN RFB 1.585/2015, arts. 37 e 64",
+    },
+    {
+      id: "withholding",
+      title: "IR retido na fonte",
+      detail: `${rateText(w.common_rate.value)} das vendas comuns (dispensado até ${reaisText(w.common_dispensed_up_to.value)} no mês) e ${rateText(w.day_trade_rate.value)} do day trade, abatidos do DARF; a sobra passa para os meses seguintes do mesmo ano. Sem o valor da nota, vale a regra.`,
+      source: `${w.common_rate.source}; ${w.common_dispensed_up_to.source}; ${w.carry_within_year_source}`,
+    },
+    {
+      id: "darf",
+      title: "DARF",
+      detail: `${rules.exchange_darf_code.value} (bolsa) e ${rules.capital_gain_darf_code.value} (cripto), no último dia útil do mês seguinte; abaixo de ${reaisText(rules.darf_minimum.value)}, soma no mês seguinte.`,
+      source: `${rules.exchange_darf_code.source}; ${rules.darf_minimum.source}`,
+    },
+    {
+      id: "late",
+      title: "DARF em atraso",
+      detail: `Multa de ${rateText(late.daily_penalty.value)} ao dia, até ${rateText(late.penalty_cap.value)}, e juros da Selic de cada mês (série ${late.selic_series.value} do Banco Central) mais ${rateText(late.payment_month_interest.value)} no mês do pagamento.`,
+      source: `${late.daily_penalty.source}; ${late.payment_month_interest.source}; ${late.selic_series.source}`,
+    },
+    {
+      id: "income",
+      title: "Proventos na declaração",
+      detail: `Dividendos e rendimentos de FII como isentos; JCP com ${rateText(rules.interest_on_equity_rate.value)} na fonte, em tributação exclusiva${dividendsDetail}. Por fonte pagadora, com o CNPJ do cadastro da CVM.`,
+      source: `${rules.interest_on_equity_rate.source}${dividendsSource}`,
+    },
+  );
   return items;
 }
 

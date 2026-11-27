@@ -16,7 +16,10 @@ type LateChargeSheetProps = {
   onClose: () => void;
 };
 
-const selicText = (m: SelicMonth) => `${monthName(m.month)} de ${m.year} (${m.rate === null ? "sem taxa" : `${m.rate.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}%`})`;
+const selicText = (m: SelicMonth) => {
+  const rate = m.rate === null ? "sem taxa" : `${m.rate.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}%`;
+  return `${monthName(m.month)} de ${m.year} (${rate})`;
+};
 
 /**
  * A calculadora do DARF pago depois do vencimento: a pessoa escolhe o dia do
@@ -24,7 +27,7 @@ const selicText = (m: SelicMonth) => `${monthName(m.month)} de ${m.year} (${m.ra
  * mês mais 1%), com a conta à vista. A conta é do servidor; mês sem Selic não
  * vira estimativa.
  */
-export function LateChargeSheet({ month, darf, today, open, onClose }: LateChargeSheetProps) {
+export function LateChargeSheet({ month, darf, today, open, onClose }: Readonly<LateChargeSheetProps>) {
   const dateId = useId();
   const [payOn, setPayOn] = useState(today);
   const late = useLateCharge(open ? { year: month.year, month: month.month, code: darf.code, payOn } : null);
@@ -64,14 +67,14 @@ export function LateChargeSheet({ month, darf, today, open, onClose }: LateCharg
   );
 }
 
-function LateBreakdown({ charge }: { charge: LateCharge }) {
+function LateBreakdown({ charge }: Readonly<{ charge: LateCharge }>) {
   const money = useMoney();
   const rule = charge.rule;
   if (charge.days_late === 0) {
     return (
-      <p className="tax-facts" role="status">
+      <output className="tax-facts">
         Pago até {isoDay(charge.due_date)}, o DARF vai sem multa nem juros: {money.brl(charge.principal)}.
-      </p>
+      </output>
     );
   }
   const interestParts = [
@@ -111,10 +114,10 @@ function LateBreakdown({ charge }: { charge: LateCharge }) {
         </div>
       </dl>
       {charge.missing_selic.length > 0 && (
-        <p className="tax-facts" role="status">
+        <output className="tax-facts">
           Falta a Selic de {charge.missing_selic.map((m) => periodName(m.year, m.month)).join(", ")}: o mês ainda não fechou ou a
           taxa não saiu. Os juros e o total aparecem quando o Banco Central publicar.
-        </p>
+        </output>
       )}
       <p className="field__hint">
         No DARF: código {charge.code}, período de apuração {String(charge.month).padStart(2, "0")}/{charge.year}, vencimento{" "}

@@ -8,7 +8,7 @@ import { useTaxRules } from "./useTax";
  * tabela do servidor), e o que fica fora, com o porquê. Recolhido: se lê uma
  * vez.
  */
-export function CoveragePanel({ year }: { year: number }) {
+export function CoveragePanel({ year }: Readonly<{ year: number }>) {
   const rules = useTaxRules(year);
   const covered = rules.data ? coveredItems(rules.data) : [];
   return (

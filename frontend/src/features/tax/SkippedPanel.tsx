@@ -4,7 +4,7 @@ import { FoldPanel } from "../income/FoldPanel";
 import { isoDay, SKIP_TEXT } from "./taxText";
 
 /** O que ficou fora da conta, com o motivo de cada item; fechado, só a contagem. */
-export function SkippedPanel({ skipped }: { skipped: Skipped[] }) {
+export function SkippedPanel({ skipped }: Readonly<{ skipped: Skipped[] }>) {
   const money = useMoney();
   return (
     <FoldPanel title="O que o Prumo não calculou" count={skipped.length}>

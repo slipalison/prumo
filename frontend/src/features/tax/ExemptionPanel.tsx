@@ -18,7 +18,7 @@ function currentMonth(data: TaxMonths): TaxMonth | undefined {
  * o lucro é isento. Só a venda de ações e units soma aqui; o resto da regra
  * fica no ⓘ.
  */
-export function ExemptionPanel({ data }: { data: TaxMonths }) {
+export function ExemptionPanel({ data }: Readonly<{ data: TaxMonths }>) {
   const money = useMoney();
   const month = currentMonth(data);
   const stocks = month?.exemptions.find((e) => e.id === "stock_sales");

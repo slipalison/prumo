@@ -24,10 +24,19 @@
   color: var(--gold-text);
 }
 
+/* O carregando é um <output> (o status nativo), que nasce inline. */
 .tax__loading {
   display: flex;
   flex-direction: column;
   gap: var(--gap-stack);
+}
+
+/* A escolha do ano é um <fieldset> (o grupo nativo): sem a moldura, o recuo e a largura mínima padrão. */
+.tax fieldset.chips {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
 /* A coluna do lado: o isentômetro, o saldo de antes e os recolheres, um
@@ -224,6 +233,11 @@
   line-height: 1.5;
 }
 
+/* O aviso da folha do atraso é um <output> (o status nativo), que nasce inline. */
+output.tax-facts {
+  display: block;
+}
+
 ul.tax-facts {
   padding-left: var(--space-5);
 }
@@ -334,10 +348,15 @@ ul.tax-facts {
 
 /* --- IR retido do mês (dentro da apuração) --- */
 
+/* O bloco é um <fieldset> (o grupo nativo): sem a moldura, o recuo e a largura mínima padrão. */
 .tax-withholding {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
 .tax-withholding p {
@@ -412,6 +431,17 @@ ul.tax-facts {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+
+/* O ano do saldo é um rádio nativo escondido dentro do chip (o <label>): o
+   chip leva o cursor e o anel de foco que o botão tinha. */
+.tax-carry__year {
+  cursor: pointer;
+}
+
+.tax-carry__year:has(:focus-visible) {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
 }
 
 .tax-carry__fields {

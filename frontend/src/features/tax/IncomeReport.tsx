@@ -2,6 +2,7 @@ import type { Doubt, IncomePayer, IrpfIncome } from "../../api/taxTypes";
 import { DataTable, type DataColumn } from "../../components/DataTable";
 import { useToast } from "../../components/toastContext";
 import { formatBRL } from "../../lib/format";
+import type { Money } from "../../lib/money";
 import { useMoney } from "../../lib/privacy";
 import { DoubtTip } from "./DoubtTip";
 import { irpfLabel, monthName } from "./taxText";
@@ -41,27 +42,9 @@ const rowName = (row: IncomeRow) => (row.payer ? (row.payer.name ?? row.payer.sy
 
 type IncomeReportProps = { exempt: IrpfIncome[]; exclusive: IrpfIncome[]; doubts: Doubt[] };
 
-/**
- * Os rendimentos do ano como a declaração pede: uma linha por fonte pagadora
- * em cada código (CNPJ e nome do cadastro da CVM, os tickers, o valor), e o
- * lucro isento das próprias vendas; "Copiar" por linha e o relatório inteiro
- * de uma vez. As dúvidas jurídicas ficam no ⓘ azul do título.
- */
-export function IncomeReport({ exempt, exclusive, doubts }: IncomeReportProps) {
-  const money = useMoney();
-  const toast = useToast();
-  const rows = [...rowsOf(exempt, false), ...rowsOf(exclusive, true)];
-
-  const copy = async (text: string, done: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      toast({ tone: "success", message: done });
-    } catch {
-      toast({ tone: "error", message: "Não consegui copiar. Selecione o texto e copie à mão." });
-    }
-  };
-
-  const columns: DataColumn<IncomeRow>[] = [
+/** As colunas da ficha de rendimentos; `onCopy` leva o texto da linha para a área de transferência. */
+function incomeColumns(money: Money, onCopy: (text: string, done: string) => Promise<void>): DataColumn<IncomeRow>[] {
+  return [
     {
       key: "sheet",
       label: "Ficha",
@@ -124,7 +107,7 @@ export function IncomeReport({ exempt, exclusive, doubts }: IncomeReportProps) {
         <button
           type="button"
           className="link-btn"
-          onClick={() => void copy(rowText(row), `Linha de ${rowName(row)} copiada.`)}
+          onClick={() => void onCopy(rowText(row), `Linha de ${rowName(row)} copiada.`)}
           aria-label={`Copiar a linha de ${rowName(row)}, código ${row.line.code}`}
         >
           Copiar
@@ -132,6 +115,27 @@ export function IncomeReport({ exempt, exclusive, doubts }: IncomeReportProps) {
       ),
     },
   ];
+}
+
+/**
+ * Os rendimentos do ano como a declaração pede: uma linha por fonte pagadora
+ * em cada código (CNPJ e nome do cadastro da CVM, os tickers, o valor), e o
+ * lucro isento das próprias vendas; "Copiar" por linha e o relatório inteiro
+ * de uma vez. As dúvidas jurídicas ficam no ⓘ azul do título.
+ */
+export function IncomeReport({ exempt, exclusive, doubts }: Readonly<IncomeReportProps>) {
+  const money = useMoney();
+  const toast = useToast();
+  const rows = [...rowsOf(exempt, false), ...rowsOf(exclusive, true)];
+
+  const copy = async (text: string, done: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({ tone: "success", message: done });
+    } catch {
+      toast({ tone: "error", message: "Não consegui copiar. Selecione o texto e copie à mão." });
+    }
+  };
 
   return (
     <section className="tax-block">
@@ -151,7 +155,7 @@ export function IncomeReport({ exempt, exclusive, doubts }: IncomeReportProps) {
       </h3>
       <DataTable
         caption="Rendimentos por fonte pagadora"
-        columns={columns}
+        columns={incomeColumns(money, copy)}
         rows={rows}
         rowKey={({ line, payer }) => `${line.group}-${line.code}-${payer ? (payer.cnpj ?? payer.symbols.join(",")) : "own"}`}
         empty="Nenhum rendimento neste ano."

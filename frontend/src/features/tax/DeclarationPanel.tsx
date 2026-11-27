@@ -3,6 +3,7 @@ import { AssetIcon } from "../../components/AssetIcon";
 import { DataTable, type DataColumn } from "../../components/DataTable";
 import { Panel } from "../../components/Layout";
 import { useToast } from "../../components/toastContext";
+import type { Money } from "../../lib/money";
 import { useMoney } from "../../lib/privacy";
 import { DoubtTip } from "./DoubtTip";
 import { BalanceText } from "./MonthsPanel";
@@ -19,7 +20,7 @@ function assetText(asset: IrpfAsset, quantity: string, cost: string, average: st
  * exclusiva, com CNPJ) e o saldo da renda variável. Cada dúvida jurídica fica
  * no ⓘ azul do bloco que ela toca.
  */
-export function DeclarationPanel({ irpf }: { irpf: Irpf }) {
+export function DeclarationPanel({ irpf }: Readonly<{ irpf: Irpf }>) {
   const money = useMoney();
   const pending = (irpf.year_end.pending_darf.exchange_net_gain ?? 0) + (irpf.year_end.pending_darf.capital_gain ?? 0);
 
@@ -55,28 +56,9 @@ export function DeclarationPanel({ irpf }: { irpf: Irpf }) {
   );
 }
 
-function AssetsTable({ assets }: { assets: IrpfAsset[] }) {
-  const money = useMoney();
-  const toast = useToast();
-
-  const copy = async (asset: IrpfAsset) => {
-    // O que vai para a área de transferência é o valor de verdade: copiar é
-    // o que a pessoa pediu, e a tela continua mascarada.
-    const real = assetText(
-      asset,
-      asset.quantity.toLocaleString("pt-BR", { maximumFractionDigits: 8 }),
-      asset.total_cost.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-      asset.average_price.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 8 }),
-    );
-    try {
-      await navigator.clipboard.writeText(real);
-      toast({ tone: "success", message: `Linha de ${asset.symbol} copiada.` });
-    } catch {
-      toast({ tone: "error", message: "Não consegui copiar. Selecione o texto e copie à mão." });
-    }
-  };
-
-  const columns: DataColumn<IrpfAsset>[] = [
+/** As colunas de Bens e Direitos; `onCopy` leva a linha do ativo para a área de transferência. */
+function assetColumns(money: Money, onCopy: (asset: IrpfAsset) => Promise<void>): DataColumn<IrpfAsset>[] {
+  return [
     {
       key: "asset",
       label: "Ativo",
@@ -110,17 +92,39 @@ function AssetsTable({ assets }: { assets: IrpfAsset[] }) {
       label: "Copiar",
       align: "end",
       cell: (asset) => (
-        <button type="button" className="link-btn" onClick={() => void copy(asset)} aria-label={`Copiar a linha de ${asset.symbol}`}>
+        <button type="button" className="link-btn" onClick={() => void onCopy(asset)} aria-label={`Copiar a linha de ${asset.symbol}`}>
           Copiar
         </button>
       ),
     },
   ];
+}
+
+function AssetsTable({ assets }: Readonly<{ assets: IrpfAsset[] }>) {
+  const money = useMoney();
+  const toast = useToast();
+
+  const copy = async (asset: IrpfAsset) => {
+    // O que vai para a área de transferência é o valor de verdade: copiar é
+    // o que a pessoa pediu, e a tela continua mascarada.
+    const real = assetText(
+      asset,
+      asset.quantity.toLocaleString("pt-BR", { maximumFractionDigits: 8 }),
+      asset.total_cost.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+      asset.average_price.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 8 }),
+    );
+    try {
+      await navigator.clipboard.writeText(real);
+      toast({ tone: "success", message: `Linha de ${asset.symbol} copiada.` });
+    } catch {
+      toast({ tone: "error", message: "Não consegui copiar. Selecione o texto e copie à mão." });
+    }
+  };
 
   return (
     <DataTable
       caption="Bens e Direitos"
-      columns={columns}
+      columns={assetColumns(money, copy)}
       rows={assets}
       rowKey={(asset) => asset.symbol}
       empty="Nenhuma posição em 31/12 dentro do IR do Prumo."

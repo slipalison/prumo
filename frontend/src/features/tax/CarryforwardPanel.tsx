@@ -34,7 +34,7 @@ function valuesOf(carry: Carryforward): CarryforwardValues {
  * estava em 1º de janeiro do primeiro ano apurado. Ele muda a conta de todos
  * os anos.
  */
-export function CarryforwardPanel({ carry }: { carry: Carryforward }) {
+export function CarryforwardPanel({ carry }: Readonly<{ carry: Carryforward }>) {
   const money = useMoney();
   const baseId = useId();
   const [editing, setEditing] = useState(false);
@@ -92,16 +92,16 @@ export function CarryforwardPanel({ carry }: { carry: Carryforward }) {
         <div className="tax-carry">
           <div className="chips" role="radiogroup" aria-label="O saldo vale em 1º de janeiro de">
             {carry.covered_years.map((option) => (
-              <button
-                key={option}
-                type="button"
-                role="radio"
-                aria-checked={option === year}
-                className={cx("chip chip--quick", option === year && "is-active")}
-                onClick={() => setYear(option)}
-              >
+              <label key={option} className={cx("chip chip--quick tax-carry__year", option === year && "is-active")}>
+                <input
+                  type="radio"
+                  name={`${baseId}-year`}
+                  className="sr-only"
+                  checked={option === year}
+                  onChange={() => setYear(option)}
+                />
                 1º/1/{option}
-              </button>
+              </label>
             ))}
           </div>
           <div className="tax-carry__fields">

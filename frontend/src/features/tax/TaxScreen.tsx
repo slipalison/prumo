@@ -65,7 +65,7 @@ export function TaxScreen() {
         infoLabel="Sobre os impostos"
         actions={
           covered.length > 0 && (
-            <div className="chips" role="group" aria-label="Ano-calendário">
+            <fieldset className="chips" aria-label="Ano-calendário">
               {covered.map((option) => (
                 <button
                   key={option}
@@ -77,7 +77,7 @@ export function TaxScreen() {
                   {option}
                 </button>
               ))}
-            </div>
+            </fieldset>
           )
         }
       />
@@ -100,10 +100,10 @@ export function TaxScreen() {
       )}
 
       {(carry.isPending || months.isPending) && !carry.isError && (
-        <div className="tax__loading" role="status" aria-label="Carregando os impostos">
+        <output className="tax__loading" aria-label="Carregando os impostos">
           <Skeleton height={120} radius={22} />
           <Skeleton height={260} radius={22} />
-        </div>
+        </output>
       )}
       {months.isError && (
         <GlassCard as="section" role="alert" className="state-card">

@@ -1,7 +1,7 @@
 import { useId, useState } from "react";
 import { errorMessage } from "../../api/client";
 import type { Balance, CapitalGain, Darf, Pool, PoolResult, TaxMonth, TaxMonths } from "../../api/taxTypes";
-import { DataTable, StatusPill, type DataColumn } from "../../components/DataTable";
+import { DataTable, StatusPill, type DataColumn, type Status } from "../../components/DataTable";
 import { Panel } from "../../components/Layout";
 import { MagneticButton } from "../../components/MagneticButton";
 import { MoneyInput } from "../../components/MoneyInput";
@@ -31,7 +31,7 @@ const isQuiet = (month: TaxMonth) =>
   !month.pools.some(hasLoss);
 
 /** Zero é traço: o número que não existe não ocupa a vista. */
-function Amount({ value }: { value: number }) {
+function Amount({ value }: Readonly<{ value: number }>) {
   const money = useMoney();
   return value === 0 ? <span className="tax-empty">–</span> : <>{money.brl(value)}</>;
 }
@@ -40,7 +40,7 @@ function Amount({ value }: { value: number }) {
  * O prejuízo a compensar de cada grupo no fim do mês, com o que compensou
  * lucro e o que entrou no mês. Só o grupo que teve prejuízo aparece.
  */
-function LossCell({ month }: { month: TaxMonth }) {
+function LossCell({ month }: Readonly<{ month: TaxMonth }>) {
   const money = useMoney();
   const pools = month.pools.filter(hasLoss);
   if (pools.length === 0) return <span className="tax-empty">–</span>;
@@ -57,19 +57,9 @@ function LossCell({ month }: { month: TaxMonth }) {
   );
 }
 
-/**
- * Os doze meses do ano numa tabela: vendas de ações, imposto, DARF (com o
- * vencimento embaixo), o prejuízo a compensar de cada grupo e a situação (a
- * pagar, em atraso ou pago, com o botão que muda e a calculadora do atraso).
- * O que fica depois da tabela é o saldo de 1º de janeiro e o que passa para o
- * ano seguinte.
- */
-export function MonthsPanel({ data }: { data: TaxMonths }) {
-  const money = useMoney();
-  const pendingDarf = (data.closing.pending_darf.exchange_net_gain ?? 0) + (data.closing.pending_darf.capital_gain ?? 0);
-  const opening = (data.months[0]?.pools ?? []).filter((p) => p.loss_before > 0);
-
-  const columns: DataColumn<TaxMonth>[] = [
+/** As colunas da tabela dos meses; `today` decide o que está em atraso. */
+function monthColumns(today: string): DataColumn<TaxMonth>[] {
+  return [
     {
       key: "month",
       label: "Mês",
@@ -86,9 +76,22 @@ export function MonthsPanel({ data }: { data: TaxMonths }) {
       cell: (month) =>
         month.darfs
           .filter((d) => d.payable)
-          .map((darf) => <PaidToggle key={darf.code} month={month} darf={darf} today={data.today} />),
+          .map((darf) => <PaidToggle key={darf.code} month={month} darf={darf} today={today} />),
     },
   ];
+}
+
+/**
+ * Os doze meses do ano numa tabela: vendas de ações, imposto, DARF (com o
+ * vencimento embaixo), o prejuízo a compensar de cada grupo e a situação (a
+ * pagar, em atraso ou pago, com o botão que muda e a calculadora do atraso).
+ * O que fica depois da tabela é o saldo de 1º de janeiro e o que passa para o
+ * ano seguinte.
+ */
+export function MonthsPanel({ data }: Readonly<{ data: TaxMonths }>) {
+  const money = useMoney();
+  const pendingDarf = (data.closing.pending_darf.exchange_net_gain ?? 0) + (data.closing.pending_darf.capital_gain ?? 0);
+  const opening = (data.months[0]?.pools ?? []).filter((p) => p.loss_before > 0);
 
   return (
     <Panel
@@ -98,7 +101,7 @@ export function MonthsPanel({ data }: { data: TaxMonths }) {
     >
       <DataTable
         caption={`DARF por mês em ${data.year}`}
-        columns={columns}
+        columns={monthColumns(data.today)}
         rows={data.months}
         rowKey={(month) => String(month.month)}
         rowClassName={(month) => (isQuiet(month) ? "tax-row--quiet" : undefined)}
@@ -118,7 +121,7 @@ export function MonthsPanel({ data }: { data: TaxMonths }) {
   );
 }
 
-function DarfCell({ month }: { month: TaxMonth }) {
+function DarfCell({ month }: Readonly<{ month: TaxMonth }>) {
   const money = useMoney();
   const payable = month.darfs.filter((d) => d.payable);
   const pending = month.darfs.filter((d) => !d.payable && d.pending_after > 0);
@@ -140,7 +143,14 @@ function DarfCell({ month }: { month: TaxMonth }) {
   );
 }
 
-function PaidToggle({ month, darf, today }: { month: TaxMonth; darf: Darf; today: string }) {
+/** A pílula do DARF: pago, em atraso ou a pagar, com o texto que a cor só reforça. */
+function darfState(paid: boolean, overdue: boolean): { status: Status; text: string } {
+  if (paid) return { status: "ok", text: "Pago" };
+  if (overdue) return { status: "bad", text: "Em atraso" };
+  return { status: "attention", text: "A pagar" };
+}
+
+function PaidToggle({ month, darf, today }: Readonly<{ month: TaxMonth; darf: Darf; today: string }>) {
   const change = useDarfPaid();
   const toast = useToast();
   const [lateOpen, setLateOpen] = useState(false);
@@ -148,6 +158,7 @@ function PaidToggle({ month, darf, today }: { month: TaxMonth; darf: Darf; today
   const paid = darf.paid !== null;
   // Datas ISO comparam como texto. Pago, o atraso é história: sem calculadora.
   const overdue = !paid && darf.due_date < today;
+  const state = darfState(paid, overdue);
   const toggle = () =>
     change.mutate(
       { year: month.year, month: month.month, code: darf.code, paid: !paid },
@@ -163,7 +174,7 @@ function PaidToggle({ month, darf, today }: { month: TaxMonth; darf: Darf; today
 
   return (
     <span className="tax-paid">
-      <StatusPill status={paid ? "ok" : overdue ? "bad" : "attention"}>{paid ? "Pago" : overdue ? "Em atraso" : "A pagar"}</StatusPill>
+      <StatusPill status={state.status}>{state.text}</StatusPill>
       <button
         type="button"
         className="link-btn tax-paid__button"
@@ -192,15 +203,15 @@ function PaidToggle({ month, darf, today }: { month: TaxMonth; darf: Darf; today
 }
 
 /** O prejuízo que sobra de cada grupo, em uma frase. */
-export function BalanceText({ balance, empty }: { balance: Balance; empty: string }) {
+export function BalanceText({ balance, empty }: Readonly<{ balance: Balance; empty: string }>) {
   const money = useMoney();
   const parts = (Object.entries(balance.losses) as Array<[Pool, number]>).filter(([, value]) => value > 0);
-  if (parts.length === 0) return <>{empty}</>;
+  if (parts.length === 0) return empty;
   return <>{parts.map(([pool, value]) => `${POOL_LABEL[pool]} ${money.brl(value)}`).join(" · ")}</>;
 }
 
 /** A conta de um mês: vendas, grupos com a compensação, cripto e as dúvidas que tocam o número. */
-export function MonthDetails({ month }: { month: TaxMonth }) {
+export function MonthDetails({ month }: Readonly<{ month: TaxMonth }>) {
   const money = useMoney();
   const name = monthName(month.month);
   const pools = month.pools.filter((p) => p.result !== 0 || p.loss_before !== 0);
@@ -233,9 +244,9 @@ export function MonthDetails({ month }: { month: TaxMonth }) {
         </ul>
       )}
       {pools.length > 0 && (
-        <div role="region" aria-label={`Apuração de ${name}`}>
+        <section aria-label={`Apuração de ${name}`}>
           <DataTable caption={`Apuração de ${name}`} columns={columns} rows={pools} rowKey={(p) => p.pool} />
-        </div>
+        </section>
       )}
       <CryptoLine gain={month.capital_gain} name={name} />
       <WithholdingBlock month={month} />
@@ -251,7 +262,7 @@ export function MonthDetails({ month }: { month: TaxMonth }) {
   );
 }
 
-function CryptoLine({ gain, name }: { gain: CapitalGain; name: string }) {
+function CryptoLine({ gain, name }: Readonly<{ gain: CapitalGain; name: string }>) {
   const money = useMoney();
   if (gain.gains === 0 && gain.losses === 0) return null;
   return (
@@ -273,7 +284,7 @@ const hasWithholding = (month: TaxMonth) => {
  * lucro do dia em day trade) ou o que a pessoa leu na nota. Dá para informar o
  * da nota e voltar para a regra.
  */
-function WithholdingBlock({ month }: { month: TaxMonth }) {
+function WithholdingBlock({ month }: Readonly<{ month: TaxMonth }>) {
   const money = useMoney();
   const inputId = useId();
   const toast = useToast();
@@ -306,7 +317,7 @@ function WithholdingBlock({ month }: { month: TaxMonth }) {
     );
 
   return (
-    <div className="tax-withholding" role="group" aria-label={`IR retido na fonte em ${name}`}>
+    <fieldset className="tax-withholding" aria-label={`IR retido na fonte em ${name}`}>
       <p className="tax-facts">
         IR retido na fonte: {money.brl(w.withheld)} {byRule ? "pela regra" : "informado da nota"}
         {byRule && ruleParts.length > 0 && <> ({ruleParts.join("; ")})</>}.
@@ -346,6 +357,6 @@ function WithholdingBlock({ month }: { month: TaxMonth }) {
           )}
         </p>
       )}
-    </div>
+    </fieldset>
   );
 }

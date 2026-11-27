@@ -15,7 +15,7 @@ type DoubtTipProps = {
  * do número que ele mexe e abre a explicação. O nome diz do que se trata, para
  * a cor não ser a única pista.
  */
-export function DoubtTip({ doubt, text = false }: DoubtTipProps) {
+export function DoubtTip({ doubt, text = false }: Readonly<DoubtTipProps>) {
   return (
     <Toggletip
       label={`Ponto a confirmar com contador: ${DOUBT_SHORT[doubt]}`}
