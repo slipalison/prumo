@@ -44,48 +44,85 @@ export function previousMonthStart(iso: string): string {
   return month === 1 ? `${year - 1}-12-01` : `${year}-${String(month - 1).padStart(2, "0")}-01`;
 }
 
-/** Um ativo e como o preço dele andou no dia. */
+/** Um ativo e como ele andou no dia. */
 export type DayMover = {
   id: string;
   label: string;
   assetClass: AssetClass;
-  /** Variação do preço contra o fechamento anterior, em %. */
-  changePercent: number;
-  /** Quanto isso vale na posição de hoje (quantidade × diferença de preço), em reais. */
+  /**
+   * Variação do preço contra o fechamento anterior, em %. `null` quando não há
+   * o que mostrar nas listas de altas e baixas: o ativo comprado hoje pela
+   * primeira vez (não tinha fechamento) e o que foi vendido inteiro.
+   */
+  changePercent: number | null;
+  /**
+   * O resultado do dia em reais: o valor de agora menos o do fechamento, sem o
+   * dinheiro das compras e vendas depois dele. A compra de hoje ganha ou perde
+   * a partir do preço pago (com as taxas); a venda, até o preço de venda.
+   */
   delta: number;
-  /** A posição ao preço do fechamento anterior (a base do percentual da classe). */
-  previousValue: number;
+  /** A base do percentual: a posição no fechamento mais o que se comprou depois. */
+  base: number;
+  /** O dia do fechamento anterior (`YYYY-MM-DD`). */
+  since: string;
 };
 
 /**
- * A variação do dia de cada ativo com posição, cotação e referência. Ativo sem
- * cotação (preço manual, renda fixa por valor) ou sem fechamento anterior fica
- * de fora: o dia dele não é medido.
+ * O dia de cada ativo cotado com referência. Ativo sem cotação (preço manual,
+ * renda fixa por valor) ou sem referência fica de fora: o dia dele não é
+ * medido. Sem fechamento anterior, as cotas que já havia entram pelo preço de
+ * agora (não há o que medir nelas) e só o negócio conta.
  */
 export function dayMovers(assets: Asset[], references: DayReference[]): DayMover[] {
-  const byAsset = new Map(references.map((r) => [r.asset_id, r.previous_close]));
+  const byAsset = new Map(references.map((r) => [r.asset_id, r]));
   const movers: DayMover[] = [];
   for (const asset of assets) {
-    const previous = byAsset.get(asset.id);
-    if (previous === undefined || previous <= 0) continue;
-    if (asset.quantity <= 0 || asset.price_source !== "quote" || asset.unit_price === null) continue;
+    const reference = byAsset.get(asset.id);
+    if (reference === undefined || asset.price_source !== "quote" || asset.unit_price === null) continue;
+    const price = asset.unit_price;
+    const close = reference.previous_close !== null && reference.previous_close > 0 ? reference.previous_close : null;
+    const previousValue = reference.previous_quantity * (close ?? price);
+    const base = previousValue + reference.bought;
+    // Nada no fechamento e nada comprado: não há dia a medir.
+    if (base <= 0) continue;
     movers.push({
       id: asset.id,
       label: assetName(asset),
       assetClass: asset.asset_class,
-      changePercent: (asset.unit_price / previous - 1) * 100,
-      delta: asset.quantity * (asset.unit_price - previous),
-      previousValue: asset.quantity * previous,
+      changePercent: close !== null && asset.quantity > 0 ? (price / close - 1) * 100 : null,
+      delta: asset.quantity * price - previousValue - reference.bought + reference.sold,
+      base,
+      since: reference.date,
     });
   }
   return movers;
+}
+
+export type DayTotal = {
+  /** O resultado do dia da carteira, em reais. */
+  delta: number;
+  /** O mesmo sobre a posição no fechamento mais o que se comprou depois, em %. */
+  percent: number;
+  /** Quantos ativos foram medidos. */
+  count: number;
+  /** O fechamento mais recente contra o qual se mediu (`YYYY-MM-DD`). */
+  since: string;
+};
+
+/** O dia da carteira inteira: a soma dos ativos medidos. `null` sem nenhum. */
+export function dayTotal(movers: DayMover[]): DayTotal | null {
+  if (movers.length === 0) return null;
+  const delta = movers.reduce((sum, m) => sum + m.delta, 0);
+  const base = movers.reduce((sum, m) => sum + m.base, 0);
+  const since = movers.reduce((latest, m) => (m.since > latest ? m.since : latest), movers[0]?.since ?? "");
+  return { delta, percent: base > 0 ? (delta / base) * 100 : 0, count: movers.length, since };
 }
 
 export type ClassDay = {
   assetClass: AssetClass;
   count: number;
   delta: number;
-  /** Variação da classe no dia, em %: o ganho sobre a posição do fechamento anterior. */
+  /** Variação da classe no dia, em %: o resultado sobre a posição do fechamento mais o comprado depois. */
   percent: number;
 };
 
@@ -95,7 +132,7 @@ export function classDays(movers: DayMover[], order: readonly AssetClass[]): Cla
     const own = movers.filter((m) => m.assetClass === assetClass);
     if (own.length === 0) return [];
     const delta = own.reduce((sum, m) => sum + m.delta, 0);
-    const base = own.reduce((sum, m) => sum + m.previousValue, 0);
+    const base = own.reduce((sum, m) => sum + m.base, 0);
     return [{ assetClass, count: own.length, delta, percent: base > 0 ? (delta / base) * 100 : 0 }];
   });
 }
@@ -103,10 +140,14 @@ export function classDays(movers: DayMover[], order: readonly AssetClass[]): Cla
 /** O que a tela mostra (uma casa): "0,0%" não é alta nem baixa. */
 const rounded = (percent: number) => Math.round(percent * 10) / 10;
 
+/** Um ativo com variação de preço para as listas. */
+export type PricedMover = DayMover & { changePercent: number };
+
 /** As `limit` maiores altas (do maior para o menor) e baixas (da pior para a menos pior). */
-export function topMovers(movers: DayMover[], limit: number): { gainers: DayMover[]; losers: DayMover[] } {
-  const up = movers.filter((m) => rounded(m.changePercent) > 0);
-  const down = movers.filter((m) => rounded(m.changePercent) < 0);
+export function topMovers(movers: DayMover[], limit: number): { gainers: PricedMover[]; losers: PricedMover[] } {
+  const priced = movers.filter((m): m is PricedMover => m.changePercent !== null);
+  const up = priced.filter((m) => rounded(m.changePercent) > 0);
+  const down = priced.filter((m) => rounded(m.changePercent) < 0);
   return {
     gainers: [...up].sort((a, b) => b.changePercent - a.changePercent).slice(0, limit),
     losers: [...down].sort((a, b) => a.changePercent - b.changePercent).slice(0, limit),

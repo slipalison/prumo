@@ -210,9 +210,115 @@ describe("Composição", () => {
   });
 });
 
+/** Os preços do banco falso como o stream os manda. */
+function livePrices(): LivePrices {
+  const db = getDb();
+  const portfolio = toPortfolio(db.assets, db.goals, db.checklists);
+  return {
+    total_value: portfolio.total_value,
+    quotes_updated_at: portfolio.quotes_updated_at,
+    classes: portfolio.classes,
+    profit: portfolio.profit,
+    assets: portfolio.assets.map((a) => ({
+      id: a.id,
+      unit_price: a.unit_price,
+      currency: a.currency,
+      price_source: a.price_source,
+      quote_updated_at: a.quote_updated_at,
+      current_value: a.current_value,
+      class_percent: a.class_percent,
+      ideal_class_percent: a.ideal_class_percent,
+      unrealized_gain: a.unrealized_gain,
+      return_percent: a.return_percent,
+    })),
+  };
+}
+
+describe("Resultado do dia", () => {
+  const card = () => screen.findByRole("region", { name: "Resultado do dia" });
+
+  it("mostra o ganho da carteira no dia, em reais e em %, com o fechamento de referência", async () => {
+    await openPortfolio();
+    const result = await card();
+    // Ações +500,00 e FIIs −3,40 sobre R$ 32.868,25.
+    expect(result).toHaveTextContent(/\+R\$\s496,60/);
+    expect(result).toHaveTextContent("+1,51%");
+    expect(result).toHaveTextContent("+1,51% desde o fechamento de 24/11");
+    expect(within(result).getByRole("button", { name: "Como se chega no resultado do dia" })).toBeInTheDocument();
+  });
+
+  it("a compra do dia não vira ganho: entra pelo preço pago", async () => {
+    // KNRI11: tinha 5 no fechamento e comprou 5 hoje a 142 (R$ 710): agora são 10 a 142.
+    panelState.references = {
+      assets: panelState.references.assets.map((r) => (r.asset_id === "a-knri" ? { ...r, previous_quantity: 5, bought: 710 } : r)),
+    };
+    await openPortfolio();
+    const result = await card();
+    // KNRI11 passa de +20,00 para +10,00 (só as 5 de ontem andaram de 140 para 142).
+    expect(result).toHaveTextContent(/\+R\$\s486,60/);
+  });
+
+  it("perda aparece com o sinal escrito", async () => {
+    panelState.references = {
+      assets: panelState.references.assets.map((r) => (r.asset_id === "a-itsa" ? { ...r, previous_close: 11.5 } : r)),
+    };
+    await openPortfolio();
+    const result = await card();
+    // ITSA4 2.500 × (11,20 − 11,50) = −750,00; FIIs −3,40.
+    expect(result).toHaveTextContent(/−R\$\s753,40/);
+    // Sobre R$ 34.118,25 (o ITSA4 do fechamento a 11,50).
+    expect(result).toHaveTextContent("−2,21%");
+    expect(result.querySelector(".stat-card__value")).toHaveClass("is-down");
+  });
+
+  it("anda com o preço ao vivo", async () => {
+    await openPortfolio();
+    const result = await card();
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    const knri = getDb().assets.find((a) => a.id === "a-knri");
+    if (knri) knri.quote_price = 150;
+    act(() => FakeEventSource.latest().emit("prices", livePrices()));
+    // KNRI11 10 × (150 − 140) = +100,00 no lugar de +20,00.
+    await waitFor(() => expect(result).toHaveTextContent(/\+R\$\s576,60/));
+  });
+
+  it("sem fechamento anterior, diz que ainda não há", async () => {
+    panelState.references = { assets: [] };
+    await openPortfolio();
+    const result = await card();
+    expect(result).toHaveTextContent("—");
+    expect(result).toHaveTextContent("sem fechamento anterior ainda");
+  });
+
+  it("a API fora não derruba a tela: o cartão some", async () => {
+    server.use(http.get("/api/v1/portfolio/day-reference", () => HttpResponse.json({ code: "internal" }, { status: 500 })));
+    await openPortfolio();
+    await screen.findByRole("region", { name: "Composição" });
+    expect(screen.queryByRole("region", { name: "Resultado do dia" })).not.toBeInTheDocument();
+  });
+
+  it("com o olho fechado, o valor vira máscara; o percentual fica", async () => {
+    window.localStorage.setItem(HIDE_VALUES_KEY, "1");
+    await openPortfolio();
+    const result = await card();
+    for (const text of heardIn(result)) expect(text).not.toMatch(MONEY);
+    expect(result).toHaveTextContent(MASK_BRL);
+    expect(result).toHaveTextContent("+1,51%");
+  });
+});
+
 describe("Hoje na carteira", () => {
   const region = () => screen.findByRole("region", { name: "Hoje na carteira" });
   const names = (list: HTMLElement) => within(list).getAllByRole("listitem").map((li) => li.textContent);
+
+  it("abre com o dia da carteira inteira, a soma das classes", async () => {
+    await openPortfolio();
+    const panel = await region();
+    const total = panel.querySelector(".today__total") as HTMLElement;
+    expect(total).toHaveTextContent("Carteira no dia");
+    expect(total).toHaveTextContent("+1,5%");
+    expect(total).toHaveTextContent(/\+R\$\s496,60/);
+  });
 
   it("lista as maiores altas e baixas do dia, com o sentido escrito, e deixa de fora o que não mexeu", async () => {
     await openPortfolio();
@@ -251,29 +357,9 @@ describe("Hoje na carteira", () => {
     await openPortfolio();
     const panel = await region();
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
-    const db = getDb();
-    const knri = db.assets.find((a) => a.id === "a-knri");
+    const knri = getDb().assets.find((a) => a.id === "a-knri");
     if (knri) knri.quote_price = 150;
-    const portfolio = toPortfolio(db.assets, db.goals, db.checklists);
-    const prices: LivePrices = {
-      total_value: portfolio.total_value,
-      quotes_updated_at: portfolio.quotes_updated_at,
-      classes: portfolio.classes,
-      profit: portfolio.profit,
-      assets: portfolio.assets.map((a) => ({
-        id: a.id,
-        unit_price: a.unit_price,
-        currency: a.currency,
-        price_source: a.price_source,
-        quote_updated_at: a.quote_updated_at,
-        current_value: a.current_value,
-        class_percent: a.class_percent,
-        ideal_class_percent: a.ideal_class_percent,
-        unrealized_gain: a.unrealized_gain,
-        return_percent: a.return_percent,
-      })),
-    };
-    act(() => FakeEventSource.latest().emit("prices", prices));
+    act(() => FakeEventSource.latest().emit("prices", livePrices()));
     const gainers = within(panel).getByRole("region", { name: "Maiores altas" });
     // 150 contra 140 de fechamento: +7,1%, agora a maior alta.
     await waitFor(() => expect(names(gainers)[0]).toBe("KNRI11 (Fundos Imobiliários)alta de +7,1%"));

@@ -166,7 +166,29 @@
   height: 100%;
 }
 
+/* ================= Resultado do dia ================= */
+
+/* "+1,51% desde o fechamento de 24/11": sem espaço, a frase da data desce
+   inteira para a linha de baixo, nunca partida no meio. */
+.day-result__since {
+  white-space: nowrap;
+}
+
 /* ================= Hoje na carteira ================= */
+
+/* A carteira inteira, antes das classes: a mesma linha delas, sem ser botão. */
+.today__total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-2);
+  padding: 0 var(--space-3);
+}
+
+.today__total-label {
+  font-weight: 700;
+}
 
 .today__classes {
   display: flex;

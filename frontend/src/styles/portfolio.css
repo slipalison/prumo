@@ -28,27 +28,41 @@
 
 /* ---------- Faixa de números ---------- */
 
+/* Os cinco lado a lado; o patrimônio leva um pouco mais, que o número dele é o
+   maior da faixa. */
 .portfolio__strip {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
+  grid-template-columns: minmax(min(240px, 100%), 1.4fr) repeat(auto-fit, minmax(min(150px, 100%), 1fr));
   gap: var(--gap-grid);
 }
 
-/* O patrimônio ocupa a linha inteira até haver espaço para os quatro lado a
-   lado; abaixo disso, três (ou dois, no celular) por linha. */
-@container page (max-width: 899px) {
+/* Sem espaço para os cinco: o patrimônio (2/3) e o resultado do dia (1/3) na
+   primeira linha, os outros três na de baixo. */
+@container page (max-width: 1099px) {
   .portfolio__strip {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .stat-card--hero {
-    grid-column: 1 / -1;
+    grid-column: span 2;
   }
 }
 
+/* No celular, duas por linha: o patrimônio e, logo abaixo, o resultado do dia
+   ocupam a linha inteira; lucro e "abaixo do ideal" dividem a seguinte. */
 @container page (max-width: 559px) {
   .portfolio__strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .portfolio__strip > .day-result {
+    grid-column: 1 / -1;
+  }
+
+  /* Meia largura não comporta "+R$ 3.120,00" no tamanho do desktop sem partir
+     o número no meio. */
+  .portfolio__strip > .stat-card:not(.stat-card--hero) .stat-card__value {
+    font-size: 1.1rem;
   }
 
   .portfolio__strip > .health-summary {
@@ -72,8 +86,9 @@
     grid-row: 1 / span 2;
   }
 
-  /* A explicação curta sob o número sai: o rótulo e o ⓘ já dizem o que é. */
-  .portfolio__strip > .stat-card:not(.stat-card--hero):not(.health-summary) .stat-card__detail {
+  /* A explicação curta sob o número sai: o rótulo e o ⓘ já dizem o que é. O
+     resultado do dia, de linha inteira, fica com o percentual e a data. */
+  .portfolio__strip > .stat-card:not(.stat-card--hero):not(.health-summary):not(.day-result) .stat-card__detail {
     display: none;
   }
 }

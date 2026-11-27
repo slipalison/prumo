@@ -453,7 +453,8 @@ linhas de pílulas, do grupo 4).
 │ Sem meta e sem ativo: [+ REITs] [+ RF Internacional]     └─────────────────┘│
 ```
 
-- Topo: `StatStrip` com patrimônio (e o selo ao vivo), lucro total (as três
+- Topo: `StatStrip` com patrimônio (e o selo ao vivo), resultado do dia (R$ e
+  % desde o fechamento anterior, `docs/painel.md`), lucro total (as três
   parcelas no ⓘ, "parcial" escrito), "N abaixo do ideal" e o resumo da Análise
   ("13 pontos a ver", link).
 - `Grid cols="main-aside"`: à esquerda, um painel por classe com o cabeçalho de

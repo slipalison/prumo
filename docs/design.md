@@ -254,13 +254,20 @@ estão em [layout.md](layout.md).
 
 - Layout denso (docs/layout.md § 7.3): `<Page>` com título e um botão
   **Adicionar ativo** no cabeçalho (some o botão flutuante), uma **faixa de
-  quatro cartões** e, abaixo, a grade `main-aside` (2/3 + 1/3): à esquerda um
+  cinco cartões** e, abaixo, a grade `main-aside` (2/3 + 1/3): à esquerda um
   painel por classe, à direita a rosca por classe, as roscas por setor e o
   histórico de aportes recolhido. Em 1440×900 a tela mede ~1,3 (antes 3,0).
 - A faixa: **Patrimônio** (count-up; a linha do rótulo traz o **● Ao vivo**
   com o aviso "B3 com 15 min de atraso", "Conectando ao vivo…" ou a hora da
-  última cotação, e o botão de atualizar), **Lucro total**, **Abaixo do ideal**
-  e **Análise**. No celular o patrimônio e a análise ocupam a linha inteira.
+  última cotação, e o botão de atualizar), **Resultado do dia**, **Lucro
+  total**, **Abaixo do ideal** e **Análise**. No celular o patrimônio e a
+  análise ocupam a linha inteira.
+- **Resultado do dia**: "▲ +R$ 496,60" e, embaixo, "+1,51% desde o fechamento
+  de 24/11" — o quanto a carteira ganhou ou perdeu desde o fechamento anterior,
+  no preço ao vivo; a compra do dia entra pelo preço pago (conta em
+  `docs/painel.md`). Seta, sinal e cor juntos. No celular sai só a data; o
+  percentual fica. Com o olho fechado, o real vira máscara (sem seta nem cor) e
+  o percentual fica.
 - **Lucro total**: "+R$ 3.150" — o ganho de capital (realizado + não
   realizado) mais os proventos recebidos. Um ⓘ ("Como se chega no lucro
   total") abre as três parcelas. O sinal é escrito (`+` / `−`), nunca só cor, e

@@ -32,8 +32,19 @@ export type PanelMonth = {
   previous: MonthTotals;
 };
 
-/** O fechamento anterior de um ativo, em reais por unidade. */
-export type DayReference = { asset_id: string; previous_close: number; date: string };
+/** O fechamento anterior de um ativo e o que os negócios mudaram depois dele. */
+export type DayReference = {
+  asset_id: string;
+  /** Reais por unidade; `null` no ativo que não estava no fechamento e teve compra ou venda depois. */
+  previous_close: number | null;
+  date: string;
+  /** As cotas que havia no fechamento. */
+  previous_quantity: number;
+  /** O que as compras depois do fechamento custaram, com taxas, em reais. */
+  bought: number;
+  /** O líquido das vendas e resgates depois do fechamento, em reais. */
+  sold: number;
+};
 
 /** `GET /portfolio/day-reference`. */
 export type DayReferences = { assets: DayReference[] };

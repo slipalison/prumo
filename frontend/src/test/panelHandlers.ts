@@ -18,16 +18,26 @@ export function sampleMonth(overrides: Partial<PanelMonth> = {}): PanelMonth {
 /**
  * O fechamento anterior dos ativos cotados do banco falso: ITSA4 e KNRI11 em
  * alta, HGLG11 e MXRF11 em baixa, BTLG11 sem mudança; BTC e TRXF11 sem referência.
+ * Sem negócio depois do fechamento: as cotas são as de agora. O dia da carteira
+ * dá +R$ 496,60 (ações +500,00; FIIs −3,40) sobre R$ 32.868,25.
  */
 export function sampleReferences(): DayReferences {
   const date = "2026-11-24";
+  const held = (asset_id: string, previous_close: number, previous_quantity: number) => ({
+    asset_id,
+    previous_close,
+    date,
+    previous_quantity,
+    bought: 0,
+    sold: 0,
+  });
   return {
     assets: [
-      { asset_id: "a-itsa", previous_close: 11.0, date },
-      { asset_id: "a-knri", previous_close: 140, date },
-      { asset_id: "a-hglg", previous_close: 142.5, date },
-      { asset_id: "a-btlg", previous_close: 94.55, date },
-      { asset_id: "a-mxrf", previous_close: 8.4, date },
+      held("a-itsa", 11.0, 2500),
+      held("a-knri", 140, 10),
+      held("a-hglg", 142.5, 12),
+      held("a-btlg", 94.55, 15),
+      held("a-mxrf", 8.4, 100),
     ],
   };
 }

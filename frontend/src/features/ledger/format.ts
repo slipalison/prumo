@@ -16,11 +16,11 @@ export function signedBRL(money: Money, value: number): string {
   return money.hidden ? money.brl(value) : formatSignedBRL(value);
 }
 
-/** `+12,3%` / `−4,0%`. */
-export function formatSignedPercent(value: number): string {
-  if (value > 0) return `+${formatPercent(value)}`;
-  if (value < 0) return `−${formatPercent(-value)}`;
-  return formatPercent(0);
+/** `+12,3%` / `−4,0%` (ou com `digits` casas). */
+export function formatSignedPercent(value: number, digits = 1): string {
+  if (value > 0) return `+${formatPercent(value, digits)}`;
+  if (value < 0) return `−${formatPercent(-value, digits)}`;
+  return formatPercent(0, digits);
 }
 
 /** Número para um campo de texto em pt-BR, sem separador de milhar ("1234,5"). */

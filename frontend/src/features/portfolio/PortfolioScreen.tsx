@@ -30,6 +30,7 @@ import { formatSignedPercent } from "../ledger/format";
 import "../ledger/ledger.css";
 import { AddAssetSheet } from "./AddAssetSheet";
 import { ContributionHistory } from "./ContributionHistory";
+import { DayResultCard } from "./DayResultCard";
 import { useNarrow } from "./useNarrow";
 import { EditAssetSheet } from "./EditAssetSheet";
 import { PanelDetails } from "./PanelDetails";
@@ -114,6 +115,8 @@ export function PortfolioScreen({ portfolio }: PortfolioScreenProps) {
             </button>
           </div>
         </GlassCard>
+
+        <DayResultCard assets={portfolio.assets} />
 
         <ProfitSummary profit={portfolio.profit} />
 

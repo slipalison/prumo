@@ -4,7 +4,7 @@ import type { Asset, AssetClass } from "../../api/types";
 import { Panel } from "../../components/Layout";
 import { ASSET_CLASSES, CLASS_META, classColor } from "../../lib/assetClasses";
 import { cx } from "../../lib/cx";
-import { classDays, dayMovers, signDirection, topMovers, type DayMover } from "../../lib/panel";
+import { classDays, dayMovers, dayTotal, signDirection, topMovers, type PricedMover } from "../../lib/panel";
 import { useMoney } from "../../lib/privacy";
 import { formatSignedPercent, signedBRL } from "../ledger/format";
 import { DeltaArrow } from "./DeltaArrow";
@@ -23,7 +23,7 @@ function Change({ percent, direction }: { percent: number; direction?: "above" |
   );
 }
 
-function MoverList({ title, movers, showClass }: { title: string; movers: DayMover[]; showClass: boolean }) {
+function MoverList({ title, movers, showClass }: { title: string; movers: PricedMover[]; showClass: boolean }) {
   return (
     <section className="movers" aria-label={title}>
       <h3 className="movers__title">{title}</h3>
@@ -60,6 +60,7 @@ export function TodayPanel({ assets }: { assets: Asset[] }) {
 
   const movers = useMemo(() => dayMovers(assets, references.data?.assets ?? []), [assets, references.data]);
   const byClass = useMemo(() => classDays(movers, ASSET_CLASSES), [movers]);
+  const total = useMemo(() => dayTotal(movers), [movers]);
   // A classe escolhida some do tema se deixou de ter ativo medido.
   const active = filter !== null && byClass.some((c) => c.assetClass === filter) ? filter : null;
   const { gainers, losers } = useMemo(
@@ -73,13 +74,20 @@ export function TodayPanel({ assets }: { assets: Asset[] }) {
     <Panel
       title="Hoje na carteira"
       className="today"
-      info="Quanto o preço de cada ativo andou contra o fechamento do pregão anterior, no preço ao vivo. Fora do pregão, vale a última cotação contra o fechamento antes dela. O valor em reais é a variação do preço vezes a quantidade que você tem agora. Ativo com preço manual ou renda fixa por valor não entra. É um retrato do dia, não um sinal de compra ou venda."
+      info="Quanto o preço de cada ativo andou contra o fechamento do pregão anterior, no preço ao vivo. Fora do pregão, vale a última cotação contra o fechamento antes dela. O valor em reais é o que cada posição ganhou ou perdeu desde o fechamento: a compra feita depois dele conta a partir do preço pago, com as taxas, e a venda, até o preço de venda. Ativo com preço manual ou renda fixa por valor não entra. É um retrato do dia, não um sinal de compra ou venda."
       infoLabel="Sobre Hoje na carteira"
     >
-      {byClass.length === 0 ? (
+      {byClass.length === 0 || total === null ? (
         <p className="field__hint">Ainda sem fechamento anterior para medir o dia. Ele aparece depois do primeiro fechamento diário da carteira.</p>
       ) : (
         <>
+          <p className="today__total">
+            <span className="today__total-label">Carteira no dia</span>
+            <span className="today__class-numbers">
+              <Change percent={total.percent} direction={signDirection(Math.round(total.percent * 10) / 10, 0.05)} />
+              <span className="today__class-money">{signedBRL(money, total.delta)}</span>
+            </span>
+          </p>
           <ul className="today__classes" aria-label="Variação do dia por classe">
             {byClass.map((c) => {
               const direction = signDirection(Math.round(c.percent * 10) / 10, 0.05);
