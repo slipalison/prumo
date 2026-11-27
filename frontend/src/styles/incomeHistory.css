@@ -1,0 +1,369 @@
+/* ================= Renda › Histórico e mapa de calor ================= */
+/* Desenho em docs/design.md (Renda, item 6). Só tokens de espaço e de movimento. */
+
+/* ---------- Escala do mapa de calor ----------
+   Um tom só (o dourado do dinheiro), em cinco passos: no escuro, do apagado ao
+   claro; no claro, do pálido ao âmbar. O texto de cada passo passa de 4,5:1
+   (conferido em `incomeHistory.test.ts`); a cor só reforça o número escrito. */
+
+:root {
+  --heat-1: #322f31;
+  --heat-2: #554939;
+  --heat-3: #7e6842;
+  --heat-4: #ac8b4b;
+  --heat-5: #deb156;
+  --heat-ink-1: #eef1f8;
+  --heat-ink-2: #eef1f8;
+  --heat-ink-3: #eef1f8;
+  --heat-ink-4: #231400;
+  --heat-ink-5: #231400;
+}
+
+[data-theme="light"] {
+  --heat-1: #f4ebd9;
+  --heat-2: #f3dfb3;
+  --heat-3: #f3cf85;
+  --heat-4: #de9924;
+  --heat-5: #b9740f;
+  --heat-ink-1: #0e1326;
+  --heat-ink-2: #0e1326;
+  --heat-ink-3: #0e1326;
+  --heat-ink-4: #0e1326;
+  --heat-ink-5: #0e1326;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --heat-1: #f4ebd9;
+    --heat-2: #f3dfb3;
+    --heat-3: #f3cf85;
+    --heat-4: #de9924;
+    --heat-5: #b9740f;
+    --heat-ink-1: #0e1326;
+    --heat-ink-2: #0e1326;
+    --heat-ink-3: #0e1326;
+    --heat-ink-4: #0e1326;
+    --heat-ink-5: #0e1326;
+  }
+}
+
+/* ---------- Escolhas ---------- */
+
+.income-history__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.income-history__segmented {
+  flex-wrap: wrap;
+}
+
+.income-history__field {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.income-history__label {
+  color: var(--text-subtle);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+}
+
+.income-history__select {
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface-sunken);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.income-history__select:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--gold) 70%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--gold) 18%, transparent);
+}
+
+@media (pointer: coarse) {
+  .income-history__select,
+  .income-history .segmented__option {
+    min-height: var(--touch);
+  }
+}
+
+/* ---------- Barras empilhadas ---------- */
+
+.history-bars {
+  margin: 0;
+}
+
+.history-bars__plot {
+  min-width: 0;
+}
+
+.history-bars__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.history-bars__grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.history-bars__axis {
+  fill: var(--text-subtle);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-bars__hit {
+  fill: transparent;
+}
+
+.history-bars__received,
+.history-bars__upcoming {
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+/* O ponteiro acende o intervalo e apaga um pouco os outros. */
+.history-bars__svg:hover .history-bars__received,
+.history-bars__svg:hover .history-bars__upcoming {
+  opacity: 0.55;
+}
+
+.history-bars__bar:hover > .history-bars__received,
+.history-bars__bar:hover > .history-bars__upcoming {
+  opacity: 1;
+}
+
+.history-legend {
+  margin-top: var(--space-2);
+}
+
+.history-legend__value {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Mapa de calor ---------- */
+
+.heatmap {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+.heatmap__table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 2px;
+  table-layout: fixed;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.heatmap__table thead th {
+  padding: 0 0 var(--space-1);
+  color: var(--text-subtle);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  text-align: center;
+  text-transform: capitalize;
+}
+
+.heatmap__table thead th:first-child {
+  width: 3.2rem;
+  text-align: left;
+}
+
+.heatmap__table thead th:last-child {
+  width: 5.6rem;
+}
+
+.heatmap__table tbody th {
+  color: var(--text);
+  font-family: var(--font-display);
+  font-weight: 650;
+  text-align: left;
+}
+
+.heatmap__cell {
+  height: var(--row-height);
+  padding: 0 2px;
+  border-radius: 6px;
+  color: var(--text-subtle);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.heatmap__cell.heat-1,
+.heatmap__swatch.heat-1 {
+  background: var(--heat-1);
+  color: var(--heat-ink-1);
+}
+
+.heatmap__cell.heat-2,
+.heatmap__swatch.heat-2 {
+  background: var(--heat-2);
+  color: var(--heat-ink-2);
+}
+
+.heatmap__cell.heat-3,
+.heatmap__swatch.heat-3 {
+  background: var(--heat-3);
+  color: var(--heat-ink-3);
+}
+
+.heatmap__cell.heat-4,
+.heatmap__swatch.heat-4 {
+  background: var(--heat-4);
+  color: var(--heat-ink-4);
+}
+
+.heatmap__cell.heat-5,
+.heatmap__swatch.heat-5 {
+  background: var(--heat-5);
+  color: var(--heat-ink-5);
+}
+
+/* O mês que ainda tem algo a receber: borda tracejada na cor do texto da
+   célula (contrasta com qualquer passo da escala). */
+.heatmap__cell.is-upcoming {
+  outline: 1.5px dashed currentColor;
+  outline-offset: -3px;
+}
+
+.heatmap__total {
+  color: var(--gold-text);
+  font-weight: 700;
+}
+
+.heatmap__mark {
+  margin-left: 1px;
+}
+
+.heatmap__key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-4);
+  margin-top: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.heatmap__scale {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.heatmap__scale > :first-child {
+  margin-left: var(--space-1);
+}
+
+.heatmap__scale > :last-child {
+  margin-right: var(--space-1);
+}
+
+.heatmap__swatch {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+  border-radius: 3px;
+  vertical-align: middle;
+}
+
+.heatmap__swatch--upcoming {
+  outline: 1.5px dashed var(--text-muted);
+  outline-offset: -2px;
+}
+
+/* Perto do limite, a letra cede um passo para "R$ 12,3 mil" caber nas 14 colunas. */
+@container (max-width: 1149px) {
+  .heatmap__table {
+    font-size: var(--text-2xs);
+  }
+}
+
+/* Abaixo de 1000 px (iPad em pé, celular) as 14 colunas não cabem: cada ano vira
+   um bloco com os meses em grade (seis por linha; quatro no celular), o nome do
+   mês antes do valor, sem rolagem lateral. A semântica de tabela fica (o mesmo
+   recurso da `DataTable`). */
+@container (max-width: 999px) {
+  .heatmap__table,
+  .heatmap__table tbody {
+    display: block;
+  }
+
+  .heatmap__table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  .heatmap__table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 3px;
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .heatmap__table tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .heatmap__table tbody th {
+    grid-column: 1 / -1;
+  }
+
+  .heatmap__cell {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1px;
+    height: auto;
+    min-height: var(--touch);
+    padding: 2px 4px;
+  }
+
+  .heatmap__cell::before {
+    content: attr(data-label);
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    text-transform: capitalize;
+  }
+
+  .heatmap__total::before {
+    text-transform: none;
+  }
+
+  .heatmap__total {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    justify-content: space-between;
+    min-height: 32px;
+  }
+}
+
+@container (min-width: 480px) and (max-width: 999px) {
+  .heatmap__table tbody tr {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}

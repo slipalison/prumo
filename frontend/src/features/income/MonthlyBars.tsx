@@ -1,9 +1,10 @@
 import { motion } from "motion/react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useId } from "react";
 import type { IncomeMonth } from "../../api/incomeTypes";
 import { useMoney } from "../../lib/privacy";
 import { barGeometry, barsSummary, monthLabel, monthShort, niceCeiling } from "../../lib/income";
 import { DURATION, SPRING, STAGGER } from "../../lib/motion";
+import { useWidth } from "./useWidth";
 
 type MonthlyBarsProps = {
   months: IncomeMonth[];
@@ -24,23 +25,6 @@ const BOTTOM = 26;
 /** A barra não passa disto, para não virar um bloco quando o gráfico é largo. */
 const MAX_BAR = 48;
 
-/** A largura em pixels do elemento: o gráfico se desenha na escala real e o texto não estica. */
-function useWidth() {
-  const ref = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(FALLBACK_WIDTH);
-  useEffect(() => {
-    const node = ref.current;
-    if (!node || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(([entry]) => {
-      const next = Math.round(entry?.contentRect.width ?? 0);
-      if (next > 0) setWidth(next);
-    });
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
-  return { ref, width };
-}
-
 /**
  * Barras mensais empilhadas: o recebido (cheio) embaixo e o a receber
  * (listrado) em cima. A cor nunca é a única pista: o listrado muda o desenho,
@@ -50,7 +34,7 @@ function useWidth() {
 export function MonthlyBars({ months, goal }: MonthlyBarsProps) {
   const patternId = useId();
   const money = useMoney();
-  const { ref, width } = useWidth();
+  const { ref, width } = useWidth(FALLBACK_WIDTH);
   const plotW = width - LEFT - RIGHT;
   const height = width < NARROW ? NARROW_HEIGHT : HEIGHT;
   const plotH = height - TOP - BOTTOM;

@@ -21,6 +21,7 @@ import { fundamentalsHandlers } from "./fundamentalsHandlers";
 import { iconsHandlers } from "./iconsHandlers";
 import { defaultIncomeAutoHandlers } from "./incomeAutoHandlers";
 import { incomeHandlers } from "./incomeHandlers";
+import { incomeHistoryHandlers } from "./incomeHistoryHandlers";
 import { objectivesHandlers } from "./objectivesHandlers";
 import { panelHandlers } from "./panelHandlers";
 import { riskHandlers } from "./riskHandlers";
@@ -439,6 +440,7 @@ export const allHandlers: HttpHandler[] = [
   ...iconsHandlers,
   ...fundamentalsHandlers,
   ...incomeHandlers,
+  ...incomeHistoryHandlers,
   ...defaultIncomeAutoHandlers,
   ...objectivesHandlers,
   ...panelHandlers,

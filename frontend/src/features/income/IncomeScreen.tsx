@@ -19,6 +19,7 @@ import { EstimateCard } from "./EstimateCard";
 import { FoldPanel } from "./FoldPanel";
 import { IncomeGoalCard } from "./IncomeGoalCard";
 import { IncomeProjectionPanel } from "./IncomeProjectionPanel";
+import { IncomeHistory } from "./IncomeHistory";
 import { EventList, UpcomingList } from "./IncomeLists";
 import { ScrollRegion } from "./ScrollRegion";
 import { MonthlyBars } from "./MonthlyBars";
@@ -123,6 +124,8 @@ function Loaded({ summary }: { summary: IncomeSummary }) {
       )}
 
       <IncomeProjectionPanel />
+
+      {hasLedger && <IncomeHistory />}
 
       {hasLedger && (
         <Panel title="Ano por mês">

@@ -113,8 +113,8 @@ export type PayerSlice = {
 /** A chave do grupo "Outros" (nenhum pagador a usa: a de um pagador é o id do ativo ou o nome). */
 export const OTHERS_KEY = "others";
 
-/** Sete tons que a interface já usa, sempre ao lado do nome. */
-const PAYER_COLORS = [
+/** Seis tons que a interface já usa, sempre ao lado do nome (o sétimo é o de "Outros"). */
+export const PAYER_COLORS = [
   "var(--c-br_reits)",
   "var(--c-br_stocks)",
   "var(--c-intl_stocks)",
@@ -122,7 +122,7 @@ const PAYER_COLORS = [
   "var(--c-crypto)",
   "var(--c-fixed_income)",
 ] as const;
-const OTHERS_COLOR = "var(--c-intl_fixed_income)";
+export const OTHERS_COLOR = "var(--c-intl_fixed_income)";
 const SHOWN_PAYERS = PAYER_COLORS.length;
 
 /** A chave de um pagador: o id do ativo, ou o nome de quem não é ativo. */

@@ -8,11 +8,13 @@ import { estimateAsset, estimateOf, knownYield, sampleEvent, sampleSummary, unkn
  * nenhuma), como os fixtures dos testes.
  */
 
-const CODES = [
+/** Os códigos inventados dos pagadores (o histórico da demonstração usa os mesmos). */
+export const DEMO_CODES = [
   "ALFA3", "BRAV11", "CEDR4", "DUNA3", "ESTR11", "FARO3", "GAIA4", "HORT11", "IRIS3", "JADE4",
   "KORA11", "LUMA3", "MIRA4", "NEVA11", "OLMA3", "PRIS4", "QUAR11", "RUBI3", "SOLA4", "TIGR11",
   "UNIO3", "VELA4", "WAVE11", "XENO3", "ZEFI4",
 ] as const;
+const CODES = DEMO_CODES;
 
 /** Do maior para o menor, em reais, somando perto de R$ 5,5 mil em 12 meses. */
 const TOTALS = [

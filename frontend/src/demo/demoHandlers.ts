@@ -14,6 +14,7 @@ import { samplePlan } from "../test/fixtures";
 import { sampleCash } from "../test/incomeHandlers";
 import { demoAgendaHandlers } from "./demoAgenda";
 import { demoIncomeEvents, demoIncomeSummary } from "./demoIncome";
+import { demoIncomeHistoryHandlers } from "./demoIncomeHistory";
 import {
   achievedObjective,
   defaultObjectivesResponse,
@@ -324,6 +325,7 @@ export const demoHandlers: HttpHandler[] = [
   http.get("/api/v1/performance/classes", ({ request }) => HttpResponse.json(demoClasses(asPeriod(request)))),
   http.get("/api/v1/income/summary", () => HttpResponse.json(demoIncomeSummary())),
   http.get("/api/v1/income", () => HttpResponse.json(demoIncomeEvents())),
+  ...demoIncomeHistoryHandlers(),
   http.get("/api/v1/cash", () => HttpResponse.json(sampleCash())),
   http.get("/api/v1/alerts", () => HttpResponse.json(sampleAlerts())),
   http.get("/api/v1/objectives", () =>
