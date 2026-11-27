@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cx } from "../lib/cx";
 import { openModal } from "../lib/useFocusOnMount";
@@ -64,9 +64,17 @@ export function Sheet({ open, onClose, title, description, children, footer, cla
     onCloseRef.current = onClose;
   });
 
+  // Quem tinha o foco ao abrir, guardado antes de qualquer efeito: um campo do
+  // conteúdo que se foca ao nascer (`focusOnMount`) roda antes do efeito desta
+  // folha e se passaria por "quem abriu".
+  const openerRef = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (open) openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  }, [open]);
+
   useEffect(() => {
     if (!open) return undefined;
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previous = openerRef.current;
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
