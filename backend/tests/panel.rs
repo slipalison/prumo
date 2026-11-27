@@ -139,6 +139,63 @@ async fn panel_end_to_end() {
     assert_eq!(assets[0]["asset_id"], knri.body["id"]);
     assert_eq!(assets[0]["previous_close"], 140.0);
     assert_eq!(assets[0]["date"], yesterday.to_string());
+    assert_eq!(assets[0]["previous_quantity"], 10.0);
+    assert_eq!(assets[0]["bought"], 0.0);
+    assert_eq!(assets[0]["sold"], 0.0);
+
+    // Compra de hoje: a referência leva as cotas que havia no fechamento e o
+    // que se pagou, para a compra não virar ganho do dia.
+    let buy = post(
+        &app.router,
+        "/api/v1/transactions",
+        json!({ "asset_id": knri.body["id"], "kind": "buy", "trade_date": today.to_string(),
+                "quantity": 5, "unit_price": 141.5, "fees": 1 }),
+    )
+    .await;
+    assert_eq!(buy.status, StatusCode::CREATED, "{}", buy.text);
+    let sell = post(
+        &app.router,
+        "/api/v1/transactions",
+        json!({ "asset_id": knri.body["id"], "kind": "sell", "trade_date": today.to_string(),
+                "quantity": 3, "unit_price": 142, "fees": 0.5 }),
+    )
+    .await;
+    assert_eq!(sell.status, StatusCode::CREATED, "{}", sell.text);
+    // Um ativo que não estava na foto, comprado pela primeira vez hoje.
+    let hglg = post(
+        &app.router,
+        "/api/v1/assets",
+        json!({ "asset_class": "br_reits", "symbol": "HGLG11", "quantity": 0 }),
+    )
+    .await;
+    assert_eq!(hglg.status, StatusCode::CREATED, "{}", hglg.text);
+    let first = post(
+        &app.router,
+        "/api/v1/transactions",
+        json!({ "asset_id": hglg.body["id"], "kind": "buy", "trade_date": today.to_string(),
+                "quantity": 2, "unit_price": 140 }),
+    )
+    .await;
+    assert_eq!(first.status, StatusCode::CREATED, "{}", first.text);
+
+    let reference = get(&app.router, "/api/v1/portfolio/day-reference").await;
+    assert_eq!(reference.status, StatusCode::OK, "{}", reference.text);
+    let assets = reference.body["assets"].as_array().unwrap();
+    let of = |id: &Value| {
+        assets
+            .iter()
+            .find(|a| a["asset_id"] == *id)
+            .unwrap_or_else(|| panic!("{id} sem referência: {assets:?}"))
+    };
+    let k = of(&knri.body["id"]);
+    assert_eq!(k["previous_close"], 140.0);
+    assert_eq!(k["previous_quantity"], 10.0);
+    assert_eq!(k["bought"], 708.5);
+    assert_eq!(k["sold"], 425.5);
+    let h = of(&hglg.body["id"]);
+    assert_eq!(h["previous_close"], Value::Null);
+    assert_eq!(h["previous_quantity"], 0.0);
+    assert_eq!(h["bought"], 280.0);
 
     // Cada pessoa vê só o que é dela.
     let other = common::app(

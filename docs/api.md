@@ -751,10 +751,22 @@ e `previous_return` são `null` quando a série começou depois. `income` é lí
 ### `GET /api/v1/portfolio/day-reference`
 
 ```json
-{ "assets": [{ "asset_id": "uuid", "previous_close": 140.0, "date": "2026-11-24" }] }
+{
+  "assets": [
+    { "asset_id": "uuid", "previous_close": 140.0, "date": "2026-11-24",
+      "previous_quantity": 10.0, "bought": 708.5, "sold": 0.0 },
+    { "asset_id": "uuid", "previous_close": null, "date": "2026-11-24",
+      "previous_quantity": 0.0, "bought": 280.0, "sold": 0.0 }
+  ]
+}
 ```
 
-Só ativos cotados com fechamento anterior conhecido (reais por unidade).
+Só ativos cotados. `previous_close` é o preço na foto `date` (reais por
+unidade); `null` só no ativo que não estava nela (ou estava sem preço) e teve
+compra ou venda depois. `previous_quantity` são as cotas que havia nessa foto;
+`bought` (custo das compras, com taxas) e `sold` (líquido das vendas e
+resgates) somam os lançamentos com data depois dela, em reais. A conta do
+resultado do dia está em [painel.md](painel.md).
 
 ## Saúde da carteira
 

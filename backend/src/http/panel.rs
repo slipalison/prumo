@@ -1,7 +1,8 @@
 //! Painel da Carteira: `GET /api/v1/portfolio/month` (a faixa de indicadores
 //! do mês) e `GET /api/v1/portfolio/day-reference` (o fechamento anterior de
-//! cada ativo, para a tela medir o dia contra a cotação ao vivo). A conta está
-//! em `domain::panel`; o método, em `docs/painel.md`.
+//! cada ativo e o que os negócios mudaram depois dele, para a tela medir o dia
+//! contra a cotação ao vivo). A conta está em `domain::panel`; o método, em
+//! `docs/painel.md`.
 
 use std::collections::BTreeMap;
 
@@ -10,7 +11,7 @@ use axum::Json;
 use rust_decimal::Decimal;
 use serde::Serialize;
 use time::macros::format_description;
-use time::{Date, OffsetDateTime};
+use time::{Date, Duration, OffsetDateTime};
 use uuid::Uuid;
 
 use super::dto::decimal_out;
@@ -20,6 +21,7 @@ use crate::domain::performance::to_percent;
 use crate::error::ApiResult;
 use crate::performance::{local_date, price_symbol, series};
 use crate::service::{self, PriceSource};
+use crate::store::{Transaction, TransactionFilter};
 
 /// Casas do percentual (0,0123%).
 const PERCENT_DP: u32 = 4;
@@ -149,11 +151,21 @@ pub async fn month(State(state): State<AppState>, user: CurrentUser) -> ApiResul
 #[derive(Debug, Serialize, PartialEq)]
 pub struct DayReferenceDto {
     asset_id: Uuid,
-    /// O preço do ativo no fechamento anterior, em reais por unidade.
-    #[serde(with = "decimal_out")]
-    previous_close: Decimal,
+    /// O preço do ativo no fechamento anterior, em reais por unidade. `null`
+    /// para o ativo que não estava na foto e teve compra ou venda depois dela.
+    #[serde(with = "decimal_out::option")]
+    previous_close: Option<Decimal>,
     /// A data desse fechamento.
     date: String,
+    /// As cotas que havia nesse fechamento.
+    #[serde(with = "decimal_out")]
+    previous_quantity: Decimal,
+    /// O que as compras depois do fechamento custaram, com taxas, em reais.
+    #[serde(with = "decimal_out")]
+    bought: Decimal,
+    /// O líquido das vendas e resgates depois do fechamento, em reais.
+    #[serde(with = "decimal_out")]
+    sold: Decimal,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -180,23 +192,52 @@ pub async fn day_reference(
         };
         by_price_date.entry(local_date(at)).or_default().push(asset);
     }
-    let mut assets = Vec::new();
+    let mut snapshots = Vec::new();
     for (price_date, group) in by_price_date {
-        let Some(snapshot) = state.store.snapshot_before(user.id, price_date).await? else {
-            continue;
-        };
+        if let Some(snapshot) = state.store.snapshot_before(user.id, price_date).await? {
+            snapshots.push((price_date, snapshot, group));
+        }
+    }
+    // Os lançamentos depois da foto mais antiga, de uma vez: a quantidade de
+    // agora já conta todos eles, então nenhum fica de fora (nem o de data
+    // futura).
+    let entries = match snapshots.iter().map(|(_, s, _)| s.date).min() {
+        Some(oldest) => {
+            let filter = TransactionFilter {
+                asset_id: None,
+                from: Some(oldest + Duration::days(1)),
+                to: None,
+            };
+            state.store.transactions(user.id, filter).await?
+        }
+        None => Vec::new(),
+    };
+    let mut assets = Vec::new();
+    for (price_date, snapshot, group) in snapshots {
         for asset in group {
-            let position = snapshot
-                .positions
+            let id = asset.asset.id;
+            let position = snapshot.positions.iter().find(|p| p.asset_id == id);
+            let own: Vec<_> = entries
                 .iter()
-                .find(|p| p.asset_id == asset.asset.id);
-            if let Some(reference) =
-                panel::day_reference(position, snapshot.date, price_date, today)
-            {
+                .filter(|t| t.asset_id == Some(id))
+                .map(Transaction::entry)
+                .collect();
+            let trades = panel::day_trades(&own, snapshot.date);
+            if let Some(reference) = panel::day_reference(
+                position,
+                snapshot.date,
+                price_date,
+                today,
+                asset.asset.quantity,
+                trades,
+            ) {
                 assets.push(DayReferenceDto {
-                    asset_id: asset.asset.id,
+                    asset_id: id,
                     previous_close: reference.previous_close,
                     date: day(reference.date),
+                    previous_quantity: reference.previous_quantity,
+                    bought: reference.bought,
+                    sold: reference.sold,
                 });
             }
         }
