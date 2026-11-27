@@ -7,10 +7,10 @@ import "./incomeProjection.css";
  * conta inteira (premissas, curva, cenários) mora em Ajustes › Objetivos; se a
  * consulta falha, a linha some e o cartão segue.
  */
-export function IncomeGoalProjection({ goalId }: { goalId: string }) {
+export function IncomeGoalProjection({ goalId }: Readonly<{ goalId: string }>) {
   const objectives = useObjectives();
   const goal = objectives.data?.objectives.find((o) => o.id === goalId);
-  if (!goal || goal.status !== "active" || !goal.scenarios) return null;
+  if (goal?.status !== "active" || !goal.scenarios) return null;
   const base = goal.scenarios.base.nominal;
   const lead =
     base.state === "reached"

@@ -34,7 +34,7 @@ type IncomeHeatmapProps = {
  * por ano e mês e ouve o valor exato e a conta. Na largura de celular cada ano
  * vira um bloco de quatro colunas de meses, sem rolagem lateral.
  */
-export function IncomeHeatmap({ years, metric, context }: IncomeHeatmapProps) {
+export function IncomeHeatmap({ years, metric, context }: Readonly<IncomeHeatmapProps>) {
   const money = useMoney();
   const max = heatMax(years, metric);
   const totalHeader = metric === "amount" ? "Total" : "No ano";

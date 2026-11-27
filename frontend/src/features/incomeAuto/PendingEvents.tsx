@@ -9,7 +9,7 @@ import "./incomeAuto.css";
  * Os eventos em ações que a B3 anunciou e o livro ainda não tem. O Prumo não
  * os lança sozinho: falta o custo atribuído, que só o informe da empresa dá.
  */
-export function PendingEventList({ events }: { events: PendingStockEvent[] }) {
+export function PendingEventList({ events }: Readonly<{ events: PendingStockEvent[] }>) {
   const money = useMoney();
   return (
     <ul className="auto-pending">

@@ -15,7 +15,7 @@ type ScrollRegionProps = {
  * fato vira uma região com nome e entra no Tab, para quem usa teclado rolar
  * com as setas (o Safari não faz isso sozinho); sem rolagem, é uma caixa comum.
  */
-export function ScrollRegion({ label, className, children, scrollRef }: ScrollRegionProps) {
+export function ScrollRegion({ label, className, children, scrollRef }: Readonly<ScrollRegionProps>) {
   const own = useRef<HTMLDivElement>(null);
   const ref = scrollRef ?? own;
   const scrolls = useScrollable(ref);

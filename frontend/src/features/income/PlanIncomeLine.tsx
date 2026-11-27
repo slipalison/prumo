@@ -8,7 +8,7 @@ import { useMoney } from "../../lib/privacy";
  * e o rótulo diz isso. O plano não espera o provedor:
  * sem histórico em cache ainda, a estimativa fica indisponível.
  */
-export function PlanIncomeLine({ income }: { income: PlanIncome }) {
+export function PlanIncomeLine({ income }: Readonly<{ income: PlanIncome }>) {
   const money = useMoney();
   if (!income.available) {
     return (
@@ -32,7 +32,7 @@ export function PlanIncomeLine({ income }: { income: PlanIncome }) {
 }
 
 /** A renda mensal estimada de um item do plano, no cartão dele. */
-export function ItemIncome({ monthly }: { monthly: number | null }) {
+export function ItemIncome({ monthly }: Readonly<{ monthly: number | null }>) {
   const money = useMoney();
   if (monthly === null || monthly <= 0) return null;
   return (

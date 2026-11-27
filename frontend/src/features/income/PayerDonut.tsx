@@ -32,6 +32,15 @@ const GAP = 3;
 /** Quanto o arco aceso engorda, em pixels. */
 const GROW = 4;
 
+/** Para onde a tecla leva o foco: as setas andam em roda, Home e End vão às pontas; outra tecla, a lugar nenhum. */
+function nextStop(key: string, index: number, count: number): number | null {
+  if (key === "ArrowRight" || key === "ArrowDown") return (index + 1) % count;
+  if (key === "ArrowLeft" || key === "ArrowUp") return (index - 1 + count) % count;
+  if (key === "Home") return 0;
+  if (key === "End") return count - 1;
+  return null;
+}
+
 /**
  * A rosca de "Quem pagou": cada arco é um botão (`role="button"`) que responde
  * ao ponteiro, ao toque e ao teclado. O teclado entra por UM arco (as setas
@@ -40,7 +49,7 @@ const GROW = 4;
  * arco com o nome. O arco aceso engorda e escurece os outros: a pista é a forma
  * e o texto do meio (o nome e o valor), nunca só a cor.
  */
-export function PayerDonut({ arcs, label, activeKey, onActive, onPick, size = 176, thickness = 14, children }: PayerDonutProps) {
+export function PayerDonut({ arcs, label, activeKey, onActive, onPick, size = 176, thickness = 14, children }: Readonly<PayerDonutProps>) {
   const radius = (size - thickness - GROW) / 2;
   const circumference = 2 * Math.PI * radius;
   const visible = arcs.filter((a) => a.value > 0);
@@ -58,17 +67,7 @@ export function PayerDonut({ arcs, label, activeKey, onActive, onPick, size = 17
   });
 
   const move = (event: KeyboardEvent<SVGCircleElement>, index: number) => {
-    const last = visible.length - 1;
-    const next =
-      event.key === "ArrowRight" || event.key === "ArrowDown"
-        ? (index + 1) % visible.length
-        : event.key === "ArrowLeft" || event.key === "ArrowUp"
-          ? (index - 1 + visible.length) % visible.length
-          : event.key === "Home"
-            ? 0
-            : event.key === "End"
-              ? last
-              : null;
+    const next = nextStop(event.key, index, visible.length);
     if (next === null) return;
     event.preventDefault();
     setStop(next);
@@ -87,11 +86,17 @@ export function PayerDonut({ arcs, label, activeKey, onActive, onPick, size = 17
       style={{ width: size, height: size, ["--arc-thickness" as string]: `${thickness}px`, ["--arc-grow" as string]: `${GROW}px` }}
       data-active={activeKey !== null ? "" : undefined}
     >
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="group" aria-label={label}>
+      <svg // NOSONAR: o grupo dos arcos é o próprio SVG; <fieldset> não entra num SVG
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        role="group"
+        aria-label={label}
+      >
         <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
           <circle className="donut__track" cx={size / 2} cy={size / 2} r={radius} strokeWidth={thickness} fill="none" />
           {placed.map(({ arc, dash, offset }, index) => (
-            <motion.circle
+            <motion.circle // NOSONAR: o arco da rosca é um <circle> do SVG; <button> não entra num SVG (o teclado e o Enter estão aqui)
               key={arc.key}
               ref={(node: SVGCircleElement | null) => {
                 nodes.current[index] = node;

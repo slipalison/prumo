@@ -1,6 +1,7 @@
 import { motion } from "motion/react";
 import { useId, type ReactNode } from "react";
 import { cx } from "../../lib/cx";
+import "./nativeTags.css";
 
 export type SegmentedOption<T extends string> = { id: T; label: ReactNode };
 
@@ -16,10 +17,10 @@ type SegmentedProps<T extends string> = {
  * A escolha entre poucas opções (o segmentado do app, `.segmented`): um grupo
  * de botões com `aria-pressed`, e o fundo dourado desliza até a escolhida.
  */
-export function Segmented<T extends string>({ label, options, value, onChange }: SegmentedProps<T>) {
+export function Segmented<T extends string>({ label, options, value, onChange }: Readonly<SegmentedProps<T>>) {
   const knob = useId();
   return (
-    <div className="segmented income-history__segmented" role="group" aria-label={label}>
+    <fieldset className="segmented income-history__segmented" aria-label={label}>
       {options.map((option) => (
         <button
           key={option.id}
@@ -32,6 +33,6 @@ export function Segmented<T extends string>({ label, options, value, onChange }:
           <span className="segmented__label">{option.label}</span>
         </button>
       ))}
-    </div>
+    </fieldset>
   );
 }

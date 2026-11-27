@@ -31,7 +31,7 @@ const MAX_BAR = 48;
  * a legenda diz o nome e uma tabela escondida traz todos os números para o
  * leitor de tela.
  */
-export function MonthlyBars({ months, goal }: MonthlyBarsProps) {
+export function MonthlyBars({ months, goal }: Readonly<MonthlyBarsProps>) {
   const patternId = useId();
   const money = useMoney();
   const { ref, width } = useWidth(FALLBACK_WIDTH);
@@ -51,7 +51,7 @@ export function MonthlyBars({ months, goal }: MonthlyBarsProps) {
   return (
     <figure className="income-bars">
       <div ref={ref} className="income-bars__plot">
-        <svg
+        <svg // NOSONAR: gráfico em SVG; role="img" com aria-label é o que o nomeia, não há tag nativa equivalente
           viewBox={`0 0 ${width} ${height}`}
           role="img"
           aria-label={barsSummary(months, money.brl)}
@@ -78,10 +78,11 @@ export function MonthlyBars({ months, goal }: MonthlyBarsProps) {
             const month = months[index];
             if (!month) return null;
             const x = LEFT + bar.x;
+            const upcoming = month.upcoming > 0 ? `, ${money.brl(month.upcoming)} a receber` : "";
             return (
               <g key={bar.month}>
                 <title>
-                  {`${monthLabel(bar.month)}: ${money.brl(month.received)} recebidos${month.upcoming > 0 ? `, ${money.brl(month.upcoming)} a receber` : ""}`}
+                  {`${monthLabel(bar.month)}: ${money.brl(month.received)} recebidos${upcoming}`}
                 </title>
                 <motion.rect
                   x={x}

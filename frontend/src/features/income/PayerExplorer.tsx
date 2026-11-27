@@ -36,7 +36,7 @@ type PayerExplorerProps = {
  *   valor no meio da rosca e acende os dois. Com o olho fechado, todo R$ (o do
  *   meio, o do nome acessível) sai mascarado.
  */
-export function PayerExplorer({ payers, total, selected, onSelect }: PayerExplorerProps) {
+export function PayerExplorer({ payers, total, selected, onSelect }: Readonly<PayerExplorerProps>) {
   const money = useMoney();
   const slices = useMemo(() => payerSlices(payers), [payers]);
   const others = slices.find((s) => s.key === OTHERS_KEY) ?? null;
@@ -94,9 +94,9 @@ export function PayerExplorer({ payers, total, selected, onSelect }: PayerExplor
       ? `${slice.label}: ${money.brl(slice.total)}, ${percentOf(slice)}. Ver quem está no grupo`
       : `${slice.label}: ${money.brl(slice.total)}, ${percentOf(slice)}`;
 
-  const donutLabel = `Renda dos últimos 12 meses por pagador${group ? ` dentro de ${group.label}` : ""}: ${view
-    .map((s) => `${s.label} ${formatPercent(s.percent)}`)
-    .join(", ")}`;
+  const inGroup = group ? ` dentro de ${group.label}` : "";
+  const shares = view.map((s) => `${s.label} ${formatPercent(s.percent)}`).join(", ");
+  const donutLabel = `Renda dos últimos 12 meses por pagador${inGroup}: ${shares}`;
 
   return (
     <Panel

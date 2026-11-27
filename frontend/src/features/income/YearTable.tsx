@@ -7,10 +7,10 @@ import { useMoney } from "../../lib/privacy";
  * (celular), cada ano vira um bloco com os meses em grade e o nome do mês antes
  * do valor (`data-label`), sem rolagem lateral.
  */
-export function YearTable({ years }: { years: IncomeYear[] }) {
+export function YearTable({ years }: Readonly<{ years: IncomeYear[] }>) {
   const money = useMoney();
   return (
-    <div className="income-table-wrap" role="region" aria-label="Renda por ano e mês">
+    <section className="income-table-wrap" aria-label="Renda por ano e mês">
       <table className="income-table">
         <caption className="sr-only">Renda líquida por ano e por mês</caption>
         <thead>
@@ -40,6 +40,6 @@ export function YearTable({ years }: { years: IncomeYear[] }) {
           ))}
         </tbody>
       </table>
-    </div>
+    </section>
   );
 }

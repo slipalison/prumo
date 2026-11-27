@@ -15,6 +15,7 @@ import { formatDay } from "../../lib/income";
 import { useMoney } from "../../lib/privacy";
 import { SPRING } from "../../lib/motion";
 import { IncomeGoalProjection } from "./IncomeGoalProjection";
+import "./nativeTags.css";
 
 type IncomeGoalCardProps = {
   goal: IncomeGoal | null;
@@ -24,11 +25,23 @@ type IncomeGoalCardProps = {
   estimatedMonthly: number;
 };
 
+/** O ⓘ da meta: como a renda é medida, pelo menor mês ou pela média, pelo recebido ou pela estimativa. */
+function goalInfo(floor: boolean, basis: IncomeGoal["basis"]): string {
+  if (floor) {
+    return basis === "received"
+      ? "O menor mês recebido nos 12 meses fechados: a meta conta quando todo mês chega lá."
+      : "O pior mês pela estimativa (o que cada cota pagou nos últimos 12 meses, no calendário de cada ativo). Ainda não há proventos recebidos nos 12 meses fechados.";
+  }
+  return basis === "received"
+    ? "Média do que você recebeu nos últimos 12 meses."
+    : "Estimativa pelo que cada cota pagou nos últimos 12 meses, líquida do IR retido na fonte como o recebido. Ainda não há proventos recebidos lançados.";
+}
+
 /**
  * A meta de renda mensal contra a renda de 12 meses. A barra usa o recebido
  * (média mensal); sem nada recebido ainda, usa a estimativa e diz isso.
  */
-export function IncomeGoalCard({ goal, monthlyAverage, estimatedMonthly }: IncomeGoalCardProps) {
+export function IncomeGoalCard({ goal, monthlyAverage, estimatedMonthly }: Readonly<IncomeGoalCardProps>) {
   const money = useMoney();
   const [editing, setEditing] = useState(false);
   const basis = goal?.basis ?? (monthlyAverage > 0 ? "received" : "estimate");
@@ -41,15 +54,7 @@ export function IncomeGoalCard({ goal, monthlyAverage, estimatedMonthly }: Incom
     <Panel
       className="income-goal"
       title="Meta de renda mensal"
-      info={
-        floor
-          ? basis === "received"
-            ? "O menor mês recebido nos 12 meses fechados: a meta conta quando todo mês chega lá."
-            : "O pior mês pela estimativa (o que cada cota pagou nos últimos 12 meses, no calendário de cada ativo). Ainda não há proventos recebidos nos 12 meses fechados."
-          : basis === "received"
-            ? "Média do que você recebeu nos últimos 12 meses."
-            : "Estimativa pelo que cada cota pagou nos últimos 12 meses, líquida do IR retido na fonte como o recebido. Ainda não há proventos recebidos lançados."
-      }
+      info={goalInfo(floor, basis)}
       infoLabel="Como a renda da meta é medida"
       actions={
         <MagneticButton variant="ghost" magnetic={false} onClick={() => setEditing(true)}>
@@ -66,7 +71,7 @@ export function IncomeGoalCard({ goal, monthlyAverage, estimatedMonthly }: Incom
 
       {goal ? (
         <>
-          <div
+          <div // NOSONAR: o <progress> nativo desenha a própria barra e não aceita filho; aqui o preenchimento anima com o Motion e tem a variante da estimativa
             className="income-progress"
             role="progressbar"
             aria-label="Progresso da meta de renda mensal"
@@ -86,9 +91,7 @@ export function IncomeGoalCard({ goal, monthlyAverage, estimatedMonthly }: Incom
             <strong>{formatPercent(percent, 0)}</strong> de {money.brl(goal.target)} por mês
           </p>
           {goal.achieved_at ? (
-            <p className="income-goal__done" role="status">
-              Meta atingida em {formatDay(goal.achieved_at)}.
-            </p>
+            <output className="income-goal__done">Meta atingida em {formatDay(goal.achieved_at)}.</output>
           ) : (
             <IncomeGoalProjection goalId={goal.id} />
           )}
@@ -102,7 +105,7 @@ export function IncomeGoalCard({ goal, monthlyAverage, estimatedMonthly }: Incom
   );
 }
 
-function GoalSheet({ open, goal, onClose }: { open: boolean; goal: IncomeGoal | null; onClose: () => void }) {
+function GoalSheet({ open, goal, onClose }: Readonly<{ open: boolean; goal: IncomeGoal | null; onClose: () => void }>) {
   const inputId = useId();
   const [target, setTarget] = useState(goal?.target ?? 0);
   const [removing, setRemoving] = useState(false);
@@ -169,7 +172,7 @@ function GoalSheet({ open, goal, onClose }: { open: boolean; goal: IncomeGoal | 
         </MagneticButton>
         {goal &&
           (removing ? (
-            <div className="income-confirm" role="group" aria-label="Confirmar remoção da meta">
+            <fieldset className="income-confirm" aria-label="Confirmar remoção da meta">
               <span>Remover a meta de renda?</span>
               <MagneticButton variant="danger" magnetic={false} loading={remove.isPending} onClick={confirmRemove}>
                 Remover
@@ -177,7 +180,7 @@ function GoalSheet({ open, goal, onClose }: { open: boolean; goal: IncomeGoal | 
               <MagneticButton variant="ghost" magnetic={false} onClick={() => setRemoving(false)}>
                 Manter
               </MagneticButton>
-            </div>
+            </fieldset>
           ) : (
             <button type="button" className="link-btn income-remove" onClick={() => setRemoving(true)}>
               Remover meta

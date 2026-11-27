@@ -44,7 +44,7 @@ function stack(segments: Segment[], series: Series[], scale: (value: number) => 
       [false, segment.received],
       [true, segment.upcoming],
     ] as const) {
-      if (!(value > 0)) continue;
+      if (value <= 0) continue;
       const full = Math.max(scale(value), MIN_PART + GAP);
       top -= full;
       pieces.push({
@@ -67,7 +67,7 @@ function stack(segments: Segment[], series: Series[], scale: (value: number) => 
  * legenda dá o nome e o total de cada grupo, o balão de cada barra lista as
  * partes e uma tabela escondida traz todos os números para o leitor de tela.
  */
-export function HistoryBars({ buckets, series, interval, caption }: HistoryBarsProps) {
+export function HistoryBars({ buckets, series, interval, caption }: Readonly<HistoryBarsProps>) {
   const patternBase = useId();
   const money = useMoney();
   const { ref, width } = useWidth(FALLBACK_WIDTH);
@@ -87,7 +87,12 @@ export function HistoryBars({ buckets, series, interval, caption }: HistoryBarsP
   return (
     <figure className="history-bars">
       <div ref={ref} className="history-bars__plot">
-        <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${caption}. Os números estão na tabela a seguir.`} className="history-bars__svg">
+        <svg // NOSONAR: gráfico em SVG; role="img" com aria-label é o que o nomeia, não há tag nativa equivalente
+          viewBox={`0 0 ${width} ${height}`}
+          role="img"
+          aria-label={`${caption}. Os números estão na tabela a seguir.`}
+          className="history-bars__svg"
+        >
           <defs>
             {series.map((s, index) => (
               <pattern key={s.key} id={patternOf(index)} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -111,11 +116,12 @@ export function HistoryBars({ buckets, series, interval, caption }: HistoryBarsP
             const segments = segmentsOf(bucket, series);
             const parts = segments.map((s) => `${s.series.label} ${money.brl(s.received + s.upcoming)}`).join("; ");
             const upcoming = bucket.upcoming > 0 ? `, ${money.brl(bucket.upcoming)} a receber` : "";
+            const breakdown = segments.length > 1 ? ` (${parts})` : "";
             const showLabel = (buckets.length - 1 - index) % step === 0;
             return (
               <g key={bucket.start} className="history-bars__bar">
                 <title>
-                  {`${bucketLong(bucket.start, interval)}: ${money.brl(bucket.received + bucket.upcoming)}${upcoming}${segments.length > 1 ? ` (${parts})` : ""}`}
+                  {`${bucketLong(bucket.start, interval)}: ${money.brl(bucket.received + bucket.upcoming)}${upcoming}${breakdown}`}
                 </title>
                 {/* A área do balão é a coluna inteira, não só a barra. */}
                 <rect x={LEFT + slot * index} y={TOP} width={slot} height={plotH} className="history-bars__hit" />

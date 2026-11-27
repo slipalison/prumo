@@ -23,6 +23,7 @@ import type { Money } from "../../lib/money";
 import { formatMonth, formatPoints } from "../../lib/objectives";
 import { useMoney } from "../../lib/privacy";
 import "../objectives/projection.css";
+import "./nativeTags.css";
 import "./incomeProjection.css";
 
 const GROUP_LABEL: Record<ProjectionGroup, string> = {
@@ -59,13 +60,13 @@ export function IncomeProjectionPanel() {
       infoLabel="Como a renda é projetada"
       info="Parte da estimativa acima (o que cada cota pagou em 12 meses, líquido do IR retido, vezes as cotas de hoje) e leva para a frente mês a mês, no mesmo calendário dos últimos 12 meses. FII de papel: a renda × o CDI esperado ÷ o CDI médio dos 12 meses que passaram. FII de tijolo: a renda × o IPCA esperado acumulado (o reajuste dos aluguéis). Ações e o resto: a média do que pagou (até 5 anos), sem crescimento. O pessimista e o otimista tiram e somam a amplitude por ano. É um cenário com premissas, não uma promessa; os pagamentos já anunciados estão em Próximos pagamentos."
       actions={
-        <div className="proj-toggle" role="group" aria-label="Horizonte da projeção">
+        <fieldset className="proj-toggle" aria-label="Horizonte da projeção">
           {([12, 24] as const).map((m) => (
             <button key={m} type="button" aria-pressed={months === m} onClick={() => setMonths(m)}>
               {m} meses
             </button>
           ))}
-        </div>
+        </fieldset>
       }
     >
       {projection.isPending && <Skeleton height={160} radius={16} />}
@@ -83,7 +84,7 @@ export function IncomeProjectionPanel() {
 
 type LoadedProps = { data: IncomeProjection; overrides: Overrides; onOverrides: (next: Overrides) => void };
 
-function Loaded({ data, overrides, onOverrides }: LoadedProps) {
+function Loaded({ data, overrides, onOverrides }: Readonly<LoadedProps>) {
   const money = useMoney();
   const horizon = data.premises.horizon_months;
   if (data.assets.length === 0) {
@@ -129,7 +130,7 @@ const H = 150;
 const W = 640;
 
 /** As barras do cenário base, mês a mês, com o traço do pessimista ao otimista. */
-function ProjectedBars({ months }: { months: ProjectedMonth[] }) {
+function ProjectedBars({ months }: Readonly<{ months: ProjectedMonth[] }>) {
   const money = useMoney();
   const [hover, setHover] = useState<number | null>(null);
   const count = months.length;
@@ -166,7 +167,12 @@ function ProjectedBars({ months }: { months: ProjectedMonth[] }) {
           onPointerLeave={() => setHover(null)}
           data-testid="projection-bars"
         >
-          <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={summary}>
+          <svg // NOSONAR: gráfico em SVG; role="img" com aria-label é o que o nomeia, não há tag nativa equivalente
+            viewBox={`0 0 ${W} ${H}`}
+            preserveAspectRatio="none"
+            role="img"
+            aria-label={summary}
+          >
             {months.map((m, i) => {
               const x = i * slot + (slot - barW) / 2;
               const mid = i * slot + slot / 2;
@@ -251,11 +257,17 @@ function basisText(asset: Pick<ProjectedAsset, "basis" | "usual_years">): string
   return asset.basis === "usual" ? `média de ${asset.usual_years ?? 2} anos` : "12 meses";
 }
 
+/** De onde veio a taxa que move a partida: informada pela pessoa, do Focus ou medida. */
+function sourceWord(source: PathSource): string {
+  if (source === "informed") return "informado";
+  if (source === "focus") return "do Focus";
+  return "medido";
+}
+
 /** O que move a partida depois: o CDI ou o IPCA (do Focus, ou o que a pessoa informou). */
 function driverSource(driver: ProjectionDriver, premises: ProjectionPremises): string | null {
-  const from = (source: PathSource) => (source === "informed" ? "informado" : source === "focus" ? "do Focus" : "medido");
-  if (driver === "cdi") return `anda com o CDI ${from(premises.cdi.source)}`;
-  if (driver === "ipca") return `anda com o IPCA ${from(premises.ipca.source)}`;
+  if (driver === "cdi") return `anda com o CDI ${sourceWord(premises.cdi.source)}`;
+  if (driver === "ipca") return `anda com o IPCA ${sourceWord(premises.ipca.source)}`;
   return null;
 }
 
@@ -271,7 +283,7 @@ function groupBasisText(group: ProjectedGroup, assets: ProjectedAsset[]): string
   return `${average} (${usual.length}), 12 meses (${trailing})`;
 }
 
-function StartCell({ value, hint, money }: { value: number; hint: string; money: Money }) {
+function StartCell({ value, hint, money }: Readonly<{ value: number; hint: string; money: Money }>) {
   return (
     <span className="income-projection__start">
       {money.brl(value)}
@@ -280,8 +292,9 @@ function StartCell({ value, hint, money }: { value: number; hint: string; money:
   );
 }
 
-function GroupTable({ data, money }: { data: IncomeProjection; money: Money }) {
-  const columns: DataColumn<ProjectedGroup>[] = [
+/** As colunas da tabela por tipo: a partida diz de onde sai e o que a move. */
+function groupColumns(data: IncomeProjection, money: Money): DataColumn<ProjectedGroup>[] {
+  return [
     { key: "group", label: "Tipo", rowHeader: true, cell: (g) => GROUP_LABEL[g.group] },
     { key: "driver", label: "Como anda", cell: (g) => DRIVER_LABEL[g.driver] },
     {
@@ -298,11 +311,15 @@ function GroupTable({ data, money }: { data: IncomeProjection; money: Money }) {
     },
     ...scenarioColumns<ProjectedGroup>(money),
   ];
-  return <DataTable caption="Renda projetada por tipo" columns={columns} rows={data.groups} rowKey={(g) => g.group} />;
 }
 
-function AssetTable({ data, money }: { data: IncomeProjection; money: Money }) {
-  const columns: DataColumn<ProjectedAsset>[] = [
+function GroupTable({ data, money }: Readonly<{ data: IncomeProjection; money: Money }>) {
+  return <DataTable caption="Renda projetada por tipo" columns={groupColumns(data, money)} rows={data.groups} rowKey={(g) => g.group} />;
+}
+
+/** As colunas da tabela por ativo: a partida diz a base (com os 12 meses, se ela é a média) e o que a move. */
+function assetColumns(data: IncomeProjection, money: Money): DataColumn<ProjectedAsset>[] {
+  return [
     { key: "asset", label: "Ativo", rowHeader: true, cell: (a) => a.symbol ?? a.display_name },
     { key: "group", label: "Tipo", cell: (a) => GROUP_LABEL[a.group] },
     {
@@ -324,7 +341,10 @@ function AssetTable({ data, money }: { data: IncomeProjection; money: Money }) {
     },
     ...scenarioColumns<ProjectedAsset>(money),
   ];
-  return <DataTable caption="Renda projetada por ativo" columns={columns} rows={data.assets} rowKey={(a) => a.asset_id} />;
+}
+
+function AssetTable({ data, money }: Readonly<{ data: IncomeProjection; money: Money }>) {
+  return <DataTable caption="Renda projetada por ativo" columns={assetColumns(data, money)} rows={data.assets} rowKey={(a) => a.asset_id} />;
 }
 
 /** Onde a média do habitual entra: nas ações, no exterior ou nos dois. */
@@ -340,7 +360,7 @@ function usualWhere(assets: ProjectedAsset[]): string {
  * habitual, ou quando um ativo sem tipo de renda fica de fora. Tudo calculado
  * pelo servidor e escrito pelo `useMoney`.
  */
-function Reconciliation({ data, money }: { data: IncomeProjection; money: Money }) {
+function Reconciliation({ data, money }: Readonly<{ data: IncomeProjection; money: Money }>) {
   const r = data.reconciliation;
   const estimate = money.brl(data.estimate_monthly);
   if (Math.abs(r.start_monthly - data.estimate_monthly) < 0.005) {
@@ -374,9 +394,9 @@ function Reconciliation({ data, money }: { data: IncomeProjection; money: Money 
 const pct = (value: number | null) => (value === null ? "—" : formatPercent(value, 2));
 
 /** As premissas que a conta usou, em frases curtas, com a data do Focus. */
-function PremisesLine({ premises, months }: { premises: ProjectionPremises; months: ProjectedMonth[] }) {
+function PremisesLine({ premises, months }: Readonly<{ premises: ProjectionPremises; months: ProjectedMonth[] }>) {
   const { cdi, ipca, focus } = premises;
-  const end = formatMonth(months[months.length - 1]?.month ?? null);
+  const end = formatMonth(months.at(-1)?.month ?? null);
   const cdiText = {
     focus: `CDI de ${pct(cdi.now_percent)} hoje a ${pct(cdi.end_percent)} em ${end} (meta Selic do Focus menos 0,10 ponto)`,
     informed: `CDI informado por você: ${pct(cdi.end_percent)} ao ano`,
@@ -420,7 +440,11 @@ function parseField(key: keyof Fields, text: string): { value: number | undefine
 const toField = (value: number | undefined) => (value === undefined ? "" : String(value).replace(".", ","));
 
 /** Trocar o CDI, o IPCA ou a amplitude da conta, sem gravar nada. */
-function PremisesForm({ premises, overrides, onOverrides }: { premises: ProjectionPremises; overrides: Overrides; onOverrides: (next: Overrides) => void }) {
+function PremisesForm({
+  premises,
+  overrides,
+  onOverrides,
+}: Readonly<{ premises: ProjectionPremises; overrides: Overrides; onOverrides: (next: Overrides) => void }>) {
   const ids = { cdi: useId(), ipca: useId(), spread: useId() };
   const [fields, setFields] = useState<Fields>({
     cdi: toField(overrides.cdi),

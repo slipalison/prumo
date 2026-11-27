@@ -36,7 +36,7 @@ const ABOVE_USUAL_INFO =
  * painel, estreito, o texto visível é "acima" (a linha do total, logo acima da
  * tabela, diz "acima do habitual" por extenso) e o leitor de tela ouve tudo.
  */
-function AboveUsual({ short }: { short: boolean }) {
+function AboveUsual({ short }: Readonly<{ short: boolean }>) {
   return (
     <span className="estimate__above-tag">
       <IconAlert aria-hidden="true" width={12} height={12} />
@@ -52,7 +52,7 @@ function AboveUsual({ short }: { short: boolean }) {
 }
 
 /** O líquido em destaque e o bruto menor embaixo (iguais quando não há JCP). */
-function NetGross({ net, gross, money, strong = false }: { net: number; gross: number; money: Money; strong?: boolean }) {
+function NetGross({ net, gross, money, strong = false }: Readonly<{ net: number; gross: number; money: Money; strong?: boolean }>) {
   const value = `~${money.brl(net)}`;
   return (
     <span className="estimate__amount">
@@ -66,7 +66,7 @@ function NetGross({ net, gross, money, strong = false }: { net: number; gross: n
  * A média do habitual por mês e, embaixo, a marca de quem passou bem dela (ou,
  * sem a marca, quantos anos entraram quando são menos de cinco).
  */
-function Usual({ asset, money, short }: { asset: IncomeEstimateAsset; money: Money; short: boolean }) {
+function Usual({ asset, money, short }: Readonly<{ asset: IncomeEstimateAsset; money: Money; short: boolean }>) {
   if (!asset.usual) return <span className="estimate__gross">histórico curto</span>;
   const years = asset.usual.years < 5 ? `${asset.usual.years} anos` : null;
   return (
@@ -134,7 +134,7 @@ function useColumns(full: boolean): DataColumn<IncomeEstimateAsset>[] {
 }
 
 /** "R$ X/mês de ativos acima do habitual", com o ⓘ que explica. */
-function AboveUsualTotal({ estimate, count }: { estimate: IncomeEstimate; count: number }) {
+function AboveUsualTotal({ estimate, count }: Readonly<{ estimate: IncomeEstimate; count: number }>) {
   const money = useMoney();
   if (estimate.above_usual_monthly <= 0) return null;
   return (
@@ -163,7 +163,7 @@ function AboveUsualTotal({ estimate, count }: { estimate: IncomeEstimate; count:
  * do que mais rende ao que menos, numa folha (uma lista de 30 linhas no painel
  * o alongaria e deixaria um vazio no painel ao lado).
  */
-export function EstimateCard({ estimate }: { estimate: IncomeEstimate }) {
+export function EstimateCard({ estimate }: Readonly<{ estimate: IncomeEstimate }>) {
   const money = useMoney();
   const [all, setAll] = useState(false);
   const paying = useMemo(

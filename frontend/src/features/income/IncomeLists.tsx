@@ -10,11 +10,12 @@ import { cx } from "../../lib/cx";
 import { formatIsoDate, formatIsoDay, KIND_LABEL, STATUS_LABEL } from "../../lib/income";
 import { STAGGER } from "../../lib/motion";
 import { useMoney } from "../../lib/privacy";
+import "./nativeTags.css";
 
 const payer = (event: IncomeEvent) => event.symbol ?? event.display_name;
 
 /** O selo do provento que o Prumo calculou do anúncio da B3. */
-function AutoTag({ event }: { event: IncomeEvent }) {
+function AutoTag({ event }: Readonly<{ event: IncomeEvent }>) {
   if (event.source !== "b3_announcement") return null;
   return <span className="income-tag income-tag--auto">automático (B3)</span>;
 }
@@ -28,11 +29,11 @@ export function UpcomingList({
   events,
   filteredBy,
   tag,
-}: {
+}: Readonly<{
   events: IncomeEvent[];
   filteredBy?: string;
   tag?: (event: IncomeEvent) => ReactNode;
-}) {
+}>) {
   const money = useMoney();
   if (events.length === 0) {
     return (
@@ -69,7 +70,7 @@ export function UpcomingList({
 }
 
 /** Os proventos lançados, do mais novo para o mais velho; o lançado à mão se apaga. */
-export function EventList({ events, filteredBy }: { events: IncomeEvent[]; filteredBy?: string }) {
+export function EventList({ events, filteredBy }: Readonly<{ events: IncomeEvent[]; filteredBy?: string }>) {
   const [confirming, setConfirming] = useState<string | null>(null);
   const remove = useDeleteIncome();
   const money = useMoney();
@@ -110,9 +111,8 @@ export function EventList({ events, filteredBy }: { events: IncomeEvent[]; filte
             </span>
             <strong className="income-row__value">{money.brl(event.net)}</strong>
             {asking ? (
-              <span
+              <fieldset
                 className="income-row__confirm"
-                role="group"
                 aria-label={
                   event.source === "b3_announcement"
                     ? `Apagar o provento automático de ${payer(event)}? Ele não volta na próxima busca.`
@@ -125,7 +125,7 @@ export function EventList({ events, filteredBy }: { events: IncomeEvent[]; filte
                 <button type="button" className="link-btn" onClick={() => setConfirming(null)}>
                   Manter
                 </button>
-              </span>
+              </fieldset>
             ) : (
               <button
                 type="button"

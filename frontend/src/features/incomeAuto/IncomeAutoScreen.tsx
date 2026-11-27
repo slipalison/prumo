@@ -52,7 +52,7 @@ const FACTS: readonly string[] = [
   "Rendimento de ETF e de ação entra como “Outro”, sem IR retido: a B3 não informa a retenção.",
 ];
 
-function Loaded({ auto }: { auto: IncomeAuto }) {
+function Loaded({ auto }: Readonly<{ auto: IncomeAuto }>) {
   const id = useId();
   const save = useSaveIncomeAuto();
   const toast = useToast();
@@ -121,14 +121,14 @@ function Loaded({ auto }: { auto: IncomeAuto }) {
   );
 }
 
-function Coverage({ auto }: { auto: IncomeAuto }) {
+function Coverage({ auto }: Readonly<{ auto: IncomeAuto }>) {
   return (
     <div className="income-auto__coverage">
-      <p className="field__hint" role="status">
+      <output className="field__hint">
         {auto.fetched_at
           ? `Anúncios da B3 conferidos em ${formatDateTime(auto.fetched_at)}. A busca é diária.`
           : "A primeira busca na B3 acontece em até uma hora."}
-      </p>
+      </output>
       {auto.covered.length > 0 && <p className="field__hint">Acompanhando: {auto.covered.join(", ")}.</p>}
       {auto.unmatched.length > 0 && (
         <p className="field__hint">

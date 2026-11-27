@@ -79,7 +79,7 @@ type SelectProps<T extends string> = {
   onChange: (value: T) => void;
 };
 
-function Select<T extends string>({ label, value, options, names, onChange }: SelectProps<T>) {
+function Select<T extends string>({ label, value, options, names, onChange }: Readonly<SelectProps<T>>) {
   const id = useId();
   return (
     <span className="income-history__field">
@@ -170,7 +170,7 @@ export function IncomeHistory() {
   );
 }
 
-function HistoryView({ history, period, context }: { history: History; period: PeriodId; context: string }) {
+function HistoryView({ history, period, context }: Readonly<{ history: History; period: PeriodId; context: string }>) {
   const money = useMoney();
   const visible = useMemo(
     () => bucketsInPeriod(history.buckets, history.interval, period, history.today),

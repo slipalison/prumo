@@ -14,7 +14,7 @@ type FoldPanelProps = {
  * Um painel de vidro que é só um recolher: o que se lê uma vez ou raramente
  * (lista longa, a conta de cada mês) fica fechado, com a contagem à vista.
  */
-export function FoldPanel({ title, count, children }: FoldPanelProps) {
+export function FoldPanel({ title, count, children }: Readonly<FoldPanelProps>) {
   return (
     <GlassCard as="section" className="panel panel--compact" aria-label={title}>
       <Disclosure summary={title} count={count}>

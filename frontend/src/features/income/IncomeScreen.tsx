@@ -32,7 +32,7 @@ const RECENT = 30;
 
 type IncomeScreenProps = { portfolio: Portfolio };
 
-export function IncomeScreen({ portfolio }: IncomeScreenProps) {
+export function IncomeScreen({ portfolio }: Readonly<IncomeScreenProps>) {
   const summary = useIncomeSummary();
   const [adding, setAdding] = useState(false);
 
@@ -72,7 +72,7 @@ export function IncomeScreen({ portfolio }: IncomeScreenProps) {
 /** O pagador de um evento, na mesma chave de "Quem pagou". */
 const eventPayerKey = (event: IncomeEvent) => event.asset_id ?? event.symbol ?? event.display_name;
 
-function Loaded({ summary }: { summary: IncomeSummary }) {
+function Loaded({ summary }: Readonly<{ summary: IncomeSummary }>) {
   const money = useMoney();
   const hasLedger = summary.years.length > 0;
   const hasPayers = summary.by_payer.length > 0;
