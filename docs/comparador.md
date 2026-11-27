@@ -29,7 +29,16 @@ patrimonial por cota), o tipo do fundo pelo balanço e o setor da B3.
   ficam no cache (`price_history`, `dividend_history`). Fundamentos só se já
   estiverem no banco; senão `not_tracked`. Nunca dispara a CVM.
 - DY = proventos brutos com data ex nos últimos 365 dias ÷ preço. Retorno de
-  12 meses = preço, sem proventos, ajustado por desdobramento.
+  12 meses = preço, sem proventos, ajustado por desdobramento. Ao lado do nome
+  da linha do DY, o CDI de 12 meses depois do IR e o juro real da NTN-B de
+  referência, só como contexto (sem destaque, sem "acima" nem "abaixo").
+- **FII completo** (linhas de fundo, contas em
+  [fundamentos.md](fundamentos.md#fii-completo-liquidez-crescimento-e-rendimento)):
+  caixa do informe mensal (sem destaque: muito caixa pode ser dinheiro parado,
+  pouco é menos folga; o número não tem lado), liquidez média de 30 e 90
+  pregões e CAGR dos proventos por cota e da cota em 3 e 5 anos (destaque no
+  maior). Para o fundo, o comparador guarda 5 anos de preço (o CAGR de 5 anos),
+  e o volume vem no mesmo pedido do preço.
 
 ## Rentabilidade comparada
 

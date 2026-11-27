@@ -1077,7 +1077,18 @@ que a Análise não faz estão em [analise.md](analise.md). Tudo pelo dono.
           "value": 137.21, "gap": null, "dividends_12m": 13.2,
           "target": { "percent": 9.62, "brick": 9.62, "paper": null, "brick_weight": 1.0, "paper_weight": 0.0 }
         },
-        "combined": { "value": 98.4, "gap": null }
+        "combined": { "value": 98.4, "gap": null },
+        "indicators": {
+          "cash_share": { "value": 0.064, "gap": null },
+          "liquidity_30d": { "value": 8400000.0, "gap": null },
+          "liquidity_90d": { "value": 7900000.0, "gap": null },
+          "dividend_cagr_3y": { "value": 0.052, "gap": null },
+          "dividend_cagr_5y": { "value": 0.041, "gap": null },
+          "price_cagr_3y": { "value": -0.018, "gap": null },
+          "price_cagr_5y": { "value": 0.012, "gap": null },
+          "dividend_yield_12m": { "value": 0.0929, "gap": null },
+          "dividends_12m": 13.2
+        }
       }
     ]
   },
@@ -1149,8 +1160,12 @@ que a Análise não faz estão em [analise.md](analise.md). Tudo pelo dono.
     `null`, o tipo que a CVM dá ao fundo), `composition` (frações de imóveis,
     recebíveis e cotas de FII, somam 1; `null` sem informe), `nav` (o VP),
     `fund_yield` (mais `dividends_12m`, os proventos por cota de 12 meses, e
-    `target`: o alvo em %, os alvos de tijolo e papel que entraram e os pesos) e
-    `combined`. FII nunca tem Bazin nem Graham.
+    `target`: o alvo em %, os alvos de tijolo e papel que entraram e os pesos),
+    `combined` e `indicators` (na Análise e em `GET /assets/{id}/references`;
+    `null` sem leitura): `cash_share` e os campos de `market` de
+    [`GET /fundamentals`](#get-apiv1fundamentals) (liquidez de 30 e 90 pregões,
+    CAGR de proventos e da cota em 3 e 5 anos, rendimento de 12 meses), a linha
+    aberta da tabela de FIIs. FII nunca tem Bazin nem Graham.
   - `ceiling`: o teto escolhido, com o valor de hoje (o mesmo do ativo); muda
     pelo `PATCH /assets/{id}`.
   - `bazin_yield` é o rendimento-alvo da pessoa; `market` traz o juro real
@@ -3155,14 +3170,40 @@ Números fictícios:
         "price_to_book": { "value": 0.9, "gap": null },
         "vacancy": { "value": 0.15, "gap": null },
         "vacancy_reference_date": "2026-09-30",
+        "total_assets": { "value": 1100000000.0, "gap": null },
+        "cash_share": { "value": 0.064, "gap": null },
+        "market": {
+          "liquidity_30d": { "value": 8400000.0, "gap": null },
+          "liquidity_90d": { "value": 7900000.0, "gap": null },
+          "dividend_cagr_3y": { "value": 0.052, "gap": null },
+          "dividend_cagr_5y": { "value": null, "gap": "insufficient_history" },
+          "price_cagr_3y": { "value": -0.018, "gap": null },
+          "price_cagr_5y": { "value": 0.012, "gap": null },
+          "dividend_yield_12m": { "value": 0.0929, "gap": null },
+          "dividends_12m": 8.36
+        },
         "synced_at": "2026-11-26T15:00:00Z"
       },
       "reason": null
     },
     { "asset_id": "c3d4…", "symbol": "BOVA11", "kind": "unsupported", "company": null, "fund": null, "reason": "no_cvm_code" }
-  ]
+  ],
+  "rates": {
+    "cdi_12m": { "percent": 14.2, "net_percent": 12.07, "from": "2025-11-19", "to": "2026-11-18", "source": "bcb_sgs_12" },
+    "real_rate": { "percent": 7.12, "base_date": "2026-11-19", "bond": "Tesouro IPCA+ com Juros Semestrais 2037", "bond_symbol": "TD-IPCAJS-20370515", "source": "tesouro_transparente" }
+  }
 }
 ```
+
+- FII completo ([fundamentos.md](fundamentos.md#fii-completo-liquidez-crescimento-e-rendimento)):
+  `total_assets` e `cash_share` (caixa e aplicações de liquidez sobre o ativo
+  total, em fração) vêm do informe mensal; `market` (`null` sem leitura) traz a
+  liquidez média diária dos últimos 30 e 90 pregões (em reais por dia), o CAGR
+  dos proventos por cota e da cota em 3 e 5 anos e o rendimento de 12 meses (em
+  fração), com `dividends_12m` em reais por cota. `rates` são o CDI de 12 meses
+  (com o líquido de IR de 15%) e o juro real da NTN-B de referência, as mesmas
+  das referências de preço, para a tela pôr ao lado do rendimento (só
+  contexto).
 
 - `kind`: `company`, `fund` ou `unsupported` (com `reason`).
 - `template`: `commercial`, `bank`, `insurer` ou `unknown`. Em banco e
@@ -3526,7 +3567,7 @@ fontes e limites em `docs/comparador.md`.
 
 ### `GET /api/v1/compare?assets=PETR4,KNRI11:br_reits`
 
-Resposta: `{ as_of, assets, rows }`.
+Resposta: `{ as_of, assets, rows, rates }`.
 
 - `assets[]`: `key` (a escolha como veio), `symbol`, `name`, `asset_class`,
   `in_portfolio`, `family` (`company`, `fund`, `other`), `currency`, `price`.
@@ -3534,7 +3575,9 @@ Resposta: `{ as_of, assets, rows }`.
   `segment`, `price_to_earnings`, `roe`, `net_margin`, `ebitda_margin`,
   `net_debt_to_ebitda`, `net_debt_to_equity`, `revenue_cagr`, `earnings_cagr`,
   `earnings_per_share`, `book_value_per_share`, `market_cap`, `nav_per_share`,
-  `vacancy`, `net_assets`), `group` (`general`, `company`, `fund`), `unit`
+  `vacancy`, `net_assets`, `cash_share`, `liquidity_30d`, `liquidity_90d`,
+  `dividend_cagr_3y`, `dividend_cagr_5y`, `price_cagr_3y`, `price_cagr_5y`),
+  `group` (`general`, `company`, `fund`), `unit`
   (`multiple`, `percent` já em %, `money`, `money_compact`, `text`),
   `direction` (`higher`, `lower`, `none`: de que lado fica o destaque) e `cells`,
   uma por ativo na ordem de `assets`.
@@ -3544,6 +3587,9 @@ Resposta: `{ as_of, assets, rows }`.
   motivos de `GET /fundamentals`, inclusive `holding`) e `mark` (`max`/`min`: o extremo da linha **entre
   ativos do mesmo tipo**, só com 2 ou mais valores; empate marca todos).
 - Linha em que nenhum ativo se aplica não vem.
+- `rates`: `{ cdi_12m, real_rate }`, o mesmo formato de `GET /fundamentals`: o
+  CDI de 12 meses (com o líquido de IR) e o juro real, que a tela põe ao lado do
+  rendimento de 12 meses, sem destaque.
 
 Preço e proventos do ativo de fora da carteira são buscados na hora (no máximo
 uma conferência por símbolo por dia). Fundamentos só vêm se já estiverem no

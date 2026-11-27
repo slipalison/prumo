@@ -108,6 +108,12 @@ Tesouro):
   refazer desde a data corrigida. Antes disso, o guardado não muda: o cache
   guarda o preço como era. Os índices diários também são pedidos de novo nos
   últimos dias (o `upsert` corrige).
+- **O volume financeiro vai junto** (`traded_value`, migração 0037; a liquidez
+  dos FIIs em [`fundamentos.md`](fundamentos.md#fii-completo-liquidez-crescimento-e-rendimento)):
+  o mesmo pedido traz o volume de cada pregão, que só entra com o fechamento
+  daquele pregão (nunca o do pregão aberto nem o do fechamento ruim), preenche o
+  que está nulo e, nos últimos 7 dias, corrige o que a fonte mudou. Não mexe na
+  série de ninguém.
 
 As duas coisas juntas: a primeira impede o erro; a segunda conserta o que a
 fonte revisar depois (e o que tenha entrado antes desta regra).

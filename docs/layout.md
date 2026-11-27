@@ -879,6 +879,35 @@ mostrar um FII de cada tipo: a tabela de FIIs tem 6 linhas.
 - Rolagem lateral: nenhuma nova (as que aparecem no celular são as pílulas de
   Ajustes e as tabelas anuais da Renda, de antes).
 
+### 7.7 FII completo (frente teto-fii)
+
+O caixa, a liquidez média diária, o CAGR de proventos e da cota, o P/VP com a
+marca em 1 e o rendimento de 12 meses ao lado do CDI líquido e do juro real
+(contas em [`fundamentos.md`](fundamentos.md#fii-completo-liquidez-crescimento-e-rendimento))
+entram em três lugares, sem estourar a altura:
+
+- **Análise › tabela de FIIs: linha expansível.** O nome do FII vira botão
+  (`aria-expanded`, `aria-controls` na linha aberta, nome acessível "KNRI11:
+  caixa, liquidez e crescimento", seta que gira). A linha aberta
+  (`DataTable` ganhou `detail`/`detailId`, genéricos) fica logo abaixo, sem o fio
+  entre as duas e sem altura fixa: em 1440 os seis indicadores lado a lado
+  (contêiner de 1000 px ou mais), 115 px; no celular, em duas colunas, 315 px.
+  Fechada por padrão, então a Análise segue em **2,97 telas em 1440** (a medida
+  de 7.6 não muda).
+- **Folha do ativo › Fundamentos.** O P/VP ganha a régua (0,5 a 1,5, traço em 1,
+  ponto no valor, cor neutra, e o texto "42% acima do valor patrimonial" no
+  `aria-label`); abaixo da grade do informe, uma segunda grade com rendimento
+  (mais o contexto), caixa, liquidez e os dois CAGRs. A folha do FII **não
+  cresce**: a coluna da esquerda (quantidade, teto, IR, checklist) segue a mais
+  alta (1,17 / 1,13 / 1,13 / 1,15 telas, como antes).
+- **Comparador.** Sete linhas de fundo (caixa, liquidez de 30 e 90 pregões, os
+  quatro CAGRs) no bloco "Fundos imobiliários", e o CDI líquido e o juro real
+  numa linha pequena sob o nome "Rendimento em 12 meses (DY)". Só aparecem com
+  fundo na escolha.
+
+Rolagem lateral: nenhuma nova (medida nas cinco larguras, a linha aberta
+incluída em 1440 e no celular).
+
 ## 8. Etapa 2: grupos e arquivos
 
 Quatro agentes em paralelo, um por grupo. Cada um mexe **só** nos arquivos do

@@ -350,6 +350,14 @@ FII esconde a troca de juro que move o preço dele).
   de hoje e o chip aprova/não aprova contra o preço de hoje, Valor próprio — e
   confirmar grava pelo `PATCH /assets/{id}`. O Prumo não calcula "margem" nem
   "potencial".
+- **FII completo, na linha aberta**: o nome do FII na tabela é um botão
+  (`aria-expanded`) que abre, logo abaixo da linha, o P/VP de hoje com a régua
+  marcada em 1, o rendimento de 12 meses com o CDI de 12 meses líquido e o juro
+  real ao lado (só contexto), o caixa do informe da CVM, a liquidez média
+  diária (30 e 90 pregões) e o CAGR dos proventos por cota e da cota em 3 e 5
+  anos. Fechada por padrão: a altura da Análise não muda. As contas estão em
+  [`fundamentos.md`](fundamentos.md#fii-completo-liquidez-crescimento-e-rendimento);
+  nenhuma delas vira veredito, regra ou nota.
 
 ## Configuração e migração
 

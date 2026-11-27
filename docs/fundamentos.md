@@ -288,12 +288,68 @@ Análise mostrarem.
 | Valor patrimonial por cota | `Patrimonio_Liquido ÷ Cotas_Emitidas` do informe mensal mais novo |
 | P/VP | cotação do Prumo ÷ valor patrimonial por cota (a folha recalcula com o preço ao vivo) |
 | Vacância física | média da `Percentual_Vacancia` dos **imóveis para renda acabados** do informe trimestral mais novo, **ponderada pela área** |
+| Caixa (`cash_share`) | `Total_Necessidades_Liquidez` (do `ativo_passivo`) ÷ `Valor_Ativo` (do `complemento`), do mesmo informe (mês e versão) |
 
 A vacância é a **física** (área vaga), a que a CVM publica imóvel a imóvel; a
 financeira (receita perdida) não está nos dados abertos. Imóvel sem área ou com
 vacância fora de 0 a 1 (erro de preenchimento: há valor negativo no arquivo)
 fica fora da média. Fundo de papel ou de fundos não tem imóvel para renda
 (`no_rental_property`); fundo fora do trimestral, `no_quarterly_report`.
+
+**O caixa.** `Total_Necessidades_Liquidez` é o grupo "ativos para manter
+liquidez" do balanço do informe mensal: `Disponibilidades` + `Titulos_Publicos`
++ `Titulos_Privados` + `Fundos_Renda_Fixa` (sem o total preenchido, o Prumo soma
+as quatro). `Valor_Ativo` é o ativo total. Conferido em 27/11/2026 nas 13 mil
+linhas do informe de 2026: o grupo é sempre a soma das quatro contas, e o ativo
+total é sempre a soma dos três grupos do balanço (liquidez, investido e a
+receber). Ativo total zero: `non_positive_base`; caixa negativo ou maior que o
+ativo total (três linhas assim no arquivo): `implausible`; sem um dos dois
+números (ou o arquivo sem o `ativo_passivo`): `not_reported`. O informe gravado
+antes dessa conta (sem a marca `cvm_funds.balance_read`, migração 0037) faz a
+rodada ler o arquivo do ano de novo, inteiro, enquanto houver linha sem ela.
+
+### FII completo: liquidez, crescimento e rendimento
+
+Os indicadores que saem do histórico de mercado, e não do informe
+(`domain::fund_market`, lidos por `crate::fund_indicators` do que está guardado:
+nada vai à rede na hora da tela). Aparecem na folha do ativo, na linha aberta da
+tabela de FIIs da Análise e nas linhas de fundo do Comparador.
+
+| Medida | Conta |
+|---|---|
+| Liquidez média diária, 30 e 90 pregões | média do volume financeiro dos últimos 30 e 90 pregões guardados com volume |
+| Proventos por cota, CAGR 3 e 5 anos | `(soma dos proventos por cota com data ex nos 365 dias até hoje ÷ a mesma soma nos 365 dias até n anos antes)^(1/n) − 1` |
+| Cota, CAGR 3 e 5 anos | `(último fechamento ÷ fechamento de n anos antes)^(1/n) − 1`, os dois no pé de hoje |
+| Rendimento de 12 meses | proventos por cota com data ex nos 365 dias até hoje ÷ cotação de agora |
+
+- **Volume financeiro.** O `chart` do Yahoo traz, por pregão, a quantidade de
+  cotas negociadas, ajustada por desdobramento como o fechamento; o produto
+  das duas (cotas × fechamento) é o volume em reais e não muda com o ajuste. É o
+  que fica em `price_history.traded_value` (migração 0037), gravado pelo mesmo
+  caminho do fechamento (`Store::record_prices`): entra só com o fechamento do
+  mesmo pregão (nunca do pregão aberto nem do fechamento ruim), preenche o que
+  está nulo e, nos últimos 7 dias, corrige o que a fonte mudou. O símbolo
+  guardado antes do volume (sem linha em `traded_value_coverage`) tem o pedido
+  que vai até hoje começando 150 dias antes, uma vez, sem pedido a mais.
+- **Pregão sem negócio** não tem fechamento nem volume e não entra. Menos
+  pregões com volume que a janela, ou o último há mais de 10 dias:
+  `insufficient_history`.
+- **Cota.** O fechamento guardado é o real do dia; o de antes de um
+  desdobramento é dividido pelo fator (`price_splits`), como no comparador e no
+  risco. A série precisa começar até 10 dias depois da data da base.
+- **Proventos.** A mesma série da estimativa de renda (`dividend_history`, do
+  Yahoo: bruta, já no pé do preço ajustado). Só conta ano **inteiro**: precisa
+  de provento conhecido de antes do começo do ano da base (a regra da média do
+  Bazin); senão a base sairia menor e o crescimento, inflado
+  (`insufficient_history`). Ponta zerada (o fundo não pagou num dos dois anos):
+  `non_positive_endpoint`.
+- **O rendimento de 12 meses** fica ao lado do **CDI de 12 meses depois do IR de
+  15%** e do **juro real** da NTN-B de referência (`domain::market_rates`, as
+  mesmas taxas do alvo de rendimento da Análise), só como contexto: nenhuma
+  conta compara um com o outro, e a tela não diz "acima" nem "abaixo".
+- **P/VP com a marca em 1**: a tela mostra uma régua de 0,5 a 1,5 com o traço
+  em 1 e o ponto no valor, e diz em palavras quanto a cotação está acima ou
+  abaixo do valor patrimonial. Sem cor de bom ou ruim.
 
 ## Motivos (`gap`)
 

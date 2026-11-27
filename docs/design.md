@@ -376,8 +376,14 @@ estão em [layout.md](layout.md).
     instituição financeira não tem a conta; o lucro da holding vem das
     participadas e não passa pela receita). Recuperação judicial (ou outra situação
     do emissor que não a operacional) é um aviso dourado com ícone e texto;
-  - FII: valor patrimonial por cota, P/VP (com o preço ao vivo da carteira),
-    vacância física e patrimônio líquido;
+  - FII: valor patrimonial por cota, P/VP (com o preço ao vivo da carteira e a
+    régua marcada em 1), vacância física e patrimônio líquido; embaixo,
+    "Caixa do informe; mercado e proventos dos últimos pregões" e uma segunda
+    grade: rendimento de 12 meses com o CDI de 12 meses líquido e o juro real
+    em texto menor logo abaixo (só contexto, o ⓘ diz por quê), caixa ("6,4% do
+    ativo"), liquidez média diária (30 pregões, e a de 90 embaixo) e o CAGR dos
+    proventos por cota e da cota (3 anos, e o de 5 embaixo). Reais da
+    liquidez passam pelo olho de ocultar valores;
   - número que falta é "—", com o motivo no `title` e em texto `sr-only`
     ("base zero ou negativa", "a conta não veio no balanço"), nunca zero;
   - a fonte e as datas no ⓘ do título ("De onde vêm os fundamentos"): "Fonte:
@@ -518,7 +524,15 @@ medidas estão em [layout.md](layout.md) § 7.5):
     tijolo 7,12% + 2,5 p.p. = 9,62%; proventos 12m R$ 13,20 ÷ 9,62% =
     R$ 137,21"; no híbrido, "60% tijolo (9,62%) + 40% papel (13,07%) = 11,00%";
     no fundo de fundos, a média e o porquê), **Pelas duas**, **Seu teto**,
-    **Hoje** e "Teto ▾".
+    **Hoje** e "Teto ▾". O nome do FII é um botão que abre, logo abaixo, a
+    **linha dos indicadores** (P/VP com a régua marcada em 1, rendimento de 12
+    meses com o CDI líquido e o juro real em texto menor ao lado, caixa,
+    liquidez média de 30 e 90 pregões, CAGR de proventos e da cota em 3 e 5
+    anos), na mesma grade afundada da folha do ativo; fechada por padrão.
+  - **Régua do P/VP** (`PriceToBook`): 64 px de trilho, traço em 1 no meio,
+    ponto no valor (para na ponta abaixo de 0,5 ou acima de 1,5); só posição,
+    sem verde nem vermelho, e o texto ("12% abaixo do valor patrimonial") no
+    `aria-label`. O mesmo componente na folha do ativo.
   - **Seu teto**: o valor de hoje com o método embaixo em versalete ("R$ 9,50 ·
     GRAHAM", "VALOR PRÓPRIO") ou "Sem teto"; método sem valor diz "Graham: sem
     valor" com o motivo no ⓘ.
