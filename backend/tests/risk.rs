@@ -644,7 +644,7 @@ async fn an_open_session_waits_for_the_close_and_recent_revisions_land() {
     }
     let evening = at(day + Duration::days(1), 20, 0);
     db.store
-        .record_prices(symbol, &vec![(day, dec!(82.3))], evening)
+        .record_prices(symbol, &vec![(day, dec!(82.3))], &[], evening)
         .await
         .unwrap();
     assert_eq!(
@@ -661,7 +661,7 @@ async fn an_open_session_waits_for_the_close_and_recent_revisions_land() {
         .await
         .unwrap();
     db.store
-        .record_prices(symbol, &vec![(old, dec!(71))], evening)
+        .record_prices(symbol, &vec![(old, dec!(71))], &[], evening)
         .await
         .unwrap();
     assert_eq!(
@@ -674,6 +674,7 @@ async fn an_open_session_waits_for_the_close_and_recent_revisions_land() {
         .record_prices(
             "USDBRL=X",
             &vec![(day + Duration::days(1), dec!(5.4))],
+            &[],
             evening,
         )
         .await

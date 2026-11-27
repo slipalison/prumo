@@ -65,6 +65,9 @@ pub struct AnalysisReport {
     pub highlights: HighlightsReport,
     /// As referências de preço das ações e dos FIIs, com o teto de cada um.
     pub references: ReferencesReport,
+    /// O caixa, a liquidez e os CAGRs de cada FII das referências, por id do
+    /// ativo (`crate::fund_indicators`).
+    pub fund_indicators: HashMap<Uuid, crate::fund_indicators::FundIndicators>,
     /// Ativos com valor em Ações Nacionais e FIIs que a fonte de setor não
     /// classificou.
     pub unclassified_count: usize,
@@ -246,6 +249,11 @@ pub async fn report(
         },
     );
     let attention_count = rules::attention_count(&results);
+    let references = build_references(store, user, &view, today, fundamentals).await?;
+    let views: Vec<&AssetView> = view.assets.iter().collect();
+    let fund_indicators =
+        crate::fund_indicators::for_references(store, &references, &views, fundamentals, today)
+            .await?;
     Ok(AnalysisReport {
         today,
         total_value: view.total_value,
@@ -261,7 +269,8 @@ pub async fn report(
             target: profile::target(view.targets),
         },
         highlights: build_highlights(store, user, &view, today).await?,
-        references: build_references(store, user, &view, today, fundamentals).await?,
+        references,
+        fund_indicators,
         unclassified_count: unclassified_count(&view),
     })
 }

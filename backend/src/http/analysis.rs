@@ -520,7 +520,7 @@ impl AnalysisDto {
                 price_12m: RankingDto::from(&report.highlights.price_12m),
                 since_purchase: RankingDto::from(&report.highlights.since_purchase),
             },
-            references: ReferencesDto::from(&report.references),
+            references: ReferencesDto::with_indicators(&report.references, &report.fund_indicators),
             unclassified_count: report.unclassified_count,
             sources,
         }

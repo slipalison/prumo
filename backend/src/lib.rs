@@ -17,6 +17,7 @@ pub mod dividends;
 pub mod domain;
 pub mod error;
 pub mod focus;
+pub mod fund_indicators;
 pub mod fundamentals;
 pub mod history;
 pub mod http;

@@ -453,15 +453,30 @@ pub struct FundMonthly {
     pub months: Vec<FundMonth>,
 }
 
-/// Lê o informe mensal de `year`: o cadastro (`geral`: ISIN e nome) e o
-/// `complemento` (patrimônio líquido, cotas emitidas e o rendimento do mês
-/// sobre o valor patrimonial), de cada fundo com ISIN de cota: o informe mais
-/// novo e a série de meses.
+/// As quatro contas do grupo "ativos para manter liquidez" do `ativo_passivo`,
+/// somadas quando o total (`Total_Necessidades_Liquidez`) vem vazio.
+const LIQUID_PARTS: [&str; 4] = [
+    "Disponibilidades",
+    "Titulos_Publicos",
+    "Titulos_Privados",
+    "Fundos_Renda_Fixa",
+];
+
+/// O que o `complemento` dá do mês mais novo: patrimônio, cotas e ativo total.
+type ComplementRow = (Option<Decimal>, Option<Decimal>, Option<Decimal>);
+
+/// Lê o informe mensal de `year`: o cadastro (`geral`: ISIN e nome), o
+/// `complemento` (patrimônio líquido, cotas emitidas, ativo total e o
+/// rendimento do mês sobre o valor patrimonial) e, do `ativo_passivo`, o caixa
+/// (o grupo de liquidez), de cada fundo com ISIN de cota: o informe mais novo e
+/// a série de meses. Sem o `ativo_passivo` no arquivo, o caixa fica sem número.
 pub fn parse_fund_monthly<R: Read>(mut reader: R, year: i32) -> Result<FundMonthly, FetchError> {
     let general_name = format!("inf_mensal_fii_geral_{year}.csv");
     let complement_name = format!("inf_mensal_fii_complemento_{year}.csv");
+    let balance_name = format!("inf_mensal_fii_ativo_passivo_{year}.csv");
     let mut general: Latest<(String, String)> = Latest::new();
-    let mut complement: Latest<(Option<Decimal>, Option<Decimal>)> = Latest::new();
+    let mut complement: Latest<ComplementRow> = Latest::new();
+    let mut balance: Latest<Option<Decimal>> = Latest::new();
     let mut months: Vec<FundMonth> = Vec::new();
     let (mut saw_general, mut saw_complement) = (false, false);
     while let Some(entry) =
@@ -488,6 +503,7 @@ pub fn parse_fund_monthly<R: Read>(mut reader: R, year: i32) -> Result<FundMonth
             let keys = FundKeys::read(&columns)?;
             let equity = columns.index("Patrimonio_Liquido")?;
             let shares = columns.index("Cotas_Emitidas")?;
+            let total_assets = columns.optional("Valor_Ativo");
             let dividend_yield = columns.optional("Percentual_Dividend_Yield_Mes");
             let mut record = csv::ByteRecord::new();
             while csv.read_byte_record(&mut record).map_err(format_error)? {
@@ -502,7 +518,30 @@ pub fn parse_fund_monthly<R: Read>(mut reader: R, year: i32) -> Result<FundMonth
                         shares: issued,
                         dividend_yield: dividend_yield.and_then(|i| number(&text(&record, i))),
                     });
-                    complement.offer(cnpj, key, (net_assets, issued));
+                    let total = total_assets.and_then(|i| number(&text(&record, i)));
+                    complement.offer(cnpj, key, (net_assets, issued, total));
+                }
+            }
+        } else if name == balance_name {
+            let mut csv = csv_reader(Limited::new(entry, MAX_CSV));
+            let columns = Columns::read(&mut csv)?;
+            let keys = FundKeys::read(&columns)?;
+            let total = columns.optional("Total_Necessidades_Liquidez");
+            let parts: Vec<usize> = LIQUID_PARTS
+                .iter()
+                .filter_map(|name| columns.optional(name))
+                .collect();
+            let mut record = csv::ByteRecord::new();
+            while csv.read_byte_record(&mut record).map_err(format_error)? {
+                if let Some((cnpj, key)) = keys.of(&record) {
+                    let declared = total.and_then(|i| number(&text(&record, i)));
+                    let summed = parts
+                        .iter()
+                        .filter_map(|i| number(&text(&record, *i)))
+                        .fold(None, |acc: Option<Decimal>, v| {
+                            Some(acc.unwrap_or_default() + v)
+                        });
+                    balance.offer(cnpj, key, declared.or(summed));
                 }
             }
         }
@@ -514,9 +553,15 @@ pub fn parse_fund_monthly<R: Read>(mut reader: R, year: i32) -> Result<FundMonth
         .rows
         .into_iter()
         .filter_map(
-            |(cnpj, ((reference_date, version), (net_assets, shares)))| {
+            |(cnpj, ((reference_date, version), (net_assets, shares, total_assets)))| {
                 let (_, (isin, name)) = general.rows.get(&cnpj)?;
                 let issuer = isin_root(isin)?;
+                // O caixa só vale do mesmo informe (mês e versão) do patrimônio.
+                let liquid_assets = balance
+                    .rows
+                    .get(&cnpj)
+                    .filter(|(key, _)| *key == (reference_date, version))
+                    .and_then(|(_, liquid)| *liquid);
                 Some(FundReport {
                     cnpj: cnpj.chars().take(20).collect(),
                     issuer,
@@ -526,6 +571,8 @@ pub fn parse_fund_monthly<R: Read>(mut reader: R, year: i32) -> Result<FundMonth
                     version,
                     net_assets,
                     shares,
+                    total_assets,
+                    liquid_assets,
                 })
             },
         )
@@ -1198,6 +1245,7 @@ mod tests {
 
     const GENERAL_HEADER: &str = "Tipo_Fundo_Classe;CNPJ_Fundo_Classe;Data_Referencia;Versao;Data_Entrega;Nome_Fundo_Classe;Data_Funcionamento;Publico_Alvo;Codigo_ISIN;Quantidade_Cotas_Emitidas";
     const COMPLEMENT_HEADER: &str = "CNPJ_Fundo_Classe;Data_Referencia;Versao;Data_Informacao_Numero_Cotistas;Total_Numero_Cotistas;Valor_Ativo;Patrimonio_Liquido;Cotas_Emitidas;Valor_Patrimonial_Cotas";
+    const FUND_BALANCE_HEADER: &str = "CNPJ_Fundo_Classe;Data_Referencia;Versao;Total_Necessidades_Liquidez;Disponibilidades;Titulos_Publicos;Titulos_Privados;Fundos_Renda_Fixa";
 
     #[test]
     fn the_monthly_report_gives_equity_and_shares_of_the_newest_month() {
@@ -1212,12 +1260,20 @@ mod tests {
             COMPLEMENT_HEADER,
             "00.000.000/0001-91;2026-09-01;1;2026-09-01;10;0;900000.00;10000;90",
             "00.000.000/0001-91;2026-10-01;1;2026-10-01;10;0;1000000.50;10000;100",
-            "00.000.000/0001-91;2026-10-01;2;2026-10-01;10;0;1100000;10000;110",
+            "00.000.000/0001-91;2026-10-01;2;2026-10-01;10;1200000;1100000;10000;110",
             "11.111.111/0001-91;2026-10-01;1;2026-10-01;10;0;5;5;1",
         ]
         .join("\r\n");
+        // O caixa: o total declarado, ou a soma das quatro contas quando ele
+        // vem vazio; só vale o do mesmo mês e versão do patrimônio.
+        let balance = [
+            FUND_BALANCE_HEADER,
+            "00.000.000/0001-91;2026-10-01;1;999;999;0;0;0",
+            "00.000.000/0001-91;2026-10-01;2;;100;200;50;650",
+        ]
+        .join("\r\n");
         let bytes = zip(&[
-            ("inf_mensal_fii_ativo_passivo_2026.csv", "x".to_owned()),
+            ("inf_mensal_fii_ativo_passivo_2026.csv", balance),
             ("inf_mensal_fii_complemento_2026.csv", complement),
             ("inf_mensal_fii_geral_2026.csv", general),
         ]);
@@ -1231,6 +1287,8 @@ mod tests {
         assert_eq!(r.version, 2);
         assert_eq!(r.net_assets, Some(dec!(1100000)));
         assert_eq!(r.shares, Some(dec!(10000)));
+        assert_eq!(r.total_assets, Some(dec!(1200000)));
+        assert_eq!(r.liquid_assets, Some(dec!(1000)));
         // A série tem os meses (e as versões) do fundo com ISIN; o sem ISIN
         // fica fora. Sem a coluna do rendimento, o mês vem sem ele.
         assert_eq!(monthly.months.len(), 3);

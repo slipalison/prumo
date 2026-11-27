@@ -236,11 +236,27 @@ pub enum Row {
     NavPerShare,
     Vacancy,
     NetAssets,
+    /// Caixa e aplicações de liquidez sobre o ativo total (informe mensal).
+    CashShare,
+    /// Volume financeiro médio dos últimos 30 e 90 pregões.
+    #[serde(rename = "liquidity_30d")]
+    Liquidity30d,
+    #[serde(rename = "liquidity_90d")]
+    Liquidity90d,
+    /// CAGR dos proventos por cota e da cota (`domain::fund_market`).
+    #[serde(rename = "dividend_cagr_3y")]
+    DividendCagr3y,
+    #[serde(rename = "dividend_cagr_5y")]
+    DividendCagr5y,
+    #[serde(rename = "price_cagr_3y")]
+    PriceCagr3y,
+    #[serde(rename = "price_cagr_5y")]
+    PriceCagr5y,
 }
 
 impl Row {
     /// Na ordem em que a tabela mostra.
-    pub const ALL: [Row; 19] = [
+    pub const ALL: [Row; 26] = [
         Row::Price,
         Row::Return12m,
         Row::DividendYield12m,
@@ -260,6 +276,13 @@ impl Row {
         Row::NavPerShare,
         Row::Vacancy,
         Row::NetAssets,
+        Row::CashShare,
+        Row::Liquidity30d,
+        Row::Liquidity90d,
+        Row::DividendCagr3y,
+        Row::DividendCagr5y,
+        Row::PriceCagr3y,
+        Row::PriceCagr5y,
     ];
 
     pub fn direction(self) -> Direction {
@@ -275,14 +298,23 @@ impl Row {
             | Row::NetMargin
             | Row::EbitdaMargin
             | Row::RevenueCagr
-            | Row::EarningsCagr => Direction::Higher,
+            | Row::EarningsCagr
+            | Row::Liquidity30d
+            | Row::Liquidity90d
+            | Row::DividendCagr3y
+            | Row::DividendCagr5y
+            | Row::PriceCagr3y
+            | Row::PriceCagr5y => Direction::Higher,
+            // O caixa não tem lado: muito caixa é dinheiro parado ou à espera
+            // de um imóvel; pouco, menos folga.
             Row::Price
             | Row::Segment
             | Row::EarningsPerShare
             | Row::BookValuePerShare
             | Row::MarketCap
             | Row::NavPerShare
-            | Row::NetAssets => Direction::None,
+            | Row::NetAssets
+            | Row::CashShare => Direction::None,
         }
     }
 
@@ -299,11 +331,18 @@ impl Row {
             | Row::EbitdaMargin
             | Row::RevenueCagr
             | Row::EarningsCagr
-            | Row::Vacancy => Unit::Percent,
+            | Row::Vacancy
+            | Row::CashShare
+            | Row::DividendCagr3y
+            | Row::DividendCagr5y
+            | Row::PriceCagr3y
+            | Row::PriceCagr5y => Unit::Percent,
             Row::Price | Row::EarningsPerShare | Row::BookValuePerShare | Row::NavPerShare => {
                 Unit::Money
             }
-            Row::MarketCap | Row::NetAssets => Unit::MoneyCompact,
+            Row::MarketCap | Row::NetAssets | Row::Liquidity30d | Row::Liquidity90d => {
+                Unit::MoneyCompact
+            }
             Row::Segment => Unit::Text,
         }
     }
@@ -326,7 +365,16 @@ impl Row {
             | Row::EarningsPerShare
             | Row::BookValuePerShare
             | Row::MarketCap => Group::Company,
-            Row::NavPerShare | Row::Vacancy | Row::NetAssets => Group::Fund,
+            Row::NavPerShare
+            | Row::Vacancy
+            | Row::NetAssets
+            | Row::CashShare
+            | Row::Liquidity30d
+            | Row::Liquidity90d
+            | Row::DividendCagr3y
+            | Row::DividendCagr5y
+            | Row::PriceCagr3y
+            | Row::PriceCagr5y => Group::Fund,
         }
     }
 

@@ -179,6 +179,8 @@ struct FundRow {
     version: i32,
     net_assets: Option<Decimal>,
     shares: Option<Decimal>,
+    total_assets: Option<Decimal>,
+    liquid_assets: Option<Decimal>,
     vacancy_reference_date: Option<Date>,
     vacancy: Option<Decimal>,
     vacancy_gap: Option<String>,
@@ -571,20 +573,28 @@ impl Store {
         let versions: Vec<i32> = reports.iter().map(|r| r.version).collect();
         let assets: Vec<Option<Decimal>> = reports.iter().map(|r| r.net_assets).collect();
         let shares: Vec<Option<Decimal>> = reports.iter().map(|r| r.shares).collect();
+        let totals: Vec<Option<Decimal>> = reports.iter().map(|r| r.total_assets).collect();
+        let liquid: Vec<Option<Decimal>> = reports.iter().map(|r| r.liquid_assets).collect();
         let mut tx = self.pool.begin().await?;
         lock(&mut tx, key).await?;
+        // `balance_read`: a linha já tem o ativo total e o caixa lidos por este
+        // código (migração 0037; `Store::fund_balance_missing`).
         sqlx::query(
             "insert into cvm_funds as f
-                (cnpj, issuer, isin, name, reference_date, version, net_assets, shares, updated_at)
-             select cnpj, issuer, isin, name, reference_date, version, net_assets, shares, $9
+                (cnpj, issuer, isin, name, reference_date, version, net_assets, shares,
+                 total_assets, liquid_assets, balance_read, updated_at)
+             select cnpj, issuer, isin, name, reference_date, version, net_assets, shares,
+                    total_assets, liquid_assets, true, $11
                from unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::date[], $6::int[],
-                           $7::numeric[], $8::numeric[])
-                    as r (cnpj, issuer, isin, name, reference_date, version, net_assets, shares)
+                           $7::numeric[], $8::numeric[], $9::numeric[], $10::numeric[])
+                    as r (cnpj, issuer, isin, name, reference_date, version, net_assets, shares,
+                          total_assets, liquid_assets)
              on conflict (cnpj) do update set
                 issuer = excluded.issuer, isin = excluded.isin, name = excluded.name,
                 reference_date = excluded.reference_date, version = excluded.version,
                 net_assets = excluded.net_assets, shares = excluded.shares,
-                updated_at = excluded.updated_at
+                total_assets = excluded.total_assets, liquid_assets = excluded.liquid_assets,
+                balance_read = true, updated_at = excluded.updated_at
               where (f.reference_date, f.version) <= (excluded.reference_date, excluded.version)",
         )
         .bind(&cnpjs)
@@ -595,6 +605,8 @@ impl Store {
         .bind(&versions)
         .bind(&assets)
         .bind(&shares)
+        .bind(&totals)
+        .bind(&liquid)
         .bind(now)
         .execute(&mut *tx)
         .await?;
@@ -634,6 +646,22 @@ impl Store {
         mark_checked(&mut tx, key, validators, &BTreeSet::new(), now).await?;
         tx.commit().await?;
         Ok(())
+    }
+
+    /// Se algum fundo com informe de `year` foi gravado sem o ativo total e o
+    /// caixa (por um código de antes da migração 0037, ou por um pod antigo
+    /// durante o canário): o arquivo do ano é lido de novo, inteiro.
+    pub async fn fund_balance_missing(&self, year: i32) -> Result<bool, StoreError> {
+        let (missing,): (bool,) = sqlx::query_as(
+            "select exists (select 1 from cvm_funds
+                             where not balance_read
+                               and reference_date >= make_date($1, 1, 1)
+                               and reference_date < make_date($1 + 1, 1, 1))",
+        )
+        .bind(year)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(missing)
     }
 
     /// Grava a vacância do informe trimestral (o mais novo vence).
@@ -886,7 +914,8 @@ impl Store {
         let cnpjs: Vec<&str> = chosen.values().map(|c| c.cnpj.as_str()).collect();
         let rows: Vec<FundRow> = sqlx::query_as(
             "select f.cnpj, f.issuer, f.isin, f.name, f.reference_date, f.version, f.net_assets,
-                    f.shares, v.reference_date as vacancy_reference_date, v.vacancy, v.vacancy_gap,
+                    f.shares, f.total_assets, f.liquid_assets,
+                    v.reference_date as vacancy_reference_date, v.vacancy, v.vacancy_gap,
                     v.properties
                from cvm_funds f
                left join cvm_fund_vacancy v on v.cnpj = f.cnpj
@@ -928,6 +957,8 @@ impl Store {
                 version: row.version,
                 net_assets: row.net_assets.map(|d| d.normalize()),
                 shares: row.shares.map(|d| d.normalize()),
+                total_assets: row.total_assets.map(|d| d.normalize()),
+                liquid_assets: row.liquid_assets.map(|d| d.normalize()),
             };
             by_cnpj.insert(report.cnpj.clone(), (report, vacancy));
         }

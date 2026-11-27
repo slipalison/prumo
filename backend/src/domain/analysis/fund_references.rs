@@ -304,6 +304,8 @@ mod tests {
                 version: 1,
                 net_assets: Some(net_assets),
                 shares: Some(shares),
+                total_assets: None,
+                liquid_assets: None,
             },
             None,
             None,

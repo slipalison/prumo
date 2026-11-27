@@ -8,6 +8,14 @@
 //! novo de cada fundo. É a vacância física, não a financeira (a CVM não publica
 //! a receita perdida por imóvel), e só vale para fundo de tijolo: fundo de
 //! papel ou de fundos não tem imóvel para renda ([`Gap::NoRentalProperty`]).
+//!
+//! **Caixa.** O informe mensal traz o ativo total (`Valor_Ativo`, no
+//! `complemento`) e o grupo "ativos para manter liquidez"
+//! (`Total_Necessidades_Liquidez`, no `ativo_passivo`): disponibilidades,
+//! títulos públicos, títulos privados e fundos de renda fixa. O % de caixa é um
+//! sobre o outro ([`cash_share`]). Conferido no informe de 2026 (13 mil linhas):
+//! o grupo é a soma das quatro contas e o ativo total é a soma dos três grupos
+//! do balanço (liquidez, investido e a receber).
 
 use rust_decimal::Decimal;
 use time::{Date, OffsetDateTime};
@@ -26,6 +34,25 @@ pub struct FundReport {
     pub version: i32,
     pub net_assets: Option<Decimal>,
     pub shares: Option<Decimal>,
+    /// `Valor_Ativo`: o ativo total.
+    pub total_assets: Option<Decimal>,
+    /// `Total_Necessidades_Liquidez`: o que o fundo tem em caixa e aplicações
+    /// de liquidez.
+    pub liquid_assets: Option<Decimal>,
+}
+
+/// O que o fundo tem em caixa e aplicações de liquidez sobre o ativo total, de
+/// 0 a 1. Ativo total zero ou negativo: [`Gap::NonPositiveBase`]; liquidez
+/// negativa ou maior que o ativo total (há três casos assim no informe de
+/// 2026): erro de preenchimento, [`Gap::Implausible`].
+pub fn cash_share(liquid_assets: Option<Decimal>, total_assets: Option<Decimal>) -> Figure {
+    let share = liquid_assets
+        .map_or(Figure::missing(Gap::NotReported), Figure::known)
+        .ratio(total_assets.map_or(Figure::missing(Gap::NotReported), Figure::known));
+    match share.value() {
+        Some(v) if v < Decimal::ZERO || v > Decimal::ONE => Figure::missing(Gap::Implausible),
+        _ => share,
+    }
 }
 
 /// Um imóvel para renda acabado do informe trimestral.
@@ -89,6 +116,10 @@ pub struct FundMetrics {
     pub price_to_book: Figure,
     /// Vacância física (0 a 1) do informe trimestral mais novo.
     pub vacancy: Figure,
+    /// O ativo total do informe mensal.
+    pub total_assets: Figure,
+    /// Caixa e aplicações de liquidez ÷ ativo total, de 0 a 1 ([`cash_share`]).
+    pub cash_share: Figure,
     pub vacancy_reference_date: Option<Date>,
     pub synced_at: Option<OffsetDateTime>,
 }
@@ -121,6 +152,10 @@ pub fn fund_metrics(
         price,
         price_to_book,
         vacancy: vacancy.map_or(Figure::missing(Gap::NoQuarterlyReport), |v| v.value),
+        total_assets: report
+            .total_assets
+            .map_or(Figure::missing(Gap::NotReported), Figure::known),
+        cash_share: cash_share(report.liquid_assets, report.total_assets),
         vacancy_reference_date: vacancy.map(|v| v.reference_date),
         synced_at,
     }
@@ -215,6 +250,8 @@ mod tests {
             version: 1,
             net_assets,
             shares,
+            total_assets: Some(dec!(1200000)),
+            liquid_assets: Some(dec!(60000)),
         }
     }
 
@@ -237,6 +274,46 @@ mod tests {
         assert_eq!(m.price_to_book.value(), Some(dec!(0.9)));
         assert_eq!(m.vacancy.gap(), Some(Gap::NoQuarterlyReport));
         assert_eq!(m.vacancy_reference_date, None);
+        assert_eq!(m.total_assets.value(), Some(dec!(1200000)));
+        assert_eq!(m.cash_share.value(), Some(dec!(0.05)));
+    }
+
+    #[test]
+    fn cash_is_the_liquid_group_over_total_assets() {
+        assert_eq!(
+            cash_share(Some(dec!(25)), Some(dec!(100))).value(),
+            Some(dec!(0.25))
+        );
+        assert_eq!(
+            cash_share(Some(dec!(0)), Some(dec!(100))).value(),
+            Some(dec!(0))
+        );
+        assert_eq!(
+            cash_share(Some(dec!(100)), Some(dec!(100))).value(),
+            Some(dec!(1))
+        );
+        // Sem um dos dois números, o motivo; ativo zero, base não positiva.
+        assert_eq!(
+            cash_share(None, Some(dec!(100))).gap(),
+            Some(Gap::NotReported)
+        );
+        assert_eq!(
+            cash_share(Some(dec!(1)), None).gap(),
+            Some(Gap::NotReported)
+        );
+        assert_eq!(
+            cash_share(Some(dec!(1)), Some(dec!(0))).gap(),
+            Some(Gap::NonPositiveBase)
+        );
+        // Mais caixa que ativo, ou caixa negativo: erro de preenchimento.
+        assert_eq!(
+            cash_share(Some(dec!(150)), Some(dec!(100))).gap(),
+            Some(Gap::Implausible)
+        );
+        assert_eq!(
+            cash_share(Some(dec!(-1)), Some(dec!(100))).gap(),
+            Some(Gap::Implausible)
+        );
     }
 
     #[test]

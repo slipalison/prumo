@@ -254,6 +254,8 @@ async fn reference_data(db: &Database) {
                 version: 1,
                 net_assets: Some(dec!(1000)),
                 shares: Some(dec!(10)),
+                total_assets: None,
+                liquid_assets: None,
             }],
             &Validators::default(),
             OffsetDateTime::now_utc(),

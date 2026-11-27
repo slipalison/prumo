@@ -105,6 +105,16 @@ pub enum HistoryError {
 /// Um valor por data, em ordem crescente e sem data repetida.
 pub type Series = Vec<(Date, Decimal)>;
 
+/// O que um pedido de fechamentos traz: os fechamentos reais, os
+/// desdobramentos (data do evento e fator) e o volume financeiro de cada
+/// pregão que a fonte informou (na moeda do símbolo).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Chart {
+    pub closes: Series,
+    pub splits: Vec<(Date, Decimal)>,
+    pub traded: Series,
+}
+
 #[async_trait]
 pub trait HistoryProvider: Send + Sync {
     /// O índice de `from` a `to`, inclusive. Janela sem dado publicado é
@@ -125,6 +135,18 @@ pub trait HistoryProvider: Send + Sync {
         to: Date,
     ) -> Result<(Series, Vec<(Date, Decimal)>), HistoryError> {
         Ok((self.closes(symbol, from, to).await?, Vec::new()))
+    }
+
+    /// Os fechamentos e desdobramentos de [`HistoryProvider::closes_and_splits`]
+    /// e o volume financeiro de cada pregão. Quem não informa volume devolve a
+    /// lista vazia.
+    async fn chart(&self, symbol: &str, from: Date, to: Date) -> Result<Chart, HistoryError> {
+        let (closes, splits) = self.closes_and_splits(symbol, from, to).await?;
+        Ok(Chart {
+            closes,
+            splits,
+            traded: Vec::new(),
+        })
     }
 }
 
@@ -182,6 +204,10 @@ impl HistoryProvider for PublicHistory {
         to: Date,
     ) -> Result<(Series, Vec<(Date, Decimal)>), HistoryError> {
         self.yahoo.closes_and_splits(symbol, from, to).await
+    }
+
+    async fn chart(&self, symbol: &str, from: Date, to: Date) -> Result<Chart, HistoryError> {
+        self.yahoo.chart(symbol, from, to).await
     }
 }
 

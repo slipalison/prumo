@@ -20,12 +20,14 @@ use crate::domain::asset_class::{AssetClass, Market};
 use crate::domain::compare::{
     self as rules, Family, Levels, Period, Row, Token, BASE_SLACK_DAYS, MAX_ASSETS,
 };
+use crate::domain::fund_market::{FundMarket, TRADED_LOOKBACK_DAYS};
 use crate::domain::fundamentals::{AssetFundamentals, Figure, Unsupported};
 use crate::domain::performance::months_before;
 use crate::domain::price_check::settled;
 use crate::domain::retro;
 use crate::domain::sector::reference_key;
 use crate::domain::tax_book::TaxInstrument;
+use crate::fund_indicators;
 use crate::history::{HistoryError, HistoryProvider, IndexCode, Series, IBOV_SYMBOL};
 use crate::income::{payer_symbol, IncomeService};
 use crate::performance::{default_currency, local_date, series as portfolio_series};
@@ -216,19 +218,32 @@ async fn try_ensure_prices(
     let missing_back = covered.is_none_or(|covered| from < covered);
     let stale =
         check.is_none_or(|(checked_from, at)| checked_from > from || now - at > SPLIT_CHECK_TTL);
-    if !missing_back && !stale {
+    let today = local_date(now);
+    // O volume financeiro (a liquidez dos FIIs, migração 0037): símbolo
+    // guardado antes dele pede o trecho de novo, uma vez.
+    let traded_from = (today - Duration::days(TRADED_LOOKBACK_DAYS)).max(from);
+    let traded_missing = store
+        .traded_covered_from(symbol)
+        .await?
+        .is_none_or(|covered| covered > traded_from);
+    if !missing_back && !stale && !traded_missing {
         return Ok(());
     }
-    let today = local_date(now);
-    match sources.history.closes_and_splits(symbol, from, today).await {
-        Ok((closes, splits)) => {
-            // Os eventos antes dos preços: o filtro de fechamento ruim de
-            // `insert_prices` não confunde um desdobramento com erro da fonte.
-            store.save_price_splits(symbol, from, &splits, now).await?;
+    match sources.history.chart(symbol, from, today).await {
+        Ok(chart) => {
+            // Os eventos antes dos preços: o filtro de fechamento ruim não
+            // confunde um desdobramento com erro da fonte.
+            store
+                .save_price_splits(symbol, from, &chart.splits, now)
+                .await?;
             // O caminho comum: sem a barra do pregão aberto, sem fechamento
-            // ruim, corrigindo os últimos dias que a fonte mudou.
-            store.record_prices(symbol, &closes, now).await?;
+            // ruim, corrigindo os últimos dias que a fonte mudou; o volume vai
+            // junto.
+            store
+                .record_prices(symbol, &chart.closes, &chart.traded, now)
+                .await?;
             store.set_price_coverage(symbol, from).await?;
+            store.set_traded_coverage(symbol, from).await?;
         }
         Err(HistoryError::NotFound) => {
             // A fonte não conhece o símbolo: não adianta pedir de novo hoje.
@@ -392,10 +407,23 @@ pub async fn table(
     let store = sources.store;
 
     let symbols: Vec<String> = subjects.iter().filter_map(Subject::quote_symbol).collect();
+    // O fundo precisa de 5 anos de preço (o CAGR da cota, `domain::fund_market`);
+    // o resto, dos 13 meses do retorno de 12 meses.
+    let wanted: Vec<(String, Date)> = subjects
+        .iter()
+        .filter_map(|s| {
+            let from = if s.family() == Family::Fund {
+                fund_indicators::history_from(today)
+            } else {
+                from
+            };
+            s.quote_symbol().map(|q| (q, from))
+        })
+        .collect();
     futures_util::future::join_all(
-        symbols
+        wanted
             .iter()
-            .map(|symbol| ensure_prices(sources, symbol, from, now)),
+            .map(|(symbol, from)| ensure_prices(sources, symbol, *from, now)),
     )
     .await;
     ensure_dividends(sources, subjects, now).await;
@@ -436,6 +464,19 @@ pub async fn table(
         .filter_map(|s| reference_key(s.class, &s.symbol))
         .collect();
     let sectors = store.sector_reference(&sector_keys).await?;
+    // O histórico de mercado dos fundos (liquidez, CAGR), com o preço de agora.
+    let fund_prices: Vec<(String, Option<Decimal>)> = subjects
+        .iter()
+        .filter(|s| s.family() == Family::Fund)
+        .map(|s| {
+            let quote = s.quote_symbol();
+            let price = quote
+                .as_ref()
+                .and_then(|q| stored.get(q).map(|x| x.price).or(live.get(q).map(|x| x.0)));
+            (s.symbol.clone(), price)
+        })
+        .collect();
+    let markets = fund_indicators::market_of(store, &fund_prices, today).await?;
 
     let mut columns = Vec::with_capacity(subjects.len());
     for subject in subjects {
@@ -487,6 +528,7 @@ pub async fn table(
             events: &events,
             has_dividend_history,
             fundamentals: fundamentals.get(&subject.symbol),
+            market: markets.get(&subject.symbol),
             segment,
             today,
         };
@@ -513,6 +555,8 @@ struct Inputs<'a> {
     events: &'a [(Date, Decimal)],
     has_dividend_history: bool,
     fundamentals: Option<&'a AssetFundamentals>,
+    /// O histórico de mercado do fundo (`None` fora de fundo).
+    market: Option<&'a FundMarket>,
     segment: Option<String>,
     today: Date,
 }
@@ -602,6 +646,12 @@ fn cell(subject: &Subject, row: Row, inputs: &Inputs<'_>) -> Cell {
             |f| build(f),
         )
     };
+    // Linha do histórico de mercado do fundo: sem ele, o motivo.
+    let market_row = |build: &dyn Fn(&FundMarket) -> Cell| {
+        inputs
+            .market
+            .map_or_else(|| Cell::missing("no_price_history"), build)
+    };
     match row {
         Row::Price => inputs
             .price
@@ -658,6 +708,13 @@ fn cell(subject: &Subject, row: Row, inputs: &Inputs<'_>) -> Cell {
         Row::NavPerShare => fund_row(&|f| figure(f.nav_per_share)),
         Row::Vacancy => fund_row(&|f| percent_figure(f.vacancy)),
         Row::NetAssets => fund_row(&|f| figure(f.net_assets)),
+        Row::CashShare => fund_row(&|f| percent_figure(f.cash_share)),
+        Row::Liquidity30d => market_row(&|m| figure(m.liquidity_short)),
+        Row::Liquidity90d => market_row(&|m| figure(m.liquidity_long)),
+        Row::DividendCagr3y => market_row(&|m| percent_figure(m.dividend_cagr_short)),
+        Row::DividendCagr5y => market_row(&|m| percent_figure(m.dividend_cagr_long)),
+        Row::PriceCagr3y => market_row(&|m| percent_figure(m.price_cagr_short)),
+        Row::PriceCagr5y => market_row(&|m| percent_figure(m.price_cagr_long)),
     }
 }
 

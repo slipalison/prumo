@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 use time::macros::format_description;
 use time::{Date, OffsetDateTime};
 
+use super::fundamentals::RatesDto;
+use super::references::{CdiDto, RealRateDto};
 use super::{ApiQuery, AppState, CurrentUser};
 use crate::compare::{self, Column, CompareError, Curve, CurveKind, CurveRequest, Sources};
 use crate::domain::asset_class::AssetClass;
@@ -110,6 +112,9 @@ pub struct CompareResponse {
     as_of: String,
     assets: Vec<AssetDto>,
     rows: Vec<RowDto>,
+    /// O CDI de 12 meses e o juro real, ao lado do rendimento de 12 meses (só
+    /// contexto, sem destaque).
+    rates: RatesDto,
 }
 
 fn sources(state: &AppState) -> Sources<'_> {
@@ -177,10 +182,15 @@ pub async fn indicators(
             }
         })
         .collect();
+    let rates = RatesDto {
+        cdi_12m: state.store.cdi_12m(table.as_of).await?.map(CdiDto::from),
+        real_rate: state.store.real_rate().await?.map(RealRateDto::from),
+    };
     Ok(Json(CompareResponse {
         as_of: day(table.as_of),
         assets: table.columns.iter().map(AssetDto::from).collect(),
         rows,
+        rates,
     }))
 }
 

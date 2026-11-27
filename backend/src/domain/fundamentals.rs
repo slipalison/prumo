@@ -33,8 +33,8 @@ pub use company::{
     Template, YearCount, HOLDING_EQUITY_SHARE, WINDOW_YEARS,
 };
 pub use fund::{
-    fund_metrics, fund_months, physical_vacancy, FundMetrics, FundMonth, FundMonthFigures,
-    FundReport, RentalProperty, Vacancy, MAX_MONTHLY_YIELD,
+    cash_share, fund_metrics, fund_months, physical_vacancy, FundMetrics, FundMonth,
+    FundMonthFigures, FundReport, RentalProperty, Vacancy, MAX_MONTHLY_YIELD,
 };
 pub use quarters::{
     quarterly_results, Change, Comparison, Quarter, QuarterMethod, QuarterlyResults, Receipts,

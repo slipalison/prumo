@@ -22,6 +22,13 @@
 //!   pedido vai sempre até hoje: só assim os eventos depois da janela, que
 //!   ajustaram os preços dela, vêm junto.
 //!
+//! `indicators.quote[0].volume[i]` é a quantidade de cotas negociadas no
+//! pregão, ajustada por desdobramento como o `close` (medido com `curl` em
+//! 27/11/2026, `MXRF11.SA`: nenhum `null` de volume em dia com fechamento). O
+//! produto dos dois é o **volume financeiro** do pregão, e não muda com o
+//! ajuste (o preço cai pelo fator e a quantidade sobe pelo mesmo fator): é o
+//! que o Prumo guarda (`docs/fundamentos.md`, liquidez média diária).
+//!
 //! O cliente devolve o fechamento **real** do dia (o que se pagava naquele
 //! dia), com o ajuste desfeito — ver `docs/desempenho.md`.
 
@@ -31,7 +38,7 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 use time::{Date, OffsetDateTime, UtcOffset};
 
-use super::{HistoryError, Series};
+use super::{Chart, HistoryError, Series};
 use crate::domain::retro::unadjust_splits;
 
 pub struct YahooHistory {
@@ -41,11 +48,11 @@ pub struct YahooHistory {
 
 #[derive(Deserialize)]
 struct Envelope {
-    chart: Chart,
+    chart: ChartBody,
 }
 
 #[derive(Deserialize)]
-struct Chart {
+struct ChartBody {
     result: Option<Vec<ChartResult>>,
 }
 
@@ -101,6 +108,8 @@ struct Indicators {
 struct QuoteSeries {
     #[serde(default)]
     close: Vec<Option<f64>>,
+    #[serde(default)]
+    volume: Vec<Option<f64>>,
 }
 
 impl YahooHistory {
@@ -156,6 +165,25 @@ impl YahooHistory {
         to: Date,
         now: OffsetDateTime,
     ) -> Result<(Series, Vec<(Date, Decimal)>), HistoryError> {
+        let chart = self.chart_at(symbol, from, to, now).await?;
+        Ok((chart.closes, chart.splits))
+    }
+
+    /// Os fechamentos reais, os desdobramentos e o volume financeiro de cada
+    /// pregão (o mesmo pedido de [`YahooHistory::closes_and_splits`]).
+    pub async fn chart(&self, symbol: &str, from: Date, to: Date) -> Result<Chart, HistoryError> {
+        self.chart_at(symbol, from, to, OffsetDateTime::now_utc())
+            .await
+    }
+
+    /// [`YahooHistory::chart`] com o relógio dado (para teste).
+    pub async fn chart_at(
+        &self,
+        symbol: &str,
+        from: Date,
+        to: Date,
+        now: OffsetDateTime,
+    ) -> Result<Chart, HistoryError> {
         let unavailable = |e: &dyn std::fmt::Display| HistoryError::Unavailable(e.to_string());
         // Margem de um dia nas pontas: a data do pregão é no fuso da bolsa.
         let period1 = (from - time::Duration::days(1)).midnight().assume_utc();
@@ -208,29 +236,45 @@ impl YahooHistory {
                 let end = OffsetDateTime::from_unix_timestamp(regular.end).ok()?;
                 (now < end).then(|| end.to_offset(offset).date())
             });
-        let closes = result
+        let (closes, volumes) = result
             .indicators
             .quote
             .into_iter()
             .next()
-            .map(|q| q.close)
+            .map(|q| (q.close, q.volume))
             .unwrap_or_default();
-        let mut out: Series = result
+        // (data, fechamento ajustado, volume financeiro): o volume só com o
+        // fechamento do mesmo pregão.
+        let mut bars: Vec<(Date, Decimal, Option<Decimal>)> = result
             .timestamp
             .iter()
+            .enumerate()
             .zip(closes)
-            .filter_map(|(at, close)| {
+            .filter_map(|((i, at), close)| {
                 let date = OffsetDateTime::from_unix_timestamp(*at)
                     .ok()?
                     .to_offset(offset)
                     .date();
-                let close = Decimal::try_from(close?).ok()?.round_dp(8);
+                let raw = Decimal::try_from(close?).ok()?;
+                let close = raw.round_dp(8);
+                let traded = volumes
+                    .get(i)
+                    .copied()
+                    .flatten()
+                    .and_then(|v| Decimal::try_from(v).ok())
+                    .filter(|v| *v >= Decimal::ZERO)
+                    .map(|v| (v * raw).round_dp(2));
                 (close > Decimal::ZERO && date >= from && date <= to && Some(date) != open_session)
-                    .then_some((date, close))
+                    .then_some((date, close, traded))
             })
             .collect();
-        out.sort_by_key(|(date, _)| *date);
-        out.dedup_by_key(|(date, _)| *date);
+        bars.sort_by_key(|(date, _, _)| *date);
+        bars.dedup_by_key(|(date, _, _)| *date);
+        let out: Series = bars.iter().map(|(d, c, _)| (*d, *c)).collect();
+        let traded: Series = bars
+            .iter()
+            .filter_map(|(d, _, t)| t.map(|t| (*d, t)))
+            .collect();
         let splits: Vec<(Date, Decimal)> = result
             .events
             .map(|e| e.splits.into_values().collect::<Vec<_>>())
@@ -248,7 +292,11 @@ impl YahooHistory {
                 Some((date, factor))
             })
             .collect();
-        Ok((unadjust_splits(&out, &splits), splits))
+        Ok(Chart {
+            closes: unadjust_splits(&out, &splits),
+            splits,
+            traded,
+        })
     }
 }
 

@@ -15,12 +15,17 @@ use time::{Date, OffsetDateTime};
 use uuid::Uuid;
 
 use super::dto::decimal_out;
+use super::references::{CdiDto, RealRateDto};
 use super::{AppState, CurrentUser};
+use crate::domain::fund_market::FundMarket;
 use crate::domain::fundamentals::{
     AssetFundamentals, Column, CompanyMetrics, Figure, FilingKind, FilingRef, FiscalYear,
     FundMetrics, Gap, PeriodFigures, Scope, Template, Unsupported, YearCount,
 };
+use crate::domain::income::today_in_brazil;
 use crate::error::ApiResult;
+use crate::fund_indicators::{self, FundIndicators};
+use crate::service;
 
 time::serde::format_description!(iso_date, Date, "[year]-[month]-[day]");
 
@@ -39,7 +44,7 @@ mod iso_date_option {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, PartialEq)]
 pub struct FigureDto {
     #[serde(with = "decimal_out::option")]
     pub value: Option<Decimal>,
@@ -234,6 +239,11 @@ pub struct FundDto {
     pub vacancy: FigureDto,
     #[serde(with = "iso_date_option")]
     pub vacancy_reference_date: Option<Date>,
+    /// O ativo total e o caixa sobre ele (fração), do informe mensal.
+    pub total_assets: FigureDto,
+    pub cash_share: FigureDto,
+    /// O histórico de mercado (liquidez, CAGR, rendimento de 12 meses).
+    pub market: Option<FundMarketDto>,
     #[serde(with = "time::serde::rfc3339::option")]
     pub synced_at: Option<OffsetDateTime>,
 }
@@ -251,9 +261,72 @@ impl From<&FundMetrics> for FundDto {
             price_to_book: m.price_to_book.into(),
             vacancy: m.vacancy.into(),
             vacancy_reference_date: m.vacancy_reference_date,
+            total_assets: m.total_assets.into(),
+            cash_share: m.cash_share.into(),
+            market: None,
             synced_at: m.synced_at,
         }
     }
+}
+
+/// O que o histórico de mercado de um FII dá (`domain::fund_market`): as
+/// razões em fração (0,1 = 10%), a liquidez em reais por dia.
+#[derive(Debug, Serialize, PartialEq)]
+pub struct FundMarketDto {
+    /// Volume financeiro médio dos últimos 30 e 90 pregões.
+    pub liquidity_30d: FigureDto,
+    pub liquidity_90d: FigureDto,
+    /// CAGR dos proventos por cota e da cota, em fração ao ano.
+    pub dividend_cagr_3y: FigureDto,
+    pub dividend_cagr_5y: FigureDto,
+    pub price_cagr_3y: FigureDto,
+    pub price_cagr_5y: FigureDto,
+    /// Proventos por cota dos últimos 365 dias sobre a cotação.
+    pub dividend_yield_12m: FigureDto,
+    #[serde(with = "decimal_out::option")]
+    pub dividends_12m: Option<Decimal>,
+}
+
+impl From<&FundMarket> for FundMarketDto {
+    fn from(m: &FundMarket) -> Self {
+        Self {
+            liquidity_30d: m.liquidity_short.into(),
+            liquidity_90d: m.liquidity_long.into(),
+            dividend_cagr_3y: m.dividend_cagr_short.into(),
+            dividend_cagr_5y: m.dividend_cagr_long.into(),
+            price_cagr_3y: m.price_cagr_short.into(),
+            price_cagr_5y: m.price_cagr_long.into(),
+            dividend_yield_12m: m.dividend_yield_12m.into(),
+            dividends_12m: m.dividends_12m,
+        }
+    }
+}
+
+/// O caixa do informe da CVM e o histórico de mercado, juntos (a tabela de
+/// FIIs da Análise).
+#[derive(Debug, Serialize, PartialEq)]
+pub struct FundIndicatorsDto {
+    pub cash_share: FigureDto,
+    #[serde(flatten)]
+    pub market: FundMarketDto,
+}
+
+impl From<&FundIndicators> for FundIndicatorsDto {
+    fn from(i: &FundIndicators) -> Self {
+        Self {
+            cash_share: i.cash_share.into(),
+            market: FundMarketDto::from(&i.market),
+        }
+    }
+}
+
+/// As taxas de mercado ao lado do rendimento de 12 meses do FII (só
+/// contexto): o CDI de 12 meses (bruto e depois do IR de 15%) e o juro real da
+/// NTN-B de referência.
+#[derive(Debug, Serialize)]
+pub struct RatesDto {
+    pub cdi_12m: Option<CdiDto>,
+    pub real_rate: Option<RealRateDto>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -309,6 +382,8 @@ impl AssetFundamentalsDto {
 pub struct FundamentalsDto {
     /// Na ordem da carteira; ativo sem símbolo (renda fixa por valor) fica fora.
     pub assets: Vec<AssetFundamentalsDto>,
+    /// As taxas de mercado ao lado do rendimento dos FIIs.
+    pub rates: RatesDto,
 }
 
 pub async fn list(
@@ -316,15 +391,37 @@ pub async fn list(
     user: CurrentUser,
 ) -> ApiResult<Json<FundamentalsDto>> {
     let by_symbol = state.store.fundamentals_for_user(user.id).await?;
-    let assets = state.store.assets(user.id).await?;
+    let view = service::portfolio(&state.store, user.id).await?;
+    let today = today_in_brazil(OffsetDateTime::now_utc());
+    // O histórico de mercado só dos FIIs com informe (os outros não mostram).
+    let funds: Vec<(String, Option<Decimal>)> = view
+        .assets
+        .iter()
+        .filter_map(|a| {
+            let symbol = a.asset.symbol.clone()?;
+            matches!(by_symbol.get(&symbol), Some(AssetFundamentals::Fund(_)))
+                .then_some((symbol, a.unit_price))
+        })
+        .collect();
+    let market = fund_indicators::market_of(&state.store, &funds, today).await?;
+    let rates = RatesDto {
+        cdi_12m: state.store.cdi_12m(today).await?.map(CdiDto::from),
+        real_rate: state.store.real_rate().await?.map(RealRateDto::from),
+    };
     Ok(Json(FundamentalsDto {
-        assets: assets
+        assets: view
+            .assets
             .iter()
-            .filter_map(|asset| {
-                let symbol = asset.symbol.as_deref()?;
+            .filter_map(|a| {
+                let symbol = a.asset.symbol.as_deref()?;
                 let fundamentals = by_symbol.get(symbol)?;
-                Some(AssetFundamentalsDto::new(asset.id, symbol, fundamentals))
+                let mut dto = AssetFundamentalsDto::new(a.asset.id, symbol, fundamentals);
+                if let Some(fund) = dto.fund.as_mut() {
+                    fund.market = market.get(symbol).map(FundMarketDto::from);
+                }
+                Some(dto)
             })
             .collect(),
+        rates,
     }))
 }

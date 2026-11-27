@@ -136,9 +136,7 @@ pub fn due_with(
     let Some(state) = state else {
         return Some(Mode::Full);
     };
-    let failed_recently =
-        state.last_error.is_some() && state.attempted_at.is_some_and(|at| now - at < RETRY_AFTER);
-    if failed_recently {
+    if failed_recently(state, now) {
         return None;
     }
     let Some(checked) = state.checked_at else {
@@ -151,6 +149,30 @@ pub fn due_with(
         }
     }
     (now - checked >= REVALIDATE_AFTER).then_some(Mode::Revalidate)
+}
+
+fn failed_recently(state: &SourceState, now: OffsetDateTime) -> bool {
+    state.last_error.is_some() && state.attempted_at.is_some_and(|at| now - at < RETRY_AFTER)
+}
+
+/// O modo de leitura quando o que está gravado ainda não tem tudo que este
+/// código lê do arquivo (`incomplete`: o informe mensal de FII sem o ativo
+/// total e o caixa, `Store::fund_balance_missing`): o arquivo inteiro, sem o
+/// GET condicional (a CVM responderia 304), mesmo que ele esteja em dia. Depois
+/// de uma falha, espera [`RETRY_AFTER`] como sempre.
+pub fn with_backfill(
+    mode: Option<Mode>,
+    incomplete: bool,
+    state: Option<&SourceState>,
+    now: OffsetDateTime,
+) -> Option<Mode> {
+    if !incomplete {
+        return mode;
+    }
+    match state {
+        Some(state) if failed_recently(state, now) => None,
+        _ => Some(Mode::Full),
+    }
 }
 
 /// Se o emissor (código CVM e ações) precisa ser buscado na B3.
@@ -451,7 +473,15 @@ impl FundamentalsService {
         let year = today_in_brazil(now).year();
         for source in sources(year, !codes.is_empty(), !wanted.funds.is_empty()) {
             let key = source.key();
-            if due(source, states.get(&key), &codes, now).is_none() {
+            let incomplete = self.incomplete(source).await;
+            if with_backfill(
+                due(source, states.get(&key), &codes, now),
+                incomplete,
+                states.get(&key),
+                now,
+            )
+            .is_none()
+            {
                 continue;
             }
             let fresh = match self.store.claim_cvm_source(&key, now, CLAIM_FOR).await {
@@ -466,7 +496,8 @@ impl FundamentalsService {
             // pode ter lido este arquivo e soltado a reserva nesse meio-tempo.
             // A decisão que vale é a tomada com o estado lido ao reservar.
             let state = Some(&fresh);
-            let Some(mode) = due(source, state, &codes, now) else {
+            let Some(mode) = with_backfill(due(source, state, &codes, now), incomplete, state, now)
+            else {
                 if let Err(error) = self.store.release_cvm_source(&key).await {
                     tracing::error!(source = %key, error = %error, "reserva nao solta");
                 }
@@ -492,6 +523,22 @@ impl FundamentalsService {
             }
         }
         report
+    }
+
+    /// Se o gravado a partir de `source` ainda não tem tudo que este código lê
+    /// dele: só o informe mensal de FII, enquanto houver fundo do ano sem o
+    /// ativo total e o caixa ([`with_backfill`]).
+    async fn incomplete(&self, source: Source) -> bool {
+        let Source::FundMonthly(year) = source else {
+            return false;
+        };
+        match self.store.fund_balance_missing(year).await {
+            Ok(missing) => missing,
+            Err(error) => {
+                tracing::error!(error = %error, "caixa dos fundos ilegivel");
+                false
+            }
+        }
     }
 
     /// Lê um arquivo e grava. `Ok(false)`: nada mudou (304, ou o arquivo do
@@ -674,6 +721,38 @@ mod tests {
             due(annual, Some(&old), &set(&[1]), now),
             Some(Mode::Revalidate)
         );
+    }
+
+    #[test]
+    fn an_incomplete_fund_report_is_read_again_in_full() {
+        let now = datetime!(2026-11-26 12:00 UTC);
+        let monthly = Source::FundMonthly(2026);
+        let fresh = state(Some(time::Duration::hours(2)), None, &[], now);
+        // Em dia: nada a ler; incompleto, o arquivo inteiro (sem 304).
+        assert_eq!(due(monthly, Some(&fresh), &set(&[]), now), None);
+        assert_eq!(
+            with_backfill(None, true, Some(&fresh), now),
+            Some(Mode::Full)
+        );
+        assert_eq!(
+            with_backfill(Some(Mode::Revalidate), true, Some(&fresh), now),
+            Some(Mode::Full)
+        );
+        assert_eq!(with_backfill(None, true, None, now), Some(Mode::Full));
+        // Completo, vale a regra de sempre.
+        assert_eq!(with_backfill(None, false, Some(&fresh), now), None);
+        assert_eq!(
+            with_backfill(Some(Mode::Revalidate), false, Some(&fresh), now),
+            Some(Mode::Revalidate)
+        );
+        // Falhou há pouco: espera, mesmo incompleto.
+        let failed = state(
+            Some(time::Duration::days(3)),
+            Some(time::Duration::hours(1)),
+            &[],
+            now,
+        );
+        assert_eq!(with_backfill(None, true, Some(&failed), now), None);
     }
 
     #[test]

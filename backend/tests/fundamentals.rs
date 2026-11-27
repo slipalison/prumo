@@ -1047,6 +1047,8 @@ async fn two_funds_on_one_isin(store: &Store) {
             version: 1,
             net_assets: Some(assets),
             shares: Some(shares),
+            total_assets: None,
+            liquid_assets: None,
         };
     let mut series = months(
         OLD_FUND,
@@ -1323,4 +1325,43 @@ async fn the_b3_client_finds_the_fund_of_a_ticker() {
     // a rodada tentar de novo; sigla fora do padrão nem vai à B3.
     assert!(client.fund("ZZZZ").await.is_err());
     assert_eq!(client.fund("fict").await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn a_fund_report_without_the_balance_is_read_again_in_full() {
+    let db = database().await;
+    let cvm = FakeCvm::start().await;
+    cvm.standard(false).await;
+    portfolio(&db.store, "caixa@teste.local").await;
+    let codes = FakeCodes::with(&[("UMUM", Some(99901)), ("ETFX", None)]);
+    let route = "/dados/FII/DOC/INF_MENSAL/DADOS/inf_mensal_fii_2026.zip";
+
+    service(&db.store, &cvm, Arc::clone(&codes))
+        .round(NOW)
+        .await;
+    assert_eq!(cvm.hits(route).await, (1, 0));
+    assert!(!db.store.fund_balance_missing(2026).await.unwrap());
+
+    // Um pod de antes do caixa regrava a linha (sem a marca): o código novo lê
+    // o arquivo de novo, inteiro, mesmo em dia (sem o GET condicional, que
+    // responderia 304), e uma vez só.
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .connect(&db.url)
+        .await
+        .unwrap();
+    sqlx::query("update cvm_funds set balance_read = false")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(db.store.fund_balance_missing(2026).await.unwrap());
+    let later = NOW + time::Duration::minutes(5);
+    service(&db.store, &cvm, Arc::clone(&codes))
+        .round(later)
+        .await;
+    assert_eq!(cvm.hits(route).await, (2, 0));
+    assert!(!db.store.fund_balance_missing(2026).await.unwrap());
+    service(&db.store, &cvm, Arc::clone(&codes))
+        .round(later + time::Duration::minutes(5))
+        .await;
+    assert_eq!(cvm.hits(route).await, (2, 0));
 }

@@ -23,6 +23,7 @@ use time::{Date, Duration, OffsetDateTime, Time, UtcOffset};
 use uuid::Uuid;
 
 use crate::domain::asset_class::{AssetClass, Market, UnitKind};
+use crate::domain::fund_market::TRADED_LOOKBACK_DAYS;
 use crate::domain::market_rates::CDI_LOOKBACK_DAYS;
 use crate::domain::monthly_stats::{self, Beat, MonthStats};
 use crate::domain::net_worth::{self, Bridge, FlowPoint};
@@ -437,19 +438,38 @@ impl Performance {
         {
             ranges = vec![(from, today, true)];
         }
+        // O volume financeiro (migração 0037, a liquidez dos FIIs em
+        // `docs/fundamentos.md`) vem no mesmo pedido. Sem ele pedido de ponta a
+        // ponta desde a janela da liquidez (símbolo guardado antes dele), o
+        // pedido que vai até hoje começa nela: uma vez, e sem pedido a mais.
+        let traded_from = (today - Duration::days(TRADED_LOOKBACK_DAYS)).max(from);
+        if self
+            .store
+            .traded_covered_from(symbol)
+            .await?
+            .is_none_or(|covered| covered > traded_from)
+        {
+            widen_to(&mut ranges, traded_from, today);
+        }
         let holders: Vec<Uuid> = holders.iter().copied().collect();
         let mut stored = 0;
         for (start, end, backward) in ranges.into_iter().filter(|(s, e, _)| s <= e) {
-            match self.history.closes_and_splits(symbol, start, end).await {
-                Ok((closes, splits)) => {
+            match self.history.chart(symbol, start, end).await {
+                Ok(chart) => {
                     // Os eventos antes dos preços: se a gravação parar no meio,
                     // o próximo pedido começa antes do último preço guardado. O
                     // pedido vai até hoje, então a lista de `start` em diante é
                     // a da fonte, inteira.
                     self.store
-                        .save_price_splits(symbol, start, &splits, now)
+                        .save_price_splits(symbol, start, &chart.splits, now)
                         .await?;
-                    let inserted = self.store.record_prices(symbol, &closes, now).await?;
+                    let inserted = self
+                        .store
+                        .record_prices(symbol, &chart.closes, &chart.traded, now)
+                        .await?;
+                    if end == today {
+                        self.store.set_traded_coverage(symbol, start).await?;
+                    }
                     stored += inserted.len();
                     if backward {
                         self.store.set_price_coverage(symbol, start).await?;
@@ -495,7 +515,10 @@ impl Performance {
         let mut stored = 0;
         for (bond, need) in bonds {
             let series: Series = history.get(&bond).cloned().unwrap_or_default();
-            let inserted = self.store.record_prices(&need.symbol, &series, now).await?;
+            let inserted = self
+                .store
+                .record_prices(&need.symbol, &series, &[], now)
+                .await?;
             stored += inserted.len();
             self.store
                 .set_price_coverage(&need.symbol, need.from)
@@ -772,6 +795,16 @@ async fn compute_days(
             taken_at: now,
         })
         .collect())
+}
+
+/// Faz o pedido que vai até hoje começar em `from` (ou acrescenta um, de
+/// `from` a hoje, se nenhum vai): o trecho do volume financeiro que falta vem
+/// no pedido de sempre, sem um a mais.
+fn widen_to(ranges: &mut Vec<(Date, Date, bool)>, from: Date, today: Date) {
+    match ranges.iter_mut().find(|(_, end, _)| *end == today) {
+        Some(range) => range.0 = range.0.min(from),
+        None => ranges.push((from, today, false)),
+    }
 }
 
 /// Refaz e grava a série da pessoa de `since` até `end`. Continua da foto
@@ -1239,6 +1272,33 @@ mod tests {
     use rust_decimal_macros::dec;
     use time::macros::{date, datetime, time};
     use time::Month;
+
+    #[test]
+    fn the_traded_value_gap_rides_on_the_request_to_today() {
+        let today = date!(2026 - 11 - 27);
+        let window = date!(2026 - 06 - 30);
+        // O pedido para a frente começa na janela; o para trás não muda.
+        let mut ranges = vec![
+            (date!(2021 - 01 - 01), date!(2021 - 06 - 01), true),
+            (date!(2026 - 11 - 20), today, false),
+        ];
+        widen_to(&mut ranges, window, today);
+        assert_eq!(
+            ranges,
+            vec![
+                (date!(2021 - 01 - 01), date!(2021 - 06 - 01), true),
+                (window, today, false),
+            ]
+        );
+        // Já começa antes: fica como está.
+        let mut whole = vec![(date!(2021 - 01 - 01), today, true)];
+        widen_to(&mut whole, window, today);
+        assert_eq!(whole, vec![(date!(2021 - 01 - 01), today, true)]);
+        // Nada vai até hoje (tudo em dia): um pedido da janela a hoje.
+        let mut none = Vec::new();
+        widen_to(&mut none, window, today);
+        assert_eq!(none, vec![(window, today, false)]);
+    }
 
     #[test]
     fn schedule_follows_brasilia_time() {

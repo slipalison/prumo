@@ -17,9 +17,10 @@ use prumo::dividends::{DividendError, DividendEvent, DividendHistory, DividendPr
 use prumo::domain::fundamentals::{
     Column, Figure, Filing, FilingKind, FundReport, Line, Registration, Scope, Statement, Vacancy,
 };
+use prumo::domain::performance::months_before;
 use prumo::fundamentals::b3::IssuerInfo;
 use prumo::fundamentals::download::Validators;
-use prumo::history::{HistoryError, HistoryProvider, IndexCode, Series};
+use prumo::history::{Chart, HistoryError, HistoryProvider, IndexCode, Series};
 use prumo::performance::local_date;
 use prumo::store::fundamentals::FundVacancy;
 use prumo::store::Store;
@@ -38,6 +39,8 @@ const NOW: OffsetDateTime = datetime!(2026-11-26 15:00 UTC);
 struct FakeHistory {
     closes: Mutex<HashMap<String, Series>>,
     splits: Mutex<HashMap<String, Vec<(Date, Decimal)>>>,
+    /// O volume financeiro de cada pregão, por símbolo.
+    traded: Mutex<HashMap<String, Series>>,
     indexes: Mutex<HashMap<IndexCode, Series>>,
     requests: Mutex<Vec<String>>,
 }
@@ -98,6 +101,16 @@ impl HistoryProvider for FakeHistory {
             .cloned()
             .unwrap_or_default();
         Ok((closes, splits))
+    }
+
+    async fn chart(&self, symbol: &str, from: Date, to: Date) -> Result<Chart, HistoryError> {
+        let (closes, splits) = self.closes_and_splits(symbol, from, to).await?;
+        let traded = window(self.traded.lock().unwrap().get(symbol), from, to);
+        Ok(Chart {
+            closes,
+            splits,
+            traded,
+        })
     }
 }
 
@@ -342,6 +355,9 @@ async fn seed_fundamentals(store: &Store) {
         version: 1,
         net_assets: Some(dec!(1000000)),
         shares: Some(Decimal::from(shares)),
+        // Caixa de 10% do ativo total (fictício).
+        total_assets: Some(dec!(1250000)),
+        liquid_assets: Some(dec!(125000)),
     };
     store
         .save_fund_reports(
@@ -481,6 +497,7 @@ async fn comparator_end_to_end() {
 
     rejects_what_cannot_be_compared(&db, &dir).await;
     side_by_side_table_with_neutral_marks(&db, &dir).await;
+    fund_rows_show_cash_liquidity_and_growth(&db, &dir).await;
     a_holding_indicator_does_not_apply_and_gets_no_mark(&db, &dir).await;
     returns_undo_splits_reinvest_dividends_and_align_the_start(&db, &dir).await;
     each_person_has_their_own_portfolio(&db, &dir).await;
@@ -694,6 +711,146 @@ async fn side_by_side_table_with_neutral_marks(db: &Database, dir: &tempfile_dir
     assert!(has_row(&only, "price_to_earnings"));
     assert!(!has_row(&only, "vacancy"));
     assert!(!has_row(&only, "nav_per_share"));
+}
+
+/// Os dias úteis de `from` a `to`.
+fn weekdays(from: Date, to: Date) -> Vec<Date> {
+    let mut out = Vec::new();
+    let mut day = from;
+    while day <= to {
+        if !matches!(
+            day.weekday(),
+            time::Weekday::Saturday | time::Weekday::Sunday
+        ) {
+            out.push(day);
+        }
+        day = day.next_day().unwrap();
+    }
+    out
+}
+
+/// FII completo no comparador: o caixa do informe, a liquidez dos últimos
+/// pregões e os CAGRs de proventos e da cota (dois FIIs fictícios de fora da
+/// carteira). O caixa não tem destaque; a liquidez e os CAGRs marcam o maior,
+/// só com dois valores conhecidos.
+async fn fund_rows_show_cash_liquidity_and_growth(db: &Database, dir: &tempfile_dir::Dir) {
+    let env = env(db, "fii-completo@prumo.test", dir);
+    let today = local_date(OffsetDateTime::now_utc());
+    // Dois fundos fictícios no informe mensal, com 10% do ativo em caixa.
+    let report = |cnpj: &str, issuer: &str, isin: &str| FundReport {
+        cnpj: cnpj.to_owned(),
+        issuer: issuer.to_owned(),
+        isin: isin.to_owned(),
+        name: format!("FUNDO {issuer}"),
+        reference_date: date!(2026 - 10 - 31),
+        version: 1,
+        net_assets: Some(dec!(1000000)),
+        shares: Some(dec!(10000)),
+        total_assets: Some(dec!(1250000)),
+        liquid_assets: Some(dec!(125000)),
+    };
+    db.store
+        .save_fund_reports(
+            "fund_monthly:2026",
+            &[
+                report("33.333.333/0001-33", "FUNA", "BRFUNACTF001"),
+                report("44.444.444/0001-44", "FUNB", "BRFUNBCTF002"),
+            ],
+            &Validators::default(),
+            NOW,
+        )
+        .await
+        .unwrap();
+    let yesterday = today - Duration::days(1);
+    let base5 = months_before(today, 60) - Duration::days(3);
+    let base3 = months_before(today, 36) - Duration::days(3);
+    // FUNA11: 100 há cinco anos, 110 há três, 133,10 nos últimos 40 pregões
+    // (com R$ 1 milhão por pregão); FUNB11: 100 pregões a 10, R$ 4 milhões.
+    let recent = weekdays(today - Duration::days(70), yesterday);
+    let knri: Vec<Date> = recent[recent.len() - 40..].to_vec();
+    let mut closes = vec![(base5, dec!(100)), (base3, dec!(110))];
+    closes.extend(knri.iter().map(|d| (*d, dec!(133.1))));
+    env.history.set("FUNA11.SA", closes);
+    env.history.traded.lock().unwrap().insert(
+        "FUNA11.SA".into(),
+        knri.iter().map(|d| (*d, dec!(1000000))).collect(),
+    );
+    let long = weekdays(today - Duration::days(170), yesterday);
+    let mxrf: Vec<Date> = long[long.len() - 100..].to_vec();
+    env.history
+        .set("FUNB11.SA", mxrf.iter().map(|d| (*d, dec!(10))).collect());
+    env.history.traded.lock().unwrap().insert(
+        "FUNB11.SA".into(),
+        mxrf.iter().map(|d| (*d, dec!(4000000))).collect(),
+    );
+    // FUNA11 paga todo mês há sete anos: R$ 0,80 até três anos atrás, R$ 1
+    // depois. FUNB11, sem provento conhecido.
+    let paid: Vec<(Date, Decimal)> = (0..84)
+        .map(|k| {
+            let day = months_before(today, k) - Duration::days(5);
+            (day, if k >= 36 { dec!(0.8) } else { dec!(1) })
+        })
+        .collect();
+    env.dividends.set("FUNA11.SA", "BRL", paid);
+
+    let body = table(&env.router, "FUNA11:br_reits,FUNB11:br_reits").await;
+    let none = Value::Null;
+    // Caixa de 10% do ativo nos dois (informe fictício), sem destaque.
+    close(&cell(&body, "cash_share", 0)["value"], 10.0);
+    close(&cell(&body, "cash_share", 1)["value"], 10.0);
+    assert_eq!(row(&body, "cash_share")["direction"], "none");
+    assert_eq!(marks(&body, "cash_share"), vec![none.clone(), none.clone()]);
+    // Liquidez: 30 pregões nos dois; 90 só no FUNB11 (o FUNA11 tem 40).
+    close(&cell(&body, "liquidity_30d", 0)["value"], 1_000_000.0);
+    close(&cell(&body, "liquidity_30d", 1)["value"], 4_000_000.0);
+    assert_eq!(row(&body, "liquidity_30d")["unit"], "money_compact");
+    assert_eq!(
+        marks(&body, "liquidity_30d"),
+        vec![none.clone(), json!("max")]
+    );
+    assert_eq!(
+        cell(&body, "liquidity_90d", 0)["reason"],
+        "insufficient_history"
+    );
+    close(&cell(&body, "liquidity_90d", 1)["value"], 4_000_000.0);
+    assert_eq!(
+        marks(&body, "liquidity_90d"),
+        vec![none.clone(), none.clone()]
+    );
+    // CAGR da cota: (133,1 / 110)^(1/3) − 1 e (133,1 / 100)^(1/5) − 1; o FUNB11
+    // não tem cinco anos de preço.
+    close(
+        &cell(&body, "price_cagr_3y", 0)["value"],
+        ((133.1_f64 / 110.0).powf(1.0 / 3.0) - 1.0) * 100.0,
+    );
+    close(
+        &cell(&body, "price_cagr_5y", 0)["value"],
+        ((133.1_f64 / 100.0).powf(1.0 / 5.0) - 1.0) * 100.0,
+    );
+    assert_eq!(
+        cell(&body, "price_cagr_5y", 1)["reason"],
+        "insufficient_history"
+    );
+    // CAGR dos proventos: 12 meses de R$ 1 sobre 12 de R$ 0,80.
+    close(
+        &cell(&body, "dividend_cagr_3y", 0)["value"],
+        ((12.0_f64 / 9.6).powf(1.0 / 3.0) - 1.0) * 100.0,
+    );
+    close(
+        &cell(&body, "dividend_cagr_5y", 0)["value"],
+        ((12.0_f64 / 9.6).powf(1.0 / 5.0) - 1.0) * 100.0,
+    );
+    assert_eq!(
+        cell(&body, "dividend_cagr_3y", 1)["reason"],
+        "insufficient_history"
+    );
+    // As taxas de mercado vêm junto (só contexto); sem CDI guardado, nulas.
+    assert!(body["rates"].is_object());
+    assert!(body["rates"]["cdi_12m"].is_null());
+    // Ação não tem linha de fundo: "não se aplica".
+    let mixed = table(&env.router, "FORT3:br_stocks,FUNA11:br_reits").await;
+    assert_eq!(cell(&mixed, "liquidity_30d", 0)["reason"], "not_applicable");
+    close(&cell(&mixed, "liquidity_30d", 1)["value"], 1_000_000.0);
 }
 
 /// Uma holding de participações (setor "Emp. Adm. Part." no cadastro e a

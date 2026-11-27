@@ -4,6 +4,8 @@
 //! (VP, Rendimento, Pelas duas) da Análise e da escolha do teto
 //! (`GET /assets/{id}/references`). Contrato em `docs/api.md`.
 
+use std::collections::HashMap;
+
 use axum::extract::State;
 use axum::Json;
 use rust_decimal::Decimal;
@@ -13,6 +15,7 @@ use time::{Date, OffsetDateTime};
 use uuid::Uuid;
 
 use super::dto::{decimal_out, optional_decimal};
+use super::fundamentals::FundIndicatorsDto;
 use super::{ApiPath, AppState, CurrentUser};
 use crate::ceiling::{self, ReferenceContext, ReferenceItem, ReferencesReport};
 use crate::domain::analysis::fund_references::{
@@ -28,6 +31,7 @@ use crate::domain::income::today_in_brazil;
 use crate::domain::market_rates::{Cdi12m, RealRate};
 use crate::domain::sector::{FundComposition, FundType};
 use crate::error::{ApiError, ApiResult};
+use crate::fund_indicators::{self, FundIndicators};
 use crate::service;
 
 /// `aaaa-mm-dd`.
@@ -248,6 +252,9 @@ pub struct FundReferenceDto {
     pub nav: RefValueDto,
     pub fund_yield: FundYieldDto,
     pub combined: RefValueDto,
+    /// O caixa, a liquidez, os CAGRs e o rendimento de 12 meses (só na Análise
+    /// e na folha do ativo; `null` onde não foram lidos).
+    pub indicators: Option<FundIndicatorsDto>,
 }
 
 fn stock_dto(item: &ReferenceItem, refs: &PriceReferences) -> StockReferenceDto {
@@ -269,7 +276,11 @@ fn stock_dto(item: &ReferenceItem, refs: &PriceReferences) -> StockReferenceDto 
     }
 }
 
-fn fund_dto(item: &ReferenceItem, refs: &FundReferences) -> FundReferenceDto {
+fn fund_dto(
+    item: &ReferenceItem,
+    refs: &FundReferences,
+    indicators: Option<&FundIndicators>,
+) -> FundReferenceDto {
     let found = refs.fund_yield.ok();
     FundReferenceDto {
         asset_id: item.asset_id,
@@ -287,6 +298,7 @@ fn fund_dto(item: &ReferenceItem, refs: &FundReferences) -> FundReferenceDto {
             target: found.map(|y| TargetDto::from(y.target)),
         },
         combined: RefValueDto::of(refs.combined()),
+        indicators: indicators.map(FundIndicatorsDto::from),
     }
 }
 
@@ -389,12 +401,24 @@ pub struct ReferencesDto {
 
 impl From<&ReferencesReport> for ReferencesDto {
     fn from(report: &ReferencesReport) -> Self {
+        Self::with_indicators(report, &HashMap::new())
+    }
+}
+
+impl ReferencesDto {
+    /// As referências com os indicadores de cada FII (por id do ativo).
+    pub fn with_indicators(
+        report: &ReferencesReport,
+        indicators: &HashMap<Uuid, FundIndicators>,
+    ) -> Self {
         let mut stocks = Vec::new();
         let mut funds = Vec::new();
         for item in report.stocks.iter().chain(&report.funds) {
             match &item.references {
                 AssetReferences::Stock(refs) => stocks.push(stock_dto(item, refs)),
-                AssetReferences::Fund(refs) => funds.push(fund_dto(item, refs)),
+                AssetReferences::Fund(refs) => {
+                    funds.push(fund_dto(item, refs, indicators.get(&item.asset_id)));
+                }
             }
         }
         Self {
@@ -418,7 +442,11 @@ pub async fn asset_references(
     let asset = view.asset(id).ok_or_else(ApiError::not_found)?;
     let today = today_in_brazil(OffsetDateTime::now_utc());
     let report = ceiling::report(&state.store, user.id, &[asset], today, None).await?;
-    Ok(Json(ReferencesDto::from(&report)))
+    let fundamentals = state.store.fundamentals_for_assets(&[&asset.asset]).await?;
+    let indicators =
+        fund_indicators::for_references(&state.store, &report, &[asset], &fundamentals, today)
+            .await?;
+    Ok(Json(ReferencesDto::with_indicators(&report, &indicators)))
 }
 
 #[cfg(test)]

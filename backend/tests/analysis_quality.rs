@@ -270,6 +270,8 @@ async fn seed_fundamentals(store: &Store) {
         version: 1,
         net_assets: Some(dec!(1000000)),
         shares: Some(Decimal::from(shares)),
+        total_assets: None,
+        liquid_assets: None,
     };
     store
         .save_fund_reports(

@@ -4,7 +4,7 @@
 //! desdobramentos e quem tem o ativo (a série dessas pessoas é refeita quando
 //! um fechamento guardado sai).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use rust_decimal::Decimal;
 use time::{Date, Duration, OffsetDateTime};
@@ -29,13 +29,18 @@ impl Store {
     /// - data nova entra; o fechamento já guardado dos últimos dias
     ///   ([`revise_from`]) que a fonte mudou é corrigido, e a série de quem tem
     ///   o ativo é marcada para refazer desde ele. Antes disso o guardado não
-    ///   muda.
+    ///   muda;
+    /// - o volume financeiro (`traded`, migração 0037) vai junto, só para os
+    ///   fechamentos que entraram ou já estavam guardados: preenche o que está
+    ///   nulo e, nos últimos dias, corrige o que a fonte mudou. Volume não mexe
+    ///   na série de ninguém.
     ///
     /// Devolve as datas novas, em ordem.
     pub async fn record_prices(
         &self,
         symbol: &str,
         closes: &Series,
+        traded: &[(Date, Decimal)],
         now: OffsetDateTime,
     ) -> Result<Vec<Date>, StoreError> {
         let closed: Series = closes
@@ -50,6 +55,8 @@ impl Store {
         let screened = self.screen_closes(symbol, &closed).await?;
         let inserted = self.insert_closes(symbol, &screened).await?;
         let since = revise_from(now);
+        let accepted: BTreeSet<Date> = screened.iter().map(|(d, _)| *d).collect();
+        self.record_traded(symbol, traded, &accepted, since).await?;
         let recent: Series = screened
             .into_iter()
             .filter(|(date, _)| *date >= since && inserted.binary_search(date).is_err())
@@ -79,6 +86,95 @@ impl Store {
             }
         }
         Ok(inserted)
+    }
+
+    /// Desde quando o volume financeiro de `symbol` já foi pedido à fonte, de
+    /// ponta a ponta até o dia do pedido (`traded_value_coverage`, migração
+    /// 0037). `None`: símbolo guardado antes do volume.
+    pub async fn traded_covered_from(&self, symbol: &str) -> Result<Option<Date>, StoreError> {
+        let row: Option<(Date,)> =
+            sqlx::query_as("select covered_from from traded_value_coverage where symbol = $1")
+                .bind(symbol)
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(row.map(|(d,)| d))
+    }
+
+    /// O volume de `symbol` foi pedido de `from` até hoje (a menor data vence).
+    pub async fn set_traded_coverage(&self, symbol: &str, from: Date) -> Result<(), StoreError> {
+        sqlx::query(
+            "insert into traded_value_coverage (symbol, covered_from) values ($1, $2)
+             on conflict (symbol) do update
+                set covered_from = least(traded_value_coverage.covered_from, excluded.covered_from)",
+        )
+        .bind(symbol)
+        .bind(from)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// O volume financeiro de cada pregão dos símbolos, de `from` a `to`, em
+    /// ordem (só os pregões com volume).
+    pub async fn traded_values(
+        &self,
+        symbols: &[String],
+        from: Date,
+        to: Date,
+    ) -> Result<HashMap<String, Series>, StoreError> {
+        if symbols.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let rows: Vec<(String, Date, Decimal)> = sqlx::query_as(
+            "select symbol, date, traded_value from price_history
+              where symbol = any($1) and date between $2 and $3 and traded_value is not null
+              order by symbol, date",
+        )
+        .bind(symbols)
+        .bind(from)
+        .bind(to)
+        .fetch_all(&self.pool)
+        .await?;
+        let mut out: HashMap<String, Series> = HashMap::new();
+        for (symbol, date, value) in rows {
+            out.entry(symbol)
+                .or_default()
+                .push((date, value.normalize()));
+        }
+        Ok(out)
+    }
+
+    /// O volume financeiro dos pregões cujo fechamento passou (`accepted`): o
+    /// nulo é preenchido; desde `since`, o que a fonte mudou é corrigido.
+    async fn record_traded(
+        &self,
+        symbol: &str,
+        traded: &[(Date, Decimal)],
+        accepted: &BTreeSet<Date>,
+        since: Date,
+    ) -> Result<(), StoreError> {
+        let (dates, values): (Vec<Date>, Vec<Decimal>) = traded
+            .iter()
+            .filter(|(date, value)| accepted.contains(date) && *value >= Decimal::ZERO)
+            .copied()
+            .unzip();
+        if dates.is_empty() {
+            return Ok(());
+        }
+        sqlx::query(
+            "update price_history p set traded_value = round(t.v, 2)
+               from unnest($2::date[], $3::numeric[]) as t (d, v)
+              where p.symbol = $1 and p.date = t.d
+                and (p.traded_value is null
+                     or (p.date >= $4 and p.traded_value <> round(t.v, 2)))",
+        )
+        .bind(symbol)
+        .bind(&dates)
+        .bind(&values)
+        .bind(since)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 
     /// Os fechamentos que chegam e podem entrar. Cada um é conferido junto com

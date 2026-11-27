@@ -536,6 +536,7 @@ impl TreasurySync {
                 .record_prices(
                     &price.bond.symbol(),
                     &vec![(price.base_date, price.redemption_price)],
+                    &[],
                     now,
                 )
                 .await?;
