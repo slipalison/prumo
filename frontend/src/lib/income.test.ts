@@ -71,6 +71,16 @@ describe("payerSlices", () => {
     expect(slices[0]?.yield?.percent).toBe(1);
   });
 
+  it("guarda quem está em Outros, do maior ao menor, com as cores em ciclo", () => {
+    const many = Array.from({ length: 15 }, (_, i) => payer(`P${i}`, 100 - i, 6));
+    const others = payerSlices(many)[6];
+    expect(others?.members.map((m) => m.label)).toEqual(many.slice(6).map((p) => p.label));
+    expect(others?.members[0]).toMatchObject({ key: "P6", total: 94, percent: 6 });
+    expect(others?.members[0]?.color).toBe(others?.members[6]?.color);
+    expect(others?.members[0]?.color).not.toBe(others?.members[1]?.color);
+    expect(payerSlices(many)[0]?.members).toEqual([]);
+  });
+
   it("usa o id do ativo como chave quando há", () => {
     expect(payerSlices([{ ...payer("A", 1, 100), asset_id: "a-1" }])[0]?.key).toBe("a-1");
   });

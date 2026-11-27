@@ -116,7 +116,8 @@ describe("Renda com o olho fechado", () => {
     server.use(http.get("/api/v1/income/summary", () => HttpResponse.json(summary)));
     renderApp("renda");
     const estimate = await screen.findByRole("region", { name: "Estimativa da carteira de hoje" });
-    expect(within(estimate).getByText(/por cota em 12 meses/)).toBeInTheDocument();
+    expect(within(estimate).getByRole("table", { name: "Os ativos que mais rendem na estimativa" })).toBeInTheDocument();
+    expect(within(estimate).getByText(`~${MASK_BRL}`)).toBeInTheDocument();
     expectNoMoney();
   });
 });

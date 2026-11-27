@@ -3,7 +3,8 @@ import type { NetWorth, Performance, PerformancePeriod, PerformanceYear } from "
 import type { Plan } from "../api/types";
 import { sampleAlerts } from "../test/alertsHandlers";
 import { samplePlan } from "../test/fixtures";
-import { sampleCash, sampleSummary } from "../test/incomeHandlers";
+import { sampleCash } from "../test/incomeHandlers";
+import { demoIncomeEvents, demoIncomeSummary } from "./demoIncome";
 import { sampleImpact, sampleObjective, defaultObjectivesResponse } from "../test/objectivesHandlers";
 
 /*
@@ -127,7 +128,8 @@ export const demoHandlers: HttpHandler[] = [
   }),
   http.get("/api/v1/history/net-worth", ({ request }) => HttpResponse.json(demoNetWorth(asPeriod(request)))),
   http.get("/api/v1/performance", ({ request }) => HttpResponse.json(demoPerformance(asPeriod(request)))),
-  http.get("/api/v1/income/summary", () => HttpResponse.json(sampleSummary())),
+  http.get("/api/v1/income/summary", () => HttpResponse.json(demoIncomeSummary())),
+  http.get("/api/v1/income", () => HttpResponse.json(demoIncomeEvents())),
   http.get("/api/v1/cash", () => HttpResponse.json(sampleCash())),
   http.get("/api/v1/alerts", () => HttpResponse.json(sampleAlerts())),
   http.get("/api/v1/objectives", () =>

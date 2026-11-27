@@ -26,13 +26,13 @@ describe("Renda", () => {
     await screen.findByRole("heading", { name: "Quanto sua carteira paga?" });
 
     // Estimativa: uma linha por pagador estimado.
-    const estimate = (await screen.findAllByText(/por cota em 12 meses/))[0]?.closest("li") as HTMLElement;
+    const estimate = (await screen.findByRole("table", { name: "Os ativos que mais rendem na estimativa" })).querySelector("tbody tr") as HTMLElement;
     expect(estimate.querySelector(".asset-icon")).not.toBeNull();
 
     // Pagadores: um ícone por pagador, e "Outros" não tem.
-    const payers = document.querySelector(".payers__list") as HTMLElement;
+    const payers = document.querySelector(".payers__table") as HTMLElement;
     expect(payers.querySelectorAll(".asset-icon")).toHaveLength(3);
-    expect(await logoOf(within(payers).getByText("KNRI11").closest("li") as HTMLElement)).toBe("/api/v1/icons/KNRI11?v=v-knri");
+    expect(await logoOf(within(payers).getByText("KNRI11").closest("tr") as HTMLElement)).toBe("/api/v1/icons/KNRI11?v=v-knri");
 
     // Lista de lançados: o sem ticker usa as iniciais do nome.
     const cdb = (await screen.findAllByText("CDB do Banco Exemplo"))[0]?.closest("li") as HTMLElement;

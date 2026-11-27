@@ -86,7 +86,12 @@ export type PayerSlice = {
   color: string;
   /** O yield on cost do pagador; `null` no grupo "Outros", que junta vários. */
   yield: YieldOnCost | null;
+  /** No grupo "Outros": quem está lá dentro, do maior para o menor; nos demais, vazio. */
+  members: PayerSlice[];
 };
+
+/** A chave do grupo "Outros" (nenhum pagador a usa: a de um pagador é o id do ativo ou o nome). */
+export const OTHERS_KEY = "others";
 
 /** Sete tons que a interface já usa, sempre ao lado do nome. */
 const PAYER_COLORS = [
@@ -100,27 +105,38 @@ const PAYER_COLORS = [
 const OTHERS_COLOR = "var(--c-intl_fixed_income)";
 const SHOWN_PAYERS = PAYER_COLORS.length;
 
-/** Os maiores pagadores um a um; o resto junto, em "Outros". */
+/** A chave de um pagador: o id do ativo, ou o nome de quem não é ativo. */
+export const payerKey = (payer: Pick<IncomePayer, "asset_id" | "label">) => payer.asset_id ?? payer.label;
+
+const sliceOf = (p: IncomePayer, color: string): PayerSlice => ({
+  key: payerKey(p),
+  label: p.label,
+  total: p.total,
+  percent: p.percent,
+  color,
+  yield: p.yield_on_cost,
+  members: [],
+});
+
+/**
+ * Os maiores pagadores um a um; o resto junto, em "Outros". Quem está em
+ * "Outros" vem em `members`, com as mesmas cores em ciclo: dentro do grupo o
+ * nome sempre vai ao lado (a cor sozinha não distingue 19 fatias).
+ */
 export function payerSlices(payers: IncomePayer[]): PayerSlice[] {
-  const head = payers.slice(0, SHOWN_PAYERS).map((p, index) => ({
-    key: p.asset_id ?? p.label,
-    label: p.label,
-    total: p.total,
-    percent: p.percent,
-    color: PAYER_COLORS[index] ?? OTHERS_COLOR,
-    yield: p.yield_on_cost,
-  }));
+  const head = payers.slice(0, SHOWN_PAYERS).map((p, index) => sliceOf(p, PAYER_COLORS[index] ?? OTHERS_COLOR));
   const tail = payers.slice(SHOWN_PAYERS);
   if (tail.length === 0) return head;
   return [
     ...head,
     {
-      key: "others",
+      key: OTHERS_KEY,
       label: `Outros (${tail.length})`,
       total: cents(tail.reduce((acc, p) => acc + p.total, 0)),
       percent: cents(tail.reduce((acc, p) => acc + p.percent, 0)),
       color: OTHERS_COLOR,
       yield: null,
+      members: tail.map((p, index) => sliceOf(p, PAYER_COLORS[index % PAYER_COLORS.length] ?? OTHERS_COLOR)),
     },
   ];
 }

@@ -142,7 +142,7 @@ describe("Renda: com proventos", () => {
     expect(within(estimate).getByText("estimativa")).toBeInTheDocument();
     expect(await openTip(user, estimate, "Como a estimativa é feita")).toHaveTextContent(/Não é extrato/);
     expect(within(estimate).getByText(/ZZZZ3/)).toBeInTheDocument();
-    expect(within(estimate).getByText("~R$ 10,50/mês")).toBeInTheDocument();
+    expect(within(estimate).getByText("~R$ 10,50")).toBeInTheDocument();
 
     // Ano × mês.
     const table = screen.getByRole("table", { name: "Renda líquida por ano e por mês" });
@@ -154,7 +154,7 @@ describe("Renda: com proventos", () => {
     const payers = screen.getByRole("heading", { name: "Quem pagou" }).closest("section");
     expect(within(payers as HTMLElement).getByText("KNRI11")).toBeInTheDocument();
     expect(within(payers as HTMLElement).getByText(/60,0%/)).toBeInTheDocument();
-    expect(within(payers as HTMLElement).getByRole("img", { name: /por pagador: KNRI11 60,0%/ })).toBeInTheDocument();
+    expect(within(payers as HTMLElement).getByRole("group", { name: /por pagador: KNRI11 60,0%/ })).toBeInTheDocument();
 
     // Lançados (recolhidos, com a contagem).
     const list = await openLedger(user);

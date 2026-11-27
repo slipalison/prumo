@@ -34,9 +34,9 @@ describe("Renda: yield on cost", () => {
     openSummary();
     renderApp("renda");
     const payers = await screen.findByRole("region", { name: "Quem pagou" });
-    const knri = within(payers).getByText("KNRI11").closest("li") as HTMLElement;
+    const knri = within(payers).getByText("KNRI11").closest("tr") as HTMLElement;
     expect(knri).toHaveTextContent(/yield on cost 7,\d%/);
-    const mxrf = within(payers).getByText("MXRF11").closest("li") as HTMLElement;
+    const mxrf = within(payers).getByText("MXRF11").closest("tr") as HTMLElement;
     expect(mxrf).toHaveTextContent("yield on cost informe o preço médio");
   });
 
