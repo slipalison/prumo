@@ -6,7 +6,7 @@ const GOALS_HEADING = "Quanto você quer em cada classe?";
 const CRITERIA_HEADING = "As perguntas que dão a nota";
 
 describe("Navegação e Ajustes", () => {
-  it("a navegação principal tem Aportar, Carteira, Renda, Desempenho, Análise e Ajustes", async () => {
+  it("a navegação principal tem Aportar, Carteira, Renda, Agenda, Desempenho, Análise e Ajustes", async () => {
     renderApp();
     await screen.findByRole("heading", { name: "Quanto você vai aportar?" });
     const nav = screen.getByRole("navigation", { name: "Principal" });
@@ -15,6 +15,7 @@ describe("Navegação e Ajustes", () => {
       "Aportar",
       "Carteira",
       "Renda",
+      "Agenda",
       "Desempenho",
       "Análise",
       "Ajustes",

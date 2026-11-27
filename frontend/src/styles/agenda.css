@@ -1,0 +1,390 @@
+/*
+ * Agenda da carteira (#/agenda) e o selo de "fora do padrão" da Renda. A cor de
+ * cada tipo de evento só reforça o nome, que está sempre escrito (no selo da
+ * linha, no filtro e no rótulo de cada dia do calendário).
+ */
+
+:root {
+  --agenda-income_record: var(--gold);
+  --agenda-income_payment: var(--success);
+  --agenda-unusual_income: #f472b6;
+  --agenda-results: var(--info);
+  --agenda-material_fact: #fb923c;
+  --agenda-notice: #a5b4fc;
+  --agenda-market_closed: var(--text-subtle);
+  --agenda-cut: #ff9aa5;
+  --agenda-increase: #6ee7b7;
+}
+
+[data-theme="light"] {
+  --agenda-unusual_income: #be185d;
+  --agenda-material_fact: #c2410c;
+  --agenda-notice: #4338ca;
+  --agenda-cut: #b42335;
+  --agenda-increase: #047857;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --agenda-unusual_income: #be185d;
+    --agenda-material_fact: #c2410c;
+    --agenda-notice: #4338ca;
+    --agenda-cut: #b42335;
+    --agenda-increase: #047857;
+  }
+}
+
+/* ---------- Mês e filtros ---------- */
+
+.agenda-month {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.agenda-month__title {
+  min-width: 12ch;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  text-align: center;
+}
+
+.agenda-month .icon-btn {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.agenda-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3) var(--space-4);
+}
+
+.agenda-filters__types {
+  flex: 1 1 520px;
+  min-width: 0;
+}
+
+.agenda-filters__selects {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.agenda-filters__selects .field {
+  min-width: 150px;
+}
+
+.agenda-chip {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: var(--text-sm);
+}
+
+.agenda-chip__count {
+  color: var(--text-subtle);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-xs);
+}
+
+.agenda-note {
+  margin: 0;
+}
+
+/* A cor de cada tipo: o ponto do filtro, o selo da linha e o ponto do dia. */
+.agenda-chip--income_record,
+.agenda-type--income_record,
+.agenda-dot--income_record {
+  --chip-color: var(--agenda-income_record);
+}
+.agenda-chip--income_payment,
+.agenda-type--income_payment,
+.agenda-dot--income_payment {
+  --chip-color: var(--agenda-income_payment);
+}
+.agenda-chip--unusual_income,
+.agenda-type--unusual_income,
+.agenda-dot--unusual_income {
+  --chip-color: var(--agenda-unusual_income);
+}
+.agenda-chip--results,
+.agenda-type--results,
+.agenda-dot--results {
+  --chip-color: var(--agenda-results);
+}
+.agenda-chip--material_fact,
+.agenda-type--material_fact,
+.agenda-dot--material_fact {
+  --chip-color: var(--agenda-material_fact);
+}
+.agenda-chip--notice,
+.agenda-type--notice,
+.agenda-dot--notice {
+  --chip-color: var(--agenda-notice);
+}
+.agenda-chip--market_closed,
+.agenda-type--market_closed,
+.agenda-dot--market_closed {
+  --chip-color: var(--agenda-market_closed);
+}
+
+/* ---------- Linha do tempo ---------- */
+
+.agenda-days {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agenda-day__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.agenda-day.is-today .agenda-day__title {
+  color: var(--gold-text);
+}
+
+.agenda-day__today {
+  padding: 1px 8px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--gold) 18%, transparent);
+  color: var(--gold-text);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.agenda-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agenda-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--row-height);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--r-sm);
+  background: var(--surface-sunken);
+  font-size: var(--text-md);
+}
+
+.agenda-item.is-past {
+  opacity: 0.78;
+}
+
+.agenda-type {
+  --chip-color: var(--gold);
+  flex: none;
+  min-width: 8.5rem;
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--chip-color) 55%, transparent);
+  border-radius: var(--r-pill);
+  color: var(--text);
+  background: color-mix(in srgb, var(--chip-color) 14%, transparent);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.agenda-item__icon {
+  width: 28px;
+  height: 28px;
+  flex: none;
+}
+
+.agenda-item__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.agenda-item__detail {
+  display: block;
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
+
+.agenda-item__value {
+  flex: none;
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.agenda-item__link {
+  flex: none;
+}
+
+/* ---------- Fora do padrão (Agenda e Renda) ---------- */
+
+.agenda-unusual {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: var(--r-pill);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.agenda-unusual--cut {
+  color: var(--agenda-cut);
+  background: color-mix(in srgb, var(--agenda-cut) 14%, transparent);
+}
+
+.agenda-unusual--increase {
+  color: var(--agenda-increase);
+  background: color-mix(in srgb, var(--agenda-increase) 14%, transparent);
+}
+
+/* ---------- Calendário ---------- */
+
+.agenda-calendar {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 4px;
+  table-layout: fixed;
+}
+
+.agenda-calendar th {
+  padding: 0 0 var(--space-1);
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: lowercase;
+}
+
+.agenda-calendar td {
+  padding: 0;
+}
+
+.agenda-calendar__day {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 64px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: var(--surface-sunken);
+  color: var(--text);
+  text-align: left;
+  transition: background var(--dur-fast), border-color var(--dur-fast);
+}
+
+.agenda-calendar__day:hover {
+  background: var(--surface-hover);
+}
+
+.agenda-calendar__day.is-past {
+  color: var(--text-muted);
+}
+
+.agenda-calendar__day.is-today {
+  border-color: color-mix(in srgb, var(--gold) 60%, transparent);
+}
+
+.agenda-calendar__day.is-selected {
+  border-color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 12%, transparent);
+}
+
+.agenda-calendar__day.is-closed {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--surface-sunken),
+    var(--surface-sunken) 6px,
+    transparent 6px,
+    transparent 12px
+  );
+}
+
+.agenda-calendar__number {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.agenda-calendar__dots {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+  min-height: 10px;
+}
+
+.agenda-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--chip-color);
+}
+
+.agenda-calendar__more {
+  color: var(--text-subtle);
+  font-size: var(--text-2xs);
+}
+
+/* No celular: o dia vira um quadrado menor, com o número e os pontos. */
+@container (max-width: 520px) {
+  .agenda-calendar {
+    border-spacing: 2px;
+  }
+
+  .agenda-calendar__day {
+    min-height: 48px;
+    padding: 4px;
+  }
+
+  .agenda-item {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .agenda-type {
+    min-width: 0;
+  }
+}
+
+/* Os filtros ficam fora dos painéis: a medida é a da janela. */
+@media (max-width: 600px) {
+  .agenda-filters__selects {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+
+  .agenda-filters__selects .field {
+    min-width: 0;
+  }
+
+  .agenda-filters__selects .link-btn {
+    grid-column: 1 / -1;
+  }
+}
+
+.agenda-day__empty {
+  margin: 0;
+}

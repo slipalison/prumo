@@ -1,6 +1,8 @@
 import type { ComponentType, SVGProps } from "react";
 import type { Portfolio } from "../api/types";
 import { IconChart, IconCoins, IconSliders, IconWallet } from "../components/icons";
+import { IconAgenda } from "../features/agenda/AgendaIcon";
+import { AgendaScreen } from "../features/agenda/AgendaScreen";
 import { AnalysisScreen } from "../features/analysis/AnalysisScreen";
 import { IconAnalysis } from "../features/analysis/icons";
 import { ContributeScreen } from "../features/contribute/ContributeScreen";
@@ -28,6 +30,7 @@ export const APP_ROUTES = [
   { id: "aportar", label: "Aportar", Icon: IconCoins, Screen: ContributeScreen },
   { id: "carteira", label: "Carteira", Icon: IconWallet, Screen: PortfolioScreen },
   { id: "renda", label: "Renda", Icon: IconIncome, Screen: IncomeScreen },
+  { id: "agenda", label: "Agenda", Icon: IconAgenda, Screen: AgendaScreen },
   { id: "desempenho", label: "Desempenho", Icon: IconChart, Screen: PerformanceScreen },
   { id: "analise", label: "Análise", Icon: IconAnalysis, Screen: AnalysisScreen },
   { id: "ajustes", label: "Ajustes", Icon: IconSliders, Screen: SettingsScreen },

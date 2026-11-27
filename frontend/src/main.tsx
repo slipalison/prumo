@@ -14,6 +14,7 @@ import "./styles/analysis.css";
 import "./styles/icons.css";
 import "./styles/alerts.css";
 import "./styles/income.css";
+import "./styles/agenda.css";
 import "./styles/objectives.css";
 
 import { StrictMode } from "react";

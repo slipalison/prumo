@@ -14,6 +14,7 @@ import { useMoney } from "../../lib/privacy";
 import { yieldText } from "../../lib/yieldOnCost";
 import { AddIncomeSheet } from "./AddIncomeSheet";
 import { PendingEventsCard } from "../incomeAuto/PendingEvents";
+import { unusualIncomeTag } from "../agenda/incomeTagSlot";
 import { EstimateCard } from "./EstimateCard";
 import { FoldPanel } from "./FoldPanel";
 import { IncomeGoalCard } from "./IncomeGoalCard";
@@ -105,7 +106,7 @@ function Loaded({ summary }: { summary: IncomeSummary }) {
         <div className="income-side">
           <Panel title="Próximos pagamentos" className="income-upcoming" actions={chip}>
             <ScrollRegion className="income-scroll" label="Próximos pagamentos, lista com rolagem">
-              <UpcomingList events={upcoming} {...(payer ? { filteredBy: payer.label } : {})} />
+              <UpcomingList events={upcoming} tag={unusualIncomeTag} {...(payer ? { filteredBy: payer.label } : {})} />
             </ScrollRegion>
           </Panel>
           <PendingEventsCard />

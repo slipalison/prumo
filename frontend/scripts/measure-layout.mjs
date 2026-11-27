@@ -58,6 +58,8 @@ const SCREENS = [
   { id: "aportar-plano", path: "aportar", setup: calculatePlan },
   { id: "carteira", path: "carteira" },
   { id: "renda", path: "renda" },
+  { id: "agenda", path: "agenda" },
+  { id: "agenda-calendario", path: "agenda", setup: (page) => page.getByRole("button", { name: "Calendário" }).click() },
   { id: "desempenho", path: "desempenho" },
   { id: "desempenho-risco", path: "desempenho/risco" },
   { id: "analise", path: "analise" },

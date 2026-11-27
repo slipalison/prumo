@@ -172,7 +172,7 @@
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
   gap: 4px;
-  width: min(460px, calc(100% - 24px));
+  width: min(560px, calc(100% - 24px));
   padding: 6px;
   transform: translateX(-50%);
   border: 1px solid var(--border);
@@ -204,8 +204,40 @@
   color: var(--text);
 }
 
-/* Em 360 px (e 320) os seis nomes na barra de baixo passam da largura dela:
-   "Desempenho" é o mais largo. Letra e recheio cedem, o nome continua inteiro. */
+/* As sete abas com nome pedem ~75 px cada ("Desempenho" é o mais largo): a
+   barra vai a 560 px. Abaixo disso (celular), só a aba de agora mostra o nome e
+   fica com a largura dele; as outras dividem o resto só com o ícone. O nome de
+   todas continua no link, para o leitor de tela. */
+@media (max-width: 600px) {
+  .nav__list {
+    display: flex;
+  }
+
+  .nav__entry {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .nav__entry:has(.nav__item.is-active) {
+    flex: 0 0 auto;
+  }
+
+  .nav__item.is-active {
+    padding-inline: 10px;
+  }
+
+  .nav__item:not(.is-active) .nav__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+}
+
+/* Em 360 px (e 320) a barra de baixo aperta: letra e recheio cedem, o nome da
+   aba de agora continua inteiro. */
 @media (max-width: 380px) {
   .nav__list {
     gap: 2px;

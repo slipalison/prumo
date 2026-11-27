@@ -10,8 +10,8 @@
 //!   do valor) nos 12 meses antes da data ex e nos 5 anos antes dela. Parecido
 //!   porque muita empresa paga em duas cadências: um banco com JCP mensal e
 //!   complementos semestrais tem pagamentos de R$ 0,02 e de R$ 0,35. A média
-//!   de todos faria todo JCP mensal parecer um corte de 80% (medido nas páginas
-//!   públicas da B3 em 27/11/2026). Sem nenhum pagamento parecido, o habitual é
+//!   de todos (R$ 0,065 num ano) faria todo JCP mensal parecer um corte de 72%
+//!   (o padrão das páginas públicas da B3 em 27/11/2026). Sem nenhum pagamento parecido, o habitual é
 //!   o pagamento mais próximo (na razão): o valor já está a mais do dobro dele.
 //! - **O limiar.** Fora do padrão quando o valor passa de `ratio ×` o habitual
 //!   (aumento) ou fica abaixo de `habitual ÷ ratio` (corte), **nos dois

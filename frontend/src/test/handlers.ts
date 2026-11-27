@@ -14,6 +14,7 @@ import type {
 import { ASSET_CLASSES } from "../api/types";
 import type { AllocationSettings } from "../api/allocationTypes";
 import type { CreateTransactionRequest, Transaction, UpdateTransactionRequest } from "../api/ledgerTypes";
+import { agendaHandlers } from "./agendaHandlers";
 import { analysisHandlers } from "./analysisHandlers";
 import { compareHandlers } from "./compareHandlers";
 import { fundamentalsHandlers } from "./fundamentalsHandlers";
@@ -431,6 +432,7 @@ const handlers = [
  */
 export const allHandlers: HttpHandler[] = [
   ...handlers,
+  ...agendaHandlers,
   ...analysisHandlers,
   ...compareHandlers,
   ...iconsHandlers,

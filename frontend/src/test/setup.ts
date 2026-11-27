@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { MotionGlobalConfig } from "motion/react";
 import { afterAll, afterEach, beforeAll, vi } from "vitest";
+import { resetAgenda } from "./agendaHandlers";
 import { resetAnalysis } from "./analysisHandlers";
 import { resetCompare } from "./compareHandlers";
 import { FakeEventSource } from "./eventSource";
@@ -30,6 +31,7 @@ afterEach(() => {
   resetDb();
   resetIcons();
   resetPanel();
+  resetAgenda();
   resetAnalysis();
   resetCompare();
   resetFundamentals();

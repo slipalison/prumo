@@ -4,6 +4,7 @@ import type { Plan } from "../api/types";
 import { sampleAlerts } from "../test/alertsHandlers";
 import { samplePlan } from "../test/fixtures";
 import { sampleCash } from "../test/incomeHandlers";
+import { demoAgendaHandlers } from "./demoAgenda";
 import { demoIncomeEvents, demoIncomeSummary } from "./demoIncome";
 import {
   achievedObjective,
@@ -129,6 +130,7 @@ const asPeriod = (request: Request): PerformancePeriod =>
   (new URL(request.url).searchParams.get("period") as PerformancePeriod | null) ?? "12m";
 
 export const demoHandlers: HttpHandler[] = [
+  ...demoAgendaHandlers,
   http.post("/api/v1/plans", async ({ request }) => {
     const { amount } = (await request.json()) as { amount: number };
     return HttpResponse.json(demoPlan(amount));

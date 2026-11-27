@@ -1,5 +1,5 @@
 import { motion } from "motion/react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { errorMessage } from "../../api/client";
 import { useDeleteIncome } from "../../api/incomeQueries";
 import type { IncomeEvent } from "../../api/incomeTypes";
@@ -21,9 +21,18 @@ function AutoTag({ event }: { event: IncomeEvent }) {
 
 /**
  * Os próximos pagamentos, do mais perto para o mais longe. Com `filteredBy` (o filtro
- * de "Quem pagou"), a lista já vem só dele e o vazio diz de quem é.
+ * de "Quem pagou"), a lista já vem só dele e o vazio diz de quem é. `tag` põe um
+ * selo de outra área ao lado do provento (o "fora do padrão" da Agenda).
  */
-export function UpcomingList({ events, filteredBy }: { events: IncomeEvent[]; filteredBy?: string }) {
+export function UpcomingList({
+  events,
+  filteredBy,
+  tag,
+}: {
+  events: IncomeEvent[];
+  filteredBy?: string;
+  tag?: (event: IncomeEvent) => ReactNode;
+}) {
   const money = useMoney();
   if (events.length === 0) {
     return (
@@ -50,6 +59,7 @@ export function UpcomingList({ events, filteredBy }: { events: IncomeEvent[]; fi
             <strong>{payer(event)}</strong>
             <span className="muted"> · {KIND_LABEL[event.kind]}</span>
             <AutoTag event={event} />
+            {tag?.(event)}
           </span>
           <strong className="income-row__value">{money.brl(event.net)}</strong>
         </motion.li>
