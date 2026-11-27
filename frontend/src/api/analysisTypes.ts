@@ -89,8 +89,17 @@ export type RuleDetail =
     }
   | { kind: "years"; positive: number; total: number }
   | { kind: "losses"; assets: Array<{ asset_id: string; label: string; asset_class: AssetClass; loss_percent: number }> }
-  /** Regra de Qualidade: quantos ativos do grupo entraram na conta (os que têm o dado) e quais reprovaram. */
-  | { kind: "quality"; covered: number; total: number; failing: string[] };
+  /**
+   * Regra de Qualidade: quantos ativos do grupo entraram na conta (os que têm o dado), quais reprovaram e em quais
+   * a medida não se aplica (banco, seguradora, holding).
+   */
+  | {
+      kind: "quality";
+      covered: number;
+      total: number;
+      failing: string[];
+      not_applicable: Array<{ label: string; reason: "bank" | "insurer" | "holding" }>;
+    };
 
 export type RuleResult = RuleConfig & {
   status: RuleStatus;

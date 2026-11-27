@@ -170,6 +170,9 @@ pub struct CompanyDto {
     pub cvm_code: i32,
     pub name: String,
     pub template: Template,
+    /// Holding de participações: margens, dívida sobre EBITDA e CAGR da receita
+    /// vêm com `gap: "holding"`.
+    pub holding: bool,
     pub judicial_recovery: Option<bool>,
     pub issuer_status: Option<String>,
     pub registration_status: Option<String>,
@@ -196,6 +199,7 @@ impl From<&CompanyMetrics> for CompanyDto {
             cvm_code: m.cvm_code,
             name: m.name.clone(),
             template: m.template,
+            holding: m.holding,
             judicial_recovery: m.judicial_recovery,
             issuer_status: m.issuer_status.clone(),
             registration_status: m.registration_status.clone(),

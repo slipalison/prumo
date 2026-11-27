@@ -5,7 +5,11 @@
 //!   viram [`CompanyMetrics`]: receita, lucro, dívida, EBITDA aproximado, ROE,
 //!   margens, CAGR, anos com lucro, recuperação judicial.
 //! - [`fund`]: o informe mensal e o trimestral de um FII viram [`FundMetrics`]:
-//!   valor patrimonial por cota, P/VP e vacância física.
+//!   valor patrimonial por cota, P/VP e vacância física; e a série mensal
+//!   ([`FundMonth`]) com o rendimento do mês que o fundo informa.
+//! - [`quarters`]: os trimestres de uma companhia (receita, lucro, margem) e a
+//!   comparação com o mesmo trimestre do ano anterior e com o anterior, com o
+//!   prejuízo dito por rótulo ([`Change`]), nunca por percentual de base negativa.
 //!
 //! As contas da CVM, as fórmulas e as limitações estão em `docs/fundamentos.md`.
 //!
@@ -15,6 +19,7 @@
 
 pub mod company;
 pub mod fund;
+pub mod quarters;
 
 use rust_decimal::Decimal;
 use serde::Serialize;
@@ -23,11 +28,18 @@ use crate::domain::asset_class::{AssetClass, Market};
 use crate::domain::income_auto::parse_ticker;
 
 pub use company::{
-    company_metrics, keeps_line, template_of, Column, CompanyMetrics, Filing, FilingKind,
-    FilingRef, FiscalYear, Line, PeriodFigures, Registration, Scope, Statement, Template,
-    YearCount, WINDOW_YEARS,
+    company_metrics, is_holding_sector, keeps_line, template_of, Column, CompanyMetrics, Filing,
+    FilingKind, FilingRef, FiscalYear, Line, PeriodFigures, Registration, Scope, Statement,
+    Template, YearCount, HOLDING_EQUITY_SHARE, WINDOW_YEARS,
 };
-pub use fund::{fund_metrics, physical_vacancy, FundMetrics, FundReport, RentalProperty, Vacancy};
+pub use fund::{
+    fund_metrics, fund_months, physical_vacancy, FundMetrics, FundMonth, FundMonthFigures,
+    FundReport, RentalProperty, Vacancy, MAX_MONTHLY_YIELD,
+};
+pub use quarters::{
+    quarterly_results, Change, Comparison, Quarter, QuarterMethod, QuarterlyResults, Receipts,
+    TopLine, SERIES_QUARTERS,
+};
 
 /// Casas decimais das razões (ROE, margens, alavancagem, CAGR, P/VP, vacância).
 pub const RATIO_DP: u32 = 6;
@@ -65,6 +77,13 @@ pub enum Gap {
     /// Sem número de ações (a B3 não informou) ou de cotas (o informe mensal
     /// veio sem cotas emitidas), ou veio zero.
     NoShares,
+    /// Holding de participações (cadastro da CVM no setor de administração de
+    /// participações, e a maior parte do lucro vem da equivalência patrimonial):
+    /// o lucro não passa pela receita, e margem sobre a receita não tem sentido.
+    Holding,
+    /// O número informado está fora do possível (rendimento do mês negativo ou
+    /// acima de 10%): erro de preenchimento, não um número.
+    Implausible,
 }
 
 impl Gap {
@@ -81,10 +100,12 @@ impl Gap {
             Gap::NoRentalProperty => "no_rental_property",
             Gap::NoQuarterlyReport => "no_quarterly_report",
             Gap::NoShares => "no_shares",
+            Gap::Holding => "holding",
+            Gap::Implausible => "implausible",
         }
     }
 
-    pub const ALL: [Gap; 11] = [
+    pub const ALL: [Gap; 13] = [
         Gap::FinancialTemplate,
         Gap::UnknownTemplate,
         Gap::NotReported,
@@ -96,6 +117,8 @@ impl Gap {
         Gap::NoRentalProperty,
         Gap::NoQuarterlyReport,
         Gap::NoShares,
+        Gap::Holding,
+        Gap::Implausible,
     ];
 
     pub fn parse(value: &str) -> Option<Self> {

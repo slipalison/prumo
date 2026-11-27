@@ -351,13 +351,16 @@ estão em [layout.md](layout.md).
     …"), receita, lucro, ROE, margem líquida, dívida líquida sobre EBITDA e
     sobre o PL, LPA e VPA; embaixo, anos com lucro e com caixa operacional
     positivo ("4 de 5") e o crescimento de receita e lucro em 5 anos ("+10,0%
-    a.a.", sinal escrito). Banco e seguradora não mostram as linhas que não se
-    aplicam e dizem por quê numa dica. Recuperação judicial (ou outra situação
+    a.a.", sinal escrito). Em banco, seguradora e holding a linha que enganaria
+    continua lá, com **"não se aplica"** escrito (mais apagado que um número, o
+    motivo no `title`), e uma dica embaixo diz por quê (o plano de contas de
+    instituição financeira não tem a conta; o lucro da holding vem das
+    participadas e não passa pela receita). Recuperação judicial (ou outra situação
     do emissor que não a operacional) é um aviso dourado com ícone e texto;
   - FII: valor patrimonial por cota, P/VP (com o preço ao vivo da carteira),
     vacância física e patrimônio líquido;
   - número que falta é "—", com o motivo no `title` e em texto `sr-only`
-    ("base zero ou negativa", "não se aplica a banco ou seguradora"), nunca zero;
+    ("base zero ou negativa", "a conta não veio no balanço"), nunca zero;
   - a fonte e as datas no ⓘ do título ("De onde vêm os fundamentos"): "Fonte:
     CVM, ITR de 30/09/2026 · conferido em 26/11/2026";
   - ainda sem dado: "Buscando os dados na CVM"; sem fundamentos (ETF em Ações
@@ -404,7 +407,10 @@ busca de ticker, ativos da carteira ao alcance de um toque), tabela lado a lado
 em blocos (em comum, empresas, fundos) e rentabilidade comparada (chips de
 período, duas chaves, linhas com cor e tracejado próprios). O destaque é um
 selo neutro com a palavra "maior" ou "menor"; nunca verde ou vermelho. Reais
-passam pelo olho de ocultar valores. Método em `docs/comparador.md`.
+passam pelo olho de ocultar valores. Indicador que não se aplica (linha de
+empresa num fundo; margem e dívida sobre EBITDA em holding, banco e seguradora)
+diz "não se aplica" escrito, fica fora do destaque, e uma linha embaixo do
+bloco das empresas diz por quê, por ativo. Método em `docs/comparador.md`.
 
 ### 5. Análise (tela de topo) e suas regras (seção de Ajustes)
 
@@ -420,8 +426,9 @@ Na tela (`AnalysisScreen`, `<Page>`), de cima para baixo (o desenho e as
 medidas estão em [layout.md](layout.md) § 7.5):
 
 - **Cabeçalho** em uma linha: o título, o ⓘ com a explicação da tela (o que é
-  cada dimensão e que regra sem dado não é falha) e o link **Ajustar as
-  regras** à direita.
+  cada dimensão e que regra sem dado não é falha) e os links **Comparar
+  ativos** (§ 5.1), **Resultados trimestrais** (§ 5.2) e **Ajustar as regras**
+  à direita.
 - **Primeira dobra.** À esquerda, o **veredito** (`role="status"`): o prumo
   parado e "Nenhum ponto a ver" quando está tudo dentro dos limites; "N pontos a
   ver" com quantas regras passaram; ou "Ainda sem o que medir". Nunca "tudo
@@ -532,6 +539,51 @@ A paleta dos setores (`--sector-1` a `--sector-7`, `--sector-other`,
 `--sector-none`) tem tom próprio nos dois temas e fica em `styles/health.css`;
 todos passam de 3:1 sobre o fundo (elementos gráficos), e o texto de cada fatia
 está na lista. O resto da Análise mora em `styles/analysis.css`.
+
+### 5.2 Análise › Resultados trimestrais
+
+`#/analise/resultados`, aberto pelo link **Resultados trimestrais** no
+cabeçalho da Análise (`AnalysisScreen` monta `ResultsScreen` quando a seção é
+`resultados`). Método em [resultados.md](resultados.md). Layout denso
+(`<Page>`); de cima para baixo:
+
+- **Cabeçalho**: eyebrow "Análise", título, ⓘ e o link **Voltar à análise**.
+- **O trimestre mais novo** (`Panel flush` + `DataTable`), uma linha por
+  empresa, da que mais pesa na carteira para a que menos: empresa (ticker e
+  nome), trimestre ("3º tri 2026"; fora do ano civil, "jul–set/2026") com
+  "entregue em 09/11/2026" embaixo, receita, a variação da receita, lucro
+  líquido, a variação do lucro e a margem com os pontos contra um ano antes.
+  Cada variação é uma etiqueta com "a/a" ou "t/t" pequeno na frente, a seta e o
+  texto: `+25,0%`, ou **"saiu do prejuízo"**, "entrou no prejuízo", "prejuízo
+  menor/maior" — nunca percentual sobre base negativa. Verde e vermelho só
+  reforçam; o texto diz o sentido. Em banco a receita vem com "resultado bruto da
+  intermediação" escrito embaixo; a margem de banco, seguradora e holding é
+  "não se aplica" com um ⓘ que diz por quê. No celular a tabela empilha.
+- **Lucro × receita** (2/3 da largura): as bolhas em SVG, x = variação do
+  lucro, y = variação da receita, tamanho = peso na carteira, com o zero
+  marcado nos dois eixos, rótulos "lucro →" e "↑ receita" e o nome de cada
+  bolha pelo mesmo arranjo do risco × retorno (`features/risk/labels.ts`: o
+  maior peso escolhe primeiro; quem não cabe fica sem nome à vista). Um
+  segmentado alterna **Ano anterior** / **Trimestre anterior** (as bolhas
+  deslizam com `SPRING.value`). Embaixo, a linha "Fora do gráfico: VARE3 (lucro:
+  saiu do prejuízo)". Tabela escondida para o leitor de tela.
+- **Oito trimestres** (1/3): um cartão afundado por empresa com barras
+  pequenas do lucro (`MiniBars`): lucro sobe da linha do zero, dourado (o
+  trimestre mais novo mais forte); prejuízo desce, vermelho **e listrado**; o
+  rótulo do primeiro e do último trimestre embaixo; o número de cada barra no
+  `title` e no nome acessível.
+- **FIIs mês a mês** (`DataTable`): fundo, mês do informe, rendimento do mês
+  sobre o valor patrimonial, a média do período, o valor patrimonial por cota e
+  as barras dos 12 meses. O ⓘ diz o que o informe mensal não tem (resultado do
+  fundo, rendimento em reais) e onde está.
+- **Rodapé**: "Sem resultados (N)" recolhido (ETF, BDR, sem código CVM) e a
+  fonte com a data da conferência.
+
+Com o olho fechado, receita, lucro e valor patrimonial (na célula, no `title`
+das barras e no nome acessível) viram `R$ ••••`; variações, margens e pesos
+ficam. Estilo em `features/results/results.css`. Medida (demonstração, tema
+escuro e claro): 1440×900 em 1,46 tela, iPad 1024 em 1,16, celular 390 em 3,81,
+sem rolagem lateral nem bloco que role de lado.
 
 ### 6. Desempenho
 

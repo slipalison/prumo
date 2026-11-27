@@ -5,6 +5,7 @@ import type {
   DimensionId,
   RiskProfile,
   RuleConfig,
+  RuleDetail,
   RuleResult,
   RuleStatus,
   Score,
@@ -163,12 +164,12 @@ export const RULE_TEXT: Record<AnalysisRuleId, RuleText> = {
   quality_leverage: {
     lead: "Pelo menos",
     tail: "do valor em ações vem de empresas com dívida líquida de até 3 vezes o EBITDA",
-    why: "Não vale para banco nem seguradora (o plano de contas deles não tem dívida nem EBITDA): eles ficam fora. O EBITDA é uma aproximação (resultado operacional mais depreciação).",
+    why: "Não vale para banco nem seguradora (o plano de contas deles não tem dívida nem EBITDA) nem para holding (o EBITDA dela leva o lucro das participadas): eles ficam fora. O EBITDA é uma aproximação (resultado operacional mais depreciação).",
   },
   quality_margin: {
     lead: "Pelo menos",
     tail: "do valor em ações vem de empresas com margem EBITDA positiva",
-    why: "Não vale para banco nem seguradora. Pesa pelo valor de cada empresa.",
+    why: "Não vale para banco, seguradora nem holding (o lucro dela vem das participadas, não da receita). Pesa pelo valor de cada empresa.",
   },
   quality_cash: {
     lead: "Pelo menos",
@@ -237,8 +238,8 @@ export const NO_DATA_TEXT: Record<AnalysisRuleId, string> = {
   max_loss: "Nenhum ativo tem custo conhecido no livro.",
   quality_roe: "Precisa de empresas com fundamentos da CVM (a busca roda em segundo plano).",
   quality_profit: "Precisa de empresa com pelo menos 4 balanços anuais conhecidos.",
-  quality_leverage: "Precisa de empresa que não seja banco nem seguradora, com EBITDA positivo.",
-  quality_margin: "Precisa de empresa que não seja banco nem seguradora.",
+  quality_leverage: "Precisa de empresa que não seja banco, seguradora nem holding, com EBITDA positivo.",
+  quality_margin: "Precisa de empresa que não seja banco, seguradora nem holding.",
   quality_cash: "Precisa de empresa com 4 exercícios de caixa operacional conhecidos.",
   quality_recovery: "Precisa de empresa com cadastro na CVM.",
   quality_fii_pvp: "Precisa de FII com informe mensal da CVM e cotação.",
@@ -345,10 +346,23 @@ export function noDataText(score: Score): string | null {
 
 const pct = (value: number) => formatRuleValue("percent", value);
 
-/** "Entraram na conta 2 de 3 ativos. Abaixo do critério: A, B." */
-function qualityCoverage(covered: number, total: number, failing: string[], label: string): string {
-  const base = `Entraram na conta ${covered} de ${total} ${plural(total, ["ativo", "ativos"])}`;
-  return failing.length > 0 ? `${base}. ${label}: ${failing.join(", ")}.` : `${base}.`;
+type NotApplicable = Extract<RuleDetail, { kind: "quality" }>["not_applicable"];
+
+/** O rótulo curto de por que a medida não se aplica ("ITSA4 (holding)"). */
+const NOT_APPLICABLE_SHORT: Record<NotApplicable[number]["reason"], string> = {
+  bank: "banco",
+  insurer: "seguradora",
+  holding: "holding",
+};
+
+/** "Entraram na conta 2 de 4 ativos. Não se aplica a A (holding) e B (banco). Abaixo do critério: C." */
+function qualityCoverage(covered: number, total: number, failing: string[], label: string, outside: NotApplicable = []): string {
+  const base = `Entraram na conta ${covered} de ${total} ${plural(total, ["ativo", "ativos"])}.`;
+  const names = outside.map((o) => `${o.label} (${NOT_APPLICABLE_SHORT[o.reason]})`);
+  const notApplicable =
+    names.length > 0 ? ` Não se aplica a ${names.length > 1 ? `${names.slice(0, -1).join(", ")} e ${names.at(-1)}` : names[0]}.` : "";
+  const below = failing.length > 0 ? ` ${label}: ${failing.join(", ")}.` : "";
+  return `${base}${notApplicable}${below}`;
 }
 
 /** `+1,23%` / `−0,40%`: o sinal diz o sentido sem depender da cor. */
@@ -427,7 +441,9 @@ export function ruleExplanation(result: RuleResult, money: Money): string | null
     case "quality_cash":
     case "quality_fii_pvp":
     case "quality_fii_vacancy":
-      return detail?.kind === "quality" ? qualityCoverage(detail.covered, detail.total, detail.failing, "Abaixo do critério") : null;
+      return detail?.kind === "quality"
+        ? qualityCoverage(detail.covered, detail.total, detail.failing, "Abaixo do critério", detail.not_applicable)
+        : null;
     case "quality_recovery":
       if (detail?.kind !== "quality") return null;
       return detail.failing.length > 0

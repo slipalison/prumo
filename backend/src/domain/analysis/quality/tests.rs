@@ -7,7 +7,7 @@ use time::Date;
 
 fn blank() -> CompanyFacts {
     CompanyFacts {
-        financial: false,
+        profile: Profile::Operating,
         roe: None,
         profit_years: None,
         net_debt_to_ebitda: None,
@@ -60,6 +60,80 @@ fn fund(
             vacancy,
         }),
     }
+}
+
+#[test]
+fn leverage_does_not_apply_to_a_holding_and_says_who_is_out() {
+    let assets = [
+        company(
+            "IND3",
+            dec!(100),
+            CompanyFacts {
+                net_debt_to_ebitda: Some(dec!(1)),
+                operating_cash_average: Some(dec!(5)),
+                ..blank()
+            },
+        ),
+        company(
+            "BANC4",
+            dec!(300),
+            CompanyFacts {
+                profile: Profile::Bank,
+                ..blank()
+            },
+        ),
+        // A holding tem número (o EBITDA leva a equivalência), mas não entra.
+        company(
+            "HOLD4",
+            dec!(500),
+            CompanyFacts {
+                profile: Profile::Holding,
+                net_debt_to_ebitda: Some(dec!(9)),
+                ebitda_margin: Some(dec!(2)),
+                operating_cash_average: Some(dec!(3)),
+                roe: Some(dec!(0.2)),
+                ..blank()
+            },
+        ),
+        company(
+            "SEGU3",
+            dec!(50),
+            CompanyFacts {
+                profile: Profile::Insurer,
+                ..blank()
+            },
+        ),
+    ];
+    let found = weighted(&assets, Criterion::Leverage).unwrap();
+    assert_eq!(found.covered, 1);
+    assert_eq!(found.total, 4);
+    assert_eq!(found.share, dec!(100));
+    // Do maior valor para o menor.
+    assert_eq!(
+        found.not_applicable,
+        vec![
+            ("HOLD4".to_owned(), Profile::Holding),
+            ("BANC4".to_owned(), Profile::Bank),
+            ("SEGU3".to_owned(), Profile::Insurer),
+        ]
+    );
+    assert!(weighted(&assets, Criterion::EbitdaMargin).is_none());
+    // O caixa operacional vale para a holding; banco e seguradora não têm.
+    let cash = weighted(&assets, Criterion::OperatingCash).unwrap();
+    assert_eq!(cash.covered, 2);
+    assert_eq!(
+        cash.not_applicable,
+        vec![
+            ("BANC4".to_owned(), Profile::Bank),
+            ("SEGU3".to_owned(), Profile::Insurer)
+        ]
+    );
+    // ROE vale para todos.
+    let roe = weighted(&assets, Criterion::Roe).unwrap();
+    assert!(roe.not_applicable.is_empty());
+    assert_eq!(roe.covered, 1);
+    assert!(Profile::Bank.financial());
+    assert!(!Profile::Holding.financial());
 }
 
 #[test]
@@ -121,7 +195,7 @@ fn profit_years_need_four_known_years_and_four_positive() {
 #[test]
 fn leverage_and_margin_do_not_apply_to_banks() {
     let bank = CompanyFacts {
-        financial: true,
+        profile: Profile::Bank,
         net_debt_to_ebitda: Some(dec!(9)),
         ebitda_margin: Some(dec!(-1)),
         roe: Some(dec!(0.2)),

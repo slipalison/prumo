@@ -149,15 +149,16 @@ tabela. A conta pesa só quem **tem o dado**: banco numa medida que o plano de
 contas dele não tem (dívida, EBITDA, receita), ano sem balanço, fundo de papel
 na vacância ficam **fora** da conta, nunca viram reprovados. O número de agora
 é o percentual do valor que passa e o aviso diz quantos ativos entraram na
-conta ("1 de 2") e quem reprovou.
+conta ("1 de 2"), quem reprovou e em quem a medida **não se aplica** (banco,
+seguradora, holding), com o motivo.
 
 | Regra (`rule`) | Passa quando | Grupo |
 |---|---|---|
 | `quality_roe` | ROE dos últimos 12 meses ≥ 10% (lucro dos controladores ÷ patrimônio deles) | empresas |
 | `quality_profit` | lucro positivo em ≥ 4 dos 5 exercícios (precisa de 4 conhecidos) | empresas |
-| `quality_leverage` | dívida líquida ÷ EBITDA ≤ 3 vezes (caixa líquido passa) | empresas, **sem bancos e seguradoras** |
-| `quality_margin` | margem EBITDA > 0 | empresas, sem bancos e seguradoras |
-| `quality_cash` | média do caixa operacional dos 4 últimos exercícios > 0 (os 4 conhecidos) | empresas |
+| `quality_leverage` | dívida líquida ÷ EBITDA ≤ 3 vezes (caixa líquido passa) | empresas, **sem bancos, seguradoras e holdings** |
+| `quality_margin` | margem EBITDA > 0 | empresas, sem bancos, seguradoras e holdings |
+| `quality_cash` | média do caixa operacional dos 4 últimos exercícios > 0 (os 4 conhecidos) | empresas, sem bancos e seguradoras |
 | `quality_recovery` | nenhuma empresa em recuperação judicial (cadastro da CVM) | empresas; **sem limite** |
 | `quality_fii_pvp` | P/VP ≤ 1,10 (cotação do Prumo ÷ valor patrimonial por cota) | FIIs |
 | `quality_fii_vacancy` | vacância física ≤ 15% (informe trimestral) | FIIs de tijolo; o de papel fica sem dado |
@@ -170,6 +171,14 @@ conta ("1 de 2") e quem reprovou.
   exercício mais o ITR, quando há.
 - **Banco e seguradora**: dívida, EBITDA e receita vêm como `financial_template`
   (não se aplica): nem ok, nem falha, e fora do denominador.
+- **Holding de participações** (`holding` nos fundamentos: setor de
+  participações no cadastro da CVM e a equivalência patrimonial com pelo menos
+  metade do lucro, ver [resultados.md](resultados.md#não-se-aplica-holding-banco-e-seguradora)):
+  o EBITDA leva o lucro das participadas, então dívida ÷ EBITDA e margem EBITDA
+  não se aplicam; ROE, lucro e caixa operacional valem.
+- O detalhe de cada regra (`detail.not_applicable`) lista, do maior valor para
+  o menor, os ativos do grupo em que a medida não se aplica e por quê (`bank`,
+  `insurer`, `holding`); a tela escreve "Não se aplica a ITSA4 (holding)".
 - `quality_recovery` não pesa por valor: é a contagem de empresas em
   recuperação judicial e só passa com zero. Sem nenhuma empresa com cadastro, sem
   dado.
@@ -185,10 +194,10 @@ recomendação. Só aparece o que passou do corte; o limite exato **não** é po
 | Ponto (`kind`) | Quando | Dado |
 |---|---|---|
 | `income_drop` | a renda de 12 meses do ativo caiu **10% ou mais** contra os 12 anteriores | `income_events` (recebido, líquido); precisa de 24 meses de histórico |
-| `low_revenue_growth` | CAGR da receita em 5 anos < 5% ao ano | fundamentos |
+| `low_revenue_growth` | CAGR da receita em 5 anos < 5% ao ano (não vale para banco, seguradora nem holding) | fundamentos |
 | `low_earnings_growth` | CAGR do lucro em 5 anos < 5% ao ano | fundamentos |
 | `low_roe` | ROE < 10% | fundamentos |
-| `low_net_margin` | margem líquida < 10% (não vale para banco: a conta é outra) | fundamentos |
+| `low_net_margin` | margem líquida < 10% (não vale para banco, seguradora nem holding: a conta é outra) | fundamentos |
 | `debt_above_equity` | dívida líquida > patrimônio líquido (mais de 1 vez) | fundamentos |
 | `judicial_recovery` | em recuperação judicial | cadastro da CVM |
 

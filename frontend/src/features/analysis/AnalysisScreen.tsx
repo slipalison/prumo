@@ -11,6 +11,7 @@ import { attentionText } from "../../lib/analysisText";
 import { formatRelative, plural } from "../../lib/format";
 import { parseSection, useHash } from "../../lib/route";
 import { CompareScreen } from "../compare/CompareScreen";
+import { ResultsScreen } from "../results/ResultsScreen";
 import { AttentionCard } from "./AttentionCard";
 import { DimensionCard } from "./DimensionCard";
 import { DimensionScores } from "./DimensionScores";
@@ -31,9 +32,12 @@ import { useAnalysis } from "./useAnalysis";
  * no fim, pontos de atenção, destaques, referências de preço e as fontes.
  */
 export function AnalysisScreen() {
-  // `#/analise/comparar`: o comparador de ativos mora no mesmo endereço-mãe.
+  // Subtelas no mesmo endereço-mãe: `#/analise/comparar` (o comparador de
+  // ativos) e `#/analise/resultados` (os resultados trimestrais).
   const section = parseSection(useHash());
-  return section === "comparar" ? <CompareScreen /> : <AnalysisReport />;
+  if (section === "comparar") return <CompareScreen />;
+  if (section === "resultados") return <ResultsScreen />;
+  return <AnalysisReport />;
 }
 
 function AnalysisReport() {
@@ -55,6 +59,9 @@ function AnalysisReport() {
           <>
             <a className="link-btn" href="#/analise/comparar">
               Comparar ativos
+            </a>
+            <a className="link-btn" href="#/analise/resultados">
+              Resultados trimestrais
             </a>
             <a className="link-btn" href="#/ajustes/analise">
               Ajustar as regras

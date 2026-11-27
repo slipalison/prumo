@@ -22,7 +22,7 @@ use super::{ApiJson, AppState, CurrentUser};
 use crate::analysis::{self as service, AnalysisReport};
 use crate::domain::analysis::highlights::{Mover, Ranking};
 use crate::domain::analysis::profile::{self, Mix};
-use crate::domain::analysis::quality::{Attention, Point};
+use crate::domain::analysis::quality::{Attention, Point, Profile};
 use crate::domain::analysis::references::{combined_ceiling, validate_bazin_yield, Bazin};
 use crate::domain::analysis::{
     AnalysisConfig, Detail, Dimension, DimensionReport, Direction, RuleId, RuleResult, Score,
@@ -122,12 +122,39 @@ pub enum DetailDto {
         assets: Vec<LossDto>,
     },
     /// Regra de Qualidade: quantos ativos do grupo entraram na conta (os que
-    /// têm o dado) e quais reprovaram.
+    /// têm o dado), quais reprovaram e em quais a medida não se aplica.
     Quality {
         covered: u32,
         total: u32,
         failing: Vec<String>,
+        not_applicable: Vec<NotApplicableDto>,
     },
+}
+
+/// Um ativo em que a medida da regra não se aplica, e por quê.
+#[derive(Debug, Serialize)]
+pub struct NotApplicableDto {
+    pub label: String,
+    pub reason: NotApplicableReason,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotApplicableReason {
+    Bank,
+    Insurer,
+    Holding,
+}
+
+impl NotApplicableReason {
+    fn of(profile: Profile) -> Option<Self> {
+        match profile {
+            Profile::Bank => Some(Self::Bank),
+            Profile::Insurer => Some(Self::Insurer),
+            Profile::Holding => Some(Self::Holding),
+            Profile::Operating => None,
+        }
+    }
 }
 
 impl DetailDto {
@@ -189,6 +216,16 @@ impl DetailDto {
                 covered: found.covered,
                 total: found.total,
                 failing: found.failing.clone(),
+                not_applicable: found
+                    .not_applicable
+                    .iter()
+                    .filter_map(|(label, profile)| {
+                        NotApplicableReason::of(*profile).map(|reason| NotApplicableDto {
+                            label: label.clone(),
+                            reason,
+                        })
+                    })
+                    .collect(),
             },
             Detail::Losses(losses) => DetailDto::Losses {
                 assets: losses
@@ -773,12 +810,25 @@ mod tests {
         let detail = Detail::Quality(crate::domain::analysis::quality::Weighted {
             share: dec!(66.67),
             covered: 2,
-            total: 3,
+            total: 4,
             failing: vec!["FRAC3".into()],
+            not_applicable: vec![
+                ("HOLD3".into(), Profile::Holding),
+                ("BANC4".into(), Profile::Bank),
+            ],
         });
         assert_eq!(
-            serde_json::to_value(DetailDto::of(RuleId::QualityRoe, &detail)).unwrap(),
-            json!({"kind": "quality", "covered": 2, "total": 3, "failing": ["FRAC3"]})
+            serde_json::to_value(DetailDto::of(RuleId::QualityLeverage, &detail)).unwrap(),
+            json!({
+                "kind": "quality",
+                "covered": 2,
+                "total": 4,
+                "failing": ["FRAC3"],
+                "not_applicable": [
+                    {"label": "HOLD3", "reason": "holding"},
+                    {"label": "BANC4", "reason": "bank"}
+                ]
+            })
         );
     }
 

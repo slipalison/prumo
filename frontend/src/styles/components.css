@@ -1826,3 +1826,12 @@
   font-weight: 600;
   text-align: center;
 }
+
+/* Indicador que não se aplica (banco, seguradora, holding; a linha de fundo
+   no comparador): escrito, mais apagado que um número, para não parecer um
+   número que falta. Folha do ativo, resultados e comparador. */
+.not-applicable {
+  color: var(--text-subtle);
+  font-size: var(--text-sm);
+  font-weight: 550;
+}

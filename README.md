@@ -122,13 +122,23 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   (Bazin e Graham) para comparar com o seu teto, e pontos de atenção por ativo, sem
   recomendar nada. O setor vem da B3 (ações) e da CVM (FIIs). Detalhes em
   [`docs/analise.md`](docs/analise.md) e [`docs/saude.md`](docs/saude.md).
+- **Resultados trimestrais** — em Análise, o último trimestre que cada empresa
+  da carteira entregou à CVM (receita, lucro, margem e a data de entrega)
+  contra o mesmo trimestre do ano anterior e contra o anterior, com prejuízo
+  dito por rótulo ("saiu do prejuízo", "prejuízo menor") em vez de percentual
+  enganoso; bolhas de lucro × receita do tamanho do peso na carteira, oito
+  trimestres por empresa e os FIIs mês a mês pelo informe mensal. Banco e
+  seguradora mostram o resultado bruto da atividade; holding, banco e
+  seguradora dizem "não se aplica" onde a margem enganaria. Detalhes em
+  [`docs/resultados.md`](docs/resultados.md).
 - **Fundamentos** — na folha de cada ação e FII da B3, os números da CVM com a
   fonte e a data: receita, lucro, ROE, margem, dívida líquida sobre EBITDA e
   sobre o patrimônio, LPA e VPA, anos com lucro e com caixa operacional
   positivo, crescimento de receita e lucro em 5 anos e o aviso de recuperação
   judicial; nos FIIs, valor patrimonial por cota, P/VP com o preço ao vivo e a
-  vacância física declarada. Banco e seguradora mostram só o que o plano de
-  contas deles tem. Tudo dos dados abertos da CVM, conferidos uma vez por dia;
+  vacância física declarada. Em banco, seguradora e holding, o indicador que
+  enganaria (margem acima de 100% em holding, por exemplo) diz "não se aplica",
+  com o porquê. Tudo dos dados abertos da CVM, conferidos uma vez por dia;
   número que falta aparece como "—" com o motivo, nunca como zero. Detalhes em
   [`docs/fundamentos.md`](docs/fundamentos.md).
 - **Alertas** — um resumo por dia no Telegram, só quando há algo a dizer:
@@ -202,6 +212,7 @@ Documentos:
 - [`docs/alertas.md`](docs/alertas.md) — alertas no Telegram: criar o bot, vincular, tipos, privacidade
 - [`docs/icones.md`](docs/icones.md) — logos dos ativos: fonte (brapi), como ligar, segurança do SVG e licença
 - [`docs/fundamentos.md`](docs/fundamentos.md) — fundamentos da CVM: fontes, contas, fórmulas, limites e o contrato
+- [`docs/resultados.md`](docs/resultados.md) — resultados trimestrais: como sai cada trimestre, a variação com prejuízo, FIIs e "não se aplica"
 - [`docs/desempenho.md`](docs/desempenho.md) — rentabilidade por cotas, índices e fontes
 - [`docs/comparador.md`](docs/comparador.md) — comparar até 5 ativos: indicadores lado a lado e rentabilidade comparada
 - [`docs/risco.md`](docs/risco.md) — volatilidade, queda máxima, correlação e parte do risco: fórmulas, séries e limites

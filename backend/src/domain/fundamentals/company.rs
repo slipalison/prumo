@@ -20,6 +20,12 @@
 //! seguradoras; 2.07 e 2.08 no patrimônio dos bancos). O resto só existe no
 //! plano comercial: em banco e seguradora é [`Gap::FinancialTemplate`].
 //!
+//! **Holding de participações** ([`CompanyMetrics::holding`]): o cadastro da CVM
+//! a põe no setor "Emp. Adm. Part." **e** pelo menos metade do lucro dos últimos
+//! 12 meses vem da equivalência patrimonial. Nela as margens, a dívida sobre o
+//! EBITDA e o CAGR da receita viram [`Gap::Holding`]: o lucro não passa pela
+//! receita.
+//!
 //! A explicação inteira, com as fórmulas, está em `docs/fundamentos.md`.
 
 use std::collections::BTreeMap;
@@ -192,6 +198,24 @@ fn is_non_controlling(description: &str) -> bool {
     fold(description).contains("nao controlador")
 }
 
+fn is_equity_method(description: &str) -> bool {
+    fold(description).contains("equivalencia patrimonial")
+}
+
+/// O setor do cadastro da CVM de quem administra participações
+/// ("Emp. Adm. Part. - Sem Setor Principal", "Emp. Adm. Part. - Bancos"...).
+/// Sozinho não basta para dizer holding: a WEG e várias elétricas estão nele e
+/// consolidam as controladas (a receita é a do grupo, e a margem vale).
+pub fn is_holding_sector(sector: &str) -> bool {
+    fold(sector).starts_with("emp. adm. part")
+}
+
+/// A parte do lucro que, vinda da equivalência patrimonial, faz da companhia
+/// do setor de participações uma holding (metade). Medido nas DFP de 2025: as
+/// holdings puras ficam entre 0,76 e 2,3 vezes o lucro; os grupos que
+/// consolidam as controladas, abaixo de 0,3.
+pub const HOLDING_EQUITY_SHARE: Decimal = Decimal::from_parts(5, 0, 0, false, 1);
+
 /// As contas que o Prumo guarda de cada demonstração: só as que a conta usa
 /// (e as de nível 1 do resultado e do passivo, onde estão o lucro, o
 /// patrimônio e o tipo de plano). O resto do arquivo nem é lido para o banco.
@@ -200,7 +224,9 @@ pub fn keeps_line(statement: Statement, code: &str, description: &str) -> bool {
         Statement::Income => {
             !code.starts_with("3.99")
                 && (depth(code) == 1
-                    || (depth(code) == 2 && fold(description).contains("controlador")))
+                    || (depth(code) == 2
+                        && (fold(description).contains("controlador")
+                            || is_equity_method(description))))
         }
         Statement::Liabilities => {
             depth(code) == 1
@@ -230,7 +256,7 @@ pub enum Template {
 }
 
 impl Template {
-    fn from_revenue(description: Option<&str>) -> Self {
+    pub(super) fn from_revenue(description: Option<&str>) -> Self {
         let Some(d) = description.map(fold) else {
             return Template::Unknown;
         };
@@ -367,6 +393,11 @@ pub struct CompanyMetrics {
     pub name: String,
     /// O plano de contas do documento mais novo.
     pub template: Template,
+    /// Holding de participações: setor "Emp. Adm. Part." no cadastro e pelo
+    /// menos [`HOLDING_EQUITY_SHARE`] do lucro dos últimos 12 meses vindo da
+    /// equivalência patrimonial. As margens, a dívida sobre o EBITDA e o CAGR
+    /// da receita vêm com [`Gap::Holding`].
+    pub holding: bool,
     /// Do cadastro; `None` quando o cadastro não tem a companhia.
     pub judicial_recovery: Option<bool>,
     /// `SIT_EMISSOR` como a CVM escreve (falida, liquidação...).
@@ -406,6 +437,9 @@ struct Raw {
     ebit: Figure,
     depreciation: Figure,
     net_income: Figure,
+    /// O resultado de equivalência patrimonial (a parte do lucro das
+    /// coligadas e controladas não consolidadas); `None` sem a conta.
+    equity_income: Option<Decimal>,
     operating_cash: Figure,
     equity: Figure,
     equity_controlling: Figure,
@@ -413,12 +447,36 @@ struct Raw {
     cash: Figure,
 }
 
-struct Columnar<'a> {
-    lines: Vec<&'a Line>,
+/// O lucro de uma coluna: o total e, quando a demonstração divide de verdade,
+/// a parte dos controladores.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct ProfitParts {
+    pub total: Decimal,
+    /// `None`: sem a divisão, ou divisão entregue toda em zero com total
+    /// diferente de zero (divisão não preenchida, ver [`Columnar::profit_parts`]).
+    pub controlling: Option<Decimal>,
+}
+
+impl ProfitParts {
+    /// O lucro dos controladores; sem a divisão, o total.
+    pub fn attributable(self) -> Decimal {
+        self.controlling.unwrap_or(self.total)
+    }
+}
+
+/// As linhas de uma coluna de um documento.
+pub(super) struct Columnar<'a> {
+    pub lines: Vec<&'a Line>,
 }
 
 impl<'a> Columnar<'a> {
-    fn find(&self, statement: Statement, code: &str) -> Option<&'a Line> {
+    pub fn of(filing: &'a Filing, column: Column) -> Self {
+        Self {
+            lines: filing.lines.iter().filter(|l| l.column == column).collect(),
+        }
+    }
+
+    pub fn find(&self, statement: Statement, code: &str) -> Option<&'a Line> {
         self.lines
             .iter()
             .copied()
@@ -441,12 +499,12 @@ impl<'a> Columnar<'a> {
         })
     }
 
-    fn net_income(&self) -> Figure {
-        let Some(profit) = self.lines.iter().copied().find(|l| {
+    /// A conta de lucro do período (nível 1, achada pela descrição) e a
+    /// divisão entre controladores e não controladores.
+    pub fn profit_parts(&self) -> Option<ProfitParts> {
+        let profit = self.lines.iter().copied().find(|l| {
             l.statement == Statement::Income && depth(&l.code) == 1 && is_profit(&l.description)
-        }) else {
-            return Figure::missing(Gap::NotReported);
-        };
+        })?;
         let children: Vec<&Line> = self.children(Statement::Income, &profit.code).collect();
         let controlling = children.iter().find(|l| is_controlling(&l.description));
         let minority = children.iter().find(|l| is_non_controlling(&l.description));
@@ -457,10 +515,33 @@ impl<'a> Columnar<'a> {
         let split_blank = !profit.value.is_zero()
             && controlling.is_none_or(|l| l.value.is_zero())
             && minority.is_none_or(|l| l.value.is_zero());
-        match controlling {
-            Some(own) if !split_blank => Figure::known(own.value),
-            _ => Figure::known(profit.value),
-        }
+        Some(ProfitParts {
+            total: profit.value,
+            controlling: controlling.filter(|_| !split_blank).map(|l| l.value),
+        })
+    }
+
+    fn net_income(&self) -> Figure {
+        self.profit_parts()
+            .map_or(Figure::missing(Gap::NotReported), |p| {
+                Figure::known(p.attributable())
+            })
+    }
+
+    /// O resultado de equivalência patrimonial: a conta de resultado de menor
+    /// nível com "equivalência patrimonial" na descrição (3.04.06 no plano
+    /// comercial, 3.06 no das seguradoras).
+    pub fn equity_income(&self) -> Option<Decimal> {
+        self.lines
+            .iter()
+            .copied()
+            .filter(|l| {
+                l.statement == Statement::Income
+                    && (1..=2).contains(&depth(&l.code))
+                    && is_equity_method(&l.description)
+            })
+            .min_by_key(|l| (depth(&l.code), l.code.clone()))
+            .map(|l| l.value)
     }
 
     /// O patrimônio total e o dos controladores.
@@ -493,9 +574,7 @@ impl<'a> Columnar<'a> {
 /// As contas de uma coluna. `None` quando a coluna não tem resultado (a DFP
 /// da companhia recém-aberta não traz exercício anterior).
 fn raw(filing: &Filing, column: Column) -> Option<Raw> {
-    let view = Columnar {
-        lines: filing.lines.iter().filter(|l| l.column == column).collect(),
-    };
+    let view = Columnar::of(filing, column);
     let anchor = view
         .lines
         .iter()
@@ -537,6 +616,7 @@ fn raw(filing: &Filing, column: Column) -> Option<Raw> {
             d.value().map_or(d, |v| Figure::known(v.abs()))
         }),
         net_income: view.net_income(),
+        equity_income: view.equity_income(),
         operating_cash: commercial(&|| view.checked(Statement::CashFlow, "6.01", "operaciona")),
         equity,
         equity_controlling,
@@ -551,7 +631,33 @@ fn raw(filing: &Filing, column: Column) -> Option<Raw> {
     })
 }
 
-fn derive(raw: &Raw, sources: Vec<FilingRef>) -> PeriodFigures {
+/// Holding de participações: o setor do cadastro e a equivalência patrimonial
+/// de pelo menos [`HOLDING_EQUITY_SHARE`] do lucro (em módulo; prejuízo também
+/// conta) no período.
+fn is_holding(registration: Option<&Registration>, raw: &Raw) -> bool {
+    let sector = registration
+        .and_then(|r| r.sector.as_deref())
+        .is_some_and(is_holding_sector);
+    let (Some(equity), Some(profit)) = (raw.equity_income, raw.net_income.value()) else {
+        return false;
+    };
+    if !sector || equity.is_zero() {
+        return false;
+    }
+    equity.abs() >= profit.abs() * HOLDING_EQUITY_SHARE
+}
+
+/// Na holding, as medidas que supõem o lucro vindo da receita não se aplicam.
+/// O motivo de banco e seguradora (o plano não tem a conta) fica.
+fn not_for_holding(figure: Figure, holding: bool) -> Figure {
+    match figure.gap() {
+        Some(Gap::FinancialTemplate | Gap::UnknownTemplate) => figure,
+        _ if holding => Figure::missing(Gap::Holding),
+        _ => figure,
+    }
+}
+
+fn derive(raw: &Raw, sources: Vec<FilingRef>, holding: bool) -> PeriodFigures {
     let ebitda = raw.ebit.add(raw.depreciation);
     let net_debt = raw.gross_debt.sub(raw.cash);
     PeriodFigures {
@@ -571,14 +677,14 @@ fn derive(raw: &Raw, sources: Vec<FilingRef>) -> PeriodFigures {
         ebitda,
         operating_cash_flow: raw.operating_cash,
         roe: raw.net_income.ratio(raw.equity_controlling),
-        net_margin: raw.net_income.ratio(raw.revenue),
-        ebitda_margin: ebitda.ratio(raw.revenue),
-        net_debt_to_ebitda: net_debt.ratio(ebitda),
+        net_margin: not_for_holding(raw.net_income.ratio(raw.revenue), holding),
+        ebitda_margin: not_for_holding(ebitda.ratio(raw.revenue), holding),
+        net_debt_to_ebitda: not_for_holding(net_debt.ratio(ebitda), holding),
         net_debt_to_equity: net_debt.ratio(raw.equity),
     }
 }
 
-fn reference(filing: &Filing, column: Column) -> FilingRef {
+pub(super) fn reference(filing: &Filing, column: Column) -> FilingRef {
     FilingRef {
         kind: filing.kind,
         reference_date: filing.reference_date,
@@ -590,8 +696,8 @@ fn reference(filing: &Filing, column: Column) -> FilingRef {
 
 /// Os últimos 12 meses: exercício + acumulado do ano − acumulado do ano
 /// anterior, se o ITR mais novo é posterior ao exercício e os períodos se
-/// encaixam; senão, o próprio exercício.
-fn trailing(filings: &[Filing], annual: &(Raw, FilingRef)) -> PeriodFigures {
+/// encaixam; senão, o próprio exercício. As contas, ainda sem as razões.
+fn trailing(filings: &[Filing], annual: &(Raw, FilingRef)) -> (Raw, Vec<FilingRef>) {
     let (a, a_ref) = annual;
     let quarter = filings
         .iter()
@@ -609,6 +715,12 @@ fn trailing(filings: &[Filing], annual: &(Raw, FilingRef)) -> PeriodFigures {
                 let flow = |annual: Figure, current: Figure, previous: Figure| {
                     annual.add(current).sub(previous)
                 };
+                let equity_income = match (a.equity_income, c.equity_income, p.equity_income) {
+                    (Some(annual), Some(current), Some(previous)) => {
+                        Some(annual + current - previous)
+                    }
+                    _ => None,
+                };
                 let ttm = Raw {
                     template: c.template,
                     start: p.end.next_day().unwrap_or(p.end),
@@ -617,14 +729,15 @@ fn trailing(filings: &[Filing], annual: &(Raw, FilingRef)) -> PeriodFigures {
                     ebit: flow(a.ebit, c.ebit, p.ebit),
                     depreciation: flow(a.depreciation, c.depreciation, p.depreciation),
                     net_income: flow(a.net_income, c.net_income, p.net_income),
+                    equity_income,
                     operating_cash: flow(a.operating_cash, c.operating_cash, p.operating_cash),
                     equity: c.equity,
                     equity_controlling: c.equity_controlling,
                     gross_debt: c.gross_debt,
                     cash: c.cash,
                 };
-                return derive(
-                    &ttm,
+                return (
+                    ttm,
                     vec![
                         *a_ref,
                         reference(q, Column::Current),
@@ -634,7 +747,7 @@ fn trailing(filings: &[Filing], annual: &(Raw, FilingRef)) -> PeriodFigures {
             }
         }
     }
-    derive(a, vec![*a_ref])
+    (a.clone(), vec![*a_ref])
 }
 
 fn count(years: &[FiscalYear], pick: impl Fn(&PeriodFigures) -> Figure) -> YearCount {
@@ -727,19 +840,27 @@ pub fn company_metrics(
         .filter(|(_, (key, _, _))| key.0)
         .map(|(year, _)| *year)
         .max();
+    let trailing_raw = last_year
+        .and_then(|year| by_year.get(&year))
+        .map(|(_, r, s)| trailing(filings, &(r.clone(), *s)));
+    // A classificação é da companhia, pelos 12 meses mais novos: a série
+    // inteira usa a mesma régua.
+    let holding = trailing_raw
+        .as_ref()
+        .is_some_and(|(raw, _)| is_holding(registration, raw));
     let years: Vec<FiscalYear> = last_year
         .map(|last| {
             (last - WINDOW_YEARS + 1..=last)
                 .map(|year| FiscalYear {
                     year,
-                    figures: by_year.get(&year).map(|(_, r, s)| derive(r, vec![*s])),
+                    figures: by_year
+                        .get(&year)
+                        .map(|(_, r, s)| derive(r, vec![*s], holding)),
                 })
                 .collect()
         })
         .unwrap_or_default();
-    let trailing = last_year
-        .and_then(|year| by_year.get(&year))
-        .map(|(_, r, s)| trailing(filings, &(r.clone(), *s)));
+    let trailing = trailing_raw.map(|(raw, sources)| derive(&raw, sources, holding));
     let per_share = |pick: fn(&PeriodFigures) -> Figure| {
         let divisor = shares
             .filter(|s| *s > Decimal::ZERO)
@@ -758,12 +879,13 @@ pub fn company_metrics(
             .map(|r| r.name.clone())
             .unwrap_or_else(|| latest.company_name.clone()),
         template: template_of(latest),
+        holding,
         judicial_recovery: registration.map(Registration::in_judicial_recovery),
         issuer_status: registration.and_then(|r| r.issuer_status.clone()),
         registration_status: registration.map(|r| r.status.clone()),
         profitable_years: count(&years, |p| p.net_income),
         positive_operating_cash_years: count(&years, |p| p.operating_cash_flow),
-        revenue_cagr: cagr(&years, |p| p.revenue),
+        revenue_cagr: not_for_holding(cagr(&years, |p| p.revenue), holding),
         earnings_cagr: cagr(&years, |p| p.net_income),
         years,
         trailing,
@@ -1637,6 +1759,142 @@ mod tests {
             assert_eq!(Column::parse(c.as_str()), Some(c));
         }
         assert_eq!(Statement::parse("dmpl"), None);
+    }
+
+    /// Cinco exercícios com a equivalência patrimonial (3.04.06) de cada ano
+    /// igual a `share` × o lucro.
+    fn with_equity_income(share: Decimal) -> Vec<Filing> {
+        let mut filings = five_years();
+        for filing in &mut filings {
+            let extra: Vec<Line> = filing
+                .lines
+                .iter()
+                .filter(|l| l.code == "3.11")
+                .map(|l| Line {
+                    code: "3.04.06".into(),
+                    description: "Resultado de Equivalência Patrimonial".into(),
+                    value: l.value * share,
+                    ..l.clone()
+                })
+                .collect();
+            filing.lines.extend(extra);
+        }
+        filings
+    }
+
+    fn sector(name: &str) -> Registration {
+        Registration {
+            sector: Some(name.into()),
+            ..registration("FASE OPERACIONAL")
+        }
+    }
+
+    #[test]
+    fn a_holding_has_no_margin_and_no_revenue_growth() {
+        let m = company_metrics(
+            99901,
+            &with_equity_income(dec!(1.2)),
+            Some(&sector("Emp. Adm. Part. - Intermediação Financeira")),
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(m.holding);
+        let ttm = m.trailing.as_ref().unwrap();
+        assert_eq!(ttm.net_margin.gap(), Some(Gap::Holding));
+        assert_eq!(ttm.ebitda_margin.gap(), Some(Gap::Holding));
+        assert_eq!(ttm.net_debt_to_ebitda.gap(), Some(Gap::Holding));
+        assert_eq!(m.revenue_cagr.gap(), Some(Gap::Holding));
+        // O que vale para holding fica: receita, lucro, ROE, CAGR do lucro.
+        assert_eq!(ttm.revenue.value(), Some(dec!(1464.1)));
+        assert_eq!(ttm.roe.value(), Some(dec!(0.029282)));
+        assert_eq!(ttm.net_debt_to_equity.value(), Some(dec!(0.14)));
+        assert_eq!(m.earnings_cagr.value(), Some(dec!(0.1)));
+        // A série anual usa a mesma régua.
+        let first = m.years[0].figures.as_ref().unwrap();
+        assert_eq!(first.net_margin.gap(), Some(Gap::Holding));
+    }
+
+    #[test]
+    fn the_participations_sector_alone_does_not_make_a_holding() {
+        // Grupo que consolida as controladas: equivalência pequena, margem vale.
+        let m = company_metrics(
+            99901,
+            &with_equity_income(dec!(0.1)),
+            Some(&sector("Emp. Adm. Part. - Máqs., Equip., Veíc. e Peças")),
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(!m.holding);
+        assert_eq!(m.trailing.unwrap().net_margin.value(), Some(dec!(0.1)));
+        // Equivalência grande fora do setor de participações: também não.
+        let m = company_metrics(
+            99901,
+            &with_equity_income(dec!(0.9)),
+            Some(&sector("Energia Elétrica")),
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(!m.holding);
+        // Sem cadastro, sem como dizer.
+        let m = company_metrics(99901, &with_equity_income(dec!(2)), None, None, None).unwrap();
+        assert!(!m.holding);
+        // Exatamente metade já é holding (prejuízo conta pelo módulo).
+        let mut filings = with_equity_income(dec!(0.5));
+        for filing in &mut filings {
+            for line in &mut filing.lines {
+                if line.code.starts_with("3.11") || line.code == "3.04.06" {
+                    line.value = -line.value;
+                }
+            }
+        }
+        let m = company_metrics(
+            99901,
+            &filings,
+            Some(&sector("Emp. Adm. Part. - Sem Setor Principal")),
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(m.holding);
+    }
+
+    #[test]
+    fn a_bank_holding_keeps_the_financial_reason() {
+        let mut m_filings = with_equity_income(dec!(1));
+        for filing in &mut m_filings {
+            for line in &mut filing.lines {
+                if line.code == "3.01" {
+                    line.description = "Receitas da Intermediação Financeira".into();
+                }
+            }
+        }
+        let m = company_metrics(
+            99901,
+            &m_filings,
+            Some(&sector("Emp. Adm. Part. - Bancos")),
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(m.holding);
+        let ttm = m.trailing.unwrap();
+        assert_eq!(ttm.net_margin.gap(), Some(Gap::FinancialTemplate));
+        assert_eq!(m.revenue_cagr.gap(), Some(Gap::FinancialTemplate));
+    }
+
+    #[test]
+    fn the_equity_method_line_is_kept() {
+        assert!(keeps_line(
+            Statement::Income,
+            "3.04.06",
+            "Resultado de Equivalência Patrimonial"
+        ));
+        assert!(is_holding_sector("Emp. Adm. Part. - Sem Setor Principal"));
+        assert!(is_holding_sector("EMP. ADM. PART. - BANCOS"));
+        assert!(!is_holding_sector("Bancos"));
     }
 
     proptest! {

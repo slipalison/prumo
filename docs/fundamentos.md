@@ -15,7 +15,9 @@ O código: regra pura em `backend/src/domain/fundamentals.rs` (com
 `fundamentals/company.rs` e `fundamentals/fund.rs`), leitura dos arquivos em
 `backend/src/fundamentals/cvm.rs`, download em `fundamentals/download.rs`, a B3
 em `fundamentals/b3.rs`, a tarefa em `fundamentals/mod.rs`, o banco em
-`store/fundamentals.rs` (migração 0020) e a rota em `http/fundamentals.rs`.
+`store/fundamentals.rs` (migrações 0020 e 0031) e a rota em `http/fundamentals.rs`.
+Os resultados trimestrais e a série mensal dos FIIs, que saem dos mesmos
+arquivos, estão em [resultados.md](resultados.md).
 
 ## Fontes
 
@@ -26,7 +28,7 @@ Conferidas em 26/11/2026 (todas respondem 200, sem login nem chave):
 | Cadastro das companhias | `dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv` | código CVM, CNPJ, nome, `SIT`, `SIT_EMISSOR`, setor |
 | DFP (anual) | `.../CIA_ABERTA/DOC/DFP/DADOS/dfp_cia_aberta_<ANO>.zip` | BPA, BPP, DRE, DFC (MD e MI), DVA; consolidada e individual |
 | ITR (trimestral) | `.../CIA_ABERTA/DOC/ITR/DADOS/itr_cia_aberta_<ANO>.zip` | o mesmo, com o acumulado do ano |
-| Informe mensal de FII | `.../FII/DOC/INF_MENSAL/DADOS/inf_mensal_fii_<ANO>.zip` | `geral` (ISIN, nome) e `complemento` (patrimônio líquido, cotas emitidas) |
+| Informe mensal de FII | `.../FII/DOC/INF_MENSAL/DADOS/inf_mensal_fii_<ANO>.zip` | `geral` (ISIN, nome) e `complemento` (patrimônio líquido, cotas emitidas e o rendimento do mês sobre o valor patrimonial, de cada mês) |
 | Informe trimestral de FII | `.../FII/DOC/INF_TRIMESTRAL/DADOS/inf_trimestral_fii_<ANO>.zip` | `geral` (o informe mais novo) e `imovel` (área e vacância de cada imóvel) |
 | Emissor na B3 | `sistemaswebb3-listados.b3.com.br/listedCompaniesProxy/CompanyCall/GetListedSupplementCompany/<base64>` | `codeCVM` e `totalNumberShares` |
 
@@ -104,9 +106,11 @@ as tem na mesma escala incerta); a diferença costuma ficar abaixo de 1%.
 
 Só as contas que a conta usa (`domain::fundamentals::keeps_line`), não o
 balanço inteiro: na DRE, as contas de nível 1 e as de nível 2 com
-"controlador" na descrição; no BPP, as de nível 1, a 2.01.04, a 2.02.01 e as
+"controlador" ou "equivalência patrimonial" na descrição (3.04.06, que diz se
+a companhia é holding); no BPP, as de nível 1, a 2.01.04, a 2.02.01 e as
 de nível 2 com "controlador"; no BPA, 1.01.01 e 1.01.02; na DFC, 6.01; na DVA,
-7.04.01. Por documento (DFP ou ITR de uma data), a versão mais alta.
+7.04.01. Por documento (DFP ou ITR de uma data), a versão mais alta. (A data
+de entrega de cada documento é da Agenda: `cvm_filing_receipts`.)
 
 - **Reapresentação:** `VERSAO` maior vence; um arquivo velho com versão menor
   nunca desfaz a reapresentação.
@@ -163,9 +167,9 @@ companhia com reconciliação); o da companhia pode ser diferente.
 | Razão | Fórmula | Sem número quando |
 |---|---|---|
 | ROE | lucro dos controladores ÷ patrimônio dos controladores **no fim do período** | patrimônio ≤ 0 |
-| Margem líquida | lucro dos controladores ÷ receita | receita ≤ 0 |
-| Margem EBITDA | EBITDA ÷ receita | receita ≤ 0 |
-| Dívida líquida / EBITDA | dívida líquida ÷ EBITDA | EBITDA ≤ 0 |
+| Margem líquida | lucro dos controladores ÷ receita | receita ≤ 0; holding (`holding`) |
+| Margem EBITDA | EBITDA ÷ receita | receita ≤ 0; holding |
+| Dívida líquida / EBITDA | dívida líquida ÷ EBITDA | EBITDA ≤ 0; holding |
 | Dívida líquida / PL | dívida líquida ÷ patrimônio total | patrimônio ≤ 0 |
 
 **ROE pelo patrimônio final, não pelo médio:** é o mesmo para o exercício e
@@ -212,6 +216,21 @@ fica vazio (`figures: null`).
 Prejuízo dá LPA negativo e patrimônio negativo, VPA negativo: o número sai, e
 quem usa (o Graham) decide. Sem o número de ações: `no_shares`.
 
+### Holding de participações
+
+`holding: true` quando o cadastro põe a companhia no setor de administração de
+participações (`SETOR_ATIV` começando por "Emp. Adm. Part.") **e** o resultado
+de equivalência patrimonial dos 12 meses (`trailing`) é pelo menos **metade**
+do lucro, em módulo. O setor sozinho não basta (WEG, CPFL, Neoenergia, BRF e
+dezenas de grupos estão nele e consolidam as controladas: a margem deles vale);
+a régua e a medida que a justifica estão em
+[resultados.md](resultados.md#não-se-aplica-holding-banco-e-seguradora). Na
+holding, as margens, a dívida líquida ÷ EBITDA e o CAGR da receita vêm com
+`gap: "holding"` (o EBITDA dela leva a equivalência, que não é caixa nem
+receita); o motivo de banco e seguradora (`financial_template`) tem
+precedência. A classificação é da companhia: a série de cinco exercícios usa a
+mesma régua.
+
 ### Recuperação judicial
 
 `SIT_EMISSOR` do cadastro começando por "EM RECUPERAÇÃO JUDICIAL". O texto
@@ -248,6 +267,8 @@ fica fora da média. Fundo de papel ou de fundos não tem imóvel para renda
 | `no_rental_property` | FII sem imóvel para renda acabado |
 | `no_quarterly_report` | FII fora do informe trimestral |
 | `no_shares` | sem número de ações (B3) ou de cotas (informe), ou zero |
+| `holding` | holding de participações: o lucro vem das participadas, a medida não se aplica |
+| `implausible` | número informado fora do possível (rendimento mensal de FII negativo ou acima de 10%) |
 
 E por que um ativo inteiro fica sem fundamentos (`reason`):
 
@@ -263,8 +284,9 @@ E por que um ativo inteiro fica sem fundamentos (`reason`):
 ## Limitações
 
 - **Holding** (Itaúsa, por exemplo) está no plano comercial, mas o lucro vem
-  da equivalência patrimonial e não da receita: a margem líquida passa de 100%.
-  O número é o da CVM; a leitura é de quem olha.
+  da equivalência patrimonial e não da receita: a margem líquida passaria de
+  100%. Desde a migração 0031 a margem dela vem como `holding` ("não se
+  aplica"); a régua está acima.
 - **Ano fiscal fora do calendário** funciona (o exercício é o ano do fim do
   período), mas os 12 meses só são montados quando os períodos se encaixam.
 - **Banco e seguradora:** só lucro, patrimônio, ROE, anos com lucro, CAGR do
@@ -304,7 +326,7 @@ pub enum AssetFundamentals {
 - Toda medida é `Figure`: `figure.value() -> Option<Decimal>` e
   `figure.gap() -> Option<Gap>` (exatamente um dos dois). Razões como fração
   (`0.15` é 15%).
-- `CompanyMetrics`: `cvm_code`, `name`, `template`, `judicial_recovery:
+- `CompanyMetrics`: `cvm_code`, `name`, `template`, `holding`, `judicial_recovery:
   Option<bool>` (`None`: cadastro sem a companhia), `issuer_status`,
   `registration_status`, `years: Vec<FiscalYear>` (cinco, do mais velho ao mais
   novo; `figures: None` = ano faltando), `trailing: Option<PeriodFigures>` (os

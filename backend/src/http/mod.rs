@@ -24,6 +24,7 @@ mod performance;
 mod price_references;
 mod profit;
 mod projection;
+mod results;
 mod risk;
 pub(crate) mod tax;
 mod treasury;
@@ -338,6 +339,7 @@ pub fn public_router(state: AppState, static_dir: &str) -> Router {
         .route("/compare/returns", get(compare::returns))
         .route("/agenda", get(agenda::show))
         .route("/agenda/unusual-income", get(agenda::unusual_income))
+        .route("/results", get(results::list))
         .route(
             "/income/goal",
             get(income::get_goal)

@@ -915,7 +915,7 @@ que a Análise não faz estão em [analise.md](analise.md). Tudo pelo dono.
           "current": 66.67,
           "limit": 70.0,
           "needed_contribution": null,
-          "detail": { "kind": "quality", "covered": 2, "total": 2, "failing": ["FRAC3"] }
+          "detail": { "kind": "quality", "covered": 2, "total": 2, "failing": ["FRAC3"], "not_applicable": [] }
         }
       ]
     }
@@ -997,10 +997,15 @@ que a Análise não faz estão em [analise.md](analise.md). Tudo pelo dono.
     `from`, `to`, `portfolio_percent`, `benchmark_percent`);
   - `years` (`positive`, `total`), `losses` (`assets[]` com `asset_id`, `label`,
     `asset_class`, `loss_percent`);
-  - `quality` (`covered`, `total`, `failing`): as regras de Qualidade, ponderadas
-    pelo valor de quem tem o dado. `covered` é quantos ativos do grupo entraram
-    na conta, `total` quantos o grupo tem e `failing` os que reprovaram (em
-    `quality_recovery`, as empresas em recuperação judicial).
+  - `quality` (`covered`, `total`, `failing`, `not_applicable`): as regras de
+    Qualidade, ponderadas pelo valor de quem tem o dado. `covered` é quantos
+    ativos do grupo entraram na conta, `total` quantos o grupo tem, `failing` os
+    que reprovaram (em `quality_recovery`, as empresas em recuperação judicial) e
+    `not_applicable` os do grupo em que a medida não se aplica, do maior valor
+    para o menor: `[{ "label": "ITSA4", "reason": "holding" }]`, com `reason`
+    `bank`, `insurer` ou `holding` (dívida ÷ EBITDA e margem EBITDA: banco,
+    seguradora e holding; caixa operacional: banco e seguradora). Sempre presente
+    (`[]` quando ninguém fica de fora por isso).
 - `attention`: os pontos de atenção por ativo (do maior valor para o menor; só
   quem tem ponto). `assessed` são os ativos com fundamentos e `without_data` as
   ações e FIIs ainda sem dados. Cada ponto tem `kind` — `income_drop` (`percent`),
@@ -2946,6 +2951,7 @@ Números fictícios:
         "cvm_code": 99901,
         "name": "CIA FICTICIA S.A.",
         "template": "commercial",
+        "holding": false,
         "judicial_recovery": false,
         "issuer_status": "FASE OPERACIONAL",
         "registration_status": "ATIVO",
@@ -3021,6 +3027,12 @@ Números fictícios:
 - `template`: `commercial`, `bank`, `insurer` ou `unknown`. Em banco e
   seguradora, receita, EBIT, dívida, caixa, EBITDA, margens e caixa operacional
   vêm com `gap: "financial_template"`.
+- `holding`: holding de participações (setor de participações no cadastro da
+  CVM e a equivalência patrimonial com pelo menos metade do lucro dos 12 meses;
+  ver [`resultados.md`](resultados.md#não-se-aplica-holding-banco-e-seguradora)).
+  Nela, `net_margin`, `ebitda_margin`, `net_debt_to_ebitda` (dos 12 meses e de
+  cada exercício) e `revenue_cagr` vêm com `gap: "holding"`. A tela escreve "não
+  se aplica" para `financial_template` e `holding`.
 - `trailing`: os últimos 12 meses (exercício + acumulado do ITR − acumulado do
   ano anterior) ou, sem trimestre depois do exercício, o próprio exercício; as
   datas e `sources` dizem qual. `null` sem nenhuma DFP.
@@ -3190,6 +3202,105 @@ do padrão: o selo de "Próximos pagamentos" da Renda.
 `income_id` é o `IncomeEvent` de `GET /income/summary` (`upcoming`). Lista
 vazia quando nada está fora do padrão.
 
+## Resultados
+
+Os resultados trimestrais das empresas da carteira e a série mensal dos FIIs,
+dos mesmos arquivos da CVM que os fundamentos já leem (nenhuma fonte nova).
+Método, contas, a variação com prejuízo e os limites em
+[`resultados.md`](resultados.md). Medidas como nos fundamentos
+(`{ value, gap }`).
+
+### `GET /api/v1/results`
+
+Ações Nacionais e FIIs da carteira (e o motivo dos que não têm dado), na
+ordem da carteira. Números fictícios:
+
+```json
+{
+  "assets": [
+    {
+      "asset_id": "6f1c…",
+      "symbol": "UMUM3",
+      "weight": 0.133333,
+      "kind": "company",
+      "company": {
+        "name": "INDUSTRIA FICTICIA S.A.",
+        "template": "commercial",
+        "holding": false,
+        "top_line": "revenue",
+        "synced_at": "2026-11-26T15:00:00Z",
+        "quarters": [
+          {
+            "fiscal_quarter": 3,
+            "period_start": "2026-07-01",
+            "period_end": "2026-09-30",
+            "method": "year_to_date_difference",
+            "top_line": { "value": 1500000.0, "gap": null },
+            "net_income": { "value": 150000.0, "gap": null },
+            "net_margin": { "value": 0.1, "gap": null },
+            "source": { "kind": "quarterly", "reference_date": "2026-09-30", "version": 1, "scope": "consolidated", "column": "current" },
+            "received_on": "2026-11-09"
+          }
+        ],
+        "year_ago": {
+          "period_end": "2025-09-30",
+          "top_line": { "kind": "percent", "value": 0.25, "gap": null },
+          "net_income": { "kind": "left_loss", "value": null, "gap": null },
+          "net_margin_points": { "value": 0.012, "gap": null }
+        },
+        "previous_quarter": null
+      },
+      "fund": null,
+      "reason": null
+    },
+    {
+      "asset_id": "9a2e…",
+      "symbol": "FICT11",
+      "weight": 0.6,
+      "kind": "fund",
+      "company": null,
+      "fund": {
+        "name": "FUNDO FICTICIO FII",
+        "synced_at": "2026-11-26T15:00:00Z",
+        "months": [
+          { "reference_date": "2026-10-01", "nav_per_share": { "value": 99.0, "gap": null }, "dividend_yield": { "value": 0.0069, "gap": null } }
+        ]
+      },
+      "reason": null
+    },
+    { "asset_id": "c3d4…", "symbol": "ETFX11", "weight": 0.0, "kind": "unsupported", "company": null, "fund": null, "reason": "no_cvm_code" }
+  ]
+}
+```
+
+- `weight`: o peso do ativo no valor total da carteira (fração, seis casas);
+  `null` com a carteira zerada. É o tamanho da bolha.
+- `top_line`: o que a linha de cima é — `revenue` (receita líquida, DRE 3.01),
+  `intermediation_result` (banco: resultado bruto da intermediação, 3.03),
+  `insurance_result` (seguradora: resultado bruto, 3.03) ou `unknown`.
+- `quarters`: até oito, do mais velho ao mais novo. `fiscal_quarter` é o
+  trimestre dentro do exercício; `method`: `first_quarter` (o acumulado de 3
+  meses), `year_to_date_difference` (acumulado − o do trimestre anterior) ou
+  `annual_less_nine_months` (DFP − nove meses do ITR). `net_income` é o lucro
+  dos controladores; `net_margin` vem com `holding` na holding e
+  `financial_template` em banco e seguradora. `source` é o documento que fecha o
+  trimestre e `received_on` quando a CVM o recebeu (`null` quando o acumulado
+  veio da coluna de comparação de um documento posterior).
+- `year_ago` / `previous_quarter`: o trimestre mais novo contra o mesmo do ano
+  anterior e contra o imediatamente anterior; `null` sem o trimestre comparado.
+  Cada variação tem `kind`: `percent` (com `value`, fração, só com a base
+  positiva), `left_loss`, `entered_loss`, `smaller_loss`, `larger_loss`,
+  `unchanged`, `no_base` (a base é zero) ou `missing` (com `gap`). Prejuízo numa
+  das pontas **nunca** vira percentual. `net_margin_points` é a diferença das
+  margens em fração (`0.012` = 1,2 ponto).
+- `months` do FII: até doze, do mais velho ao mais novo, do informe mensal:
+  `nav_per_share` (patrimônio ÷ cotas) e `dividend_yield` (o rendimento do mês
+  sobre o valor patrimonial, como o fundo informou; negativo ou acima de 10% vem
+  com `gap: "implausible"`). O informe mensal não traz o resultado do fundo nem
+  o rendimento em reais (ver `resultados.md`).
+- `kind: "unsupported"` com `reason`, como nos fundamentos (`pending` enquanto
+  a primeira busca não terminou).
+
 ## Logos dos ativos
 
 Cada ativo da B3 mostra o logo da empresa ou do fundo. O navegador **nunca** fala
@@ -3271,7 +3382,7 @@ Resposta: `{ as_of, assets, rows }`.
 - célula: `value`, `text` (setor ou tipo), `reason` (por que não há número:
   `not_applicable`, `not_tracked`, `no_price`, `no_price_history`,
   `short_history`, `no_dividend_history`, `no_sector`, `no_sector_source`, os
-  motivos de `GET /fundamentals`) e `mark` (`max`/`min`: o extremo da linha **entre
+  motivos de `GET /fundamentals`, inclusive `holding`) e `mark` (`max`/`min`: o extremo da linha **entre
   ativos do mesmo tipo**, só com 2 ou mais valores; empate marca todos).
 - Linha em que nenhum ativo se aplica não vem.
 

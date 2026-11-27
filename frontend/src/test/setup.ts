@@ -9,6 +9,7 @@ import { FakeEventSource } from "./eventSource";
 import { resetFundamentals } from "./fundamentalsHandlers";
 import { resetIcons } from "./iconsHandlers";
 import { resetPanel } from "./panelHandlers";
+import { resetResults } from "./resultsHandlers";
 import { resetDb, server } from "./server";
 import { resetTaxDb } from "./taxHandlers";
 
@@ -35,6 +36,7 @@ afterEach(() => {
   resetAnalysis();
   resetCompare();
   resetFundamentals();
+  resetResults();
   resetTaxDb();
   window.localStorage.clear();
   window.location.hash = "";

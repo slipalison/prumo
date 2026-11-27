@@ -254,7 +254,7 @@ describe("tela Análise", () => {
     // Quem não tem dado fica fora da conta, com o motivo, e não é aviso.
     const leverage = ruleItem(table, "Pelo menos 70% do valor em ações vem de empresas com dívida líquida de até 3 vezes o EBITDA");
     expect(within(leverage).getByText("Sem dado")).toBeInTheDocument();
-    expect(within(leverage).getByText("Precisa de empresa que não seja banco nem seguradora, com EBITDA positivo.")).toBeInTheDocument();
+    expect(within(leverage).getByText("Precisa de empresa que não seja banco, seguradora nem holding, com EBITDA positivo.")).toBeInTheDocument();
 
     // A regra sem limite: recuperação judicial.
     const recovery = ruleItem(table, "Nenhuma empresa da carteira está em recuperação judicial");

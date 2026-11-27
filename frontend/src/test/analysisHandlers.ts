@@ -300,23 +300,23 @@ export function defaultAnalysis(): Analysis {
   const quality = [
     result("quality_roe", "warning", {
       current: 0,
-      detail: { kind: "quality", covered: 1, total: 1, failing: ["ITSA4"] },
+      detail: { kind: "quality", covered: 1, total: 1, failing: ["ITSA4"], not_applicable: [] },
     }),
-    result("quality_profit", "ok", { current: 100, detail: { kind: "quality", covered: 1, total: 1, failing: [] } }),
+    result("quality_profit", "ok", { current: 100, detail: { kind: "quality", covered: 1, total: 1, failing: [], not_applicable: [] } }),
     result("quality_leverage", "no_data"),
-    result("quality_margin", "ok", { current: 100, detail: { kind: "quality", covered: 1, total: 1, failing: [] } }),
+    result("quality_margin", "ok", { current: 100, detail: { kind: "quality", covered: 1, total: 1, failing: [], not_applicable: [] } }),
     result("quality_cash", "no_data"),
     result("quality_recovery", "ok", {
       current: 0,
-      detail: { kind: "quality", covered: 1, total: 1, failing: [] },
+      detail: { kind: "quality", covered: 1, total: 1, failing: [], not_applicable: [] },
     }),
     result("quality_fii_pvp", "warning", {
       current: 40.5,
-      detail: { kind: "quality", covered: 4, total: 4, failing: ["KNRI11", "HGLG11"] },
+      detail: { kind: "quality", covered: 4, total: 4, failing: ["KNRI11", "HGLG11"], not_applicable: [] },
     }),
     result("quality_fii_vacancy", "ok", {
       current: 100,
-      detail: { kind: "quality", covered: 3, total: 4, failing: [] },
+      detail: { kind: "quality", covered: 3, total: 4, failing: [], not_applicable: [] },
     }),
   ];
 

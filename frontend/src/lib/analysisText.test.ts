@@ -266,26 +266,51 @@ describe("qualidade e pontos de atenção", () => {
   it("diz quantos ativos entraram na conta e quem ficou abaixo do critério", () => {
     const roe = result("quality_roe", "warning", {
       current: 60,
-      detail: { kind: "quality", covered: 2, total: 3, failing: ["AAAA3", "BBBB3"] },
+      detail: { kind: "quality", covered: 2, total: 3, failing: ["AAAA3", "BBBB3"], not_applicable: [] },
     });
     expect(ruleExplanation(roe, visible)).toBe("Entraram na conta 2 de 3 ativos. Abaixo do critério: AAAA3, BBBB3.");
     const ok = result("quality_fii_vacancy", "ok", {
       current: 100,
-      detail: { kind: "quality", covered: 1, total: 1, failing: [] },
+      detail: { kind: "quality", covered: 1, total: 1, failing: [], not_applicable: [] },
     });
     expect(ruleExplanation(ok, visible)).toBe("Entraram na conta 1 de 1 ativo.");
     expect(ruleExplanation(result("quality_roe", "no_data"), visible)).toBeNull();
   });
 
+  it("diz em quem a medida não se aplica, e por quê", () => {
+    const leverage = result("quality_leverage", "warning", {
+      current: 50,
+      detail: {
+        kind: "quality",
+        covered: 2,
+        total: 5,
+        failing: ["CCCC3"],
+        not_applicable: [
+          { label: "HOLD4", reason: "holding" },
+          { label: "BANC4", reason: "bank" },
+          { label: "SEGU3", reason: "insurer" },
+        ],
+      },
+    });
+    expect(ruleExplanation(leverage, visible)).toBe(
+      "Entraram na conta 2 de 5 ativos. Não se aplica a HOLD4 (holding), BANC4 (banco) e SEGU3 (seguradora). Abaixo do critério: CCCC3.",
+    );
+    const one = result("quality_margin", "ok", {
+      current: 100,
+      detail: { kind: "quality", covered: 1, total: 2, failing: [], not_applicable: [{ label: "HOLD4", reason: "holding" }] },
+    });
+    expect(ruleExplanation(one, visible)).toBe("Entraram na conta 1 de 2 ativos. Não se aplica a HOLD4 (holding).");
+  });
+
   it("recuperação judicial nomeia a empresa; sem nenhuma, diz quantas têm cadastro", () => {
     const bad = result("quality_recovery", "warning", {
       current: 1,
-      detail: { kind: "quality", covered: 3, total: 3, failing: ["RJ3"] },
+      detail: { kind: "quality", covered: 3, total: 3, failing: ["RJ3"], not_applicable: [] },
     });
     expect(ruleExplanation(bad, visible)).toBe("Em recuperação judicial: RJ3.");
     const fine = result("quality_recovery", "ok", {
       current: 0,
-      detail: { kind: "quality", covered: 3, total: 4, failing: [] },
+      detail: { kind: "quality", covered: 3, total: 4, failing: [], not_applicable: [] },
     });
     expect(ruleExplanation(fine, visible)).toBe("Nenhuma empresa está em recuperação judicial (3 com cadastro na CVM).");
   });

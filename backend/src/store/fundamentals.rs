@@ -21,7 +21,8 @@ use super::{decode_error, Asset, Store, StoreError};
 use crate::domain::asset_class::{AssetClass, Market};
 use crate::domain::fundamentals::{
     company_metrics, coverage, fund_metrics, AssetFundamentals, Column, Coverage, Figure, Filing,
-    FilingKind, FundReport, Gap, Line, Registration, Scope, Statement, Unsupported, Vacancy,
+    FilingKind, FundMonth, FundReport, Gap, Line, Registration, Scope, Statement, Unsupported,
+    Vacancy,
 };
 use crate::fundamentals::b3::IssuerInfo;
 use crate::fundamentals::download::Validators;
@@ -538,11 +539,27 @@ impl Store {
     }
 
     /// Grava o informe mensal dos fundos: só troca o gravado por um informe
-    /// mais novo (ou reapresentado).
+    /// mais novo (ou reapresentado). Sem a série de meses; ver
+    /// [`Store::save_fund_monthly`].
     pub async fn save_fund_reports(
         &self,
         key: &str,
         reports: &[FundReport],
+        validators: &Validators,
+        now: OffsetDateTime,
+    ) -> Result<(), StoreError> {
+        self.save_fund_monthly(key, reports, &[], validators, now)
+            .await
+    }
+
+    /// Grava o informe mensal dos fundos e a série de meses, numa transação:
+    /// o informe só troca o gravado por um mais novo (ou reapresentado); cada
+    /// mês, pela versão igual ou maior.
+    pub async fn save_fund_monthly(
+        &self,
+        key: &str,
+        reports: &[FundReport],
+        months: &[FundMonth],
         validators: &Validators,
         now: OffsetDateTime,
     ) -> Result<(), StoreError> {
@@ -581,6 +598,39 @@ impl Store {
         .bind(now)
         .execute(&mut *tx)
         .await?;
+        if !months.is_empty() {
+            let cnpjs: Vec<&str> = months.iter().map(|m| m.cnpj.as_str()).collect();
+            let dates: Vec<Date> = months.iter().map(|m| m.reference_date).collect();
+            let versions: Vec<i32> = months.iter().map(|m| m.version).collect();
+            let assets: Vec<Option<Decimal>> = months.iter().map(|m| m.net_assets).collect();
+            let shares: Vec<Option<Decimal>> = months.iter().map(|m| m.shares).collect();
+            let yields: Vec<Option<Decimal>> = months.iter().map(|m| m.dividend_yield).collect();
+            // O mesmo mês pode vir em mais de uma versão no arquivo: a maior.
+            sqlx::query(
+                "insert into cvm_fund_months as m
+                    (cnpj, reference_date, version, net_assets, shares, dividend_yield, updated_at)
+                 select distinct on (cnpj, reference_date)
+                        cnpj, reference_date, version, net_assets, shares, dividend_yield, $7
+                   from unnest($1::text[], $2::date[], $3::int[], $4::numeric[], $5::numeric[],
+                               $6::numeric[])
+                        as r (cnpj, reference_date, version, net_assets, shares, dividend_yield)
+                  order by cnpj, reference_date, version desc
+                 on conflict (cnpj, reference_date) do update set
+                    version = excluded.version, net_assets = excluded.net_assets,
+                    shares = excluded.shares, dividend_yield = excluded.dividend_yield,
+                    updated_at = excluded.updated_at
+                  where m.version <= excluded.version",
+            )
+            .bind(&cnpjs)
+            .bind(&dates)
+            .bind(&versions)
+            .bind(&assets)
+            .bind(&shares)
+            .bind(&yields)
+            .bind(now)
+            .execute(&mut *tx)
+            .await?;
+        }
         mark_checked(&mut tx, key, validators, &BTreeSet::new(), now).await?;
         tx.commit().await?;
         Ok(())
@@ -632,7 +682,7 @@ impl Store {
         Ok(())
     }
 
-    async fn company_filings(
+    pub(super) async fn company_filings(
         &self,
         codes: &[i32],
     ) -> Result<HashMap<i32, Vec<Filing>>, StoreError> {

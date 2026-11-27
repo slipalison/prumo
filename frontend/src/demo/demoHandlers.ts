@@ -11,8 +11,11 @@ import type {
 import type { Plan } from "../api/types";
 import { sampleAlerts } from "../test/alertsHandlers";
 import { samplePlan } from "../test/fixtures";
+import type { AssetFundamentals } from "../api/fundamentalsTypes";
+import { samplePeriod } from "../test/fundamentalsHandlers";
 import { sampleCash } from "../test/incomeHandlers";
 import { demoAgendaHandlers } from "./demoAgenda";
+import { demoResults } from "../test/resultsHandlers";
 import { demoIncomeEvents, demoIncomeSummary } from "./demoIncome";
 import { demoIncomeHistoryHandlers } from "./demoIncomeHistory";
 import {
@@ -313,6 +316,43 @@ function demoPlan(amount: number): Plan {
   return plan;
 }
 
+/** A holding da carteira fictícia nos fundamentos: margem e dívida sobre EBITDA "não se aplicam". */
+function demoFundamentals(): AssetFundamentals[] {
+  const holding = { value: null, gap: "holding" as const };
+  return [
+    {
+      asset_id: "a-itsa",
+      symbol: "ITSA4",
+      kind: "company",
+      fund: null,
+      reason: null,
+      company: {
+        cvm_code: 99922,
+        name: "HOLDING FICTICIA S.A.",
+        template: "commercial",
+        holding: true,
+        judicial_recovery: false,
+        issuer_status: "FASE OPERACIONAL",
+        registration_status: "ATIVO",
+        latest_filing: { kind: "quarterly", reference_date: "2026-09-30", version: 1, scope: "consolidated", column: "current" },
+        synced_at: "2026-11-26T15:00:00Z",
+        trailing: samplePeriod({ net_margin: holding, ebitda_margin: holding, net_debt_to_ebitda: holding }),
+        years: [2021, 2022, 2023, 2024, 2025].map((year) => ({
+          year,
+          figures: samplePeriod({ period_end: `${year}-12-31`, net_margin: holding, ebitda_margin: holding, net_debt_to_ebitda: holding }),
+        })),
+        profitable_years: { positive: 5, known: 5, window: 5, gap: null },
+        positive_operating_cash_years: { positive: 5, known: 5, window: 5, gap: null },
+        revenue_cagr: holding,
+        earnings_cagr: { value: 0.08, gap: null },
+        shares: 1_000_000_000,
+        earnings_per_share: { value: 1.4, gap: null },
+        book_value_per_share: { value: 9.8, gap: null },
+      },
+    },
+  ];
+}
+
 const asPeriod = (request: Request): PerformancePeriod =>
   (new URL(request.url).searchParams.get("period") as PerformancePeriod | null) ?? "12m";
 
@@ -333,6 +373,8 @@ export const demoHandlers: HttpHandler[] = [
   http.get("/api/v1/income", () => HttpResponse.json(demoIncomeEvents())),
   ...demoIncomeHistoryHandlers(),
   http.get("/api/v1/cash", () => HttpResponse.json(sampleCash())),
+  http.get("/api/v1/results", () => HttpResponse.json({ assets: demoResults() })),
+  http.get("/api/v1/fundamentals", () => HttpResponse.json({ assets: demoFundamentals() })),
   http.get("/api/v1/alerts", () => HttpResponse.json(sampleAlerts())),
   http.get("/api/v1/objectives", () =>
     HttpResponse.json({

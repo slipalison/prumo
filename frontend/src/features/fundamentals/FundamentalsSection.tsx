@@ -4,7 +4,6 @@ import type {
   CompanyFundamentals,
   Figure,
   FundFundamentals,
-  FundamentalsGap,
   PeriodFigures,
   YearCount,
 } from "../../api/fundamentalsTypes";
@@ -16,21 +15,9 @@ import { formatDay, formatPercent } from "../../lib/format";
 import { formatIsoDate } from "../../lib/income";
 import type { Money } from "../../lib/money";
 import { useMoney } from "../../lib/privacy";
-import { GAP_TEXT, UNSUPPORTED_TEXT } from "./fundamentalsText";
+import { Missing } from "./Missing";
+import { NOT_APPLICABLE_TEXT, UNSUPPORTED_TEXT, notApplicableReason } from "./fundamentalsText";
 import "./fundamentals.css";
-
-/** "—" com o motivo para quem passa o mouse e para o leitor de tela. */
-function Missing({ gap }: { gap: FundamentalsGap | null }) {
-  const text = gap ? GAP_TEXT[gap] : "sem número";
-  return (
-    <>
-      <span aria-hidden="true" title={text}>
-        —
-      </span>
-      <span className="sr-only">{text}</span>
-    </>
-  );
-}
 
 const percent = (figure: Figure) =>
   figure.value === null ? <Missing gap={figure.gap} /> : formatPercent(figure.value * 100);
@@ -57,9 +44,6 @@ const growth = (figure: Figure) => {
 
 const count = (c: YearCount) => (c.known === 0 ? <Missing gap={c.gap} /> : `${c.positive} de ${c.known}`);
 
-/** As contas que só o plano comercial tem: no banco, nem aparecem. */
-const applies = (figure: Figure) => figure.gap !== "financial_template" && figure.gap !== "unknown_template";
-
 function periodLabel(period: PeriodFigures): string {
   const twelveMonths = period.sources.some((s) => s.kind === "quarterly");
   return twelveMonths
@@ -83,7 +67,7 @@ function fundSourceLine(fund: FundFundamentals): string {
 
 function CompanyBody({ company, money }: { company: CompanyFundamentals; money: Money }) {
   const period = company.trailing;
-  const financial = company.template === "bank" || company.template === "insurer";
+  const reason = notApplicableReason(company.template, company.holding);
   const situation = company.issuer_status && company.issuer_status !== "FASE OPERACIONAL" ? company.issuer_status : null;
   return (
     <>
@@ -102,12 +86,10 @@ function CompanyBody({ company, money }: { company: CompanyFundamentals; money: 
         <>
           <span className="field__hint">{periodLabel(period)}</span>
           <dl className="fundamentals__grid">
-            {applies(period.revenue) && (
-              <div>
-                <dt>Receita líquida</dt>
-                <dd>{reais(money, period.revenue)}</dd>
-              </div>
-            )}
+            <div>
+              <dt>Receita líquida</dt>
+              <dd>{reais(money, period.revenue)}</dd>
+            </div>
             <div>
               <dt>Lucro líquido</dt>
               <dd>{reais(money, period.net_income)}</dd>
@@ -116,24 +98,18 @@ function CompanyBody({ company, money }: { company: CompanyFundamentals; money: 
               <dt>ROE</dt>
               <dd>{percent(period.roe)}</dd>
             </div>
-            {applies(period.net_margin) && (
-              <div>
-                <dt>Margem líquida</dt>
-                <dd>{percent(period.net_margin)}</dd>
-              </div>
-            )}
-            {applies(period.net_debt_to_ebitda) && (
-              <div>
-                <dt>Dív. líquida / EBITDA</dt>
-                <dd>{times(period.net_debt_to_ebitda)}</dd>
-              </div>
-            )}
-            {applies(period.net_debt_to_equity) && (
-              <div>
-                <dt>Dív. líquida / PL</dt>
-                <dd>{times(period.net_debt_to_equity)}</dd>
-              </div>
-            )}
+            <div>
+              <dt>Margem líquida</dt>
+              <dd>{percent(period.net_margin)}</dd>
+            </div>
+            <div>
+              <dt>Dív. líquida / EBITDA</dt>
+              <dd>{times(period.net_debt_to_ebitda)}</dd>
+            </div>
+            <div>
+              <dt>Dív. líquida / PL</dt>
+              <dd>{times(period.net_debt_to_equity)}</dd>
+            </div>
             <div>
               <dt>LPA</dt>
               <dd>{perShare(money, company.earnings_per_share)}</dd>
@@ -150,29 +126,20 @@ function CompanyBody({ company, money }: { company: CompanyFundamentals; money: 
           <dt>Anos com lucro</dt>
           <dd>{count(company.profitable_years)}</dd>
         </div>
-        {!financial && (
-          <div>
-            <dt>Anos com caixa operacional positivo</dt>
-            <dd>{count(company.positive_operating_cash_years)}</dd>
-          </div>
-        )}
-        {!financial && (
-          <div>
-            <dt>Receita, CAGR 5 anos</dt>
-            <dd>{growth(company.revenue_cagr)}</dd>
-          </div>
-        )}
+        <div>
+          <dt>Anos com caixa operacional positivo</dt>
+          <dd>{count(company.positive_operating_cash_years)}</dd>
+        </div>
+        <div>
+          <dt>Receita, CAGR 5 anos</dt>
+          <dd>{growth(company.revenue_cagr)}</dd>
+        </div>
         <div>
           <dt>Lucro, CAGR 5 anos</dt>
           <dd>{growth(company.earnings_cagr)}</dd>
         </div>
       </dl>
-      {financial && (
-        <p className="field__hint">
-          {company.template === "bank" ? "Banco" : "Seguradora"}: receita, dívida e EBITDA não se aplicam ao plano de contas de
-          instituição financeira.
-        </p>
-      )}
+      {reason && <p className="field__hint">{NOT_APPLICABLE_TEXT[reason]}</p>}
     </>
   );
 }

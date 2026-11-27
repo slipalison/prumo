@@ -48,12 +48,40 @@ pub const MAX_NET_DEBT_TO_EQUITY: Decimal = Decimal::ONE;
 /// Queda da renda de 12 meses (em %) a partir da qual vira ponto de atenção.
 pub const MIN_INCOME_DROP: Decimal = Decimal::from_parts(10, 0, 0, false, 0);
 
+/// Que tipo de empresa é, para dizer onde uma medida **não se aplica**.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Profile {
+    /// Indústria, comércio, serviços (e plano que o Prumo não reconhece).
+    Operating,
+    /// Holding de participações (`CompanyMetrics::holding`): o lucro vem da
+    /// equivalência patrimonial, não da receita.
+    Holding,
+    Bank,
+    Insurer,
+}
+
+impl Profile {
+    pub fn of(metrics: &CompanyMetrics) -> Self {
+        match metrics.template {
+            Template::Bank => Profile::Bank,
+            Template::Insurer => Profile::Insurer,
+            _ if metrics.holding => Profile::Holding,
+            _ => Profile::Operating,
+        }
+    }
+
+    /// Banco ou seguradora: o plano da CVM não tem dívida, EBITDA nem receita.
+    pub fn financial(self) -> bool {
+        matches!(self, Profile::Bank | Profile::Insurer)
+    }
+}
+
 /// O que a regra sabe de uma empresa. `None` = sem número (o motivo mora nos
-/// fundamentos); `financial` marca banco e seguradora, onde dívida, EBITDA e
-/// receita **não se aplicam**.
+/// fundamentos); `profile` diz onde dívida, EBITDA e receita **não se
+/// aplicam** (banco, seguradora e holding).
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompanyFacts {
-    pub financial: bool,
+    pub profile: Profile,
     pub roe: Option<Decimal>,
     /// Exercícios com lucro positivo e quantos têm o número.
     pub profit_years: Option<(u8, u8)>,
@@ -121,7 +149,7 @@ impl CompanyFacts {
             .map(|last| last.iter().sum::<Decimal>() / Decimal::from(CASH_YEARS));
         let years = metrics.profitable_years;
         Self {
-            financial: matches!(metrics.template, Template::Bank | Template::Insurer),
+            profile: Profile::of(metrics),
             roe: ratio(|p| p.roe.value()),
             profit_years: (years.known > 0).then_some((years.positive, years.known)),
             net_debt_to_ebitda: ratio(|p| p.net_debt_to_ebitda.value()),
@@ -190,22 +218,38 @@ pub enum Criterion {
     FundVacancy,
 }
 
+/// Por que a medida do critério não se aplica à empresa (`None`: se aplica).
+/// Dívida sobre EBITDA e margem EBITDA não existem no plano de banco e
+/// seguradora e, na holding, o EBITDA leva a equivalência patrimonial; o caixa
+/// operacional não existe no plano de banco e seguradora.
+pub fn not_applicable(criterion: Criterion, facts: &Facts) -> Option<Profile> {
+    let Facts::Company(c) = facts else {
+        return None;
+    };
+    match (criterion, c.profile) {
+        (Criterion::Leverage | Criterion::EbitdaMargin, Profile::Operating) => None,
+        (Criterion::Leverage | Criterion::EbitdaMargin, profile) => Some(profile),
+        (Criterion::OperatingCash, profile) if profile.financial() => Some(profile),
+        _ => None,
+    }
+}
+
 /// Passa (`Some(true)`), reprova (`Some(false)`) ou não entra na conta
 /// (`None`: sem número, ou a medida não se aplica ao ativo).
 pub fn verdict(criterion: Criterion, facts: &Facts) -> Option<bool> {
+    if not_applicable(criterion, facts).is_some() {
+        return None;
+    }
     match (criterion, facts) {
         (Criterion::Roe, Facts::Company(c)) => c.roe.map(|v| v >= MIN_ROE),
         (Criterion::ProfitYears, Facts::Company(c)) => c
             .profit_years
             .filter(|(_, known)| *known >= MIN_PROFIT_YEARS)
             .map(|(positive, _)| positive >= MIN_PROFIT_YEARS),
-        // Banco e seguradora não têm dívida nem EBITDA no plano da CVM: não se aplica.
-        (Criterion::Leverage, Facts::Company(c)) if !c.financial => {
+        (Criterion::Leverage, Facts::Company(c)) => {
             c.net_debt_to_ebitda.map(|v| v <= MAX_NET_DEBT_TO_EBITDA)
         }
-        (Criterion::EbitdaMargin, Facts::Company(c)) if !c.financial => {
-            c.ebitda_margin.map(|v| v > Decimal::ZERO)
-        }
+        (Criterion::EbitdaMargin, Facts::Company(c)) => c.ebitda_margin.map(|v| v > Decimal::ZERO),
         (Criterion::OperatingCash, Facts::Company(c)) => {
             c.operating_cash_average.map(|v| v > Decimal::ZERO)
         }
@@ -227,6 +271,9 @@ pub struct Weighted {
     pub total: u32,
     /// Os que reprovaram, do maior valor para o menor.
     pub failing: Vec<String>,
+    /// Os do grupo em que a medida não se aplica (banco, seguradora, holding),
+    /// do maior valor para o menor: ficam fora da conta, e a tela diz por quê.
+    pub not_applicable: Vec<(String, Profile)>,
 }
 
 fn is_company(a: &QualityAsset) -> bool {
@@ -239,7 +286,8 @@ pub fn weighted(assets: &[QualityAsset], criterion: Criterion) -> Option<Weighte
         Criterion::FundPriceToBook | Criterion::FundVacancy => !is_company(a),
         _ => is_company(a),
     };
-    let group: Vec<&QualityAsset> = assets.iter().filter(in_group).collect();
+    let mut group: Vec<&QualityAsset> = assets.iter().filter(in_group).collect();
+    group.sort_by(|a, b| b.value.cmp(&a.value).then_with(|| a.label.cmp(&b.label)));
     let mut judged: Vec<(&QualityAsset, bool)> = group
         .iter()
         .filter_map(|a| verdict(criterion, &a.facts).map(|pass| (*a, pass)))
@@ -262,6 +310,10 @@ pub fn weighted(assets: &[QualityAsset], criterion: Criterion) -> Option<Weighte
             .iter()
             .filter(|(_, pass)| !*pass)
             .map(|(a, _)| a.label.clone())
+            .collect(),
+        not_applicable: group
+            .iter()
+            .filter_map(|a| not_applicable(criterion, &a.facts).map(|p| (a.label.clone(), p)))
             .collect(),
     })
 }
@@ -290,6 +342,7 @@ pub fn judicial_recovery(assets: &[QualityAsset]) -> Option<Weighted> {
         covered: u32::try_from(known.len()).unwrap_or(u32::MAX),
         total: u32::try_from(total).unwrap_or(u32::MAX),
         failing,
+        not_applicable: Vec::new(),
     })
 }
 

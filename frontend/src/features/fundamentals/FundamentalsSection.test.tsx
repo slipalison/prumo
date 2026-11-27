@@ -8,7 +8,7 @@ import { HIDE_VALUES_KEY } from "../../lib/privacy";
 import { samplePeriod, setFundamentals } from "../../test/fundamentalsHandlers";
 import { renderApp } from "../../test/render";
 import { server } from "../../test/server";
-import { GAP_TEXT, UNSUPPORTED_TEXT } from "./fundamentalsText";
+import { GAP_TEXT, NOT_APPLICABLE_TEXT, UNSUPPORTED_TEXT } from "./fundamentalsText";
 
 /** Companhia fictícia, números inventados. */
 function company(overrides: Partial<CompanyFundamentals> = {}): AssetFundamentals {
@@ -22,6 +22,7 @@ function company(overrides: Partial<CompanyFundamentals> = {}): AssetFundamental
       cvm_code: 99901,
       name: "CIA FICTICIA S.A.",
       template: "commercial",
+      holding: false,
       judicial_recovery: false,
       issuer_status: "FASE OPERACIONAL",
       registration_status: "ATIVO",
@@ -150,7 +151,7 @@ describe("Fundamentos na folha do ativo", () => {
     expect(fundSection.textContent).not.toMatch(/R\$\s*\d/);
   });
 
-  it("banco: só lucro, ROE e anos com lucro; o resto não se aplica", async () => {
+  it("banco: só lucro, ROE e anos com lucro; o resto diz que não se aplica, e por quê", async () => {
     const missing = { value: null, gap: "financial_template" as const };
     setFundamentals([
       company({
@@ -171,10 +172,12 @@ describe("Fundamentos na folha do ativo", () => {
     ]);
     const { section } = await openSection(/ITSA4/, "ITSA4");
     expect(await within(section).findByText("Lucro líquido")).toBeInTheDocument();
+    // O indicador aparece com "não se aplica", nunca com um número ou um zero.
     for (const label of ["Receita líquida", "Margem líquida", "Dív. líquida / EBITDA", "Dív. líquida / PL", "Receita, CAGR 5 anos", "Anos com caixa operacional positivo"]) {
-      expect(within(section).queryByText(label)).toBeNull();
+      expect(value(section, label)).toHaveTextContent("não se aplica");
+      expect(within(value(section, label)).getByText("não se aplica")).toHaveAttribute("title", GAP_TEXT.financial_template);
     }
-    expect(section).toHaveTextContent("Banco: receita, dívida e EBITDA não se aplicam");
+    expect(section).toHaveTextContent(NOT_APPLICABLE_TEXT.bank);
     // O número que falta é um traço com o motivo, nunca um zero.
     expect(value(section, "ROE")).toHaveTextContent("—");
     expect(within(value(section, "ROE")).getByText(GAP_TEXT.non_positive_base)).toHaveClass("sr-only");
@@ -192,9 +195,31 @@ describe("Fundamentos na folha do ativo", () => {
       }),
     ]);
     const { section } = await openSection(/ITSA4/, "ITSA4");
-    expect(await within(section).findByText(/Seguradora: receita, dívida e EBITDA/)).toBeInTheDocument();
+    expect(await within(section).findByText(NOT_APPLICABLE_TEXT.insurer)).toBeInTheDocument();
     expect(within(section).queryByText("ROE")).toBeNull();
     expect(within(value(section, "Anos com lucro")).getByText(GAP_TEXT.no_filing)).toBeInTheDocument();
+  });
+
+  it("holding: margem e dívida sobre EBITDA não se aplicam, em vez de margem acima de 100%", async () => {
+    const holding = { value: null, gap: "holding" as const };
+    setFundamentals([
+      company({
+        holding: true,
+        trailing: samplePeriod({ net_margin: holding, ebitda_margin: holding, net_debt_to_ebitda: holding }),
+        revenue_cagr: holding,
+      }),
+    ]);
+    const { section } = await openSection(/ITSA4/, "ITSA4");
+    expect(await within(section).findByText("Margem líquida")).toBeInTheDocument();
+    expect(value(section, "Margem líquida")).toHaveTextContent("não se aplica");
+    expect(value(section, "Dív. líquida / EBITDA")).toHaveTextContent("não se aplica");
+    expect(value(section, "Receita, CAGR 5 anos")).toHaveTextContent("não se aplica");
+    expect(within(value(section, "Margem líquida")).getByText("não se aplica")).toHaveAttribute("title", GAP_TEXT.holding);
+    // O que vale para holding continua com número.
+    expect(value(section, "Receita líquida")).toHaveTextContent(/R\$\s1,5\sbi/);
+    expect(value(section, "ROE")).toHaveTextContent("15,0%");
+    expect(value(section, "Dív. líquida / PL")).toHaveTextContent("0,3×");
+    expect(section).toHaveTextContent(NOT_APPLICABLE_TEXT.holding);
   });
 
   it("avisa recuperação judicial e outra situação do emissor", async () => {

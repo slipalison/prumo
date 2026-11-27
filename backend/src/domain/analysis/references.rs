@@ -257,6 +257,7 @@ mod tests {
             cvm_code: 1,
             name: "EMPRESA FICTICIA".to_owned(),
             template: Template::Commercial,
+            holding: false,
             judicial_recovery: None,
             issuer_status: None,
             registration_status: None,

@@ -472,12 +472,12 @@ impl FundamentalsService {
                 store.save_registry(&key, &list, &validators, now).await
             }
             Source::FundMonthly(year) => {
-                let reports = download
+                let monthly = download
                     .parse(move |reader| cvm::parse_fund_monthly(reader, year))
                     .await
                     .map_err(|e| e.to_string())?;
                 store
-                    .save_fund_reports(&key, &reports, &validators, now)
+                    .save_fund_monthly(&key, &monthly.reports, &monthly.months, &validators, now)
                     .await
             }
             Source::FundQuarterly(year) => {

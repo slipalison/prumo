@@ -126,6 +126,78 @@ pub fn fund_metrics(
     }
 }
 
+/// O teto do rendimento de um mês que o Prumo aceita como número (10%: 120%
+/// ao ano). Acima disso, ou negativo, é erro de preenchimento: há fundo que
+/// escreve 0,89 querendo dizer 0,89% (medido no informe de 2026).
+pub const MAX_MONTHLY_YIELD: Decimal = Decimal::from_parts(1, 0, 0, false, 1);
+
+/// Um mês do informe mensal de um FII, como o fundo informou.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FundMonth {
+    pub cnpj: String,
+    /// `Data_Referencia`: o primeiro dia do mês do informe.
+    pub reference_date: Date,
+    pub version: i32,
+    pub net_assets: Option<Decimal>,
+    pub shares: Option<Decimal>,
+    /// `Percentual_Dividend_Yield_Mes`, em fração: o rendimento do mês sobre o
+    /// valor patrimonial da cota (não sobre a cotação).
+    pub dividend_yield: Option<Decimal>,
+}
+
+/// Um mês da série do fundo, pronto para a tela.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FundMonthFigures {
+    pub reference_date: Date,
+    /// Patrimônio líquido ÷ cotas emitidas no fim do mês.
+    pub nav_per_share: Figure,
+    /// O rendimento do mês sobre o valor patrimonial, como o fundo informou;
+    /// fora de 0 a [`MAX_MONTHLY_YIELD`], [`Gap::Implausible`].
+    pub dividend_yield: Figure,
+}
+
+/// Os `count` meses mais novos do fundo, do mais velho ao mais novo. Um mês
+/// repetido (reapresentação) vale pela versão maior.
+pub fn fund_months(months: &[FundMonth], count: usize) -> Vec<FundMonthFigures> {
+    let mut newest: std::collections::BTreeMap<Date, &FundMonth> =
+        std::collections::BTreeMap::new();
+    for month in months {
+        if newest
+            .get(&month.reference_date)
+            .is_some_and(|kept| kept.version >= month.version)
+        {
+            continue;
+        }
+        newest.insert(month.reference_date, month);
+    }
+    let skip = newest.len().saturating_sub(count);
+    newest
+        .into_values()
+        .skip(skip)
+        .map(|m| {
+            let net_assets = m
+                .net_assets
+                .map_or(Figure::missing(Gap::NotReported), Figure::known);
+            let shares = m
+                .shares
+                .filter(|s| *s > Decimal::ZERO)
+                .map_or(Figure::missing(Gap::NoShares), Figure::known);
+            let dividend_yield = match m.dividend_yield {
+                None => Figure::missing(Gap::NotReported),
+                Some(v) if v < Decimal::ZERO || v > MAX_MONTHLY_YIELD => {
+                    Figure::missing(Gap::Implausible)
+                }
+                Some(v) => Figure::known(v.round_dp(RATIO_DP).normalize()),
+            };
+            FundMonthFigures {
+                reference_date: m.reference_date,
+                nav_per_share: net_assets.ratio(shares),
+                dividend_yield,
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -223,6 +295,60 @@ mod tests {
         );
         assert_eq!(m.vacancy.value(), Some(dec!(0.05)));
         assert_eq!(m.vacancy_reference_date, Some(date!(2026 - 09 - 30)));
+    }
+
+    fn month(day: Date, version: i32, assets: &str, shares: &str, dy: &str) -> FundMonth {
+        FundMonth {
+            cnpj: "00.000.000/0001-91".into(),
+            reference_date: day,
+            version,
+            net_assets: assets.parse().ok(),
+            shares: shares.parse().ok(),
+            dividend_yield: dy.parse().ok(),
+        }
+    }
+
+    #[test]
+    fn the_monthly_series_keeps_the_newest_months_and_the_highest_version() {
+        let months = vec![
+            month(date!(2026 - 08 - 01), 1, "1000000", "10000", "0.0067"),
+            month(date!(2026 - 10 - 01), 1, "990000", "10000", "0.0070"),
+            month(date!(2026 - 09 - 01), 1, "1005000", "10000", "0.0068"),
+            // A reapresentação de setembro vence.
+            month(date!(2026 - 09 - 01), 2, "1010000", "10000", "0.0069"),
+            month(date!(2026 - 07 - 01), 1, "1000000", "10000", "0.0066"),
+        ];
+        let series = fund_months(&months, 3);
+        assert_eq!(
+            series.iter().map(|m| m.reference_date).collect::<Vec<_>>(),
+            vec![
+                date!(2026 - 08 - 01),
+                date!(2026 - 09 - 01),
+                date!(2026 - 10 - 01)
+            ]
+        );
+        assert_eq!(series[1].nav_per_share.value(), Some(dec!(101)));
+        assert_eq!(series[1].dividend_yield.value(), Some(dec!(0.0069)));
+        assert_eq!(series[2].nav_per_share.value(), Some(dec!(99)));
+    }
+
+    #[test]
+    fn an_impossible_monthly_yield_is_a_filling_error() {
+        let months = vec![
+            month(date!(2026 - 08 - 01), 1, "1000", "10", "0.89"),
+            month(date!(2026 - 09 - 01), 1, "1000", "10", "-0.002"),
+            month(date!(2026 - 10 - 01), 1, "1000", "0", ""),
+            month(date!(2026 - 11 - 01), 1, "", "10", "0.1"),
+        ];
+        let series = fund_months(&months, 12);
+        assert_eq!(series[0].dividend_yield.gap(), Some(Gap::Implausible));
+        assert_eq!(series[1].dividend_yield.gap(), Some(Gap::Implausible));
+        assert_eq!(series[2].dividend_yield.gap(), Some(Gap::NotReported));
+        assert_eq!(series[2].nav_per_share.gap(), Some(Gap::NoShares));
+        // 10% ainda é número; sem patrimônio, o motivo.
+        assert_eq!(series[3].dividend_yield.value(), Some(dec!(0.1)));
+        assert_eq!(series[3].nav_per_share.gap(), Some(Gap::NotReported));
+        assert!(fund_months(&[], 12).is_empty());
     }
 
     proptest! {

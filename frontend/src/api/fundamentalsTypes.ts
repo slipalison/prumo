@@ -16,7 +16,11 @@ export type FundamentalsGap =
   | "no_quote"
   | "no_rental_property"
   | "no_quarterly_report"
-  | "no_shares";
+  | "no_shares"
+  /** Holding de participações: margens, dívida sobre EBITDA e CAGR da receita não se aplicam. */
+  | "holding"
+  /** O número informado está fora do possível (erro de preenchimento). */
+  | "implausible";
 
 export type Figure = { value: number | null; gap: FundamentalsGap | null };
 
@@ -61,6 +65,8 @@ export type CompanyFundamentals = {
   cvm_code: number;
   name: string;
   template: AccountTemplate;
+  /** Holding de participações (setor de participações no cadastro da CVM e o lucro vindo da equivalência patrimonial). */
+  holding: boolean;
   judicial_recovery: boolean | null;
   issuer_status: string | null;
   registration_status: string | null;

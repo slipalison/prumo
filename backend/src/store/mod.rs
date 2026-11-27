@@ -14,6 +14,7 @@ mod compare;
 pub mod fundamentals;
 pub mod health;
 pub mod icons;
+pub mod results;
 pub mod sectors;
 pub mod tax;
 

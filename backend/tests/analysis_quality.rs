@@ -344,7 +344,13 @@ async fn quality_attention_and_graham_contract() {
     assert_eq!(roe["direction"], "at_least");
     assert_eq!(
         roe["detail"],
-        json!({ "kind": "quality", "covered": 2, "total": 2, "failing": ["FRAC3"] })
+        json!({
+            "kind": "quality",
+            "covered": 2,
+            "total": 2,
+            "failing": ["FRAC3"],
+            "not_applicable": []
+        })
     );
     // As duas tiveram lucro nos 5 anos, caixa operacional e margem positivos.
     for id in ["quality_profit", "quality_cash", "quality_margin"] {
@@ -376,7 +382,13 @@ async fn quality_attention_and_graham_contract() {
     assert_eq!(vacancy["current"], 100.0);
     assert_eq!(
         vacancy["detail"],
-        json!({ "kind": "quality", "covered": 1, "total": 2, "failing": [] })
+        json!({
+            "kind": "quality",
+            "covered": 1,
+            "total": 2,
+            "failing": [],
+            "not_applicable": []
+        })
     );
 
     // A pontuação da Qualidade: 4 ok (lucro, caixa, margem, vacância) de 8.

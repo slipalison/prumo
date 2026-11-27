@@ -23,8 +23,8 @@ use time::Date;
 
 use super::download::{FetchError, Limited};
 use crate::domain::fundamentals::{
-    keeps_line, Column, Filing, FilingKind, FundReport, Line, Registration, RentalProperty, Scope,
-    Statement,
+    keeps_line, Column, Filing, FilingKind, FundMonth, FundReport, Line, Registration,
+    RentalProperty, Scope, Statement,
 };
 use crate::sectors::cvm::{isin_root, latin1};
 
@@ -445,17 +445,24 @@ impl FundKeys {
     }
 }
 
+/// O que o informe mensal de um ano dá: o mais novo de cada fundo (para o P/VP)
+/// e todos os meses (a série de rendimento e valor patrimonial).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct FundMonthly {
+    pub reports: Vec<FundReport>,
+    pub months: Vec<FundMonth>,
+}
+
 /// Lê o informe mensal de `year`: o cadastro (`geral`: ISIN e nome) e o
-/// `complemento` (patrimônio líquido e cotas emitidas), o mais novo de cada
-/// fundo com ISIN de cota.
-pub fn parse_fund_monthly<R: Read>(
-    mut reader: R,
-    year: i32,
-) -> Result<Vec<FundReport>, FetchError> {
+/// `complemento` (patrimônio líquido, cotas emitidas e o rendimento do mês
+/// sobre o valor patrimonial), de cada fundo com ISIN de cota: o informe mais
+/// novo e a série de meses.
+pub fn parse_fund_monthly<R: Read>(mut reader: R, year: i32) -> Result<FundMonthly, FetchError> {
     let general_name = format!("inf_mensal_fii_geral_{year}.csv");
     let complement_name = format!("inf_mensal_fii_complemento_{year}.csv");
     let mut general: Latest<(String, String)> = Latest::new();
     let mut complement: Latest<(Option<Decimal>, Option<Decimal>)> = Latest::new();
+    let mut months: Vec<FundMonth> = Vec::new();
     let (mut saw_general, mut saw_complement) = (false, false);
     while let Some(entry) =
         zip::read::read_zipfile_from_stream(&mut reader).map_err(format_error)?
@@ -481,17 +488,21 @@ pub fn parse_fund_monthly<R: Read>(
             let keys = FundKeys::read(&columns)?;
             let equity = columns.index("Patrimonio_Liquido")?;
             let shares = columns.index("Cotas_Emitidas")?;
+            let dividend_yield = columns.optional("Percentual_Dividend_Yield_Mes");
             let mut record = csv::ByteRecord::new();
             while csv.read_byte_record(&mut record).map_err(format_error)? {
                 if let Some((cnpj, key)) = keys.of(&record) {
-                    complement.offer(
-                        cnpj,
-                        key,
-                        (
-                            number(&text(&record, equity)),
-                            number(&text(&record, shares)),
-                        ),
-                    );
+                    let net_assets = number(&text(&record, equity));
+                    let issued = number(&text(&record, shares));
+                    months.push(FundMonth {
+                        cnpj: cnpj.chars().take(20).collect(),
+                        reference_date: key.0,
+                        version: key.1,
+                        net_assets,
+                        shares: issued,
+                        dividend_yield: dividend_yield.and_then(|i| number(&text(&record, i))),
+                    });
+                    complement.offer(cnpj, key, (net_assets, issued));
                 }
             }
         }
@@ -520,7 +531,17 @@ pub fn parse_fund_monthly<R: Read>(
         )
         .collect();
     reports.sort_by(|a, b| a.cnpj.cmp(&b.cnpj));
-    Ok(reports)
+    // Só os meses dos fundos com cota negociável (os que viraram informe).
+    let listed: HashSet<&str> = reports.iter().map(|r| r.cnpj.as_str()).collect();
+    months.retain(|m| listed.contains(m.cnpj.as_str()));
+    months.sort_by(|a, b| {
+        (a.cnpj.as_str(), a.reference_date, a.version).cmp(&(
+            b.cnpj.as_str(),
+            b.reference_date,
+            b.version,
+        ))
+    });
+    Ok(FundMonthly { reports, months })
 }
 
 /// A vacância declarada no informe trimestral mais novo de um fundo.
@@ -888,6 +909,9 @@ mod tests {
             .find(|l| l.statement == statement && l.column == column && l.code == code)
     }
 
+    const INDEX_HEADER: &str =
+        "CNPJ_CIA;DT_REFER;VERSAO;DENOM_CIA;CD_CVM;CATEG_DOC;ID_DOC;DT_RECEB;LINK_DOC";
+
     #[test]
     fn reads_only_the_portfolio_companies_in_the_highest_version() {
         let bytes = dfp_2025();
@@ -1197,7 +1221,8 @@ mod tests {
             ("inf_mensal_fii_complemento_2026.csv", complement),
             ("inf_mensal_fii_geral_2026.csv", general),
         ]);
-        let reports = parse_fund_monthly(bytes.as_slice(), 2026).unwrap();
+        let monthly = parse_fund_monthly(bytes.as_slice(), 2026).unwrap();
+        let reports = &monthly.reports;
         assert_eq!(reports.len(), 1);
         let r = &reports[0];
         assert_eq!(r.issuer, "FICT");
@@ -1206,6 +1231,14 @@ mod tests {
         assert_eq!(r.version, 2);
         assert_eq!(r.net_assets, Some(dec!(1100000)));
         assert_eq!(r.shares, Some(dec!(10000)));
+        // A série tem os meses (e as versões) do fundo com ISIN; o sem ISIN
+        // fica fora. Sem a coluna do rendimento, o mês vem sem ele.
+        assert_eq!(monthly.months.len(), 3);
+        assert!(monthly
+            .months
+            .iter()
+            .all(|m| m.cnpj == "00.000.000/0001-91"));
+        assert!(monthly.months.iter().all(|m| m.dividend_yield.is_none()));
         assert!(parse_fund_monthly(
             zip(&[("inf_mensal_fii_geral_2026.csv", GENERAL_HEADER.to_owned())]).as_slice(),
             2026
@@ -1247,5 +1280,198 @@ mod tests {
         assert_eq!(vacancy.value(), Some(dec!(0.15)));
         assert_eq!(n, 2);
         assert!(quarters[1].properties.is_empty());
+    }
+
+    /// As linhas de resultado de uma companhia fictícia num ITR ou numa DFP,
+    /// como a CVM publica: no ITR, o trimestre **e** o acumulado do ano, da
+    /// coluna do período e da de comparação. Valores em milhares.
+    fn result_rows(
+        cvm: &str,
+        refer: &str,
+        order: &str,
+        year: i32,
+        quarters: &[(i64, i64)],
+        split_in_zeros: bool,
+    ) -> Vec<String> {
+        let ends = ["03-31", "06-30", "09-30", "12-31"];
+        let starts = ["01-01", "04-01", "07-01", "10-01"];
+        let k = quarters.len();
+        let mut rows = Vec::new();
+        let mut periods = vec![(format!("{year}-01-01"), quarters.to_vec())];
+        if k > 1 && k < 4 {
+            // O trimestre sozinho (o ITR do 2º e do 3º traz os dois).
+            periods.push((format!("{year}-{}", starts[k - 1]), vec![quarters[k - 1]]));
+        }
+        for (start, part) in periods {
+            let end = format!("{year}-{}", ends[k - 1]);
+            let revenue: i64 = part.iter().map(|q| q.0).sum();
+            let profit: i64 = part.iter().map(|q| q.1).sum();
+            let (own, minority) = if split_in_zeros { (0, 0) } else { (profit, 0) };
+            for (code, desc, value) in [
+                ("3.01", "Receita de Venda de Bens e/ou Serviços", revenue),
+                ("3.11", "Lucro/Prejuízo Consolidado do Período", profit),
+                ("3.11.01", "Atribuído a Sócios da Empresa Controladora", own),
+                ("3.11.02", "Atribuído a Sócios Não Controladores", minority),
+            ] {
+                rows.push(flow_row(
+                    cvm,
+                    refer,
+                    1,
+                    order,
+                    (&start, &end),
+                    (code, desc),
+                    &format!("{value}.0000000000"),
+                ));
+            }
+        }
+        rows
+    }
+
+    fn company_archive(prefix: &str, year: i32, documents: &[(String, Vec<String>)]) -> Vec<u8> {
+        let mut dre = vec![COMPANY_HEADER.to_owned()];
+        let mut index = vec![INDEX_HEADER.to_owned()];
+        for (refer, rows) in documents {
+            dre.extend(rows.iter().cloned());
+            for cvm in ["099921", "099922"] {
+                index.push(format!(
+                    "00.000.000/0001-00;{refer};1;CIA FICTICIA SA;{cvm};{};1;{refer};http://exemplo",
+                    prefix.to_uppercase()
+                ));
+            }
+        }
+        zip(&[
+            (
+                &format!("{prefix}_cia_aberta_{year}.csv"),
+                index.join("\r\n"),
+            ),
+            (
+                &format!("{prefix}_cia_aberta_BPA_con_{year}.csv"),
+                BALANCE_HEADER.to_owned(),
+            ),
+            (
+                &format!("{prefix}_cia_aberta_BPP_con_{year}.csv"),
+                BALANCE_HEADER.to_owned(),
+            ),
+            (
+                &format!("{prefix}_cia_aberta_DRE_con_{year}.csv"),
+                dre.join("\r\n"),
+            ),
+        ])
+    }
+
+    /// Confere os trimestres que o Prumo monta (diferença de acumulados e DFP
+    /// − nove meses) contra as linhas do próprio trimestre que o CSV cru do ITR
+    /// traz e o leitor descarta, para uma companhia que divide o lucro e outra
+    /// que entrega a divisão toda em zero.
+    #[test]
+    fn the_quarters_match_the_quarter_rows_of_the_raw_files() {
+        use crate::domain::fundamentals::{quarterly_results, Change};
+        let y2025: [(i64, i64); 4] = [(100, 10), (120, -5), (130, 12), (150, 20)];
+        let y2026: [(i64, i64); 3] = [(110, -3), (125, 8), (140, 15)];
+        let mut filings = Vec::new();
+        for (cvm, zeros) in [("099921", false), ("099922", true)] {
+            let itr = |year: i32, current: &[(i64, i64)], previous: Option<&[(i64, i64)]>| {
+                let documents: Vec<(String, Vec<String>)> = (1..=current.len())
+                    .map(|k| {
+                        let refer = format!("{year}-{}", ["03-31", "06-30", "09-30"][k - 1]);
+                        let mut rows =
+                            result_rows(cvm, &refer, "ÚLTIMO", year, &current[..k], zeros);
+                        if let Some(previous) = previous {
+                            rows.extend(result_rows(
+                                cvm,
+                                &refer,
+                                "PENÚLTIMO",
+                                year - 1,
+                                &previous[..k],
+                                zeros,
+                            ));
+                        }
+                        (refer, rows)
+                    })
+                    .collect();
+                company_archive("itr", year, &documents)
+            };
+            let wanted: HashSet<i32> = [cvm.parse::<i32>().unwrap()].into_iter().collect();
+            let archives = [
+                (
+                    FilingKind::Quarterly,
+                    2026,
+                    itr(2026, &y2026, Some(&y2025[..3])),
+                ),
+                (FilingKind::Quarterly, 2025, itr(2025, &y2025[..3], None)),
+                (
+                    FilingKind::Annual,
+                    2025,
+                    company_archive(
+                        "dfp",
+                        2025,
+                        &[(
+                            "2025-12-31".to_owned(),
+                            result_rows(cvm, "2025-12-31", "ÚLTIMO", 2025, &y2025, zeros),
+                        )],
+                    ),
+                ),
+            ];
+            for (kind, year, bytes) in archives {
+                filings
+                    .extend(parse_company_archive(bytes.as_slice(), kind, year, &wanted).unwrap());
+            }
+        }
+        for cvm_code in [99921, 99922] {
+            let own: Vec<Filing> = filings
+                .iter()
+                .filter(|f| f.cvm_code == cvm_code)
+                .cloned()
+                .collect();
+            let results = quarterly_results(&own, &HashMap::new(), false);
+            let got: Vec<(Decimal, Decimal)> = results
+                .quarters
+                .iter()
+                .map(|q| (q.top_line.value().unwrap(), q.net_income.value().unwrap()))
+                .collect();
+            // As linhas do trimestre do CSV cru, em reais (escala MIL).
+            let want: Vec<(Decimal, Decimal)> = y2025
+                .iter()
+                .chain(y2026.iter())
+                .map(|(r, p)| (Decimal::from(*r * 1000), Decimal::from(*p * 1000)))
+                .collect();
+            assert_eq!(got, want, "companhia {cvm_code}");
+            // 15 contra 12 um ano antes; 8 contra −5 no 2º: saiu do prejuízo.
+            let year_ago = results.year_ago.unwrap();
+            assert_eq!(year_ago.net_income, Change::Percent { value: dec!(0.25) });
+            let q2 = &results.quarters[5];
+            assert_eq!(q2.net_income.value(), Some(dec!(8000)));
+            assert_eq!(
+                Change::between(results.quarters[1].net_income, q2.net_income),
+                Change::LeftLoss
+            );
+        }
+    }
+
+    #[test]
+    fn the_monthly_yield_comes_from_the_complement() {
+        let general = [
+            GENERAL_HEADER,
+            "FII;00.000.000/0001-91;2026-09-01;1;2026-10-10;FUNDO FICTICIO FII;2010-01-01;Geral;BRFICTCTF000;100",
+            "FII;00.000.000/0001-91;2026-10-01;1;2026-11-10;FUNDO FICTICIO FII;2010-01-01;Geral;BRFICTCTF000;100",
+        ]
+        .join("\r\n");
+        let header = format!("{COMPLEMENT_HEADER};Percentual_Rentabilidade_Efetiva_Mes;Percentual_Rentabilidade_Patrimonial_Mes;Percentual_Dividend_Yield_Mes");
+        let complement = [
+            header.as_str(),
+            "00.000.000/0001-91;2026-09-01;1;2026-09-01;10;0;1000000;10000;100;0.008;0.001;0.007",
+            "00.000.000/0001-91;2026-10-01;1;2026-10-01;10;0;1010000;10000;101;0.009;0.002;0.0069",
+        ]
+        .join("\r\n");
+        let bytes = zip(&[
+            ("inf_mensal_fii_complemento_2026.csv", complement),
+            ("inf_mensal_fii_geral_2026.csv", general),
+        ]);
+        let monthly = parse_fund_monthly(bytes.as_slice(), 2026).unwrap();
+        assert_eq!(monthly.months.len(), 2);
+        assert_eq!(monthly.months[0].reference_date, date!(2026 - 09 - 01));
+        assert_eq!(monthly.months[0].dividend_yield, Some(dec!(0.007)));
+        assert_eq!(monthly.months[1].net_assets, Some(dec!(1010000)));
+        assert_eq!(monthly.months[1].dividend_yield, Some(dec!(0.0069)));
     }
 }
