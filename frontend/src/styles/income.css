@@ -366,11 +366,11 @@
 .income-table-wrap {
   overflow-x: auto;
   border-radius: var(--r-sm);
+  container-type: inline-size;
 }
 
 .income-table {
   width: 100%;
-  min-width: 760px;
   border-collapse: collapse;
   font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
@@ -419,6 +419,78 @@
 .income-table__total {
   color: var(--gold-text);
   font-weight: 700;
+}
+
+/* Abaixo de 760 px as 14 colunas não cabem: cada ano vira um bloco com os meses
+   em grade (quatro por linha; três no celular) e o nome do mês antes do valor,
+   sem rolagem lateral. A semântica de tabela fica (o recurso da `DataTable`). */
+@container (max-width: 759px) {
+  .income-table,
+  .income-table tbody {
+    display: block;
+  }
+
+  .income-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  .income-table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-1) var(--space-2);
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .income-table tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .income-table tbody th {
+    grid-column: 1 / -1;
+  }
+
+  .income-table th,
+  .income-table td {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    border-bottom: 0;
+    text-align: left;
+  }
+
+  .income-table td::before {
+    content: attr(data-label);
+    color: var(--text-subtle);
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    text-transform: capitalize;
+  }
+
+  .income-table td.income-table__total {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+}
+
+@container (min-width: 480px) and (max-width: 759px) {
+  .income-table tbody tr {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* Em tabela, as 14 colunas pedem 760 px; perto disso a tabela rola por dentro. */
+@container (min-width: 760px) {
+  .income-table {
+    min-width: 760px;
+  }
 }
 
 /* --- Linha de baixo: Quem pagou e a estimativa, na mesma altura --- */

@@ -354,7 +354,7 @@
     text-transform: none;
   }
 
-  .heatmap__total {
+  .heatmap__cell.heatmap__total {
     grid-column: 1 / -1;
     flex-direction: row;
     justify-content: space-between;

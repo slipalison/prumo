@@ -837,12 +837,13 @@ e o botão **Lançar provento** à direita.
    valor sai mascarado (barras sem número, balão, tabelas e o resumo do leitor
    de tela); percentuais e datas ficam.
 7. **Ano por mês:** tabela real (`<table>`), uma linha por ano, na largura
-   inteira.
+   inteira. Abaixo de 760 px de largura (celular), cada ano vira um bloco com os
+   meses em grade e o nome do mês antes do valor, sem rolagem lateral.
 8. **Proventos lançados:** painel recolhido (`FoldPanel`, `<details>`) com a
    contagem; aberto, a lista com apagar (confirmação na própria linha). O
    automático tem o mesmo selo, e a confirmação diz que ele não volta na
    próxima busca.
-8. **Lançar provento:** folha com ativo, tipo (chips), data de pagamento, valor
+9. **Lançar provento:** folha com ativo, tipo (chips), data de pagamento, valor
    por cota, quantidade e data ex opcional. **Em branco, a quantidade vale a do
    livro na data com** (não a de hoje): o campo mostra o número que o servidor
    vai usar ("Em branco vale o que o livro tinha na data com (09/11/2026)") e ele
@@ -855,41 +856,41 @@ e o botão **Lançar provento** à direita.
    branco, o servidor aplica o mesmo padrão. Só vale para o lançamento novo:
    o que já está gravado não muda. Renda fixa por valor pede só o valor recebido. A folha não
    mudou no redesenho (cabe em uma tela).
-9. **Histórico** (entre "Quem pagou"/estimativa e o "Ano por mês", na largura
-   inteira; só com provento no livro). Um painel com duas vistas, escolhidas no
-   segmentado do cabeçalho: **Barras** e **Mapa de calor**. Embaixo do título,
-   as escolhas que valem para as duas — **Pagamento | Data com** e **Líquido |
-   Bruto** (segmentados) — e as de cada vista: nas barras, três listas
-   (`<select>` com rótulo): **Intervalo** (mês, trimestre, semestre, ano),
-   **Agrupar por** (total, classe, segmento, ativo) e **Período** (12 meses,
-   2 anos — o padrão —, 5 anos, tudo); no mapa, **R$ | DY | YoC**. O ⓘ do título
-   explica a data com, o líquido e as duas contas do mapa. Método em
-   [renda.md](renda.md).
-   - **Barras**: SVG próprio na largura real do painel (barra até 48 px), uma
-     parte por grupo, de baixo para cima na ordem da legenda, com um vão de 2 px
-     entre as partes; dentro de cada parte o recebido é cheio e o a receber,
-     listrado na mesma cor. Classe tem a cor da classe; segmento e ativo, as
-     seis cores de "Quem pagou" pela ordem do histórico inteiro (a cor segue o
-     grupo, não muda com o período) e o resto em "Outros (N)"; ativo apagado é
-     cinza. Os rótulos do eixo rareiam para não se encostar (`nov/26`, `4T26`,
-     `2S26`, `2026`). A legenda dá o nome e o total de cada grupo no período e o
-     total; o balão de cada barra lista as partes; a tabela escondida, cada
-     intervalo × grupo. Período sem provento: "Nenhum provento nesse período."
-   - **Mapa de calor**: tabela real, um ano por linha, janeiro a dezembro e o
-     total ("Total" em R$, "No ano" em DY e YoC). Cada célula traz o número (R$
-     com centavos até R$ 100, sem centavos até mil, "R$ 1,2 mil" depois; DY e
-     YoC com duas casas) e um fundo dourado em cinco passos pela fração do maior
-     mês — a cor só reforça o número; zero e sem base ficam "–" e sem cor, e o
-     total do ano não entra na escala. O mês com algo a receber tem borda
-     tracejada; o parcial (provento fora da conta), um `*`. Embaixo, a escala
-     ("menos ▪▪▪▪▪ mais"), "inclui a receber" e, em DY e YoC, "* parcial". O
-     leitor de tela ouve o valor exato e a conta de cada célula ("0,83%: R$ 41,25
-     do patrimônio médio de R$ 5.000,00"), que também vai no balão do mouse.
-     Abaixo de 1000 px de largura do painel, cada ano vira um bloco com os meses
-     em grade (seis por linha; quatro no celular) e o nome do mês antes do valor:
-     sem rolagem lateral.
-   - Com o olho fechado, todo R$ (eixo, legenda, balão, células, tabela
-     escondida) sai mascarado; DY e YoC ficam.
+10. **Histórico** (entre a renda projetada e o "Ano por mês", na largura
+    inteira; só com provento no livro). Um painel com duas vistas, escolhidas no
+    segmentado do cabeçalho: **Barras** e **Mapa de calor**. Embaixo do título,
+    as escolhas que valem para as duas — **Pagamento | Data com** e **Líquido |
+    Bruto** (segmentados) — e as de cada vista: nas barras, três listas
+    (`<select>` com rótulo): **Intervalo** (mês, trimestre, semestre, ano),
+    **Agrupar por** (total, classe, segmento, ativo) e **Período** (12 meses,
+    2 anos — o padrão —, 5 anos, tudo); no mapa, **R$ | DY | YoC**. O ⓘ do título
+    explica a data com, o líquido e as duas contas do mapa. Método em
+    [renda.md](renda.md).
+    - **Barras**: SVG próprio na largura real do painel (barra até 48 px), uma
+      parte por grupo, de baixo para cima na ordem da legenda, com um vão de 2 px
+      entre as partes; dentro de cada parte o recebido é cheio e o a receber,
+      listrado na mesma cor. Classe tem a cor da classe; segmento e ativo, as
+      seis cores de "Quem pagou" pela ordem do histórico inteiro (a cor segue o
+      grupo, não muda com o período) e o resto em "Outros (N)"; ativo apagado é
+      cinza. Os rótulos do eixo rareiam para não se encostar (`nov/26`, `4T26`,
+      `2S26`, `2026`). A legenda dá o nome e o total de cada grupo no período e o
+      total; o balão de cada barra lista as partes; a tabela escondida, cada
+      intervalo × grupo. Período sem provento: "Nenhum provento nesse período."
+    - **Mapa de calor**: tabela real, um ano por linha, janeiro a dezembro e o
+      total ("Total" em R$, "No ano" em DY e YoC). Cada célula traz o número (R$
+      com centavos até R$ 100, sem centavos até mil, "R$ 1,2 mil" depois; DY e
+      YoC com duas casas) e um fundo dourado em cinco passos pela fração do maior
+      mês — a cor só reforça o número; zero e sem base ficam "–" e sem cor, e o
+      total do ano não entra na escala. O mês com algo a receber tem borda
+      tracejada; o parcial (provento fora da conta), um `*`. Embaixo, a escala
+      ("menos ▪▪▪▪▪ mais"), "inclui a receber" e, em DY e YoC, "* parcial". O
+      leitor de tela ouve o valor exato e a conta de cada célula ("0,83%: R$ 41,25
+      do patrimônio médio de R$ 5.000,00"), que também vai no balão do mouse.
+      Abaixo de 1000 px de largura do painel, cada ano vira um bloco com os meses
+      em grade (seis por linha; quatro no celular) e o nome do mês antes do valor:
+      sem rolagem lateral.
+    - Com o olho fechado, todo R$ (eixo, legenda, balão, células, tabela
+      escondida) sai mascarado; DY e YoC ficam.
 
 Na tela **Aportar**:
 

@@ -2,7 +2,11 @@ import type { IncomeYear } from "../../api/incomeTypes";
 import { MONTH_HEADERS } from "../../lib/income";
 import { useMoney } from "../../lib/privacy";
 
-/** Ano × mês: o líquido (recebido e a receber) de cada mês de cada ano. */
+/**
+ * Ano × mês: o líquido (recebido e a receber) de cada mês de cada ano. Estreita
+ * (celular), cada ano vira um bloco com os meses em grade e o nome do mês antes
+ * do valor (`data-label`), sem rolagem lateral.
+ */
 export function YearTable({ years }: { years: IncomeYear[] }) {
   const money = useMoney();
   return (
@@ -25,11 +29,13 @@ export function YearTable({ years }: { years: IncomeYear[] }) {
             <tr key={row.year}>
               <th scope="row">{row.year}</th>
               {row.months.map((value, index) => (
-                <td key={MONTH_HEADERS[index]} className={value === 0 ? "is-empty" : undefined}>
+                <td key={MONTH_HEADERS[index]} data-label={MONTH_HEADERS[index]} className={value === 0 ? "is-empty" : undefined}>
                   {value === 0 ? "–" : money.brl(value)}
                 </td>
               ))}
-              <td className="income-table__total">{money.brl(row.total)}</td>
+              <td className="income-table__total" data-label="Total">
+                {money.brl(row.total)}
+              </td>
             </tr>
           ))}
         </tbody>
