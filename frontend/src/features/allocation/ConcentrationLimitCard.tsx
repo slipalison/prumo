@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { useAllocationSettings, useSaveAllocationSettings } from "../../api/allocation";
 import type { AllocationSettings } from "../../api/allocationTypes";
 import { errorMessage } from "../../api/client";
@@ -17,6 +17,19 @@ const DEFAULT_LIMIT = 20;
  */
 export function ConcentrationLimitCard() {
   const settings = useAllocationSettings();
+  let content: ReactNode;
+  if (settings.isError) {
+    content = (
+      <p className="form-error" role="alert">
+        {errorMessage(settings.error)}
+      </p>
+    );
+  } else if (settings.data) {
+    // A chave recomeça o formulário quando o valor salvo muda.
+    content = <LimitForm key={String(settings.data.max_asset_percent)} saved={settings.data} />;
+  } else {
+    content = <p className="field__hint">Carregando…</p>;
+  }
 
   return (
     <Panel
@@ -25,21 +38,12 @@ export function ConcentrationLimitCard() {
       infoLabel="Como funciona o limite por ativo"
       info="Opcional. Nenhum ativo passa desta fatia da carteira depois do aporte; o que passaria vai para os outros ativos da mesma classe. O motor nunca vende: quem já está acima só deixa de receber."
     >
-      {settings.isError ? (
-        <p className="form-error" role="alert">
-          {errorMessage(settings.error)}
-        </p>
-      ) : settings.data ? (
-        // A chave recomeça o formulário quando o valor salvo muda.
-        <LimitForm key={String(settings.data.max_asset_percent)} saved={settings.data} />
-      ) : (
-        <p className="field__hint">Carregando…</p>
-      )}
+      {content}
     </Panel>
   );
 }
 
-function LimitForm({ saved }: { saved: AllocationSettings }) {
+function LimitForm({ saved }: Readonly<{ saved: AllocationSettings }>) {
   const ids = { toggle: useId(), range: useId() };
   const [enabled, setEnabled] = useState(saved.max_asset_percent !== null);
   const [percent, setPercent] = useState(saved.max_asset_percent ?? DEFAULT_LIMIT);
@@ -69,7 +73,7 @@ function LimitForm({ saved }: { saved: AllocationSettings }) {
     <>
       <div className="switch-row">
         <label htmlFor={ids.toggle} className="switch-row__label">
-          Limitar a concentração
+          Limitar a concentração{" "}
           <span className="field__hint">
             {saved.max_asset_percent === null
               ? "Desligado: cada ativo recebe pela nota, sem teto."

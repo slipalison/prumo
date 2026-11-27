@@ -13,10 +13,11 @@ import { formatPercent } from "../../lib/format";
 import { balanceTargets, isComplete, PRESETS, sameTargets, sumTargets, targetsFromClasses } from "../../lib/goals";
 import { ConcentrationLimitCard } from "../allocation/ConcentrationLimitCard";
 import { SumRing } from "./SumRing";
+import "./nativeTags.css";
 
 type GoalsScreenProps = { portfolio: Portfolio };
 
-export function GoalsScreen({ portfolio }: GoalsScreenProps) {
+export function GoalsScreen({ portfolio }: Readonly<GoalsScreenProps>) {
   const saved = useMemo(() => targetsFromClasses(portfolio.classes), [portfolio.classes]);
   const [draft, setDraft] = useState<GoalTargets>(saved);
   const [touched, setTouched] = useState(false);
@@ -59,7 +60,7 @@ export function GoalsScreen({ portfolio }: GoalsScreenProps) {
         info="Os aportes vão sempre para o que está mais longe da meta."
         actions={
           <div className="preset-row">
-            <div className="preset-row__group" role="group" aria-label="Perfis prontos">
+            <fieldset className="preset-row__group" aria-label="Perfis prontos">
               {PRESETS.map((preset) => (
                 <button
                   key={preset.id}
@@ -71,7 +72,7 @@ export function GoalsScreen({ portfolio }: GoalsScreenProps) {
                   {preset.label}
                 </button>
               ))}
-            </div>
+            </fieldset>
             <InfoTip label="O que cada perfil pronto faz" align="end" placement="bottom">
               <span className="preset-row__tip">
                 {PRESETS.map((preset) => (

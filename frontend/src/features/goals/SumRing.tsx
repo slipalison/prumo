@@ -2,6 +2,7 @@ import { motion } from "motion/react";
 import { cx } from "../../lib/cx";
 import { formatPercent } from "../../lib/format";
 import { DURATION, SPRING } from "../../lib/motion";
+import "./nativeTags.css";
 
 type SumRingProps = { sum: number };
 
@@ -10,19 +11,25 @@ const STROKE = 10;
 const RADIUS = (SIZE - STROKE) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
+/** O que falta, o que passou ou "Fechou 100%". */
+function statusText(sum: number, complete: boolean, over: boolean): string {
+  if (complete) return "Fechou 100%";
+  if (over) return `Passou ${formatPercent(sum - 100, 0)}`;
+  return `Faltam ${formatPercent(100 - sum, 0)}`;
+}
+
 /** O anel da soma: enche até 100%, fica verde e dá um estalo quando fecha. */
-export function SumRing({ sum }: SumRingProps) {
+export function SumRing({ sum }: Readonly<SumRingProps>) {
   const complete = Math.abs(sum - 100) < 0.005;
   const over = sum > 100.005;
   const fraction = Math.min(sum, 100) / 100;
-  const status = complete ? "Fechou 100%" : over ? `Passou ${formatPercent(sum - 100, 0)}` : `Faltam ${formatPercent(100 - sum, 0)}`;
+  const status = statusText(sum, complete, over);
 
   return (
-    <motion.div
+    <motion.output
       className={cx("sum-ring", complete && "is-complete", over && "is-over")}
       animate={complete ? { scale: [1, 1.08, 1] } : { scale: 1 }}
       transition={{ duration: DURATION.slow }}
-      role="status"
       aria-live="polite"
       aria-label={`Soma das metas: ${formatPercent(sum, 0)}. ${status}`}
     >
@@ -46,6 +53,6 @@ export function SumRing({ sum }: SumRingProps) {
         <strong className="sum-ring__value">{formatPercent(sum, 0)}</strong>
         <span className="sum-ring__status">{status}</span>
       </div>
-    </motion.div>
+    </motion.output>
   );
 }
