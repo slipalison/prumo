@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Asset } from "../../api/types";
 import { DataTable, type DataColumn } from "../../components/DataTable";
 import { Disclosure } from "../../components/Disclosure";
@@ -65,6 +65,23 @@ function StackedBars({ nodes, headings }: { nodes: CompositionNode[]; headings: 
   );
 }
 
+/** Abaixo desta largura de painel o diagrama fica apertado (texto minúsculo): só as barras. */
+const MIN_DIAGRAM_WIDTH = 600;
+
+/** A largura do elemento, acompanhando o redimensionamento (0 sem `ResizeObserver`). */
+function useWidth<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(([entry]) => setWidth(entry?.contentRect.width ?? 0));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  return { ref, width };
+}
+
 /**
  * Composição da carteira: o diagrama de Sankey (carteira → classe → setor →
  * ativo) com o seletor do último nível, ou as barras empilhadas, que no
@@ -73,7 +90,8 @@ function StackedBars({ nodes, headings }: { nodes: CompositionNode[]; headings: 
  */
 export function CompositionPanel({ assets }: { assets: Asset[] }) {
   const money = useMoney();
-  const narrow = useNarrow();
+  const { ref, width } = useWidth<HTMLDivElement>();
+  const narrow = useNarrow() || (width > 0 && width < MIN_DIAGRAM_WIDTH);
   const [level, setLevel] = useState<CompositionLevel>("asset");
   const [chosen, setChosen] = useState<View>("diagram");
   const view: View = narrow ? "bars" : chosen;
@@ -94,6 +112,7 @@ export function CompositionPanel({ assets }: { assets: Asset[] }) {
   const summary = classes.map((c) => `${c.label} ${formatPercent(c.percent)}`).join(", ");
 
   return (
+    <div ref={ref} className="composition-wrap">
     <Panel
       title="Composição"
       className="composition"
@@ -135,5 +154,6 @@ export function CompositionPanel({ assets }: { assets: Asset[] }) {
         </>
       )}
     </Panel>
+    </div>
   );
 }

@@ -46,6 +46,45 @@ export type Composition = {
   nodes: CompositionNode[];
 };
 
+const TREASURY_TYPES: Record<string, string> = {
+  SELIC: "Tesouro Selic",
+  PRE: "Tesouro Prefixado",
+  PREJS: "Tesouro Prefixado com juros",
+  IPCA: "Tesouro IPCA+",
+  IPCAJS: "Tesouro IPCA+ com juros",
+  RENDA: "Tesouro Renda+",
+};
+
+/**
+ * O agrupamento do ativo no nível de setor ou segmento. Ações e FIIs da B3 usam
+ * o que a fonte pública trouxe ("Sem setor" só quando ela não classificou); as
+ * demais classes não têm setor da B3 e usam o agrupamento natural delas: o tipo
+ * do título na renda fixa, "Cripto", e o tipo do papel no exterior.
+ */
+export function groupLabel(asset: Asset, level: "sector" | "segment"): string {
+  const own = level === "sector" ? asset.sector : asset.segment;
+  switch (asset.asset_class) {
+    case "br_stocks":
+    case "br_reits":
+      return own ?? (level === "sector" ? NO_SECTOR : NO_SEGMENT);
+    case "crypto":
+      return "Cripto";
+    case "fixed_income":
+    case "intl_fixed_income": {
+      if (asset.treasury) {
+        const kind = /^TD-([A-Z]+)-/.exec(asset.symbol ?? "")?.[1] ?? "";
+        return TREASURY_TYPES[kind] ?? "Tesouro Direto";
+      }
+      if (asset.listed_on_b3) return "ETF de renda fixa";
+      return asset.asset_class === "intl_fixed_income" ? "Renda fixa internacional" : "Renda fixa por valor";
+    }
+    case "us_reits":
+      return own ?? "REITs";
+    case "intl_stocks":
+      return own ?? (asset.listed_on_b3 ? "BDRs e ETFs na B3" : "Ações e ETFs do exterior");
+  }
+}
+
 type Entry = { key: string; label: string; value: number; assets: Asset[] };
 
 const byValueThenLabel = (a: Entry, b: Entry) => b.value - a.value || a.label.localeCompare(b.label, "pt-BR");
@@ -122,11 +161,11 @@ export function buildComposition(assets: Asset[], level: CompositionLevel, colla
     const classId = `class:${assetClass}`;
     push({ id: classId, label: entry.label, value: entry.value, column: 1, parent: "root", assetClass, kind: "class", assets: entry.assets.length });
     if (level === "sector") {
-      leaves(classId, assetClass, 2, group(entry.assets, (a) => a.sector ?? NO_SECTOR, NO_SECTOR), "group");
+      leaves(classId, assetClass, 2, group(entry.assets, (a) => groupLabel(a, "sector"), NO_SECTOR), "group");
     } else if (level === "segment") {
-      leaves(classId, assetClass, 2, group(entry.assets, (a) => a.segment ?? NO_SEGMENT, NO_SEGMENT), "group");
+      leaves(classId, assetClass, 2, group(entry.assets, (a) => groupLabel(a, "segment"), NO_SEGMENT), "group");
     } else {
-      for (const sector of group(entry.assets, (a) => a.sector ?? NO_SECTOR, NO_SECTOR)) {
+      for (const sector of group(entry.assets, (a) => groupLabel(a, "sector"), NO_SECTOR)) {
         const sectorId = `${classId}/${sector.key}`;
         push({ id: sectorId, label: sector.label, value: sector.value, column: 2, parent: classId, assetClass, kind: "group", assets: sector.assets.length });
         const items: Entry[] = sector.assets

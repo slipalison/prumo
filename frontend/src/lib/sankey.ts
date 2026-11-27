@@ -17,7 +17,53 @@ export type SankeyLink = {
   path: string;
 };
 
-export type SankeyLayout = { width: number; height: number; boxes: SankeyBox[]; links: SankeyLink[] };
+export type SankeyLayout = {
+  width: number;
+  height: number;
+  /** Distância entre uma coluna e a seguinte. */
+  step: number;
+  boxes: SankeyBox[];
+  links: SankeyLink[];
+};
+
+/** Largura estimada de um texto de 12 px em negrito (o SVG não se mede fora do navegador); erra para mais. */
+export function estimateTextWidth(text: string): number {
+  return text.length * 6.4;
+}
+
+/**
+ * Corta o nome com reticências para `nome + fatia` caber em `maxWidth`. A fatia
+ * (percentual) nunca é cortada. O nome inteiro fica no `<title>` e na tabela.
+ */
+export function fitLabel(name: string, percent: string, maxWidth: number): { text: string; truncated: boolean } {
+  const room = maxWidth - estimateTextWidth(` ${percent}`);
+  if (estimateTextWidth(name) <= room) return { text: name, truncated: false };
+  const chars = Math.max(1, Math.floor(room / 6.4) - 1);
+  return { text: `${name.slice(0, chars).trimEnd()}…`, truncated: true };
+}
+
+/**
+ * Quais nós levam rótulo: por coluna, do maior para o menor, só se o centro
+ * ficar a `spacing` ou mais de todo rótulo já aceito na coluna.
+ */
+export function labelledIds(nodes: CompositionNode[], boxes: SankeyBox[], spacing: number): Set<string> {
+  const byId = new Map(boxes.map((b) => [b.id, b]));
+  const accepted = new Set<string>();
+  const centers = new Map<number, number[]>();
+  const order = [...nodes].sort((a, b) => b.value - a.value);
+  for (const node of order) {
+    const box = byId.get(node.id);
+    if (!box) continue;
+    const middle = box.y + box.height / 2;
+    const taken = centers.get(node.column) ?? [];
+    if (taken.every((c) => Math.abs(c - middle) >= spacing)) {
+      accepted.add(node.id);
+      taken.push(middle);
+      centers.set(node.column, taken);
+    }
+  }
+  return accepted;
+}
 
 export type SankeyOptions = {
   width: number;
@@ -35,7 +81,7 @@ export function layoutSankey(nodes: CompositionNode[], options: SankeyOptions): 
   const { width, height, nodeWidth, gap, labelRoom } = options;
   const total = nodes[0]?.value ?? 0;
   const columnCount = Math.max(...nodes.map((n) => n.column), 0) + 1;
-  if (nodes.length === 0 || total <= 0) return { width, height, boxes: [], links: [] };
+  if (nodes.length === 0 || total <= 0) return { width, height, step: 0, boxes: [], links: [] };
 
   const columns = Array.from({ length: columnCount }, (_, c) => nodes.filter((n) => n.column === c));
   // A escala é a da coluna mais apertada (a com mais espaços entre nós).
@@ -79,5 +125,5 @@ export function layoutSankey(nodes: CompositionNode[], options: SankeyOptions): 
         `L${round(x1)} ${round(bottom1)}C${round(mid)} ${round(bottom1)} ${round(mid)} ${round(bottom0)} ${round(x0)} ${round(bottom0)}Z`,
     });
   }
-  return { width, height, boxes: [...boxes.values()], links };
+  return { width, height, step, boxes: [...boxes.values()], links };
 }

@@ -270,3 +270,7 @@
   white-space: nowrap;
   font-size: clamp(1.05rem, 4.6vw, 1.3rem);
 }
+
+.composition-wrap {
+  min-width: 0;
+}

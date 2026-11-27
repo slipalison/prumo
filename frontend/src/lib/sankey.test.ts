@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Asset } from "../api/types";
 import { buildComposition } from "./composition";
-import { layoutSankey } from "./sankey";
+import { estimateTextWidth, fitLabel, labelledIds, layoutSankey } from "./sankey";
 
 const asset = (id: string, value: number, over: Partial<Asset> = {}): Asset =>
   ({ id, symbol: id.toUpperCase(), display_name: id, asset_class: "br_stocks", current_value: value, sector: "S", segment: "G", ...over }) as Asset;
@@ -48,12 +48,42 @@ describe("layout do Sankey", () => {
   });
 
   it("sem nó, desenha nada", () => {
-    expect(layoutSankey([], options)).toEqual({ width: 760, height: 300, boxes: [], links: [] });
+    expect(layoutSankey([], options)).toEqual({ width: 760, height: 300, step: 0, boxes: [], links: [] });
   });
 
   it("com uma coluna só, não quebra", () => {
     const only = layoutSankey(composition.nodes.slice(0, 1), options);
     expect(only.boxes).toHaveLength(1);
     expect(only.links).toEqual([]);
+  });
+});
+
+describe("rótulos do Sankey", () => {
+  it("corta o nome com reticências para caber e nunca corta a fatia", () => {
+    const long = "Petróleo, Gás e Biocombustíveis";
+    const fit = fitLabel(long, "0,5%", 150);
+    expect(fit.truncated).toBe(true);
+    expect(fit.text.endsWith("…")).toBe(true);
+    expect(estimateTextWidth(`${fit.text} 0,5%`)).toBeLessThanOrEqual(150);
+    expect(fitLabel("TAEE4", "0,9%", 150)).toEqual({ text: "TAEE4", truncated: false });
+    expect(fitLabel("Nome", "100,0%", 10).text).toBe("N…");
+  });
+
+  it("em cada coluna fica o rótulo do maior e cai o que colidiria na vertical", () => {
+    const many = [asset("a", 500), asset("b", 8), asset("c", 7), asset("d", 6), asset("e", 300)];
+    const composition = buildComposition(many, "asset", false);
+    const laid = layoutSankey(composition.nodes, options);
+    const shown = labelledIds(composition.nodes, laid.boxes, 14);
+    for (const column of [0, 1, 2, 3]) {
+      const centers = composition.nodes
+        .filter((n) => n.column === column && shown.has(n.id))
+        .map((n) => {
+          const box = laid.boxes.find((b) => b.id === n.id);
+          return (box?.y ?? 0) + (box?.height ?? 0) / 2;
+        })
+        .sort((p, q) => p - q);
+      for (let i = 1; i < centers.length; i += 1) expect((centers[i] ?? 0) - (centers[i - 1] ?? 0)).toBeGreaterThanOrEqual(14);
+    }
+    expect(shown.has("class:br_stocks/S/a")).toBe(true);
   });
 });

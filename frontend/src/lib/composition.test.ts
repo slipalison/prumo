@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Asset } from "../api/types";
-import { buildComposition, leavesByClass, NO_SECTOR, NO_SEGMENT } from "./composition";
+import { buildComposition, groupLabel, leavesByClass, NO_SECTOR, NO_SEGMENT } from "./composition";
 
 let n = 0;
 const asset = (over: Partial<Asset>): Asset => {
@@ -40,7 +40,7 @@ describe("composição da carteira", () => {
       "Fundos Imobiliários",
       "Tijolo",
       "Criptomoedas",
-      NO_SECTOR,
+      "Cripto",
     ]);
     expect(c.nodes[1]?.percent).toBe(80);
     const financial = c.nodes.find((x) => x.label === "Financeiro");
@@ -52,7 +52,7 @@ describe("composição da carteira", () => {
   it("no nível segmento pula o setor; no de ativo, desce até o papel", () => {
     const segment = buildComposition(assets, "segment", false);
     expect(segment.headings).toEqual(["Carteira", "Classe", "Segmento"]);
-    expect(segment.nodes.filter((x) => x.column === 2).map((x) => x.label)).toEqual(["Máquinas", "Holdings", "Bancos", "Multicategoria", NO_SEGMENT]);
+    expect(segment.nodes.filter((x) => x.column === 2).map((x) => x.label)).toEqual(["Máquinas", "Holdings", "Bancos", "Multicategoria", "Cripto"]);
 
     const deep = buildComposition(assets, "asset", false);
     expect(deep.headings).toEqual(["Carteira", "Classe", "Setor", "Ativo"]);
@@ -94,5 +94,29 @@ describe("composição da carteira", () => {
     const groups = leavesByClass(buildComposition(assets, "sector", false));
     expect(groups.map((g) => g.node.label)).toEqual(["Ações Nacionais", "Fundos Imobiliários", "Criptomoedas"]);
     expect(groups[0]?.leaves.map((l) => l.label)).toEqual(["Financeiro", "Industrial"]);
+  });
+});
+
+describe("agrupamento das classes sem setor da B3", () => {
+  it("usa o tipo do título na renda fixa e o tipo do papel no exterior", () => {
+    const bond = (symbol: string) => asset({ asset_class: "fixed_income", treasury: true, symbol });
+    expect(groupLabel(bond("TD-SELIC-20290301"), "sector")).toBe("Tesouro Selic");
+    expect(groupLabel(bond("TD-PRE-20290101"), "sector")).toBe("Tesouro Prefixado");
+    expect(groupLabel(bond("TD-IPCA-20350515"), "segment")).toBe("Tesouro IPCA+");
+    expect(groupLabel(bond("TD-IPCAJS-20600815"), "sector")).toBe("Tesouro IPCA+ com juros");
+    expect(groupLabel(bond("TD-XX"), "sector")).toBe("Tesouro Direto");
+    expect(groupLabel(asset({ asset_class: "fixed_income", symbol: null }), "sector")).toBe("Renda fixa por valor");
+    expect(groupLabel(asset({ asset_class: "fixed_income", listed_on_b3: true }), "sector")).toBe("ETF de renda fixa");
+    expect(groupLabel(asset({ asset_class: "intl_fixed_income" }), "sector")).toBe("Renda fixa internacional");
+    expect(groupLabel(asset({ asset_class: "crypto" }), "segment")).toBe("Cripto");
+    expect(groupLabel(asset({ asset_class: "us_reits" }), "sector")).toBe("REITs");
+    expect(groupLabel(asset({ asset_class: "intl_stocks", sector: "Tecnologia" }), "sector")).toBe("Tecnologia");
+    expect(groupLabel(asset({ asset_class: "intl_stocks" }), "sector")).toBe("Ações e ETFs do exterior");
+    expect(groupLabel(asset({ asset_class: "intl_stocks", listed_on_b3: true }), "sector")).toBe("BDRs e ETFs na B3");
+  });
+
+  it("Sem setor e Sem segmento ficam só para ação e FII sem classificação", () => {
+    expect(groupLabel(asset({ asset_class: "br_stocks" }), "sector")).toBe(NO_SECTOR);
+    expect(groupLabel(asset({ asset_class: "br_reits" }), "segment")).toBe(NO_SEGMENT);
   });
 });
