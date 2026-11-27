@@ -244,6 +244,133 @@ mod tests {
         assert!(weights(&[]).is_empty());
     }
 
+    /// Ajuste de ativo cotado é posição que entrou ou saiu pelo preço do dia:
+    /// um pequeno ontem e +1/−1,01 hoje (zerando) não mexem na cota da classe,
+    /// que fica com a alta do ETF (a forma do caso da classe Cripto).
+    #[test]
+    fn same_day_adjustments_do_not_move_the_class() {
+        let from = date!(2026 - 07 - 24);
+        let today = date!(2026 - 11 - 27);
+        let days = (today - from).whole_days();
+        let etf_prices: Series = (0..=days)
+            .map(|i| {
+                (
+                    from + Duration::days(i),
+                    dec!(100) + Decimal::from(i) * dec!(7) / Decimal::from(days),
+                )
+            })
+            .collect();
+        let etf = asset(
+            1,
+            vec![entry(Kind::Buy, from, 1, dec!(20), Some(dec!(100)))],
+            etf_prices,
+        );
+        // Preço do BTC parado: o que se mede é só o efeito dos ajustes.
+        let btc_prices: Series = (0..=9)
+            .map(|i| (date!(2026 - 11 - 18) + Duration::days(i), dec!(485000)))
+            .collect();
+        let btc = asset(
+            2,
+            vec![
+                entry(Kind::Adjustment, date!(2026 - 11 - 26), 2, dec!(0.01), None),
+                entry(Kind::Adjustment, today, 3, dec!(1), None),
+                entry(Kind::Adjustment, today, 4, dec!(-1.01), None),
+            ],
+            btc_prices,
+        );
+        let only_etf = class_returns(
+            &[(AssetClass::Crypto, etf.clone())],
+            &HashMap::new(),
+            from,
+            today,
+        );
+        let both = class_returns(
+            &[(AssetClass::Crypto, etf), (AssetClass::Crypto, btc)],
+            &HashMap::new(),
+            from,
+            today,
+        );
+        assert_eq!(only_etf[0].ret.round_dp(6), dec!(0.07));
+        // Os ajustes não são perda nem ganho: o BTC entra no fim de 26/11 e sai
+        // no fim de 27/11 pelo preço do dia. Em 27/11 a classe abre com o BTC
+        // (parado) e o ETF, então a alta do ETF nesse dia pesa só a parte dele.
+        let etf_value = |date: Date| {
+            dec!(20)
+                * (dec!(100)
+                    + Decimal::from((date - from).whole_days()) * dec!(7) / Decimal::from(days))
+        };
+        let btc_value = dec!(0.01) * dec!(485000);
+        let before = etf_value(date!(2026 - 11 - 26));
+        let expected = (before / dec!(2000))
+            * ((etf_value(today) + btc_value) / (before + btc_value))
+            - Decimal::ONE;
+        // Diferença só do arredondamento do patrimônio em centavos.
+        assert!(
+            (both[0].ret - expected).abs() < dec!(0.00001),
+            "{} != {expected}",
+            both[0].ret
+        );
+    }
+
+    /// A forma do caso da classe Cripto, com números fictícios: a classe
+    /// começa com DUAS cotas e depois compra 40, 55, 8 e 30 pagando um pouco
+    /// acima do fechamento. A rentabilidade é a do preço (80 → 86) menos o
+    /// custo de cada compra sobre o dinheiro daquele dia (~2 pontos); pela
+    /// regra antiga, o custo da primeira compra caía todo sobre as duas cotas.
+    #[test]
+    fn small_base_then_large_purchases_above_the_close() {
+        let from = date!(2026 - 07 - 20);
+        let today = date!(2026 - 11 - 27);
+        let days = (today - from).whole_days();
+        let close = |date: Date| {
+            (dec!(80) + Decimal::from((date - from).whole_days()) * dec!(6) / Decimal::from(days))
+                .round_dp(2)
+        };
+        let prices: Series = (0..=days)
+            .map(|i| (from + Duration::days(i), close(from + Duration::days(i))))
+            .collect();
+        let buy = |date: Date, seq: i64, quantity: u32, premium: Decimal| {
+            entry(
+                Kind::Buy,
+                date,
+                seq,
+                Decimal::from(quantity),
+                Some((close(date) * premium).round_dp(2)),
+            )
+        };
+        let purchases = [
+            (date!(2026 - 08 - 05), 40u32, dec!(0.015), 2u32),
+            (date!(2026 - 08 - 12), 55, dec!(0.008), 42),
+            (date!(2026 - 08 - 27), 8, dec!(0.005), 97),
+            (date!(2026 - 09 - 15), 30, dec!(0.012), 105),
+        ];
+        let mut entries = vec![buy(from, 1, 2, dec!(1.004))];
+        for (n, (date, quantity, premium, _)) in purchases.iter().enumerate() {
+            entries.push(buy(*date, 2 + n as i64, *quantity, Decimal::ONE + premium));
+        }
+        let etf = asset(1, entries, prices);
+        let classes = class_returns(&[(AssetClass::Crypto, etf)], &HashMap::new(), from, today);
+        let price = close(today) / close(from) - Decimal::ONE;
+        // Cada compra custa à cota o que se pagou acima do fechamento sobre o
+        // dinheiro daquele dia: as cotas de antes e o que se pagou.
+        let cost: Decimal = purchases
+            .iter()
+            .map(|(date, quantity, premium, held)| {
+                let c = close(*date);
+                let q = Decimal::from(*quantity);
+                let paid = (c * (Decimal::ONE + premium)).round_dp(2) * q;
+                Decimal::ONE - (paid - q * c) / (Decimal::from(*held) * c + paid)
+            })
+            .product();
+        let expected = (Decimal::ONE + price) * cost - Decimal::ONE;
+        assert!(
+            (classes[0].ret - expected).abs() < dec!(0.0005),
+            "{} != {expected}",
+            classes[0].ret
+        );
+        assert!(classes[0].ret > dec!(0.05) && classes[0].ret < price);
+    }
+
     fn quota_points(days: &[retro::Day]) -> Vec<QuotaPoint> {
         days.iter()
             .map(|d| QuotaPoint {

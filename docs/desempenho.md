@@ -18,19 +18,47 @@ A carteira é tratada como um fundo de uma pessoa só:
 
 1. No primeiro dia da série, a cota vale **1** e a carteira tem
    `patrimônio / 1` cotas.
-2. A cada dia seguinte:
-   - `cota_hoje = (patrimônio_hoje − fluxo_hoje + proventos_hoje) / cotas_ontem`;
-   - `cotas_hoje = patrimônio_hoje / cota_hoje`.
+2. A cada dia seguinte, com `P` o patrimônio no fechamento, `F` o fluxo, `R`
+   os proventos e `C` o **custo da compra** (o valor no fechamento do que se
+   comprou no dia menos o que se pagou, com as taxas: negativo quando pagou
+   acima do fechamento, positivo abaixo; zero sem compra):
+   - `cota_hoje = (P − F + R − C) / cotas_ontem × P / (P − C)`;
+   - `cotas_hoje = P / cota_hoje`.
+   Sem custo de compra é `(P − F + R) / cotas_ontem`.
 3. A rentabilidade de um período é `cota_fim / cota_base − 1`, com a base no
    último fechamento em ou antes do começo do período.
 
-O fluxo entra **no fim do dia**: primeiro o preço anda sobre as cotas que já
-existiam, depois o aporte compra cotas novas pelo valor recém-calculado. Por
-isso aportar não muda a rentabilidade — só o preço e os proventos mudam. Isso é
-conferido com proptest:
+O dia é o de um fundo que emite cotas pelo valor do fechamento:
+
+- **o preço anda sobre as cotas que já existiam**: a primeira parte,
+  `(P − F + R − C) / cotas_ontem`, é o patrimônio de antes dos negócios, com
+  o que entrou valendo o fechamento;
+- **o aporte compra cotas por esse valor**: por isso aportar não muda a
+  rentabilidade — só o preço e os proventos mudam;
+- **o custo da compra é de todo o dinheiro que ficou na carteira** depois dela
+  — o de antes e o que chegou: `× P / (P − C)`. Pagar 1% acima do fechamento
+  custa à cota, no máximo, 1% da parte comprada.
+
+A venda abaixo do fechamento (e a taxa dela) fica com as cotas de antes, que
+são as que venderam: está no fluxo (`F` é o que voltou de fato).
+
+**Por que o custo é de todo o dinheiro do dia.** Até 27/11/2026 a conta era
+`(P − F + R) / cotas_ontem`: o custo da compra caía inteiro sobre as cotas de
+ontem. Com uma base pequena e uma compra grande, isso não mede nada: uma cota
+de R$ 80 e, no dia seguinte, 50 cotas compradas 1,6% acima do fechamento
+(R$ 65 de custo) levavam a cota a perder 80% num dia — e uma compra paga
+acima do fechamento maior que a base levava a cota ao piso para sempre. Com a
+conta nova, o custo pesa 1,6% no dia (R$ 65 sobre os R$ 4.165 do dia). O caso
+apareceu na classe Cripto (a classe começava com uma cota), mas a regra é a
+mesma da carteira; a migração `0035` refaz as séries guardadas desde o
+primeiro lançamento de cada pessoa.
+
+Conferido com proptest:
 
 - o aporte comprado pelo preço do dia não muda a cota do dia, seja qual for o
   ativo e a quantidade, nem a de dia nenhum da série refeita do livro;
+- pagar acima do fechamento custa à cota, no máximo, a fração do custo sobre o
+  que se pagou, seja qual for o tamanho da base;
 - aportes na mesma proporção da carteira deixam a série inteira igual;
 - o desdobramento (ou grupamento), com o preço que o Yahoo ajustou, não muda
   o patrimônio nem a cota;
@@ -106,8 +134,10 @@ preço do último pregão. Cada dia (`domain/retro.rs`):
 
    O preço pago acima do fechamento do dia (e a taxa) aparece como pequena
    perda naquele dia, e abaixo, como ganho: é o que de fato aconteceu com o
-   dinheiro. A venda que zera a posição fica na foto do dia com quantidade
-   zero, para o dia medir o preço da venda e não o de ontem.
+   dinheiro. Na compra, ela pesa sobre todo o dinheiro do dia (o custo da
+   compra, acima); na venda, sobre as cotas que venderam. A venda que zera a
+   posição fica na foto do dia com quantidade zero, para o dia medir o preço da
+   venda e não o de ontem.
 4. **Proventos** do dia (acima) e a **cota** pela regra do método.
 
 O "aplicado" do gráfico de patrimônio é a soma dos fluxos desde o primeiro
@@ -378,9 +408,14 @@ lançamento); sem aporte nem provento na janela, a rentabilidade da carteira é
 a média das classes pesada pelo patrimônio de cada uma na base. De ponta a
 ponta (`tests/performance.rs`, fictício): 10 KNRI11 a R$ 142 e um CDB de
 R$ 1.000 no dia 1; no dia 2, 5 KNRI11 compradas a R$ 148 com o fechamento a
-R$ 150 e o CDB a R$ 1.010. FIIs: `(2.250 − 740) / 1.420 − 1` = **+6,338%**,
-peso 2.250 / 3.260 = 69,02%; Renda Fixa: **+1%**, peso 30,98%; a carteira,
-**+4,1322%** (2.520 / 2.420); o IFIX falso subiu 1% no mesmo dia.
+R$ 150 e o CDB a R$ 1.010. FIIs: as 5 cotas custaram 740 e valem 750 (custo
+da compra +10), `(2.250 − 740 − 10) / 1.420 × 2.250 / 2.240 − 1` =
+**+6,1054%**, peso 2.250 / 3.260 = 69,02%; Renda Fixa: **+1%**, peso 30,98%;
+a carteira, **+4,0381%** (`2.510 / 2.420 × 3.260 / 3.250`); o IFIX falso
+subiu 1% no mesmo dia. E a forma do caso que motivou o custo da compra (a
+classe que começa com duas cotas e compra 40, 55, 8 e 30 um pouco acima do
+fechamento, em `domain/class_returns.rs`) dá a alta do preço menos ~2 pontos
+de custo.
 
 A série das classes é refeita **na hora da leitura**, sem gravar nada (para
 "Tudo", desde o primeiro lançamento): é a mesma conta da reconstrução, uma vez
@@ -429,22 +464,29 @@ rotas (`tests/retro.rs`).
 mostra depois do desdobro: 20,50, 21,00, 21,50, 22,00 — o real de D2 e D3 é o
 dobro, 41 e 42.
 
-**Cada dia.** Patrimônio (P), fluxo (F), proventos (R) e a cota
-(`cota = (P − F + R) / cotas de ontem`; com `cotas = P / cota`, isso é a cota
-de ontem vezes `(P − F + R) / P de ontem`):
+**Cada dia.** Patrimônio (P), fluxo (F), proventos (R), custo da compra (C) e
+a cota (`cota = (P − F + R − C) / cotas de ontem × P / (P − C)`; com
+`cotas = P / cota` e sem compra, isso é a cota de ontem vezes
+`(P − F + R) / P de ontem`):
 
 | Dia | Patrimônio | Fluxo | Prov. | Cota |
 |---|---|---|---|---|
 | D1 | 10 × 101 + 1.000 = **2.010** | 10 × 100 + 1 + 1.000 = **2.001** | 0 | **1** |
-| D2 | 10 × 102 + 20 × 41 + 1.000 = **2.840** | 20 × 40 = **800** | 0 | (2.840 − 800) / 2.010 = **1,0149254** |
-| D3 | 10 × 103 + 20 × 42 + 1.000 = **2.870** | 0 | **10** | 1,0149254 × 2.880 / 2.840 = **1,0292200** |
-| D4 | 10 × 103 + 40 × 21,50 + 1.005 = **2.895** | 0 (desdobro e ajuste não são dinheiro) | 0 | 1,0292200 × 2.895 / 2.870 = **1,0381854** |
-| D5 | 5 × 104 + 40 × 22 + 1.005 = **2.405** | −(5 × 104 − 0,50) = **−519,50** | 0 | 1,0381854 × 2.924,50 / 2.895 = **1,0487645** |
-| sáb, dom | 2.405 (preço de sexta) | 0 | 0 | 1,0487645 |
+| D2 | 10 × 102 + 20 × 41 + 1.000 = **2.840** | 20 × 40 = **800** (C = 20 × 41 − 800 = **+20**) | 0 | (2.840 − 800 − 20) / 2.010 × 2.840 / 2.820 = **1,0121026** |
+| D3 | 10 × 103 + 20 × 42 + 1.000 = **2.870** | 0 | **10** | 1,0121026 × 2.880 / 2.840 = **1,0263576** |
+| D4 | 10 × 103 + 40 × 21,50 + 1.005 = **2.895** | 0 (desdobro e ajuste não são dinheiro) | 0 | 1,0263576 × 2.895 / 2.870 = **1,0352980** |
+| D5 | 5 × 104 + 40 × 22 + 1.005 = **2.405** | −(5 × 104 − 0,50) = **−519,50** | 0 | 1,0352980 × 2.924,50 / 2.895 = **1,0458476** |
+| sáb, dom | 2.405 (preço de sexta) | 0 | 0 | 1,0458476 |
 
-- Rentabilidade desde o início: `1,0487645 / 1 − 1` = **+4,8765%**
-  (`(2.040/2.010) × (2.880/2.840) × (2.924,50/2.870) − 1`; o 2.895 se cancela).
-  Março de 2025 na tabela mês × ano: o mesmo +4,8765%; os meses seguintes, 0.
+- Em D2 as 20 WEGE3 custaram R$ 800 e valem R$ 820 no fechamento: o preço anda
+  sobre as cotas de ontem (KNRI11 de 101 a 102, o CDB parado:
+  2.020 / 2.010) e o ganho da compra (+20) é de todo o dinheiro do dia
+  (× 2.840 / 2.820). Em D1 a compra também foi abaixo do fechamento, mas D1 é
+  a base (cota 1 por definição).
+- Rentabilidade desde o início: `1,0458476 / 1 − 1` = **+4,5848%**
+  (`(2.020/2.010) × (2.840/2.820) × (2.880/2.840) × (2.924,50/2.870) − 1`; o
+  2.895 se cancela). Março de 2025 na tabela mês × ano: o mesmo +4,5848%; os
+  meses seguintes, 0.
 - Aplicado: 2.001 + 800 − 519,50 = **R$ 2.281,50**. Ganho de preço:
   2.405 − 2.281,50 = **R$ 123,50**. Proventos: **R$ 10,00**.
 - Prova do ganho total (R$ 133,50): KNRI11 custou 1.001 e devolveu
@@ -453,10 +495,11 @@ de ontem vezes `(P − F + R) / P de ontem`):
 
 **Depois de mexer no passado** (o mesmo teste de ponta a ponta):
 
-- a compra de WEGE3 de D2 corrigida para R$ 39,00: o fluxo de D2 vira 780 e a
-  cota de D2, 2.060 / 2.010; D1 não é tocado (a mesma foto, da mesma hora);
+- a compra de WEGE3 de D2 corrigida para R$ 39,00: o fluxo de D2 vira 780, o
+  custo da compra +40, e a cota de D2, `(2.020/2.010) × (2.840/2.800)`
+  = 1,0193319; D1 não é tocado (a mesma foto, da mesma hora);
 - o rendimento de D3 apagado: D3 fica só com o preço, e a cota de D5 vira
-  `(2.060/2.010) × (2.924,50/2.840)`;
+  `1,0193319 × (2.924,50/2.840)`;
 - a venda de D5 apagada: D5 fica com 10 KNRI11, patrimônio 2.925 e fluxo 0;
 - uma compra de KNRI11 em 28/02 faz a série começar em 28/02 (o fechamento
   desse dia é baixado para trás); apagada, a série volta a começar em D1 e o

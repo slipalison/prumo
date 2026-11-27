@@ -136,6 +136,7 @@ async fn performance_end_to_end() {
     each_person_sees_only_their_own_series(&db, &dir).await;
     rejects_unknown_period_and_index(&db, &dir).await;
     treasury_title_is_valued_by_its_daily_quote(&db, &dir).await;
+    crypto_class_with_same_day_adjustments(&db, &dir).await;
 }
 
 async fn daily_job_is_idempotent_and_separates_flow_from_return(
@@ -234,9 +235,11 @@ async fn daily_job_is_idempotent_and_separates_flow_from_return(
     let rows = snapshot_rows(db, email).await;
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[1].0, day2);
-    // 15 × 150 + 1010; o fluxo é só o aporte (740), o resto é rendimento.
+    // 15 × 150 + 1010; o fluxo é só o aporte (740), o resto é rendimento. As
+    // 5 cotas custaram 740 e valem 750 no fechamento: o preço anda sobre as
+    // cotas de ontem e o ganho da compra (+10) é de todo o dinheiro do dia.
     assert_eq!((rows[1].1, rows[1].2), (dec!(3260), dec!(740)));
-    let expected = (dec!(2520) / dec!(2420)).round_dp(12);
+    let expected = (dec!(2510) / dec!(2420) * dec!(3260) / dec!(3250)).round_dp(12);
     assert_eq!(rows[1].3, expected);
 
     // Incremental: o primeiro pedido começa no começo da janela mais longa
@@ -335,7 +338,7 @@ async fn daily_job_is_idempotent_and_separates_flow_from_return(
     .await;
     assert_eq!(perf.status, StatusCode::OK, "{}", perf.text);
     let ret = perf.body["return_percent"].as_f64().unwrap();
-    assert!((ret - 4.1322).abs() < 0.0001, "{ret}");
+    assert!((ret - 4.0381).abs() < 0.0001, "{ret}");
     let benchmarks = perf.body["benchmarks"].as_array().unwrap();
     assert_eq!(benchmarks.len(), 3);
     assert_eq!(benchmarks[0]["code"], "cdi");
@@ -355,7 +358,7 @@ async fn daily_job_is_idempotent_and_separates_flow_from_return(
     // o acumulado é a série inteira e o CDI fica abaixo.
     let last_year = years.last().unwrap();
     let accumulated = last_year["accumulated_percent"].as_f64().unwrap();
-    assert!((accumulated - 4.1322).abs() < 0.0001, "{accumulated}");
+    assert!((accumulated - 4.0381).abs() < 0.0001, "{accumulated}");
     assert_eq!(last_year["accumulated"].as_array().unwrap().len(), 12);
     let cdi_year = &last_year["benchmarks"]["cdi"];
     assert!(cdi_year["return_percent"].as_f64().unwrap() > 0.0);
@@ -370,7 +373,7 @@ async fn daily_job_is_idempotent_and_separates_flow_from_return(
         (json!(1), json!(0))
     );
     assert_eq!(summary["best"], summary["worst"]);
-    assert!((summary["best"]["return_percent"].as_f64().unwrap() - 4.1322).abs() < 0.0001);
+    assert!((summary["best"]["return_percent"].as_f64().unwrap() - 4.0381).abs() < 0.0001);
     assert_eq!(
         summary["versus"][0],
         json!({ "code": "cdi", "label": "CDI", "above": 1, "compared": 1 })
@@ -386,10 +389,11 @@ async fn daily_job_is_idempotent_and_separates_flow_from_return(
     );
     let rows = classes.body["classes"].as_array().unwrap();
     assert_eq!(rows.len(), 2, "{rows:?}");
-    // FIIs: (2.250 − 740) / 1.420 = +6,338%; peso 2.250 / 3.260.
+    // FIIs: (2.250 − 740 − 10) / 1.420 × 2.250 / 2.240 = +6,1054%; peso
+    // 2.250 / 3.260.
     assert_eq!(rows[0]["asset_class"], "br_reits");
     assert_eq!(rows[0]["market_value"], 2250.0);
-    assert_eq!(rows[0]["return_percent"], 6.338);
+    assert_eq!(rows[0]["return_percent"], 6.1054);
     assert_eq!(rows[0]["weight_percent"], 69.0184);
     assert_eq!(rows[0]["full_window"], true);
     assert_eq!(rows[0]["benchmark"]["code"], "ifix");
@@ -592,8 +596,13 @@ async fn treasury_title_is_valued_by_its_daily_quote(db: &Database, dir: &tempfi
     assert_eq!(rows.len(), 2, "{rows:?}");
     assert_eq!((rows[0].1, rows[0].2), (dec!(4500), dec!(4500)));
     // 2 × 3.010; o fluxo é o aporte (0,5 × 3.000); o resto é a alta do título.
+    // O meio título custou 1.500 e vale 1.505 no fechamento: o preço anda
+    // sobre a cota de ontem e o ganho da compra (+5) é de todo o dinheiro.
     assert_eq!((rows[1].1, rows[1].2), (dec!(6020), dec!(1500)));
-    assert_eq!(rows[1].3, (dec!(4520) / dec!(4500)).round_dp(12));
+    assert_eq!(
+        rows[1].3,
+        (dec!(4515) / dec!(4500) * dec!(6020) / dec!(6015)).round_dp(12)
+    );
 
     let asked = history.requests.lock().unwrap().clone();
     assert!(
@@ -606,4 +615,103 @@ async fn treasury_title_is_valued_by_its_daily_quote(db: &Database, dir: &tempfi
     job.run_daily(OffsetDateTime::now_utc()).await.unwrap();
     assert_eq!(bonds.asked.lock().unwrap().len(), 1);
     assert_eq!(snapshot_rows(db, email).await.len(), 2);
+}
+
+/// Cripto por classe, pelo caminho inteiro (livro, `price_history`, cotação ao
+/// vivo de hoje): um ETF de cripto da B3 comprado em julho, de 100 para 107, e
+/// um ativo cripto (`BTC-USD` em reais pelo câmbio) com um ajuste pequeno ontem
+/// e, hoje, +1 e −1,01. Os ajustes são posição que entrou e saiu pelo preço do
+/// dia: não mexem na cota da classe, que fica com a alta do ETF, nem na da
+/// carteira. A carteira é mais velha que o ETF (a classe começa no meio da
+/// janela). Carteira fictícia.
+async fn crypto_class_with_same_day_adjustments(db: &Database, dir: &tempfile_dir::Dir) {
+    let email = "cripto-classe@exemplo.com";
+    let quotes = FakeQuotes::with_market();
+    quotes
+        .prices
+        .lock()
+        .unwrap()
+        .insert("QBTC11.SA".to_owned(), (dec!(107), "BRL", "QR Bitcoin"));
+    let app = app(&db.store, email, quotes, &dir.path());
+    let now = OffsetDateTime::now_utc();
+    let today = local_date(now);
+    let yesterday = today - Duration::days(1);
+    let july = today - Duration::days(126);
+
+    let etf = post(
+        &app.router,
+        "/api/v1/assets",
+        json!({ "asset_class": "crypto", "symbol": "QBTC11", "listed_on_b3": true, "quantity": 20 }),
+    )
+    .await;
+    assert_eq!(etf.status, StatusCode::CREATED, "{}", etf.text);
+    backdate(&app.router, etf.body["id"].as_str().unwrap(), july).await;
+    let fii = post(
+        &app.router,
+        "/api/v1/assets",
+        json!({ "asset_class": "br_reits", "symbol": "HGLG11", "quantity": 30 }),
+    )
+    .await;
+    assert_eq!(fii.status, StatusCode::CREATED, "{}", fii.text);
+    let old = today - Duration::days(400);
+    backdate(&app.router, fii.body["id"].as_str().unwrap(), old).await;
+    let btc = post(
+        &app.router,
+        "/api/v1/assets",
+        json!({ "asset_class": "crypto", "symbol": "BTC", "quantity": 0 }),
+    )
+    .await;
+    assert_eq!(btc.status, StatusCode::CREATED, "{}", btc.text);
+    let btc_id = btc.body["id"].as_str().unwrap().to_owned();
+    let set = |quantity: Decimal| {
+        let router = app.router.clone();
+        let id = btc_id.clone();
+        async move {
+            let r = patch(
+                &router,
+                &format!("/api/v1/assets/{id}"),
+                json!({ "quantity": quantity }),
+            )
+            .await;
+            assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+        }
+    };
+    set(dec!(0.01)).await;
+    backdate(&app.router, &btc_id, yesterday).await;
+    set(dec!(1.01)).await;
+    set(dec!(0)).await;
+
+    let history = Arc::new(FakeHistory::default());
+    let days = (today - july).whole_days();
+    for n in 0..days {
+        let date = july + Duration::days(n);
+        let close = dec!(100) + Decimal::from(n) * dec!(7) / Decimal::from(days - 1);
+        history.set_close("QBTC11.SA", date, close.round_dp(2));
+    }
+    for n in 0..400 {
+        history.set_close("HGLG11.SA", old + Duration::days(n), dec!(140.80));
+    }
+    for n in 1..=9 {
+        history.set_close("BTC-USD", today - Duration::days(n), dec!(60000));
+        history.set_close("USDBRL=X", today - Duration::days(n), dec!(5.5));
+    }
+    let job = Performance::new(db.store.clone(), history);
+    job.run_daily(now - Duration::days(1)).await.unwrap();
+
+    let classes = get(&app.router, "/api/v1/performance/classes?period=all").await;
+    assert_eq!(classes.status, StatusCode::OK, "{}", classes.text);
+    let rows = classes.body["classes"].as_array().unwrap();
+    let crypto = rows.iter().find(|r| r["asset_class"] == "crypto").unwrap();
+    assert_eq!(crypto["return_percent"], 7.0, "{crypto}");
+    assert_eq!(crypto["from"], Value::String(july.to_string()));
+    assert_eq!(crypto["full_window"], false);
+    // O FII parado e o ETF a +7%: a carteira só tem a alta do ETF, pesada.
+    let fii_row = rows
+        .iter()
+        .find(|r| r["asset_class"] == "br_reits")
+        .unwrap();
+    assert_eq!(fii_row["return_percent"], 0.0, "{fii_row}");
+    let perf = get(&app.router, "/api/v1/performance?period=all&benchmarks=cdi").await;
+    let portfolio = perf.body["return_percent"].as_f64().unwrap();
+    assert!(portfolio > 0.0 && portfolio < 7.0, "{portfolio}");
 }

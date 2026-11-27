@@ -1349,7 +1349,7 @@ de `GET /performance`); a série das classes é refeita na leitura, sem gravar.
   "window": { "from": "2025-11-27", "to": "2026-11-27" },
   "classes": [
     { "asset_class": "br_reits", "market_value": 2250.0, "weight_percent": 69.0184,
-      "return_percent": 6.338, "from": "2025-11-27", "to": "2026-11-27", "full_window": true,
+      "return_percent": 6.1054, "from": "2025-11-27", "to": "2026-11-27", "full_window": true,
       "benchmark": { "code": "ifix", "label": "IFIX", "return_percent": 1.0, "as_of": "2026-11-26" } },
     { "asset_class": "crypto", "market_value": 0.0, "weight_percent": 0.0,
       "return_percent": -3.1, "from": "2025-11-27", "to": "2026-03-10", "full_window": false,

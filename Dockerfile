@@ -27,6 +27,7 @@ RUN mkdir src \
     && rm -rf src
 COPY backend/src ./src
 COPY backend/migrations ./migrations
+COPY backend/build.rs ./build.rs
 RUN touch src/main.rs src/lib.rs && cargo build --release --locked
 
 # -------------------------------------------------------------- runtime ----

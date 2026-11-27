@@ -32,10 +32,40 @@ fn round_quota(value: Decimal) -> Decimal {
 }
 
 /// A cota do dia, a partir da anterior, do patrimônio no fechamento e do fluxo
-/// do dia (aporte positivo, retirada negativa). O fluxo entra no fim do dia:
-/// primeiro o preço anda sobre as cotas que já existiam, depois o aporte
-/// compra cotas novas pelo valor recém-calculado.
+/// do dia (aporte positivo, retirada negativa), sem custo de compra: o que
+/// entrou foi comprado pelo preço do fechamento. Ver [`advance_day`].
 pub fn advance(previous: Option<Quota>, market_value: Decimal, net_flow: Decimal) -> Quota {
+    advance_day(previous, market_value, net_flow, Decimal::ZERO)
+}
+
+/// A cota do dia, como um fundo que emite cotas pelo valor do fechamento:
+///
+/// 1. o preço anda sobre as cotas que já existiam: a cota "antes dos
+///    negócios" é o patrimônio de antes sem o que entrou ou saiu, com o que
+///    entrou valendo o preço do fechamento
+///    (`(patrimônio − fluxo − custo_da_compra) / cotas_de_ontem`);
+/// 2. o dinheiro que entrou compra cotas por essa cota;
+/// 3. o custo da compra — o que se pagou acima do fechamento, mais as taxas
+///    (`purchase_cost` é o valor no fechamento do que se comprou menos o que
+///    se pagou: negativo quando custou) — é de todo o dinheiro que ficou na
+///    carteira depois dos negócios, o de antes e o que chegou:
+///    `× patrimônio / (patrimônio − custo_da_compra)`.
+///
+/// Sem custo de compra (comprou pelo fechamento, ajuste, saldo inicial, dia
+/// sem negócio) é a conta de sempre, `(patrimônio − fluxo) / cotas_de_ontem`.
+/// A venda abaixo do fechamento (e a taxa dela) continua com as cotas de
+/// antes, que são as que venderam: está no fluxo.
+///
+/// Antes, o custo da compra caía inteiro sobre as cotas de ontem: com uma base
+/// pequena (uma cota) e uma compra 50 vezes maior paga 1,6% acima do
+/// fechamento, a cota perdia 80% num dia. Agora pesa no máximo a fração do
+/// custo sobre o que se comprou.
+pub fn advance_day(
+    previous: Option<Quota>,
+    market_value: Decimal,
+    net_flow: Decimal,
+    purchase_cost: Decimal,
+) -> Quota {
     let market_value = market_value.max(Decimal::ZERO);
     let value = match previous {
         None => INITIAL_QUOTA,
@@ -43,16 +73,44 @@ pub fn advance(previous: Option<Quota>, market_value: Decimal, net_flow: Decimal
         // não houve rendimento a medir, a cota fica onde estava.
         Some(p) if p.quotas <= Decimal::ZERO => p.value,
         Some(p) => {
-            // Perda total (ou um aporte pago muito acima do fechamento) levaria
-            // a cota a zero ou abaixo; o piso mantém a série definida.
+            // Perda total levaria a cota a zero ou abaixo; o piso mantém a
+            // série definida.
             let floor = Decimal::new(1, QUOTA_DP);
-            round_quota((market_value - net_flow) / p.quotas).max(floor)
+            let before_trades = (market_value - net_flow - purchase_cost) / p.quotas;
+            let shared = market_value - purchase_cost;
+            let cost = if purchase_cost.is_zero() || shared <= Decimal::ZERO {
+                Decimal::ONE
+            } else {
+                market_value / shared
+            };
+            round_quota(before_trades * cost).max(floor)
         }
     };
     Quota {
         quotas: round_quota(market_value / value),
         value,
     }
+}
+
+/// O custo das compras do dia: o valor no fechamento do que se comprou menos o
+/// que se pagou, com as taxas (negativo quando pagou acima do fechamento,
+/// positivo abaixo). Só compra de verdade conta: quantidade e dinheiro
+/// positivos, num ativo cotado que tem preço hoje (desdobramento e bonificação
+/// não são dinheiro; renda fixa por valor entra pelo valor; ativo sem preço
+/// fica fora da carteira até ganhar um).
+pub fn purchase_cost(current: &[Position], purchases: &[Purchase]) -> Decimal {
+    let cost: Decimal = purchases
+        .iter()
+        .filter(|p| p.quantity > Decimal::ZERO && p.value > Decimal::ZERO)
+        .filter_map(|p| {
+            let now = current.iter().find(|c| c.asset_id == p.asset_id)?;
+            let price = now
+                .unit_price
+                .filter(|price| !now.by_value && *price > Decimal::ZERO)?;
+            Some(p.quantity * price - p.value)
+        })
+        .sum();
+    round_cents(cost)
 }
 
 /// Um ativo na foto do dia.
@@ -511,6 +569,52 @@ mod tests {
         assert_eq!(alone.value, day1.value);
     }
 
+    /// Uma cota de base e uma compra 50 vezes maior paga 1,6% acima do
+    /// fechamento (fictício; pela regra antiga a cota perdia 80% no dia): o
+    /// custo é de todo o dinheiro do dia, e a cota perde ~1,6% por ele.
+    #[test]
+    fn purchase_cost_is_shared_by_all_the_money_of_the_day() {
+        let id = Uuid::from_u128(7);
+        let day0 = advance(None, dec!(80), dec!(80));
+        let current = [units(id, dec!(51), dec!(80.40))];
+        let bought = [Purchase {
+            asset_id: id,
+            quantity: dec!(50),
+            value: dec!(4085),
+        }];
+        let cost = purchase_cost(&current, &bought);
+        assert_eq!(cost, dec!(-65));
+        let value = market_value(&current);
+        let flow = net_flow(&[units(id, dec!(1), dec!(80))], &current, &bought);
+        let day1 = advance_day(Some(day0), value, flow, cost);
+        // O preço andou 80 → 80,40 sobre a cota de ontem; o custo de 65 pesa
+        // sobre os 4.165,40 do dia.
+        let expected = dec!(80.40) / dec!(80) * value / (value - cost);
+        assert!(
+            (day1.value - expected).abs() < dec!(0.000001),
+            "{} != {expected}",
+            day1.value
+        );
+        assert!(day1.value > dec!(0.98));
+        // Sem custo (comprou pelo fechamento), a conta de sempre.
+        let at_close = [Purchase {
+            value: dec!(50) * dec!(80.40),
+            ..bought[0]
+        }];
+        assert_eq!(purchase_cost(&current, &at_close), Decimal::ZERO);
+        // Desdobramento e bonificação (sem dinheiro) e renda fixa não são compra.
+        let split = [Purchase {
+            asset_id: id,
+            quantity: dec!(10),
+            value: Decimal::ZERO,
+        }];
+        assert_eq!(purchase_cost(&current, &split), Decimal::ZERO);
+        assert_eq!(
+            purchase_cost(&[by_value(id, dec!(500))], &bought),
+            Decimal::ZERO
+        );
+    }
+
     #[test]
     fn empty_portfolio_keeps_the_quota_until_money_arrives() {
         let day0 = advance(None, Decimal::ZERO, Decimal::ZERO);
@@ -861,6 +965,37 @@ mod tests {
             let a = advance(Some(start), market_value(&alone), net_flow(&previous, &alone, &[]));
             let b = advance(Some(start), market_value(&with), net_flow(&previous, &with, &purchases));
             prop_assert_eq!(a.value, b.value);
+        }
+
+        /// Pagar acima do fechamento custa à cota, no máximo, a fração do
+        /// custo sobre o que se pagou — seja qual for o tamanho da base. Antes,
+        /// com base pequena, o mesmo custo podia levar a cota quase a zero.
+        #[test]
+        fn purchase_cost_never_costs_more_than_its_share_of_the_purchase(
+            held in 1u32..2_000,
+            bought in 1u32..5_000,
+            before in 1_000u32..20_000,
+            after in 1_000u32..20_000,
+            premium in 0u32..1_000,
+        ) {
+            let id = Uuid::new_v4();
+            let (before, after) = (Decimal::new(i64::from(before), 2), Decimal::new(i64::from(after), 2));
+            let previous = [units(id, Decimal::from(held), before)];
+            let start = advance(None, market_value(&previous), market_value(&previous));
+            let current = [units(id, Decimal::from(held + bought), after)];
+            let value = market_value(&current);
+            let at_close = Decimal::from(bought) * after;
+            let paid = round_cents(at_close * (Decimal::ONE + Decimal::new(i64::from(premium), 4)));
+            let purchase = |value: Decimal| [Purchase { asset_id: id, quantity: Decimal::from(bought), value }];
+            let fair = advance_day(Some(start), value, net_flow(&previous, &current, &purchase(at_close)), Decimal::ZERO);
+            let cost = purchase_cost(&current, &purchase(paid));
+            let charged = advance_day(Some(start), value, net_flow(&previous, &current, &purchase(paid)), cost);
+            let share = (paid - at_close) / paid;
+            prop_assert!(charged.value <= fair.value + dec!(0.000000001));
+            prop_assert!(
+                charged.value >= fair.value * (Decimal::ONE - share) - dec!(0.000001),
+                "{} < {} × (1 − {share})", charged.value, fair.value
+            );
         }
 
         /// Aportes que mantêm a proporção da carteira deixam a série inteira

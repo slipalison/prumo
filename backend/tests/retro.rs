@@ -293,7 +293,9 @@ async fn hand_case_matches_the_document(
     assert_eq!(row(D3), (dec!(2870), dec!(0), dec!(10)));
     assert_eq!(row(D4), (dec!(2895), dec!(0), dec!(0)));
     assert_eq!(row(D5), (dec!(2405), dec!(-519.5), dec!(0)));
-    let q2 = dec!(2040) / dec!(2010);
+    // D2: as 20 WEGE3 custaram 800 e valem 820 no fechamento; o ganho da
+    // compra é de todo o dinheiro do dia (docs/desempenho.md).
+    let q2 = dec!(2020) / dec!(2010) * dec!(2840) / dec!(2820);
     let q3 = q2 * dec!(2880) / dec!(2840);
     let q5 = q3 * dec!(2924.5) / dec!(2870);
     close_to(on(&series, D1).quota, Decimal::ONE);
@@ -319,7 +321,7 @@ async fn hand_case_matches_the_document(
     assert_eq!(all.status, StatusCode::OK, "{}", all.text);
     assert_eq!(all.body["starts_on"], D1.to_string());
     assert_eq!(all.body["rebuilding_since"], Value::Null);
-    assert_eq!(all.body["return_percent"], 4.8765);
+    assert_eq!(all.body["return_percent"], 4.5848);
     let year = get(&app.router, "/api/v1/performance?period=12m").await;
     assert_eq!(year.body["return_percent"], 0.0);
     assert_eq!(year.body["summary"]["twelve_months"]["full_window"], true);
@@ -327,9 +329,9 @@ async fn hand_case_matches_the_document(
     assert_eq!(years[0]["year"], 2025);
     let months = years[0]["months"].as_array().unwrap();
     assert_eq!(months[1], Value::Null);
-    assert_eq!(months[2], 4.8765);
+    assert_eq!(months[2], 4.5848);
     assert_eq!(months[3], 0.0);
-    assert_eq!(years[0]["return_percent"], 4.8765);
+    assert_eq!(years[0]["return_percent"], 4.5848);
     assert_eq!(years.last().unwrap()["return_percent"], 0.0);
     let worth = get(&app.router, "/api/v1/history/net-worth?period=all").await;
     let points = worth.body["points"].as_array().unwrap();
@@ -407,7 +409,8 @@ async fn editing_an_old_entry_redoes_only_from_its_date(
     );
     let series = rows(&db.store, user).await;
     assert_eq!(on(&series, D2).net_flow, dec!(780));
-    let q2 = dec!(2060) / dec!(2010);
+    // Pagou 780 pelo que vale 820: +40, de todo o dinheiro do dia.
+    let q2 = dec!(2020) / dec!(2010) * dec!(2840) / dec!(2800);
     close_to(on(&series, D2).quota, q2);
     close_to(
         on(&series, D5).quota,
@@ -657,4 +660,74 @@ async fn migration_marks_existing_ledgers() {
     assert!(store.dirty_since(empty).await.unwrap().is_none());
     let points = store.snapshot_points(user).await.unwrap();
     assert_eq!(points[0].income, dec!(0));
+}
+
+/// A migração 0035 (o custo da compra passou a ser de todo o dinheiro do dia)
+/// refaz toda série já guardada, desde o primeiro lançamento de cada pessoa:
+/// banco nas migrações anteriores, série em dia (sem marca), e a 0035 por cima.
+#[tokio::test]
+async fn purchase_cost_migration_rebuilds_every_series() {
+    let container = Postgres::default()
+        .with_tag("17-alpine")
+        .start()
+        .await
+        .unwrap();
+    let url = format!(
+        "postgres://postgres:postgres@{}:{}/postgres",
+        container.get_host().await.unwrap(),
+        container.get_host_port_ipv4(5432).await.unwrap()
+    );
+    let pool = PgPoolOptions::new().connect(&url).await.unwrap();
+    let mut before = sqlx::migrate!("./migrations");
+    before.migrations = before
+        .migrations
+        .iter()
+        .filter(|m| m.version < 35)
+        .cloned()
+        .collect::<Vec<_>>()
+        .into();
+    before.run(&pool).await.unwrap();
+
+    let (user, empty, asset) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+    for (id, email) in [(user, "custo@prumo.test"), (empty, "sem-livro@prumo.test")] {
+        sqlx::query("insert into users (id, email) values ($1, $2)")
+            .bind(id)
+            .bind(email)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    sqlx::query(
+        "insert into assets (id, user_id, asset_class, symbol, display_name, quantity, listed_on_b3, tax_instrument)
+         values ($1, $2, 'crypto', 'QBTC11', 'Ficticio', 47, true, 'etf')",
+    )
+    .bind(asset)
+    .bind(user)
+    .execute(&pool)
+    .await
+    .unwrap();
+    for (date, quantity) in [(D4, 46), (D2, 1)] {
+        sqlx::query(
+            "insert into transactions (id, user_id, asset_id, symbol, asset_class, display_name, kind, trade_date, quantity, unit_price)
+             values ($1, $2, $3, 'QBTC11', 'crypto', 'Ficticio', 'buy', $4, $5, 100)",
+        )
+        .bind(Uuid::new_v4())
+        .bind(user)
+        .bind(asset)
+        .bind(date)
+        .bind(Decimal::from(quantity))
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    // A série já estava em dia: a marca que o gatilho deixou foi atendida.
+    sqlx::query("delete from performance_rebuilds")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let store = Store::from_pool(pool.clone());
+    store.migrate().await.unwrap();
+    assert_eq!(store.dirty_since(user).await.unwrap().unwrap().since, D2);
+    assert!(store.dirty_since(empty).await.unwrap().is_none());
 }

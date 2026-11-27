@@ -23,7 +23,9 @@ use uuid::Uuid;
 
 use super::allocation::round_cents;
 use super::ledger::{sort, Entry, Kind};
-use super::performance::{advance, market_value, net_flow, Position, Purchase, Quota};
+use super::performance::{
+    advance_day, market_value, net_flow, purchase_cost, Position, Purchase, Quota,
+};
 
 /// Um valor por data, em ordem crescente e sem data repetida.
 pub type Series = Vec<(Date, Decimal)>;
@@ -253,8 +255,11 @@ pub fn rebuild(
                 .sum(),
         );
         // Provento é retorno: soma ao patrimônio do dia na conta da cota, como
-        // o dinheiro que a carteira rendeu antes de sair para a pessoa.
-        let next = advance(quota, value, flow - received);
+        // o dinheiro que a carteira rendeu antes de sair para a pessoa. O custo
+        // da compra (pago acima do fechamento, taxas) é de todo o dinheiro do
+        // dia, não só do de ontem (`advance_day`).
+        let cost = purchase_cost(&positions, &purchases);
+        let next = advance_day(quota, value, flow - received, cost);
         days.push(Day {
             date,
             market_value: value,
@@ -394,12 +399,16 @@ mod tests {
         assert_eq!(row(&days[6]), (dec!(2405), dec!(0), dec!(0)));
         assert!((days[6].quota.value - days[4].quota.value).abs() < dec!(0.0000000001));
         // A cota, dia a dia: (patrimônio − fluxo + provento) / cotas de ontem.
+        // Em D2 as 20 WEGE3 custaram 800 e valem 820 no fechamento (+20): o
+        // preço anda sobre as cotas de ontem ((2.840 − 800 − 20) / 2.010) e o
+        // ganho da compra é de todo o dinheiro do dia (× 2.840 / 2.820).
+        let d2 = dec!(2020) / dec!(2010) * dec!(2840) / dec!(2820);
         let exact = [
             Decimal::ONE,
-            dec!(2040) / dec!(2010),
-            dec!(2040) / dec!(2010) * dec!(2880) / dec!(2840),
-            dec!(2040) / dec!(2010) * dec!(2880) / dec!(2840) * dec!(2895) / dec!(2870),
-            dec!(2040) / dec!(2010) * dec!(2880) / dec!(2840) * dec!(2924.5) / dec!(2870),
+            d2,
+            d2 * dec!(2880) / dec!(2840),
+            d2 * dec!(2880) / dec!(2840) * dec!(2895) / dec!(2870),
+            d2 * dec!(2880) / dec!(2840) * dec!(2924.5) / dec!(2870),
         ];
         for (day, want) in days.iter().zip(exact) {
             assert!(
@@ -410,7 +419,7 @@ mod tests {
             );
         }
         let all = period_return(&quotas(&days), D1, SUNDAY).unwrap();
-        assert_eq!((all.ret * dec!(100)).round_dp(4), dec!(4.8765));
+        assert_eq!((all.ret * dec!(100)).round_dp(4), dec!(4.5848));
         // Aplicado e ganho: 2001 + 800 − 519,50; ganho de preço 2405 − 2281,50.
         let invested: Decimal = days.iter().map(|d| d.net_flow).sum();
         assert_eq!(invested, dec!(2281.5));
