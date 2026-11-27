@@ -323,7 +323,7 @@ todas de uma vez.
   `https://api.bcb.gov.br/dados/serie/bcdata.sgs.4390/dados?formato=json`. É a
   taxa da tabela de acréscimos legais da Receita: o teste
   `interest_matches_the_receita_table_for_july_2026` refaz a tabela de juros
-  para pagamento em julho de 2026 (vencimentos de janeiro de 2025 a junho de
+  para pagamento em julho de 2026 (a da Receita, republicada pelo CNB/SP) (vencimentos de janeiro de 2025 a junho de
   2026, de 20,11% a 1,00%) somando a série, e bate em todos os meses.
 - O SGS publica o mês corrente acumulado até a véspera (em 27/11/2026, o de
   novembro dizia 0,87%). O Prumo só guarda **mês fechado há 4 dias**
@@ -332,7 +332,8 @@ todas de uma vez.
 - A tarefa `tax_selic` roda a cada 6 horas e só vai à rede quando falta um mês
   fechado (uma resposta de menos de 1 KB, de janeiro de 2025 até hoje). Falha
   da fonte não derruba nada: o que está guardado continua valendo.
-- A calculadora fica na linha do mês, em DARF vencido ("Multa e juros"): a
+- A calculadora fica na linha do mês, em DARF vencido e não marcado como pago
+  ("Multa e juros"): a
   pessoa escolhe o dia do pagamento e vê a conta e o que vai em cada campo do
   DARF (código, período de apuração, vencimento, principal, multa e juros). É
   estimativa; o Sicalc da Receita é quem emite.
