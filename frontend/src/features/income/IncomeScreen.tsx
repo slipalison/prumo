@@ -18,6 +18,7 @@ import { EstimateCard } from "./EstimateCard";
 import { FoldPanel } from "./FoldPanel";
 import { IncomeGoalCard } from "./IncomeGoalCard";
 import { EventList, UpcomingList } from "./IncomeLists";
+import { ScrollRegion } from "./ScrollRegion";
 import { MonthlyBars } from "./MonthlyBars";
 import { FilterChip } from "./FilterChip";
 import { PayerExplorer } from "./PayerExplorer";
@@ -102,9 +103,9 @@ function Loaded({ summary }: { summary: IncomeSummary }) {
         </Panel>
         <div className="income-side">
           <Panel title="Próximos pagamentos" className="income-upcoming" actions={chip}>
-            <div className="income-scroll">
+            <ScrollRegion className="income-scroll" label="Próximos pagamentos, lista com rolagem">
               <UpcomingList events={upcoming} {...(payer ? { filteredBy: payer.label } : {})} />
-            </div>
+            </ScrollRegion>
           </Panel>
           <PendingEventsCard />
           {!hasPayers && estimate}

@@ -13,6 +13,7 @@ import { useMoney } from "../../lib/privacy";
 import { yieldText } from "../../lib/yieldOnCost";
 import { FilterChip } from "./FilterChip";
 import { PayerDonut } from "./PayerDonut";
+import { ScrollRegion } from "./ScrollRegion";
 
 type PayerExplorerProps = {
   payers: IncomePayer[];
@@ -142,7 +143,7 @@ export function PayerExplorer({ payers, total, selected, onSelect }: PayerExplor
             </>
           )}
         </PayerDonut>
-        <div ref={scroller} className="payers__scroll">
+        <ScrollRegion scrollRef={scroller} className="payers__scroll" label={group ? `Quem pagou dentro de ${group.label}, lista com rolagem` : "Quem pagou, lista com rolagem"}>
           <table className="payers__table">
             <caption className="sr-only">{group ? `Quem pagou dentro de ${group.label}` : "Quem pagou nos últimos 12 meses"}</caption>
             <thead>
@@ -214,7 +215,7 @@ export function PayerExplorer({ payers, total, selected, onSelect }: PayerExplor
               })}
             </tbody>
           </table>
-        </div>
+        </ScrollRegion>
       </motion.div>
     </Panel>
   );
