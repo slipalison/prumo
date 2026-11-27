@@ -15,6 +15,12 @@ function attentionLine(result: RuleResult): string {
   return `${ruleSentence(result)}${now}`;
 }
 
+/** O título do resumo: os pontos a ver, nenhum, ou ainda sem regra com o que medir. */
+function summaryTitle(attention: number, measured: boolean): string {
+  if (attention > 0) return attentionText(attention);
+  return measured ? "Nenhum ponto a ver" : "Ainda sem o que medir";
+}
+
 /**
  * Resumo curto da Análise para a faixa de números da Carteira: quantos pontos
  * a ver e o caminho para a tela; os dois primeiros ficam no ⓘ. Nunca atrapalha
@@ -50,7 +56,7 @@ export function AnalysisSummary() {
         )}
       </span>
       <h2 className="stat-card__value health-summary__title">
-        {attention > 0 ? attentionText(attention) : measured ? "Nenhum ponto a ver" : "Ainda sem o que medir"}
+        {summaryTitle(attention, measured)}
       </h2>
       <a className="stat-card__detail health-summary__link" href="#/analise">
         Ver análise

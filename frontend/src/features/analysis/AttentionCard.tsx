@@ -6,13 +6,30 @@ import { pointText } from "../../lib/analysisText";
 import { iconSubjectOfLabel } from "../../lib/assetIcon";
 import { plural } from "../../lib/format";
 
+/** Sem ponto de atenção: nenhum nos ativos avaliados, ou ainda sem dado para avaliar. */
+function NoAttention({ assessed }: Readonly<{ assessed: number }>) {
+  if (assessed > 0) {
+    return (
+      <output>
+        Nenhum ponto de atenção nos {assessed} {plural(assessed, ["ativo com fundamentos", "ativos com fundamentos"])}.
+      </output>
+    );
+  }
+  return (
+    <output>
+      Ainda sem dados de fundamentos para avaliar: nenhum ativo seu tem balanço ou informe da CVM guardado, então não
+      há o que dizer, nem “tudo certo”.
+    </output>
+  );
+}
+
 /**
  * Pontos de atenção por ativo: avisos curtos e factuais tirados dos balanços da
  * CVM (ROE e margem baixos, crescimento fraco, dívida maior que o patrimônio,
  * recuperação judicial) e dos proventos (queda em 12 meses). Não recomendam
  * nada. Sem dado de fundamentos, diz isso em vez de "tudo certo".
  */
-export function AttentionCard({ attention }: { attention: Attention }) {
+export function AttentionCard({ attention }: Readonly<{ attention: Attention }>) {
   const { assessed, without_data: without, items } = attention;
 
   return (
@@ -40,15 +57,8 @@ export function AttentionCard({ attention }: { attention: Attention }) {
             </li>
           ))}
         </ul>
-      ) : assessed > 0 ? (
-        <p role="status">
-          Nenhum ponto de atenção nos {assessed} {plural(assessed, ["ativo com fundamentos", "ativos com fundamentos"])}.
-        </p>
       ) : (
-        <p role="status">
-          Ainda sem dados de fundamentos para avaliar: nenhum ativo seu tem balanço ou informe da CVM guardado, então não
-          há o que dizer, nem “tudo certo”.
-        </p>
+        <NoAttention assessed={assessed} />
       )}
 
       <p className="attention-card__foot">

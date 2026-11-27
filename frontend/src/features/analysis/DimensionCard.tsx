@@ -12,7 +12,7 @@ const ORDER = { warning: 0, ok: 1, no_data: 2, off: 3 } as const;
  * regras ok, sem dado e desligadas. O cabeçalho repete a pontuação, com o
  * número exato.
  */
-export function DimensionCard({ dimension }: { dimension: Dimension }) {
+export function DimensionCard({ dimension }: Readonly<{ dimension: Dimension }>) {
   const text = DIMENSION_TEXT[dimension.id];
   const { score } = dimension;
   const rules = [...dimension.rules].sort((a, b) => ORDER[a.status] - ORDER[b.status]);

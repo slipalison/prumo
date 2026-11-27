@@ -2,7 +2,7 @@ import type { SVGProps } from "react";
 import { Svg } from "../../components/icons";
 
 /** Batimento: o ícone da Análise na navegação. */
-export function IconAnalysis(props: SVGProps<SVGSVGElement>) {
+export function IconAnalysis(props: Readonly<SVGProps<SVGSVGElement>>) {
   return (
     <Svg {...props}>
       <path d="M3 12h4l2.5-6 4 12 2.5-6H21" />

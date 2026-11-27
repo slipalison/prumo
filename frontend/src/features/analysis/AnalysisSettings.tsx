@@ -98,7 +98,7 @@ export function AnalysisSettings() {
   );
 }
 
-function RulesCard({ config }: { config: AnalysisConfig }) {
+function RulesCard({ config }: Readonly<{ config: AnalysisConfig }>) {
   const saved = useMemo(() => toDraft(config), [config]);
   const [draft, setDraft] = useState<Draft>(saved);
   const [touched, setTouched] = useState(false);

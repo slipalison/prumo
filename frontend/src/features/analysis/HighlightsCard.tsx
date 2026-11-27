@@ -5,7 +5,7 @@ import { formatSignedPercent } from "../../lib/analysisText";
 import { iconSubjectOfLabel } from "../../lib/assetIcon";
 import { cx } from "../../lib/cx";
 
-function MoverList({ title, movers, empty }: { title: string; movers: Mover[]; empty: string }) {
+function MoverList({ title, movers, empty }: Readonly<{ title: string; movers: Mover[]; empty: string }>) {
   return (
     <div className="movers">
       <h4 className="movers__title">{title}</h4>
@@ -28,7 +28,7 @@ function MoverList({ title, movers, empty }: { title: string; movers: Mover[]; e
   );
 }
 
-function Measure({ title, ranking, empty }: { title: string; ranking: Ranking; empty: string }) {
+function Measure({ title, ranking, empty }: Readonly<{ title: string; ranking: Ranking; empty: string }>) {
   return (
     <div className="highlights__measure">
       <h3 className="highlights__heading">{title}</h3>
@@ -46,7 +46,7 @@ function Measure({ title, ranking, empty }: { title: string; ranking: Ranking; e
  * passado, não recomendação: só entra quem subiu na lista de cima e quem caiu na
  * de baixo.
  */
-export function HighlightsCard({ highlights }: { highlights: Analysis["highlights"] }) {
+export function HighlightsCard({ highlights }: Readonly<{ highlights: Analysis["highlights"] }>) {
   return (
     <Panel
       className="highlights"

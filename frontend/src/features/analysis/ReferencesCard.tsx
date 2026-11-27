@@ -36,7 +36,7 @@ import { methodTip } from "../ceiling/methodTip";
 type Item = StockReference | FundReference;
 
 /** Célula sem valor: o traço à vista, o motivo para o leitor de tela e no ⓘ. */
-function Missing({ why }: { why: string }) {
+function Missing({ why }: Readonly<{ why: string }>) {
   return (
     <>
       <span className="references__none" aria-hidden="true">
@@ -48,7 +48,7 @@ function Missing({ why }: { why: string }) {
 }
 
 /** O valor de uma referência, com a conta no ⓘ; sem valor, o motivo. */
-function RefCell({ found, name, tip }: { found: RefValue; name: string; tip: string | null }) {
+function RefCell({ found, name, tip }: Readonly<{ found: RefValue; name: string; tip: string | null }>) {
   const money = useMoney();
   if (found.value === null) return <Missing why={`sem ${name}: ${GAP_TEXT[found.gap ?? "no_reference"]}`} />;
   return (
@@ -64,7 +64,7 @@ function RefCell({ found, name, tip }: { found: RefValue; name: string; tip: str
 }
 
 /** "Seu teto": o valor e o método, "Sem teto", ou o método sem valor com o motivo. */
-function CeilingCell({ ceiling, label }: { ceiling: Ceiling | null; label: string }) {
+function CeilingCell({ ceiling, label }: Readonly<{ ceiling: Ceiling | null; label: string }>) {
   const money = useMoney();
   if (!ceiling) return <span className="references__muted">Sem teto</span>;
   if (ceiling.value === null) {
@@ -250,7 +250,7 @@ function fundColumns(
 }
 
 /** A explicação das fórmulas, com as taxas de hoje. */
-function Formulas({ references }: { references: References }): ReactNode {
+function Formulas({ references }: Readonly<{ references: References }>): ReactNode {
   const bazinYield = `${formatPercent(references.bazin_yield, Number.isInteger(references.bazin_yield) ? 0 : 2)} ao ano`;
   const market = references.market;
   const pp = (value: number) => `${value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} p.p.`;
@@ -279,7 +279,7 @@ function Formulas({ references }: { references: References }): ReactNode {
  * alvo, nem recomendação. "Teto ▾" abre a escolha (Sem teto, cada método com o
  * valor de hoje, Valor próprio); confirmar grava, e "Sem teto" tira o teto.
  */
-export function ReferencesCard({ references }: { references: References }) {
+export function ReferencesCard({ references }: Readonly<{ references: References }>) {
   const money = useMoney();
   const toast = useToast();
   const client = useQueryClient();

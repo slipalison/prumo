@@ -23,6 +23,28 @@ const PILL: Record<RuleStatus, Status> = { warning: "attention", ok: "ok", no_da
 const findingsOf = (result: RuleResult): HealthWarning[] =>
   result.detail?.kind === "findings" ? result.detail.warnings : [];
 
+/**
+ * A chave de um achado: quem ele aponta (o ativo, o setor, a classe), que não
+ * se repete dentro de uma regra e não muda entre uma renderização e outra.
+ */
+function findingKey(warning: HealthWarning): string {
+  const { subject } = warning;
+  switch (subject.kind) {
+    case "asset":
+      return `${warning.rule}-asset-${subject.asset_id}`;
+    case "top_assets":
+      return `${warning.rule}-top-${subject.labels.join(",")}`;
+    case "sector":
+      return `${warning.rule}-sector-${subject.asset_class}-${subject.sector}`;
+    case "class":
+      return `${warning.rule}-class-${subject.asset_class}`;
+    case "income_months":
+      return `${warning.rule}-income-months`;
+    case "payer":
+      return `${warning.rule}-payer-${subject.asset_id ?? subject.label}`;
+  }
+}
+
 /** O número de agora: só quando a regra mediu, e não nas regras sem limite que contam achados. */
 function nowValue(result: RuleResult): string | null {
   const measured = result.status === "ok" || result.status === "warning";
@@ -43,7 +65,7 @@ function showsBar(result: RuleResult): result is RuleResult & { current: number;
 }
 
 /** Um achado de uma das sete regras originais da Saúde, em uma linha: quem passou e o número. */
-function FindingLine({ warning }: { warning: HealthWarning }) {
+function FindingLine({ warning }: Readonly<{ warning: HealthWarning }>) {
   const assets = warningAssets(warning);
   const members = warningMembers(warning);
   return (
@@ -64,13 +86,13 @@ function FindingLine({ warning }: { warning: HealthWarning }) {
 }
 
 /** A conta por trás do estado, em uma linha (o diagnóstico). */
-function Diagnosis({ result, money }: { result: RuleResult; money: Money }) {
+function Diagnosis({ result, money }: Readonly<{ result: RuleResult; money: Money }>) {
   const findings = findingsOf(result);
   if (findings.length > 0) {
     return (
       <ul className="rule-findings">
-        {findings.map((warning, index) => (
-          <FindingLine key={`${warning.rule}-${index}`} warning={warning} />
+        {findings.map((warning) => (
+          <FindingLine key={findingKey(warning)} warning={warning} />
         ))}
       </ul>
     );
@@ -84,12 +106,16 @@ function Diagnosis({ result, money }: { result: RuleResult; money: Money }) {
 }
 
 /** O que fazer num ponto a ver: o caminho à vista, o texto inteiro (com o valor do aporte) no ⓘ. */
-function Action({ result, money }: { result: RuleResult; money: Money }) {
+function Action({ result, money }: Readonly<{ result: RuleResult; money: Money }>) {
   const findings = findingsOf(result);
-  const actions: Array<{ title?: string; action: WarningAction }> =
+  const actions: Array<{ key: string; title?: string; action: WarningAction }> =
     findings.length > 0
-      ? findings.map((warning) => ({ title: findings.length > 1 ? warningTitle(warning) : undefined, action: warningAction(warning, money) }))
-      : [ruleAction(result, money)].filter((a): a is WarningAction => a !== null).map((action) => ({ action }));
+      ? findings.map((warning) => ({
+          key: findingKey(warning),
+          title: findings.length > 1 ? warningTitle(warning) : undefined,
+          action: warningAction(warning, money),
+        }))
+      : [ruleAction(result, money)].filter((a): a is WarningAction => a !== null).map((action) => ({ key: result.rule, action }));
   const link = actions.find((entry) => entry.action.link)?.action.link;
   if (actions.length === 0) return null;
   return (
@@ -100,8 +126,8 @@ function Action({ result, money }: { result: RuleResult; money: Money }) {
         </a>
       )}
       <InfoTip label={`O que fazer: ${ruleSentence(result)}`} align="end">
-        {actions.map(({ title, action }, index) => (
-          <span key={index} className="rule-action__text">
+        {actions.map(({ key, title, action }) => (
+          <span key={key} className="rule-action__text">
             {title && <strong>{title}. </strong>}
             {action.text}
           </span>
@@ -188,7 +214,7 @@ type RuleTableProps = {
  * agora com a barra do limite e, num ponto a ver, o caminho do que fazer. Sem
  * dado é dito como sem dado, nunca como "tudo certo" nem como falha.
  */
-export function RuleTable({ caption, rules, withAction = false }: RuleTableProps) {
+export function RuleTable({ caption, rules, withAction = false }: Readonly<RuleTableProps>) {
   const columns = useColumns(withAction);
   return (
     <DataTable

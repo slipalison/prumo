@@ -90,7 +90,7 @@ function AnalysisReport() {
   );
 }
 
-function Report({ analysis }: { analysis: Analysis }) {
+function Report({ analysis }: Readonly<{ analysis: Analysis }>) {
   return (
     <>
       <div className="analysis__top">
@@ -110,8 +110,46 @@ function Report({ analysis }: { analysis: Analysis }) {
   );
 }
 
+/**
+ * As duas linhas do veredito: os pontos a ver, a carteira nos limites ou
+ * ainda sem o que medir. São `<span>` porque vão dentro do `<output>`, que só
+ * aceita conteúdo de frase; a coluna do veredito (flex) as empilha.
+ */
+function VerdictLines({ attention, measured, calm }: Readonly<{ attention: number; measured: number; calm: boolean }>) {
+  if (attention > 0) {
+    return (
+      <>
+        <span className="analysis__count">{attentionText(attention)}</span>
+        <span className="analysis__hint">
+          Das {measured} {plural(measured, ["regra que tinha", "regras que tinham"])} o que medir,{" "}
+          {attention} {plural(attention, ["passou", "passaram"])} do seu limite.
+        </span>
+      </>
+    );
+  }
+  if (calm) {
+    return (
+      <>
+        <span className="analysis__count">Nenhum ponto a ver</span>
+        <span className="analysis__hint">
+          A carteira está dentro dos seus limites em {measured} {plural(measured, ["regra", "regras"])}.
+        </span>
+      </>
+    );
+  }
+  return (
+    <>
+      <span className="analysis__count">Ainda sem o que medir</span>
+      <span className="analysis__hint">
+        Cadastre ativos, defina as metas e registre proventos para as regras terem o que olhar. Ligadas e sem
+        dado, elas aparecem como “Sem dado”.
+      </span>
+    </>
+  );
+}
+
 /** O veredito em uma frase, com o perfil de risco logo abaixo. */
-function Verdict({ analysis }: { analysis: Analysis }) {
+function Verdict({ analysis }: Readonly<{ analysis: Analysis }>) {
   const measured = analysis.dimensions.reduce((sum, d) => sum + (d.score?.measured ?? 0), 0);
   const calm = analysis.attention_count === 0 && measured > 0;
 
@@ -119,32 +157,9 @@ function Verdict({ analysis }: { analysis: Analysis }) {
     <GlassCard as="section" className="panel analysis__verdict" aria-label="Resumo">
       <div className="analysis__verdict-head">
         <Plumb state={calm ? "settled" : "idle"} size={44} label={calm ? "Prumo no eixo" : "Prumo"} />
-        <div role="status" className="analysis__verdict-text">
-          {analysis.attention_count > 0 ? (
-            <>
-              <p className="analysis__count">{attentionText(analysis.attention_count)}</p>
-              <p className="analysis__hint">
-                Das {measured} {plural(measured, ["regra que tinha", "regras que tinham"])} o que medir,{" "}
-                {analysis.attention_count} {plural(analysis.attention_count, ["passou", "passaram"])} do seu limite.
-              </p>
-            </>
-          ) : calm ? (
-            <>
-              <p className="analysis__count">Nenhum ponto a ver</p>
-              <p className="analysis__hint">
-                A carteira está dentro dos seus limites em {measured} {plural(measured, ["regra", "regras"])}.
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="analysis__count">Ainda sem o que medir</p>
-              <p className="analysis__hint">
-                Cadastre ativos, defina as metas e registre proventos para as regras terem o que olhar. Ligadas e sem
-                dado, elas aparecem como “Sem dado”.
-              </p>
-            </>
-          )}
-        </div>
+        <output className="analysis__verdict-text">
+          <VerdictLines attention={analysis.attention_count} measured={measured} calm={calm} />
+        </output>
       </div>
       <ProfileCard profile={analysis.profile} />
     </GlassCard>
@@ -157,7 +172,7 @@ const ORIGIN: Record<string, string> = {
 };
 
 /** De onde vêm os dados: recolhido no fim, com o aviso de falha à mostra na frase fechada. */
-function SourcesCard({ analysis }: { analysis: Analysis }) {
+function SourcesCard({ analysis }: Readonly<{ analysis: Analysis }>) {
   const failing = analysis.sources.filter((source) => source.failing).length;
 
   return (

@@ -13,12 +13,19 @@ function jumpTo(id: DimensionId) {
   target.focus({ preventScroll: true });
 }
 
+/** A pílula ao lado do percentual: quantas regras a ver, tudo ok ou nada (sem regra medida). */
+function ScorePill({ warnings, measured }: Readonly<{ warnings: number; measured: number }>) {
+  if (warnings > 0) return <StatusPill status="attention">{warnings} a ver</StatusPill>;
+  if (measured > 0) return <StatusPill status="ok">Tudo ok</StatusPill>;
+  return null;
+}
+
 /**
  * As quatro pontuações lado a lado, no topo: o percentual grande, a barra e o
  * número exato por trás ("3 de 9 regras ok"). Cada cartão leva até a tabela
  * da dimensão.
  */
-export function DimensionScores({ dimensions }: { dimensions: Dimension[] }) {
+export function DimensionScores({ dimensions }: Readonly<{ dimensions: Dimension[] }>) {
   return (
     <ul className="dim-scores" aria-label="Pontuação por dimensão">
       {dimensions.map((dimension, index) => {
@@ -38,14 +45,10 @@ export function DimensionScores({ dimensions }: { dimensions: Dimension[] }) {
             <p className="dim-score__title">{title}</p>
             <div className="dim-score__head">
               <p className="dim-score__percent">{percent ?? "Sem dado"}</p>
-              {warnings > 0 ? (
-                <StatusPill status="attention">{warnings} a ver</StatusPill>
-              ) : score.measured > 0 ? (
-                <StatusPill status="ok">Tudo ok</StatusPill>
-              ) : null}
+              <ScorePill warnings={warnings} measured={score.measured} />
             </div>
             {score.percent !== null && (
-              <div
+              <div // NOSONAR: o <meter> nativo desenha a própria barra e não mostra filhos; aqui o preenchimento é animado (motion)
                 className="dim-score__meter"
                 role="meter"
                 aria-label={`${title}: ${scoreText(score)}`}

@@ -7,7 +7,7 @@ import { formatPercent } from "../../lib/format";
 type Profile = Analysis["profile"];
 
 /** A barra de uma mistura: renda fixa de um lado (listrada), renda variável do outro (lisa), os dois em texto. */
-function MixBar({ title, mix, empty }: { title: string; mix: Mix | null; empty: string }) {
+function MixBar({ title, mix, empty }: Readonly<{ title: string; mix: Mix | null; empty: string }>) {
   if (!mix) {
     return (
       <div className="mix">
@@ -23,7 +23,7 @@ function MixBar({ title, mix, empty }: { title: string; mix: Mix | null; empty: 
       <p className="mix__title">
         {title}: <strong>{PROFILE_LABEL[mix.profile]}</strong>
       </p>
-      <div
+      <div // NOSONAR: barra de proporção desenhada com spans; <img> pediria um arquivo, e o role="img" com aria-label é o que a nomeia
         className="mix__bar"
         role="img"
         aria-label={`${title}: perfil ${PROFILE_LABEL[mix.profile].toLowerCase()}, renda fixa ${fixed}, renda variável ${variable}`}
@@ -58,7 +58,7 @@ function comparison(profile: Profile): string | null {
  * renda fixa e renda variável, o rótulo que isso merece e o mesmo para as
  * metas, para comparar o atual com o desejado. Os limiares do Prumo ficam no ⓘ.
  */
-export function ProfileCard({ profile }: { profile: Profile }) {
+export function ProfileCard({ profile }: Readonly<{ profile: Profile }>) {
   const titleId = useId();
   const note = comparison(profile);
   const conservative = formatPercent(profile.conservative_max, 0);
