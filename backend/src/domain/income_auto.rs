@@ -672,86 +672,34 @@ pub fn plan(
     let mut wanted: HashMap<String, AutoIncome> = HashMap::new();
     let mut kept: HashSet<String> = HashSet::new();
 
-    let mut by_isin: HashMap<&str, Vec<&CashAnnouncement>> = HashMap::new();
-    for announcement in announcements {
-        by_isin
-            .entry(announcement.isin.as_str())
-            .or_default()
-            .push(announcement);
-    }
-    for list in by_isin.values_mut() {
-        // As parcelas de um anúncio ficam juntas, da data de pagamento mais
-        // cedo à mais tarde, e a que ainda não tem data por último: quando ela
-        // ganhar data, as de antes não mudam de ordem.
-        list.sort_by_key(|a| {
-            (
-                a.record_date,
-                a.label.clone(),
-                a.rate,
-                a.pay_date.is_none(),
-                a.pay_date,
-            )
-        });
-    }
-
+    let by_isin = announcements_by_isin(announcements);
     let mut ordered: Vec<&AutoAsset> = assets.iter().collect();
     ordered.sort_by_key(|a| a.id);
     for asset in ordered {
         let Some(isin) = asset.isin.as_deref() else {
             continue;
         };
-        let mut derived = Vec::new();
-        let mut broken = false;
         let list = by_isin.get(isin).map_or(&[][..], Vec::as_slice);
-        for (index, announcement) in list.iter().enumerate() {
-            let installment = list[..index]
-                .iter()
-                .rev()
-                .take_while(|before| same_announcement(before, announcement))
-                .count();
-            match derive(asset, announcement, installment) {
-                Ok(Some(auto)) => derived.push((announcement.record_date, auto)),
-                Ok(None) => {}
-                Err(_) => {
-                    broken = true;
-                    break;
-                }
-            }
-        }
-        if broken {
+        let Some(derived) = derive_all(asset, list) else {
             // Livro que não fecha: não dá para saber a quantidade. Os
             // automáticos deste ativo ficam como estão até o livro ser corrigido.
             result.skipped.push(asset.id);
-            for k in known.iter().filter(|k| {
-                k.source == IncomeSource::B3Announcement && k.asset_id == Some(asset.id)
-            }) {
-                if let Some(r) = &k.external_ref {
-                    kept.insert(r.clone());
-                }
-            }
+            kept.extend(
+                known
+                    .iter()
+                    .filter(|k| {
+                        k.source == IncomeSource::B3Announcement && k.asset_id == Some(asset.id)
+                    })
+                    .filter_map(|k| k.external_ref.clone()),
+            );
             continue;
-        }
+        };
         // Primeiro o um para um pela data de pagamento, em todos os anúncios;
         // depois pela data com; só o que sobrar procura as parcelas da pessoa.
         // Assim a parcela de 2027 lançada à mão não cobre a de 2026 (as duas têm
         // a mesma data com), e um grupo nunca toma o provento que outro anúncio
         // casaria sozinho.
-        let mut unmatched = derived;
-        for day in [SameDay::Payment, SameDay::Record] {
-            let mut left = Vec::new();
-            for (record, auto) in unmatched {
-                let winner = winners
-                    .iter()
-                    .find(|k| !used.contains(&k.id) && same_income(k, asset, &auto, record, day));
-                if let Some(winner) = winner {
-                    used.insert(winner.id);
-                    result.covered += 1;
-                } else {
-                    left.push((record, auto));
-                }
-            }
-            unmatched = left;
-        }
+        let unmatched = match_one_to_one(&winners, &mut used, asset, derived, &mut result.covered);
         for (record, auto) in unmatched {
             if let Some(parts) = installments_of(&winners, &used, asset, &auto, record) {
                 used.extend(parts);
@@ -765,6 +713,91 @@ pub fn plan(
         }
     }
 
+    settle(&mut result, &current, wanted, kept);
+    result
+}
+
+/// Os anúncios por ISIN. As parcelas de um anúncio ficam juntas, da data de
+/// pagamento mais cedo à mais tarde, e a que ainda não tem data por último:
+/// quando ela ganhar data, as de antes não mudam de ordem.
+fn announcements_by_isin(
+    announcements: &[CashAnnouncement],
+) -> HashMap<&str, Vec<&CashAnnouncement>> {
+    let mut by_isin: HashMap<&str, Vec<&CashAnnouncement>> = HashMap::new();
+    for announcement in announcements {
+        by_isin
+            .entry(announcement.isin.as_str())
+            .or_default()
+            .push(announcement);
+    }
+    for list in by_isin.values_mut() {
+        list.sort_by_key(|a| {
+            (
+                a.record_date,
+                a.label.clone(),
+                a.rate,
+                a.pay_date.is_none(),
+                a.pay_date,
+            )
+        });
+    }
+    by_isin
+}
+
+/// Os automáticos que os anúncios do ativo pedem, cada um com a data com do
+/// anúncio. `None` quando o livro não fecha (não dá para saber a quantidade).
+fn derive_all(asset: &AutoAsset, list: &[&CashAnnouncement]) -> Option<Vec<(Date, AutoIncome)>> {
+    let mut derived = Vec::new();
+    for (index, announcement) in list.iter().enumerate() {
+        let installment = list[..index]
+            .iter()
+            .rev()
+            .take_while(|before| same_announcement(before, announcement))
+            .count();
+        if let Some(auto) = derive(asset, announcement, installment).ok()? {
+            derived.push((announcement.record_date, auto));
+        }
+    }
+    Some(derived)
+}
+
+/// O um para um com os proventos da pessoa ([`same_income`]): uma passada pela
+/// data de pagamento e outra pela data com. Cada par conta em `covered`; o que
+/// sobra sem par volta.
+fn match_one_to_one(
+    winners: &[&KnownIncome],
+    used: &mut HashSet<Uuid>,
+    asset: &AutoAsset,
+    derived: Vec<(Date, AutoIncome)>,
+    covered: &mut usize,
+) -> Vec<(Date, AutoIncome)> {
+    let mut unmatched = derived;
+    for day in [SameDay::Payment, SameDay::Record] {
+        let mut left = Vec::new();
+        for (record, auto) in unmatched {
+            let winner = winners
+                .iter()
+                .find(|k| !used.contains(&k.id) && same_income(k, asset, &auto, record, day));
+            if let Some(winner) = winner {
+                used.insert(winner.id);
+                *covered += 1;
+            } else {
+                left.push((record, auto));
+            }
+        }
+        unmatched = left;
+    }
+    unmatched
+}
+
+/// Os automáticos pedidos contra os gravados: insere o que falta, troca o que
+/// mudou e apaga o gravado que nem o plano pede nem `kept` guarda.
+fn settle(
+    result: &mut AutoPlan,
+    current: &HashMap<&str, &KnownIncome>,
+    wanted: HashMap<String, AutoIncome>,
+    mut kept: HashSet<String>,
+) {
     let mut wanted: Vec<AutoIncome> = wanted.into_values().collect();
     wanted.sort_by(|a, b| a.external_ref.cmp(&b.external_ref));
     for auto in &wanted {
@@ -784,7 +817,6 @@ pub fn plan(
         .collect();
     stale.sort_unstable();
     result.delete = stale;
-    result
 }
 
 // ---------------------------------------------------------------------------
