@@ -1,5 +1,6 @@
 //! Rotas, estado e extratores.
 
+mod agenda;
 mod alerts;
 mod allocation;
 mod analysis;
@@ -332,6 +333,8 @@ pub fn public_router(state: AppState, static_dir: &str) -> Router {
         .route("/fundamentals", get(fundamentals::list))
         .route("/compare", get(compare::indicators))
         .route("/compare/returns", get(compare::returns))
+        .route("/agenda", get(agenda::show))
+        .route("/agenda/unusual-income", get(agenda::unusual_income))
         .route(
             "/income/goal",
             get(income::get_goal)

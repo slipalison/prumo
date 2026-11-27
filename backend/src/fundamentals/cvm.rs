@@ -29,7 +29,7 @@ use crate::domain::fundamentals::{
 use crate::sectors::cvm::{isin_root, latin1};
 
 /// Teto de cada CSV aberto. O maior lido hoje (BPP individual do ITR) tem 86 MB.
-const MAX_CSV: u64 = 1024 * 1024 * 1024;
+pub(crate) const MAX_CSV: u64 = 1024 * 1024 * 1024;
 
 /// O caminho de cada arquivo, a partir da raiz do site.
 pub fn path(kind: FilingKind, year: i32) -> String {
@@ -51,11 +51,11 @@ pub fn fund_quarterly_path(year: i32) -> String {
     format!("/dados/FII/DOC/INF_TRIMESTRAL/DADOS/inf_trimestral_fii_{year}.zip")
 }
 
-fn format_error(what: impl std::fmt::Display) -> FetchError {
+pub(crate) fn format_error(what: impl std::fmt::Display) -> FetchError {
     FetchError::Format(format!("arquivo da CVM: {what}"))
 }
 
-fn csv_reader<R: Read>(reader: R) -> csv::Reader<R> {
+pub(crate) fn csv_reader<R: Read>(reader: R) -> csv::Reader<R> {
     csv::ReaderBuilder::new()
         .delimiter(b';')
         .quoting(false)
@@ -64,10 +64,10 @@ fn csv_reader<R: Read>(reader: R) -> csv::Reader<R> {
 }
 
 /// Onde está cada coluna pelo nome do cabeçalho.
-struct Columns(HashMap<String, usize>);
+pub(crate) struct Columns(HashMap<String, usize>);
 
 impl Columns {
-    fn read<R: Read>(reader: &mut csv::Reader<R>) -> Result<Self, FetchError> {
+    pub(crate) fn read<R: Read>(reader: &mut csv::Reader<R>) -> Result<Self, FetchError> {
         let headers = reader.byte_headers().map_err(format_error)?;
         Ok(Self(
             headers
@@ -83,26 +83,26 @@ impl Columns {
         ))
     }
 
-    fn index(&self, name: &str) -> Result<usize, FetchError> {
+    pub(crate) fn index(&self, name: &str) -> Result<usize, FetchError> {
         self.0
             .get(name)
             .copied()
             .ok_or_else(|| format_error(format!("falta a coluna {name}")))
     }
 
-    fn optional(&self, name: &str) -> Option<usize> {
+    pub(crate) fn optional(&self, name: &str) -> Option<usize> {
         self.0.get(name).copied()
     }
 }
 
-fn text(record: &csv::ByteRecord, index: usize) -> String {
+pub(crate) fn text(record: &csv::ByteRecord, index: usize) -> String {
     record
         .get(index)
         .map(|v| latin1(v).trim().to_owned())
         .unwrap_or_default()
 }
 
-fn date(record: &csv::ByteRecord, index: usize) -> Option<Date> {
+pub(crate) fn date(record: &csv::ByteRecord, index: usize) -> Option<Date> {
     let raw = record.get(index)?;
     let s = std::str::from_utf8(raw).ok()?.trim();
     let format = time::macros::format_description!("[year]-[month]-[day]");
@@ -120,7 +120,7 @@ fn number(value: &str) -> Option<Decimal> {
         .map(|d| d.normalize())
 }
 
-fn integer(record: &csv::ByteRecord, index: usize) -> Option<i32> {
+pub(crate) fn integer(record: &csv::ByteRecord, index: usize) -> Option<i32> {
     std::str::from_utf8(record.get(index)?)
         .ok()?
         .trim()
@@ -128,7 +128,7 @@ fn integer(record: &csv::ByteRecord, index: usize) -> Option<i32> {
         .ok()
 }
 
-fn entry_name<R: Read>(entry: &zip::read::ZipFile<'_, R>) -> Result<String, FetchError> {
+pub(crate) fn entry_name<R: Read>(entry: &zip::read::ZipFile<'_, R>) -> Result<String, FetchError> {
     entry.name().map(|n| n.into_owned()).map_err(format_error)
 }
 

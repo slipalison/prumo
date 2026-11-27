@@ -155,6 +155,82 @@ pub fn darf_due_date(period: YearMonth) -> Result<Date, TaxError> {
     last_business_day(period.next())
 }
 
+/// Por que a B3 não tem pregão num dia de semana. O nome vai para o JSON; o
+/// texto que a pessoa lê mora na tela.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Closure {
+    NewYear,
+    Carnival,
+    GoodFriday,
+    Tiradentes,
+    LabourDay,
+    CorpusChristi,
+    Independence,
+    Aparecida,
+    AllSouls,
+    Republic,
+    BlackConsciousness,
+    ChristmasEve,
+    Christmas,
+    YearEnd,
+}
+
+fn closure_of(reason: &str) -> Option<Closure> {
+    [
+        (NEW_YEAR, Closure::NewYear),
+        (CARNIVAL, Closure::Carnival),
+        (GOOD_FRIDAY, Closure::GoodFriday),
+        (TIRADENTES, Closure::Tiradentes),
+        (LABOUR_DAY, Closure::LabourDay),
+        (CORPUS_CHRISTI, Closure::CorpusChristi),
+        (INDEPENDENCE, Closure::Independence),
+        (APARECIDA, Closure::Aparecida),
+        (ALL_SOULS, Closure::AllSouls),
+        (REPUBLIC, Closure::Republic),
+        (BLACK_CONSCIOUSNESS, Closure::BlackConsciousness),
+        (CHRISTMAS, Closure::Christmas),
+        (LAST_DAY, Closure::YearEnd),
+    ]
+    .into_iter()
+    .find(|(text, _)| *text == reason)
+    .map(|(_, closure)| closure)
+}
+
+/// Os dias **de semana** sem pregão da B3 entre `from` e `to` (inclusive), com
+/// o motivo: os da tabela ([`is_trading_day`]) mais a véspera de Natal. Fim de
+/// semana não entra (nunca há pregão), nem feriado que cai nele. Ano fora da
+/// tabela fica de fora: a Agenda diz até quando o calendário vai.
+pub fn trading_closures(from: Date, to: Date) -> Vec<(Date, Closure)> {
+    let mut days = Vec::new();
+    for calendar in TABLE
+        .iter()
+        .filter(|c| c.year >= from.year() && c.year <= to.year())
+    {
+        let eve = (CHRISTMAS_EVE.0, CHRISTMAS_EVE.1, "");
+        for &(month, day, reason) in calendar.closed.iter().chain(std::iter::once(&eve)) {
+            let Ok(month) = time::Month::try_from(month) else {
+                continue;
+            };
+            let Ok(date) = Date::from_calendar_date(calendar.year, month, day) else {
+                continue;
+            };
+            let weekday = !matches!(date.weekday(), Weekday::Saturday | Weekday::Sunday);
+            let closure = if reason.is_empty() {
+                Some(Closure::ChristmasEve)
+            } else {
+                closure_of(reason)
+            };
+            if let (true, Some(closure)) = (weekday && date >= from && date <= to, closure) {
+                days.push((date, closure));
+            }
+        }
+    }
+    days.sort_by_key(|(date, _)| *date);
+    days.dedup_by_key(|(date, _)| *date);
+    days
+}
+
 fn first_day(period: YearMonth) -> Result<Date, TaxError> {
     Date::from_calendar_date(period.year, period.time_month(), 1)
         .map_err(|_| TaxError::NoCalendarForYear(period.year))
@@ -247,6 +323,43 @@ mod tests {
         for (period, due) in published {
             assert_eq!(darf_due_date(period).unwrap(), due, "{period:?}");
         }
+    }
+
+    #[test]
+    fn every_closed_day_has_a_closure_and_weekends_stay_out() {
+        for calendar in TABLE {
+            for &(_, _, reason) in calendar.closed {
+                assert!(closure_of(reason).is_some(), "{reason}");
+            }
+        }
+        let november = trading_closures(date!(2026 - 11 - 01), date!(2026 - 11 - 30));
+        // 02/11 (segunda) e 20/11 (sexta); 15/11 caiu num domingo.
+        assert_eq!(
+            november,
+            vec![
+                (date!(2026 - 11 - 02), Closure::AllSouls),
+                (date!(2026 - 11 - 20), Closure::BlackConsciousness),
+            ]
+        );
+        let december = trading_closures(date!(2026 - 12 - 01), date!(2027 - 01 - 05));
+        assert_eq!(
+            december,
+            vec![
+                (date!(2026 - 12 - 24), Closure::ChristmasEve),
+                (date!(2026 - 12 - 25), Closure::Christmas),
+                (date!(2026 - 12 - 31), Closure::YearEnd),
+                (date!(2027 - 01 - 01), Closure::NewYear),
+            ]
+        );
+        for (day, _) in trading_closures(date!(2025 - 01 - 01), date!(2027 - 12 - 31)) {
+            assert!(!is_trading_day(day).unwrap(), "{day}");
+            assert!(!matches!(
+                day.weekday(),
+                Weekday::Saturday | Weekday::Sunday
+            ));
+        }
+        // Fora da tabela, nada (a tela diz até quando o calendário vai).
+        assert!(trading_closures(date!(2028 - 01 - 01), date!(2028 - 12 - 31)).is_empty());
     }
 
     #[test]

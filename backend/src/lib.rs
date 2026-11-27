@@ -4,6 +4,7 @@
 //! Postgres; `quotes` o provedor de cotações; `treasury` a tabela diária do
 //! Tesouro Direto; `service` junta tudo; `http` expõe a API e os estáticos.
 
+pub mod agenda;
 pub mod alerts;
 pub mod analysis;
 pub mod auth;
@@ -39,6 +40,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
+use crate::agenda::fundos_net::FundosNet;
+use crate::agenda::AgendaService;
 use crate::alerts::AlertService;
 use crate::auth::{AccessAuthenticator, Authenticator, DevAuthenticator};
 use crate::brapi::{BrapiLogos, LogoSource};
@@ -243,6 +246,16 @@ pub async fn run(config: Config) -> Result<(), StartError> {
     });
     if fundamentals.enabled() {
         Arc::clone(&fundamentals).spawn(fundamentals::CHECK_EVERY);
+    }
+    // Agenda: documentos das companhias (CVM IPE, data de entrega do ITR e da
+    // DFP) e dos FIIs (Fundos.NET), na mesma chave dos fundamentos.
+    if config.fundamentals_enabled {
+        Arc::new(AgendaService::new(
+            store.clone(),
+            http.clone(),
+            Arc::new(FundosNet::new(http.clone())),
+        ))
+        .spawn(agenda::CHECK_EVERY);
     }
     let icons = Arc::new(IconService::new(store.clone(), logos));
     if icons.enabled() {

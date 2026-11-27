@@ -65,7 +65,7 @@ fn pg_interval(duration: time::Duration) -> String {
     format!("{} seconds", duration.whole_seconds())
 }
 
-async fn lock(tx: &mut Transaction<'_, Postgres>, key: &str) -> Result<(), StoreError> {
+pub(super) async fn lock(tx: &mut Transaction<'_, Postgres>, key: &str) -> Result<(), StoreError> {
     sqlx::query("select pg_advisory_xact_lock(hashtextextended($1::text, 0))")
         .bind(format!("fundamentals:{key}"))
         .execute(&mut **tx)
@@ -74,7 +74,7 @@ async fn lock(tx: &mut Transaction<'_, Postgres>, key: &str) -> Result<(), Store
 }
 
 /// Marca o arquivo como lido com sucesso agora, com esta versão.
-async fn mark_checked(
+pub(super) async fn mark_checked(
     tx: &mut Transaction<'_, Postgres>,
     key: &str,
     validators: &Validators,

@@ -1,5 +1,6 @@
 //! Regras do produto, sem banco, sem rede e sem HTTP.
 
+pub mod agenda;
 pub mod alerts;
 pub mod allocation;
 pub mod analysis;

@@ -120,6 +120,17 @@ pub fn due(
     wanted: &BTreeSet<i32>,
     now: OffsetDateTime,
 ) -> Option<Mode> {
+    due_with(source.company_file(), state, wanted, now)
+}
+
+/// A mesma regra para qualquer arquivo da CVM (a Agenda lê outros):
+/// `company_file` diz se o arquivo é lido só para as companhias `wanted`.
+pub fn due_with(
+    company_file: bool,
+    state: Option<&SourceState>,
+    wanted: &BTreeSet<i32>,
+    now: OffsetDateTime,
+) -> Option<Mode> {
     let Some(state) = state else {
         return Some(Mode::Full);
     };
@@ -131,7 +142,7 @@ pub fn due(
     let Some(checked) = state.checked_at else {
         return Some(Mode::Full);
     };
-    if source.company_file() {
+    if company_file {
         let missing: BTreeSet<i32> = wanted.difference(&state.scanned).copied().collect();
         if !missing.is_empty() {
             return Some(Mode::Extend(missing));
