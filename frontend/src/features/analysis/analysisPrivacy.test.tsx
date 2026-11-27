@@ -65,18 +65,23 @@ describe("Análise com o olho fechado", () => {
     expect(screen.getByText("Renda de 12 meses: R$ ••••; dos 12 meses anteriores: R$ ••••.")).toBeInTheDocument();
     expectNoMoney(document.body);
 
-    // As referências de preço: Bazin, teto e preço de hoje são valores em reais.
+    // As referências de preço: Bazin, VP, Rendimento, teto e preço de hoje são valores em reais.
     const references = within(screen.getByRole("region", { name: "Referências de preço" }));
     const itsa = references.getByRole("rowheader", { name: "ITSA4" }).closest("tr") as HTMLElement;
-    const cell = (column: string) => itsa.querySelector(`td[data-label="${column}"]`);
-    expect(cell("Bazin")).toHaveTextContent("R$ ••••");
-    expect(cell("Graham")).toHaveTextContent("R$ ••••");
-    expect(cell("Pelas duas")).toHaveTextContent("R$ ••••");
-    expect(cell("Seu teto")).toHaveTextContent("R$ ••••");
-    expect(cell("Hoje")).toHaveTextContent("R$ ••••");
-    expect(within(itsa).getByRole("button", { name: "Usar a referência como teto de ITSA4" })).toHaveTextContent("R$ ••••");
-    await openTip(user, "Como sai o Bazin de ITSA4");
+    const cell = (row: HTMLElement, column: string) => row.querySelector(`td[data-label="${column}"]`);
+    expect(cell(itsa, "Bazin")).toHaveTextContent("R$ ••••");
+    expect(cell(itsa, "Graham")).toHaveTextContent("R$ ••••");
+    expect(cell(itsa, "Pelas duas")).toHaveTextContent("R$ ••••");
+    expect(cell(itsa, "Seu teto")).toHaveTextContent("R$ ••••");
+    expect(cell(itsa, "Hoje")).toHaveTextContent("R$ ••••");
+    await openTip(user, "Como sai: Bazin de ITSA4");
     expect(within(itsa).getByText(/Média de 4 anos de dividendos: R\$ •••• por cota ao ano/)).toBeInTheDocument();
+    const knri = references.getByRole("rowheader", { name: "KNRI11" }).closest("tr") as HTMLElement;
+    expect(cell(knri, "VP")).toHaveTextContent("R$ ••••");
+    expect(cell(knri, "Rendimento")).toHaveTextContent("R$ ••••");
+    await openTip(user, "Como sai: Rendimento de KNRI11");
+    // A conta do alvo é de percentuais e fica; os reais somem.
+    expect(within(knri).getByText(/9,62%; proventos 12m R\$ •••• ÷ 9,62% = R\$ ••••/)).toBeInTheDocument();
     await openTip(user, "Como as referências são calculadas");
     expect(references.getByText(/hoje 6% ao ano/)).toBeInTheDocument();
 
@@ -95,13 +100,14 @@ describe("Análise com o olho fechado", () => {
     expect(highlights.getAllByText("+18,40%").length).toBeGreaterThan(0);
   });
 
-  it("a confirmação do teto também não mostra o valor", async () => {
+  it("a escolha do teto também não mostra o valor", async () => {
     window.localStorage.setItem(HIDE_VALUES_KEY, "1");
     const { user } = renderApp("analise");
     const references = within(await screen.findByRole("region", { name: "Referências de preço" }));
-    await user.click(references.getByRole("button", { name: "Usar a referência como teto de ITSA4" }));
-    const dialog = await screen.findByRole("dialog", { name: "Usar como teto de preço?" });
-    expect(within(dialog).getByText(/Definir R\$ •••• como teto de preço de ITSA4\?/)).toBeInTheDocument();
+    await user.click(references.getByRole("button", { name: "Escolher o teto de ITSA4" }));
+    const dialog = await screen.findByRole("dialog", { name: "Teto de ITSA4" });
+    expect(within(dialog).getByRole("radio", { name: /^Bazin R\$ •••• aprova/ })).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Como sai o Bazin de ITSA4" }));
     expectNoMoney(document.body);
   });
 

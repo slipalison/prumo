@@ -2,6 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { analysisState } from "../../test/analysisHandlers";
+import { defaultMarket } from "../../test/referencesFixtures";
 import { renderApp } from "../../test/render";
 import { server } from "../../test/server";
 
@@ -117,7 +118,7 @@ describe("Ajustes, Análise", () => {
       rules: { max_volatility: { threshold: 17.5 }, min_sectors: { threshold: 6 } },
       bazin_yield: 7.5,
     });
-    expect(analysisState().bazinYield).toBe(7.5);
+    expect(analysisState().analysis.references.bazin_yield).toBe(7.5);
     await waitFor(() => expect(limitOf(/Limite: Volatilidade anualizada de até/)).toHaveValue("17,5"));
     expect(screen.getByRole("textbox", { name: "Rendimento-alvo do Bazin" })).toHaveValue("7,5");
   });
@@ -155,6 +156,62 @@ describe("Ajustes, Análise", () => {
     await user.clear(bazin);
     await user.type(bazin, "6");
     expect(save).toBeEnabled();
+  });
+
+  it("os prêmios dos FIIs mostram as taxas de hoje com data e fonte, e vão no mesmo pedido", async () => {
+    const { user } = await openSettings();
+    const references = group("Referências de preço");
+    const brick = references.getByRole("textbox", { name: "Prêmio do FII de tijolo" });
+    const paper = references.getByRole("textbox", { name: "Prêmio do FII de papel" });
+    expect(brick).toHaveValue("2,5");
+    expect(paper).toHaveValue("1");
+    // O juro real e o CDI de hoje, com a data e o título.
+    expect(
+      references.getByText(/juro real 7,12% em 19\/11\/2026 \(Tesouro IPCA\+ com Juros Semestrais 2037\)/),
+    ).toBeInTheDocument();
+    expect(references.getByText(/CDI de 12 meses 14,20% até 18\/11\/2026, 12,07% depois dos 15% de IR/)).toBeInTheDocument();
+    // A conta do alvo, no ⓘ de cada prêmio.
+    await user.click(references.getByRole("button", { name: "Sobre: Prêmio do FII de tijolo" }));
+    expect(references.getByText(/Alvo de hoje: 7,12% \+ 2,5 p\.p\. = 9,62%/)).toBeInTheDocument();
+    await user.click(references.getByRole("button", { name: "Sobre: Prêmio do FII de papel" }));
+    expect(references.getByText(/Alvo de hoje: 14,20% × 0,85 = 12,07% \+ 1,0 p\.p\. = 13,07%/)).toBeInTheDocument();
+
+    const save = screen.getByRole("button", { name: "Salvar regras" });
+    await user.clear(brick);
+    await user.type(brick, "25");
+    expect(await references.findByText("Use de 0 a 20 pontos percentuais.")).toBeInTheDocument();
+    expect(save).toBeDisabled();
+    await user.clear(brick);
+    await user.type(brick, "3,125");
+    expect(await references.findByText("Use até duas casas decimais.")).toBeInTheDocument();
+    await user.clear(brick);
+    await user.type(brick, "3");
+    await user.clear(paper);
+    await user.type(paper, "0,5");
+    await user.click(save);
+    await screen.findByText("Regras salvas.");
+    expect(lastPut()).toEqual({ brick_premium: 3, paper_premium: 0.5 });
+    expect(analysisState().analysis.references.market.brick_premium).toBe(3);
+    expect(analysisState().analysis.references.market.brick_target).toBe(10.12);
+    // O padrão de fábrica a um toque.
+    await waitFor(() => expect(references.getByRole("textbox", { name: "Prêmio do FII de tijolo" })).toHaveValue("3"));
+    await user.click(references.getByRole("button", { name: "Voltar para 2,5 p.p." }));
+    expect(references.getByRole("textbox", { name: "Prêmio do FII de tijolo" })).toHaveValue("2,5");
+  });
+
+  it("sem as taxas guardadas ainda, diz isso em vez de um alvo", async () => {
+    const references = analysisState().analysis.references;
+    analysisState().analysis = {
+      ...analysisState().analysis,
+      references: {
+        ...references,
+        market: { ...references.market, real_rate: null, cdi_12m: null, brick_target: null, paper_target: null },
+      },
+    };
+    await openSettings();
+    const panel = group("Referências de preço");
+    expect(panel.getByText(/juro real do Tesouro ainda não lido/)).toBeInTheDocument();
+    expect(panel.getByText(/CDI de 12 meses ainda não guardado/)).toBeInTheDocument();
   });
 
   it("os limites de contagem vão até o máximo de cada regra", async () => {
@@ -210,7 +267,7 @@ describe("Ajustes, Análise", () => {
       http.get("/api/v1/analysis/rules", () =>
         fail
           ? HttpResponse.json({ code: "internal", status: 500 }, { status: 500, headers: { "Content-Type": "application/problem+json" } })
-          : HttpResponse.json({ rules: analysisState().rules, bazin_yield: 6 }),
+          : HttpResponse.json({ rules: analysisState().rules, bazin_yield: 6, market: defaultMarket() }),
       ),
     );
     const { user } = renderApp("ajustes/analise");

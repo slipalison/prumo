@@ -10,7 +10,7 @@ import type {
 } from "../api/performanceTypes";
 import type { Plan } from "../api/types";
 import { sampleAlerts } from "../test/alertsHandlers";
-import { samplePlan } from "../test/fixtures";
+import { samplePlan, type StoredAsset } from "../test/fixtures";
 import type { AssetFundamentals } from "../api/fundamentalsTypes";
 import { samplePeriod } from "../test/fundamentalsHandlers";
 import { sampleCash } from "../test/incomeHandlers";
@@ -297,10 +297,47 @@ function demoClasses(period: PerformancePeriod): ClassesPerformance {
   };
 }
 
-/** O plano dos testes com o que o desenho tem de mais longo: renda, referências de preço e um aviso de teto. */
+/**
+ * Dois FIIs FICTÍCIOS que só a demonstração tem (tickers inventados), para a
+ * Análise mostrar um FII de cada tipo: um híbrido e um fundo de fundos. As
+ * referências deles estão em `test/referencesFixtures.ts`.
+ */
+export function demoExtraAssets(): StoredAsset[] {
+  const fund = (id: string, symbol: string, name: string, quantity: number, price: number, sector: string): StoredAsset => ({
+    id,
+    asset_class: "br_reits",
+    symbol,
+    display_name: name,
+    quantity,
+    quote_price: price,
+    manual_price: null,
+    currency: "BRL",
+    score_override: 6,
+    answers: {},
+    sector,
+  });
+  return [
+    fund("a-hibr", "HIBR11", "Híbrido Fictício FII", 10, 88, "Híbrido"),
+    fund("a-foff", "FOFF11", "Fundo de Fundos Fictício FII", 12, 70.5, "Fundo de fundos"),
+  ];
+}
+
+/** O plano dos testes com o que o desenho tem de mais longo: renda, referências de preço e os avisos de teto. */
 function demoPlan(amount: number): Plan {
   const plan = samplePlan(amount);
-  const references = [{ bazin: 9.5, graham: 14.8 }, { bazin: 120, graham: 130.5 }, { bazin: null, graham: 40.1 }, null];
+  // ITSA4: Bazin e Graham; BTLG11: VP e Rendimento; TRXF11 (sem tipo): só o VP.
+  const references: Plan["items"][number]["price_references"][] = [
+    [
+      { method: "bazin", value: 12.5 },
+      { method: "graham", value: 9.5 },
+    ],
+    [
+      { method: "nav", value: 99.1 },
+      { method: "fund_yield", value: 99.79 },
+    ],
+    [{ method: "nav", value: 110.2 }],
+    null,
+  ];
   const income = [19.44, 6.3, 8.1, null];
   plan.items = plan.items.map((item, index) => ({
     ...item,
@@ -310,7 +347,8 @@ function demoPlan(amount: number): Plan {
   // Um aviso que abre a folha do ativo (o checklist), como na vida real.
   plan.notices = [
     ...plan.notices,
-    { code: "asset_above_ceiling", asset_id: "a-hglg", symbol: "HGLG11", unit_price: 140.8, max_price: 130 },
+    { code: "asset_above_ceiling", asset_id: "a-hglg", symbol: "HGLG11", unit_price: 140.8, max_price: 130, method: "manual" },
+    { code: "asset_ceiling_unavailable", asset_id: "a-mxrf", symbol: "MXRF11", method: "fund_yield", reason: "no_dividends" },
   ];
   plan.income = { available: true, missing: [], added_monthly: 33.84, before_monthly: 410.5, after_monthly: 444.34 };
   return plan;

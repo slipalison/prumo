@@ -22,8 +22,12 @@ export function findAssetByLabel(assets: Asset[], label: string): Asset | undefi
 }
 
 /** O preço de hoje passou do teto da pessoa: o ativo fica fora do aporte. */
-export function isAboveCeiling(asset: Pick<Asset, "unit_price" | "max_price" | "price_source">): boolean {
-  return (
-    asset.max_price !== null && asset.unit_price !== null && asset.price_source !== "missing" && asset.unit_price > asset.max_price
-  );
+export function isAboveCeiling(asset: Pick<Asset, "unit_price" | "ceiling" | "price_source">): boolean {
+  const max = asset.ceiling?.value ?? null;
+  return max !== null && asset.unit_price !== null && asset.price_source !== "missing" && asset.unit_price > max;
+}
+
+/** O teto pelo método que a pessoa escolheu está sem valor hoje: o ativo fica fora do aporte. */
+export function isCeilingUnavailable(asset: Pick<Asset, "ceiling">): boolean {
+  return asset.ceiling !== null && asset.ceiling.unavailable_reason !== null;
 }

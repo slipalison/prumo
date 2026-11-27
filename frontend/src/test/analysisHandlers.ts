@@ -13,7 +13,9 @@ import type {
   Score,
 } from "../api/analysisTypes";
 import { ANALYSIS_RULE_IDS } from "../api/analysisTypes";
+import type { CeilingChoice, References } from "../api/ceilingTypes";
 import type { HealthWarning, SectorSourceInfo } from "../api/healthTypes";
+import { defaultReferences, effectiveCeiling, referencesOf } from "./referencesFixtures";
 
 /** Uma regra de fábrica: dimensão, unidade, direção e limite padrão. */
 const FACTORY: Record<AnalysisRuleId, Pick<RuleConfig, "dimension" | "unit" | "direction" | "default_threshold">> = {
@@ -375,31 +377,7 @@ export function defaultAnalysis(): Analysis {
         worst: [{ asset_id: "a-btlg", label: "BTLG11", asset_class: "br_reits", change_percent: -41.5 }],
       },
     },
-    references: {
-      bazin_yield: 6,
-      items: [
-        {
-          asset_id: "a-itsa",
-          label: "ITSA4",
-          asset_class: "br_stocks",
-          unit_price: 11.2,
-          max_price: 10,
-          bazin: { price: 12.5, annual_average: 0.75, years: 4 },
-          graham: 9.5,
-          ceiling: 9.5,
-        },
-        {
-          asset_id: "a-knri",
-          label: "KNRI11",
-          asset_class: "br_reits",
-          unit_price: 160,
-          max_price: null,
-          bazin: { price: 140, annual_average: 8.4, years: 2 },
-          graham: null,
-          ceiling: 140,
-        },
-      ],
-    },
+    references: defaultReferences(),
     unclassified_count: 1,
     sources: defaultSectorSources(),
   };
@@ -408,13 +386,12 @@ export function defaultAnalysis(): Analysis {
 type State = {
   analysis: Analysis;
   rules: RuleConfig[];
-  bazinYield: number;
   /** O que a tela mandou em `PUT /analysis/rules`. */
   saved: ConfigRequest[];
 };
 
 function fresh(): State {
-  return { analysis: defaultAnalysis(), rules: defaultAnalysisRules(), bazinYield: 6, saved: [] };
+  return { analysis: defaultAnalysis(), rules: defaultAnalysisRules(), saved: [] };
 }
 
 let state = fresh();
@@ -428,6 +405,34 @@ export function resetAnalysis() {
   state = fresh();
 }
 
+/** As referências que a Análise falsa mostra (e que a escolha do teto lê). */
+function references(): References {
+  return state.analysis.references;
+}
+
+/** O teto de hoje para uma escolha, pelas referências falsas do ativo. */
+export function ceilingFor(id: string, choice: CeilingChoice | null | undefined) {
+  return effectiveCeiling(references(), id, choice);
+}
+
+/** A escolha nova também aparece na Análise falsa (o servidor recalcula a cada leitura). */
+export function recordCeiling(id: string, choice: CeilingChoice | null) {
+  const all = references();
+  const ceiling = effectiveCeiling(all, id, choice);
+  state.analysis = {
+    ...state.analysis,
+    references: {
+      ...all,
+      stocks: all.stocks.map((s) => (s.asset_id === id ? { ...s, ceiling } : s)),
+      funds: all.funds.map((f) => (f.asset_id === id ? { ...f, ceiling } : f)),
+    },
+  };
+}
+
+function config(): AnalysisConfig {
+  return { rules: state.rules, bazin_yield: references().bazin_yield, market: references().market };
+}
+
 const problem = (detail: string) =>
   HttpResponse.json(
     { type: "urn:prumo:error:validation_failed", title: "Dados inválidos", status: 422, code: "validation_failed", detail },
@@ -437,8 +442,10 @@ const problem = (detail: string) =>
 export const analysisHandlers: HttpHandler[] = [
   http.get("/api/v1/analysis", () => HttpResponse.json(state.analysis)),
 
-  http.get("/api/v1/analysis/rules", () =>
-    HttpResponse.json({ rules: state.rules, bazin_yield: state.bazinYield } satisfies AnalysisConfig),
+  http.get("/api/v1/analysis/rules", () => HttpResponse.json(config())),
+
+  http.get("/api/v1/assets/:id/references", ({ params }) =>
+    HttpResponse.json(referencesOf(references(), String(params.id))),
   ),
 
   http.put("/api/v1/analysis/rules", async ({ request }) => {
@@ -452,13 +459,31 @@ export const analysisHandlers: HttpHandler[] = [
     if (body.bazin_yield !== undefined && (body.bazin_yield <= 0 || body.bazin_yield > 100)) {
       return problem("bazin_yield: o rendimento-alvo precisa ser maior que 0 e até 100.");
     }
+    for (const [name, value] of [
+      ["brick_premium", body.brick_premium],
+      ["paper_premium", body.paper_premium],
+    ] as const) {
+      if (value !== undefined && (value < 0 || value > 20)) {
+        return problem(`${name}: o premio precisa estar entre 0 e 20 pontos percentuais.`);
+      }
+    }
     for (const [rule, change] of Object.entries(body.rules ?? {})) {
       const stored = state.rules.find((r) => r.rule === rule);
       if (!stored) continue;
       if (change?.enabled !== undefined) stored.enabled = change.enabled;
       if (change?.threshold !== undefined) stored.threshold = change.threshold;
     }
-    if (body.bazin_yield !== undefined) state.bazinYield = body.bazin_yield;
-    return HttpResponse.json({ rules: state.rules, bazin_yield: state.bazinYield } satisfies AnalysisConfig);
+    const all = references();
+    const market = { ...all.market };
+    if (body.brick_premium !== undefined) market.brick_premium = body.brick_premium;
+    if (body.paper_premium !== undefined) market.paper_premium = body.paper_premium;
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    market.brick_target = market.real_rate ? round2(market.real_rate.percent + market.brick_premium) : null;
+    market.paper_target = market.cdi_12m ? round2(market.cdi_12m.net_percent + market.paper_premium) : null;
+    state.analysis = {
+      ...state.analysis,
+      references: { ...all, market, bazin_yield: body.bazin_yield ?? all.bazin_yield },
+    };
+    return HttpResponse.json(config());
   }),
 ];

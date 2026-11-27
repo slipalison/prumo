@@ -248,3 +248,12 @@ export function IconChart(props: IconProps) {
     </Svg>
   );
 }
+
+/** A seta de "abre uma escolha" (o "Teto ▾" das referências de preço). */
+export function IconChevronDown(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="m6 9 6 6 6-6" />
+    </Svg>
+  );
+}

@@ -2,7 +2,7 @@ import { setupWorker } from "msw/browser";
 import type { LivePrices } from "../api/types";
 import { toPortfolio } from "../test/fixtures";
 import { allHandlers, getDb } from "../test/handlers";
-import { demoHandlers } from "./demoHandlers";
+import { demoExtraAssets, demoHandlers } from "./demoHandlers";
 
 /**
  * O stream da carteira na demonstração: o service worker do msw não
@@ -43,6 +43,8 @@ class DemoEventSource extends EventTarget {
  */
 export async function startDemo(): Promise<void> {
   window.EventSource = DemoEventSource as unknown as typeof EventSource;
+  // Um FII híbrido e um fundo de fundos fictícios: a Análise mostra um de cada tipo.
+  getDb().assets.push(...demoExtraAssets());
   const worker = setupWorker(...demoHandlers, ...allHandlers);
   await worker.start({ onUnhandledRequest: "bypass", quiet: true });
 }

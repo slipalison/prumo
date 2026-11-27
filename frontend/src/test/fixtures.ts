@@ -1,3 +1,4 @@
+import type { Ceiling } from "../api/ceilingTypes";
 import type { Transaction } from "../api/ledgerTypes";
 import { ASSET_CLASSES, type Asset, type AssetClass, type Checklists, type GoalTargets, type Plan, type Portfolio, type Profit } from "../api/types";
 import type { TaxInstrument } from "../api/taxTypes";
@@ -25,8 +26,8 @@ export type StoredAsset = {
   sector?: string;
   subsector?: string;
   segment?: string;
-  /** Teto de preço; ausente = sem teto. */
-  max_price?: number | null;
+  /** O teto de hoje, como o servidor devolve; ausente = sem teto. */
+  ceiling?: Ceiling | null;
   /** Custo do livro, em reais. Ausente ou `null` = desconhecido (com quantidade). */
   cost_basis?: number | null;
   realized_gain?: number | null;
@@ -225,7 +226,7 @@ export function toAsset(stored: StoredAsset, checklists: Checklists, classTotal:
     quantity: stored.quantity,
     unit_price: price,
     manual_price: stored.manual_price,
-    max_price: stored.max_price ?? null,
+    ceiling: stored.ceiling ?? null,
     currency: stored.currency,
     price_source: stored.manual_price !== null ? "manual" : price === null ? "missing" : "quote",
     quote_updated_at: stored.quote_price === null ? null : (stored.quote_at ?? QUOTES_AT),

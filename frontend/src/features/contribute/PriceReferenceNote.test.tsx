@@ -11,15 +11,24 @@ import { server } from "../../test/server";
 /** Qualquer R$ seguido de dígito é valor vazando. */
 const MONEY = /R\$\s*\d/;
 
-/** Quatro cartões: dois com as duas referências, um só com o Graham, um sem teto e sem referência. */
+/**
+ * Quatro cartões: uma ação com Bazin e Graham, um FII com VP e Rendimento, um
+ * FII só com o VP e um sem teto e sem referência.
+ */
 function planWithReferences(): Plan {
   const plan = samplePlan(6000);
-  // ITSA4 a R$ 11,20: acima do Bazin, abaixo do Graham. BTLG11 a R$ 94,55: abaixo dos dois.
-  // TRXF11 a R$ 53,81: só o Graham, acima. BTC (cripto, ou ativo com teto): sem aviso.
-  const references = [
-    { bazin: 9.5, graham: 14.8 },
-    { bazin: 120, graham: 130.5 },
-    { bazin: null, graham: 40.1 },
+  // ITSA4 a R$ 11,20: acima do Bazin, abaixo do Graham. BTLG11 a R$ 94,55: abaixo do VP e do Rendimento.
+  // TRXF11 a R$ 53,81: só o VP, acima. BTC (cripto, ou ativo com teto): sem aviso.
+  const references: Plan["items"][number]["price_references"][] = [
+    [
+      { method: "bazin", value: 9.5 },
+      { method: "graham", value: 14.8 },
+    ],
+    [
+      { method: "nav", value: 120 },
+      { method: "fund_yield", value: 130.5 },
+    ],
+    [{ method: "nav", value: 40.1 }],
     null,
   ];
   plan.items = plan.items.map((item, index) => ({ ...item, price_references: references[index] ?? null }));
@@ -51,14 +60,14 @@ describe("Aportar: as referências do ativo sem teto", () => {
       "Bazin R$ 9,50: não aprova",
       "Graham R$ 14,80: aprova",
     ]);
-    // BTLG11 a R$ 94,55: abaixo dos dois.
+    // BTLG11 a R$ 94,55: abaixo do VP e do Rendimento (FII não tem Bazin nem Graham).
     expect(chips(notes[1] as HTMLElement)).toEqual([
       "O que são estas referências",
-      "Bazin R$ 120,00: aprova",
-      "Graham R$ 130,50: aprova",
+      "VP R$ 120,00: aprova",
+      "Rendimento R$ 130,50: aprova",
     ]);
-    // TRXF11: só o Graham, acima.
-    expect(chips(notes[2] as HTMLElement)).toEqual(["O que são estas referências", "Graham R$ 40,10: não aprova"]);
+    // TRXF11: só o VP, acima.
+    expect(chips(notes[2] as HTMLElement)).toEqual(["O que são estas referências", "VP R$ 40,10: não aprova"]);
     // Pouco texto à vista: o chip mostra o método e o preço; a explicação fica no toque.
     expect(notes[0]).toHaveTextContent(/^Sem teto\s*Bazin\s*R\$\s9,50\s*Graham\s*R\$\s14,80$/);
     // O aviso mora no cartão do ativo dele.

@@ -24,7 +24,7 @@ import { countBelowIdeal, hasIdeal, readIdeal, type IdealReading } from "../../l
 import { useLiveStatus } from "../../lib/liveStatus";
 import { SPRING, STAGGER } from "../../lib/motion";
 import { useMoney } from "../../lib/privacy";
-import { assetName, isAboveCeiling, needsRating, ratingIntro } from "../../lib/rating";
+import { assetName, isAboveCeiling, isCeilingUnavailable, needsRating, ratingIntro } from "../../lib/rating";
 import { AnalysisSummary } from "../analysis/AnalysisSummary";
 import { formatSignedPercent } from "../ledger/format";
 import "../ledger/ledger.css";
@@ -377,7 +377,10 @@ function AssetRow({ asset, classAssets, onClick }: { asset: Asset; classAssets: 
       </span>
       <span className="asset-row__return-cell">{asset.return_percent !== null && <ReturnMark percent={asset.return_percent} />}</span>
       {ideal.counts ? (
-        <IdealLine reading={ideal} aboveCeiling={asset.score > 0 && isAboveCeiling(asset)} />
+        <IdealLine
+          reading={ideal}
+          ceiling={asset.score > 0 ? (isCeilingUnavailable(asset) ? "unavailable" : isAboveCeiling(asset) ? "above" : null) : null}
+        />
       ) : (
         <span className="asset-row__ideal">
           <span className="asset-row__share">{formatPercent(asset.class_percent)} da classe</span>
@@ -405,7 +408,10 @@ function AssetRow({ asset, classAssets, onClick }: { asset: Asset; classAssets: 
  * selo "acima do teto" (ícone e texto) diz por que o ativo não recebe agora. A
  * barra é só desenho; quem lê o leitor de tela é o texto ao lado.
  */
-function IdealLine({ reading, aboveCeiling }: { reading: IdealReading; aboveCeiling: boolean }) {
+/** Por que o teto tira o ativo do aporte agora: o preço passou dele, ou o método escolhido está sem valor. */
+type CeilingBlock = "above" | "unavailable" | null;
+
+function IdealLine({ reading, ceiling }: { reading: IdealReading; ceiling: CeilingBlock }) {
   const scale = Math.min(Math.max(reading.idealShare, reading.currentShare, 1) * 1.15, 100);
   const at = (value: number) => `${Math.min((value / scale) * 100, 100)}%`;
   return (
@@ -424,9 +430,9 @@ function IdealLine({ reading, aboveCeiling }: { reading: IdealReading; aboveCeil
       )}
       {/* O teto não muda o ideal (é a carteira que a pessoa quer ter); só
           explica por que, abaixo do ideal ou não, o ativo não recebe agora. */}
-      {aboveCeiling && (
+      {ceiling && (
         <span className="below-badge ceiling-badge">
-          <IconAlert width={12} height={12} /> acima do teto
+          <IconAlert width={12} height={12} /> {ceiling === "above" ? "acima do teto" : "teto sem valor"}
         </span>
       )}
     </span>

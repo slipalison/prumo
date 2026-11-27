@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { errorMessage } from "../../api/client";
 import type { AnalysisConfig, AnalysisRuleId, ConfigRequest, DimensionId, RuleChange, RuleConfig } from "../../api/analysisTypes";
 import { GlassCard } from "../../components/GlassCard";
@@ -8,6 +8,7 @@ import { MagneticButton } from "../../components/MagneticButton";
 import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/toastContext";
 import { COUNT_MAX, DIMENSION_TEXT, RULE_TEXT, ruleName } from "../../lib/analysisText";
+import { brickTargetMath, cdiText, paperTargetMath, realRateText } from "../../lib/ceilingText";
 import { parseDecimal } from "../../lib/format";
 import { formatRuleValue, thresholdError } from "../../lib/healthText";
 import { useAnalysisConfig, useSaveAnalysisConfig } from "./useAnalysis";
@@ -24,6 +25,8 @@ const COLUMNS: [DimensionId[], DimensionId[]] = [
 type Draft = {
   rules: Record<AnalysisRuleId, { enabled: boolean; threshold: string }>;
   bazinYield: string;
+  brickPremium: string;
+  paperPremium: string;
 };
 
 const text = (value: number | null): string => (value === null ? "" : String(value).replace(".", ","));
@@ -32,11 +35,23 @@ function toDraft(config: AnalysisConfig): Draft {
   return {
     rules: Object.fromEntries(config.rules.map((r) => [r.rule, { enabled: r.enabled, threshold: text(r.threshold) }])) as Draft["rules"],
     bazinYield: text(config.bazin_yield),
+    brickPremium: text(config.market.brick_premium),
+    paperPremium: text(config.market.paper_premium),
   };
 }
 
 /** O rendimento-alvo do Bazin: percentual maior que 0 e até 100, com até duas casas. */
 const bazinError = (value: string) => thresholdError("percent", parseDecimal(value));
+
+/** O prêmio de um tipo de FII: de 0 a 20 pontos percentuais, com até duas casas. */
+function premiumError(value: string): string | null {
+  const number = parseDecimal(value);
+  if (number === null || number < 0 || number > 20) return "Use de 0 a 20 pontos percentuais.";
+  if (Math.round(number * 100) !== number * 100) return "Use até duas casas decimais.";
+  return null;
+}
+
+type PremiumKey = "brickPremium" | "paperPremium";
 
 /**
  * Ajustes, Análise: liga, desliga e escolhe o limite de cada regra da Análise
@@ -97,7 +112,7 @@ function RulesCard({ config }: { config: AnalysisConfig }) {
   }, [saved, touched]);
 
   const errors = useMemo(() => {
-    const found: Partial<Record<AnalysisRuleId | "bazin", string>> = {};
+    const found: Partial<Record<AnalysisRuleId | "bazin" | PremiumKey, string>> = {};
     for (const rule of config.rules) {
       if (rule.default_threshold === null || !draft.rules[rule.rule].enabled) continue;
       const message = thresholdError(rule.unit, parseDecimal(draft.rules[rule.rule].threshold), COUNT_MAX[rule.rule]);
@@ -105,6 +120,10 @@ function RulesCard({ config }: { config: AnalysisConfig }) {
     }
     const bazin = bazinError(draft.bazinYield);
     if (bazin) found.bazin = bazin;
+    for (const key of ["brickPremium", "paperPremium"] as const) {
+      const message = premiumError(draft[key]);
+      if (message) found[key] = message;
+    }
     return found;
   }, [config, draft]);
 
@@ -123,6 +142,10 @@ function RulesCard({ config }: { config: AnalysisConfig }) {
     if (Object.keys(rules).length > 0) body.rules = rules;
     const bazin = parseDecimal(draft.bazinYield);
     if (draft.bazinYield !== saved.bazinYield && bazin !== null) body.bazin_yield = bazin;
+    const brick = parseDecimal(draft.brickPremium);
+    if (draft.brickPremium !== saved.brickPremium && brick !== null) body.brick_premium = brick;
+    const paper = parseDecimal(draft.paperPremium);
+    if (draft.paperPremium !== saved.paperPremium && paper !== null) body.paper_premium = paper;
     return body;
   }, [config, draft, saved]);
 
@@ -202,6 +225,66 @@ function RulesCard({ config }: { config: AnalysisConfig }) {
     );
   };
 
+  type ValueRow = {
+    id: string;
+    label: string;
+    unit: string;
+    value: string;
+    error: string | undefined;
+    onChange: (value: string) => void;
+    /** O padrão de fábrica, para o "Voltar para". */
+    defaultValue?: number;
+    tip?: ReactNode;
+  };
+
+  /** Uma linha com campo numérico (o rendimento-alvo, um prêmio). */
+  const valueRow = ({ id, label, unit, value, error, onChange, defaultValue, tip }: ValueRow) => (
+    <li className="rule-row">
+      <div className="rule-row__main">
+        <div className="rule-row__sentence">
+          <label className="rule-row__lead" htmlFor={id}>
+            {label}
+          </label>
+          <span className="rule-row__field">
+            <input
+              id={id}
+              className="text-input rule-row__input"
+              inputMode="decimal"
+              value={value}
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? `${id}-error` : undefined}
+              onChange={(event) => {
+                setTouched(true);
+                onChange(event.target.value);
+              }}
+            />
+            <span className="rule-row__unit">{unit}</span>
+          </span>
+          {tip && <InfoTip label={`Sobre: ${label}`}>{tip}</InfoTip>}
+        </div>
+        {error && (
+          <p id={`${id}-error`} className="rule-row__error" role="alert">
+            {error}
+          </p>
+        )}
+        {defaultValue !== undefined && value !== text(defaultValue) && (
+          <div className="rule-row__meta">
+            <button
+              type="button"
+              className="link-btn"
+              onClick={() => {
+                setTouched(true);
+                onChange(text(defaultValue));
+              }}
+            >
+              Voltar para {text(defaultValue)} p.p.
+            </button>
+          </div>
+        )}
+      </div>
+    </li>
+  );
+
   const panel = (group: DimensionId) => (
     <Panel key={group} className="rules-panel" title={DIMENSION_TEXT[group].title} info={DIMENSION_TEXT[group].lead}>
       <ul className="rule-list">{config.rules.filter((r) => r.dimension === group).map(row)}</ul>
@@ -216,38 +299,54 @@ function RulesCard({ config }: { config: AnalysisConfig }) {
           <Panel
             className="rules-panel"
             title="Referências de preço"
-            infoLabel="Sobre o rendimento-alvo do Bazin"
-            info="O preço de referência de Bazin é a média anual de dividendos por cota dividida por este rendimento. É uma referência pública, não uma recomendação."
+            infoLabel="Sobre o rendimento-alvo e os prêmios"
+            info="O Bazin é a média anual de dividendos por cota dividida pelo rendimento-alvo. O Rendimento dos FIIs divide os proventos de 12 meses pelo alvo do tipo: juro real do Tesouro mais o prêmio do tijolo, ou CDI líquido mais o prêmio do papel. São referências públicas, não recomendação."
           >
-            <div className="rule-row">
-              <div className="rule-row__main">
-                <div className="rule-row__sentence">
-                  <label className="rule-row__lead" htmlFor={`${baseId}-bazin-yield`}>
-                    Rendimento-alvo do Bazin
-                  </label>
-                  <span className="rule-row__field">
-                    <input
-                      id={`${baseId}-bazin-yield`}
-                      className="text-input rule-row__input"
-                      inputMode="decimal"
-                      value={draft.bazinYield}
-                      aria-invalid={errors.bazin ? true : undefined}
-                      aria-describedby={errors.bazin ? `${baseId}-bazin-error` : undefined}
-                      onChange={(event) => {
-                        setTouched(true);
-                        setDraft((current) => ({ ...current, bazinYield: event.target.value }));
-                      }}
-                    />
-                    <span className="rule-row__unit">% ao ano</span>
-                  </span>
-                </div>
-                {errors.bazin && (
-                  <p id={`${baseId}-bazin-error`} className="rule-row__error" role="alert">
-                    {errors.bazin}
-                  </p>
-                )}
-              </div>
-            </div>
+            <ul className="rule-list">
+              {valueRow({
+                id: `${baseId}-bazin-yield`,
+                label: "Rendimento-alvo do Bazin",
+                unit: "% ao ano",
+                value: draft.bazinYield,
+                error: errors.bazin,
+                onChange: (value) => setDraft((current) => ({ ...current, bazinYield: value })),
+              })}
+              {valueRow({
+                id: `${baseId}-brick-premium`,
+                label: "Prêmio do FII de tijolo",
+                unit: "p.p. sobre o juro real",
+                value: draft.brickPremium,
+                error: errors.brickPremium,
+                onChange: (value) => setDraft((current) => ({ ...current, brickPremium: value })),
+                defaultValue: config.market.default_brick_premium,
+                tip: (
+                  <>
+                    Sobre o {realRateText(config.market)}.{" "}
+                    {brickTargetMath(config.market) ? `Alvo de hoje: ${brickTargetMath(config.market)}.` : ""} O prêmio paga o
+                    risco do imóvel (vacância, inadimplência) acima do título público.
+                  </>
+                ),
+              })}
+              {valueRow({
+                id: `${baseId}-paper-premium`,
+                label: "Prêmio do FII de papel",
+                unit: "p.p. sobre o CDI líquido",
+                value: draft.paperPremium,
+                error: errors.paperPremium,
+                onChange: (value) => setDraft((current) => ({ ...current, paperPremium: value })),
+                defaultValue: config.market.default_paper_premium,
+                tip: (
+                  <>
+                    Sobre o {cdiText(config.market)}.{" "}
+                    {paperTargetMath(config.market) ? `Alvo de hoje: ${paperTargetMath(config.market)}.` : ""} O prêmio paga o
+                    risco de crédito dos recebíveis acima do CDI.
+                  </>
+                ),
+              })}
+            </ul>
+            <p className="rules-market" aria-live="polite">
+              <span>Hoje: {realRateText(config.market)}.</span> <span>{cdiText(config.market)}.</span>
+            </p>
           </Panel>
         </div>
         <div className="rules-column">{COLUMNS[1].map(panel)}</div>

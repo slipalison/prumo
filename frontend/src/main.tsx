@@ -11,6 +11,7 @@ import "./styles/goals.css";
 import "./styles/criteria.css";
 import "./styles/health.css";
 import "./styles/analysis.css";
+import "./styles/ceiling.css";
 import "./styles/icons.css";
 import "./styles/alerts.css";
 import "./styles/income.css";

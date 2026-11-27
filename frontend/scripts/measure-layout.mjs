@@ -106,7 +106,8 @@ const SHEETS = [
   { id: "folha-provento", path: "renda", open: (page) => page.getByRole("button", { name: /Lançar provento/ }).first().click() },
   { id: "folha-meta-renda", path: "renda", open: (page) => page.getByRole("button", { name: /Editar meta|Definir meta/ }).click() },
   { id: "folha-objetivo", path: "ajustes/objetivos", open: (page) => page.getByRole("button", { name: "Novo objetivo" }).click() },
-  { id: "folha-teto", path: "analise", open: (page) => page.getByRole("button", { name: /como teto de/ }).first().click() },
+  { id: "folha-teto", path: "analise", open: (page) => page.getByRole("button", { name: /Escolher o teto de ITSA4/ }).click() },
+  { id: "folha-teto-fii", path: "analise", open: (page) => page.getByRole("button", { name: /Escolher o teto de KNRI11/ }).click() },
 ];
 
 /** Blocos que rolam de lado por dentro (tabela larga, lista de pílulas): quais e quanto passa. */

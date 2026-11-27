@@ -378,65 +378,129 @@ describe("tela Análise", () => {
     expect(highlights.getAllByText("Nenhum com custo conhecido no livro.")).toHaveLength(2);
   });
 
-  it("referências de preço: rotuladas como públicas, comparadas com o teto e sem recomendar", async () => {
+  it("referências de preço: ações e FIIs em tabelas próprias, rotuladas como públicas e sem recomendar", async () => {
     const { user } = await openAnalysis();
     const references = card("Referências de preço");
     expect(references.getByRole("note")).toHaveTextContent("Referência pública, não é recomendação");
-    expect(references.getByRole("link", { name: "Mudar o rendimento-alvo" })).toHaveAttribute("href", "#/ajustes/analise");
-    const itsa = references.getByRole("rowheader", { name: "ITSA4" }).closest("tr") as HTMLElement;
+    expect(references.getByRole("link", { name: "Mudar o rendimento-alvo e os prêmios" })).toHaveAttribute(
+      "href",
+      "#/ajustes/analise",
+    );
+    // Ações: Bazin, Graham e Pelas duas.
+    const stocks = within(references.getByRole("table", { name: "Ações" }));
+    const itsa = stocks.getByRole("rowheader", { name: "ITSA4" }).closest("tr") as HTMLElement;
     expect(cellOf(itsa, "Bazin")).toHaveTextContent(/R\$\s12,50/);
-    expect(cellOf(itsa, "Seu teto")).toHaveTextContent(/R\$\s10,00/);
-    expect(cellOf(itsa, "Hoje")).toHaveTextContent(/R\$\s11,20/);
-    const knri = references.getByRole("rowheader", { name: "KNRI11" }).closest("tr") as HTMLElement;
-    expect(cellOf(knri, "Seu teto")).toHaveTextContent("Sem teto");
-    // O Graham aparece só para quem tem lucro e patrimônio por ação.
     expect(cellOf(itsa, "Graham")).toHaveTextContent(/R\$\s9,50/);
-    expect(cellOf(knri, "Graham")).toHaveTextContent("sem Graham");
-    expect(cellOf(knri, "Graham")).not.toHaveTextContent(/R\$/);
-    // A média de dividendos de cada um, no ⓘ do Bazin.
-    await user.click(within(itsa).getByRole("button", { name: "Como sai o Bazin de ITSA4" }));
+    expect(cellOf(itsa, "Pelas duas")).toHaveTextContent(/R\$\s9,50/);
+    expect(cellOf(itsa, "Seu teto")).toHaveTextContent(/R\$\s10,00/);
+    expect(cellOf(itsa, "Seu teto")).toHaveTextContent("Valor próprio");
+    expect(cellOf(itsa, "Hoje")).toHaveTextContent(/R\$\s11,20/);
+    await user.click(within(itsa).getByRole("button", { name: "Como sai: Bazin de ITSA4" }));
     expect(
       within(itsa).getByText(/Média de 4 anos de dividendos: R\$\s0,75 por cota ao ano, dividida por 6% ao ano/),
     ).toBeInTheDocument();
-    await user.click(within(knri).getByRole("button", { name: "Como sai o Bazin de KNRI11" }));
-    expect(within(knri).getByText(/Média de 2 anos de dividendos/)).toBeInTheDocument();
-    // As fórmulas, com o rendimento-alvo de hoje, no ⓘ do título.
+    // FIIs: o tipo, VP, Rendimento e Pelas duas; nunca Bazin nem Graham.
+    const funds = within(references.getByRole("table", { name: "FIIs" }));
+    expect(funds.queryByRole("columnheader", { name: "Bazin" })).toBeNull();
+    const knri = funds.getByRole("rowheader", { name: "KNRI11" }).closest("tr") as HTMLElement;
+    expect(cellOf(knri, "Tipo")).toHaveTextContent("Tijolo");
+    expect(cellOf(knri, "VP")).toHaveTextContent(/R\$\s98,40/);
+    expect(cellOf(knri, "Rendimento")).toHaveTextContent(/R\$\s137,21/);
+    expect(cellOf(knri, "Pelas duas")).toHaveTextContent(/R\$\s98,40/);
+    expect(cellOf(knri, "Seu teto")).toHaveTextContent("Sem teto");
+    // A conta de verdade do Rendimento, no ⓘ.
+    await user.click(within(knri).getByRole("button", { name: "Como sai: Rendimento de KNRI11" }));
+    expect(
+      within(knri).getByText(
+        /Tijolo: alvo do tijolo 7,12% \+ 2,5 p\.p\. = 9,62%; proventos 12m R\$\s13,20 ÷ 9,62% = R\$\s137,21\./,
+      ),
+    ).toBeInTheDocument();
+    const mxrf = funds.getByRole("rowheader", { name: "MXRF11" }).closest("tr") as HTMLElement;
+    await user.click(within(mxrf).getByRole("button", { name: "Como sai: Rendimento de MXRF11" }));
+    expect(within(mxrf).getByText(/alvo do papel: CDI 14,20% × 0,85 = 12,07% \+ 1,0 p\.p\. = 13,07%/)).toBeInTheDocument();
+    const hibr = funds.getByRole("rowheader", { name: "HIBR11" }).closest("tr") as HTMLElement;
+    expect(cellOf(hibr, "Tipo")).toHaveTextContent("Híbrido");
+    await user.click(within(hibr).getByRole("button", { name: "Como sai: Rendimento de HIBR11" }));
+    expect(within(hibr).getByText(/60% tijolo \(9,62%\) \+ 40% papel \(13,07%\) = 11,00%/)).toBeInTheDocument();
+    const foff = funds.getByRole("rowheader", { name: "FOFF11" }).closest("tr") as HTMLElement;
+    await user.click(within(foff).getByRole("button", { name: "Como sai: Rendimento de FOFF11" }));
+    expect(within(foff).getByText(/a carteira dos fundos de baixo não é conhecida/)).toBeInTheDocument();
+    // Sem tipo: sem Rendimento, com o motivo para o leitor de tela.
+    const trxf = funds.getByRole("rowheader", { name: "TRXF11" }).closest("tr") as HTMLElement;
+    expect(cellOf(trxf, "Tipo")).toHaveTextContent("Sem tipo");
+    expect(cellOf(trxf, "Rendimento")).toHaveTextContent("tipo do FII ainda desconhecido");
+    expect(cellOf(trxf, "Rendimento")).not.toHaveTextContent(/R\$/);
+    // As fórmulas, com o rendimento-alvo e as taxas de hoje, no ⓘ do título.
     await user.click(references.getByRole("button", { name: "Como as referências são calculadas" }));
     expect(references.getByText(/hoje 6% ao ano/)).toBeInTheDocument();
-    expect(references.getByText(/Graham: a raiz de 22,5 vezes o lucro por ação/)).toBeInTheDocument();
+    expect(
+      references.getByText(/juro real 7,12% em 19\/11\/2026 \(Tesouro IPCA\+ com Juros Semestrais 2037\) \+ 2,5 p\.p\./),
+    ).toBeInTheDocument();
     // Nada de "oportunidade" nem de "compre".
     expect(document.body.textContent).not.toMatch(/oportunidade|compre|preço justo|upside/i);
   });
 
-  it("aplica a referência como teto só depois de confirmar", async () => {
+  it("escolhe o teto pelo método, com o valor e o veredito de cada um, e grava só depois de confirmar", async () => {
     const { user } = await openAnalysis();
     const references = card("Referências de preço");
-    await user.click(references.getByRole("button", { name: "Usar a referência como teto de ITSA4" }));
-    const dialog = await screen.findByRole("dialog", { name: "Usar como teto de preço?" });
-    expect(within(dialog).getByText(/Definir R\$\s9,50 como teto de preço de ITSA4\?/)).toBeInTheDocument();
+    await user.click(references.getByRole("button", { name: "Escolher o teto de KNRI11" }));
+    const dialog = await screen.findByRole("dialog", { name: "Teto de KNRI11" });
+    // O que está gravado vem marcado; cada método com o valor de hoje e o chip contra R$ 142,00.
+    expect(within(dialog).getByRole("radio", { name: /Sem teto/ })).toBeChecked();
+    expect(within(dialog).getByRole("radio", { name: /^VP R\$\s98,40 não aprova/ })).toBeInTheDocument();
+    expect(within(dialog).getByRole("radio", { name: /^Rendimento R\$\s137,21 não aprova/ })).toBeInTheDocument();
+    expect(within(dialog).getByRole("radio", { name: /^Pelas duas R\$\s98,40 não aprova/ })).toBeInTheDocument();
+    expect(within(dialog).queryByRole("radio", { name: /Bazin|Graham/ })).toBeNull();
     expect(getDb().requests.filter((r) => r.method === "PATCH")).toHaveLength(0);
 
+    await user.click(within(dialog).getByRole("radio", { name: /^Rendimento/ }));
     await user.click(within(dialog).getByRole("button", { name: "Cancelar" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(getDb().requests.filter((r) => r.method === "PATCH")).toHaveLength(0);
 
-    await user.click(references.getByRole("button", { name: "Usar a referência como teto de ITSA4" }));
-    const again = await screen.findByRole("dialog", { name: "Usar como teto de preço?" });
-    await user.click(within(again).getByRole("button", { name: "Definir teto" }));
-    await screen.findByText("Teto de ITSA4 atualizado.");
-    const patch = getDb().requests.filter((r) => r.method === "PATCH" && r.path === "/api/v1/assets/a-itsa").at(-1);
-    expect(patch?.body).toEqual({ max_price: 9.5 });
-    expect(getDb().assets.find((a) => a.id === "a-itsa")?.max_price).toBe(9.5);
+    await user.click(references.getByRole("button", { name: "Escolher o teto de KNRI11" }));
+    const again = await screen.findByRole("dialog", { name: "Teto de KNRI11" });
+    await user.click(within(again).getByRole("radio", { name: /^Rendimento/ }));
+    await user.click(within(again).getByRole("button", { name: "Confirmar" }));
+    await screen.findByText("Teto de KNRI11 atualizado.");
+    const patch = getDb().requests.filter((r) => r.method === "PATCH" && r.path === "/api/v1/assets/a-knri").at(-1);
+    expect(patch?.body).toEqual({ ceiling: { method: "fund_yield" } });
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    // A tabela mostra o teto novo: o valor de hoje e o método.
+    const knri = within(references.getByRole("table", { name: "FIIs" }))
+      .getByRole("rowheader", { name: "KNRI11" })
+      .closest("tr") as HTMLElement;
+    await waitFor(() => expect(cellOf(knri, "Seu teto")).toHaveTextContent(/R\$\s137,21\s*Rendimento/));
   });
 
-  it("não oferece o botão quando o teto já é a referência, e mostra o erro ao falhar", async () => {
+  it("Sem teto tira o teto; Valor próprio grava o número; confirmar sem mudar não grava", async () => {
+    const { user } = await openAnalysis();
+    const references = card("Referências de preço");
+    await user.click(references.getByRole("button", { name: "Escolher o teto de ITSA4" }));
+    const dialog = await screen.findByRole("dialog", { name: "Teto de ITSA4" });
+    expect(within(dialog).getByRole("radio", { name: /Valor próprio/ })).toBeChecked();
+    expect(within(dialog).getByLabelText<HTMLInputElement>("Pagar no máximo, por unidade").value).toMatch(/10,00$/);
+    await user.click(within(dialog).getByRole("button", { name: "Confirmar" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(getDb().requests.filter((r) => r.method === "PATCH")).toHaveLength(0);
+
+    await user.click(references.getByRole("button", { name: "Escolher o teto de ITSA4" }));
+    const remove = await screen.findByRole("dialog", { name: "Teto de ITSA4" });
+    await user.click(within(remove).getByRole("radio", { name: /Sem teto/ }));
+    await user.click(within(remove).getByRole("button", { name: "Confirmar" }));
+    await screen.findByText("Teto de ITSA4 removido.");
+    expect(getDb().requests.filter((r) => r.method === "PATCH").at(-1)?.body).toEqual({ ceiling: null });
+  });
+
+  it("o teto pelo método sem valor aparece com o motivo, e o erro do servidor deixa a folha aberta", async () => {
     const base = defaultAnalysis();
     analysisState().analysis = {
       ...base,
       references: {
         ...base.references,
-        items: base.references.items.map((i) => (i.label === "ITSA4" ? { ...i, max_price: 9.5 } : i)),
+        funds: base.references.funds.map((f) =>
+          f.label === "TRXF11" ? { ...f, ceiling: { method: "fund_yield", value: null, unavailable_reason: "unknown_fund_type" } } : f,
+        ),
       },
     };
     server.use(
@@ -449,41 +513,27 @@ describe("tela Análise", () => {
     );
     const { user } = await openAnalysis();
     const references = card("Referências de preço");
-    expect(references.queryByRole("button", { name: /teto de ITSA4/ })).not.toBeInTheDocument();
-    await user.click(references.getByRole("button", { name: "Usar a referência como teto de KNRI11" }));
-    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Definir teto" }));
+    const funds = within(references.getByRole("table", { name: "FIIs" }));
+    const trxf = funds.getByRole("rowheader", { name: "TRXF11" }).closest("tr") as HTMLElement;
+    expect(cellOf(trxf, "Seu teto")).toHaveTextContent("Rendimento: sem valor");
+    await user.click(within(trxf).getByRole("button", { name: "Por que o teto de TRXF11 está sem valor" }));
+    expect(within(trxf).getByText(/tipo do FII ainda desconhecido\): TRXF11 fica fora do aporte/)).toBeInTheDocument();
+
+    await user.click(references.getByRole("button", { name: "Escolher o teto de KNRI11" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("radio", { name: /^VP/ }));
+    await user.click(within(dialog).getByRole("button", { name: "Confirmar" }));
     expect(await screen.findByText(/Teto ruim\./)).toBeInTheDocument();
     // O diálogo continua aberto para tentar de novo ou cancelar.
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
-  it("sem histórico de dividendos, diz o que falta em vez de uma lista vazia", async () => {
+  it("sem ações nem FIIs, diz o que falta em vez de uma lista vazia", async () => {
     const base = defaultAnalysis();
-    analysisState().analysis = { ...base, references: { ...base.references, items: [] } };
+    analysisState().analysis = { ...base, references: { ...base.references, stocks: [], funds: [] } };
     await openAnalysis();
-    expect(card("Referências de preço").getByText(/Sem referência por enquanto/)).toBeInTheDocument();
-  });
-
-  it("oferece um teto só, pelas duas referências, e não pede para escolher uma", async () => {
-    const { user } = await openAnalysis();
-    const references = card("Referências de preço");
-    const itsaRow = references.getByRole("rowheader", { name: "ITSA4" }).closest("tr") as HTMLElement;
-    const knriRow = references.getByRole("rowheader", { name: "KNRI11" }).closest("tr") as HTMLElement;
-    const itsa = within(itsaRow);
-    const knri = within(knriRow);
-    // Com as duas, o teto é o menor (Graham 9,50 < Bazin 12,50).
-    expect(cellOf(itsaRow, "Pelas duas")).toHaveTextContent(/R\$\s9,50/);
-    expect(itsa.getAllByRole("button", { name: /teto/ })).toHaveLength(1);
-    expect(itsa.getByRole("button", { name: "Usar a referência como teto de ITSA4" })).toHaveTextContent(
-      /Usar R\$\s9,50 como meu teto/,
-    );
-    // Com uma só (KNRI11 não tem Graham), o teto é ela, sem valor em "Pelas duas".
-    expect(cellOf(knriRow, "Pelas duas")).toHaveTextContent("só uma referência");
-    expect(cellOf(knriRow, "Pelas duas")).not.toHaveTextContent(/R\$/);
-    await user.click(knri.getByRole("button", { name: "Usar a referência como teto de KNRI11" }));
-    const dialog = await screen.findByRole("dialog", { name: "Usar como teto de preço?" });
-    expect(dialog).toHaveTextContent(/Definir R\$\s140,00 como teto de preço de KNRI11\?/);
-    expect(document.body.textContent).not.toMatch(/Usar Bazin|Usar Graham/);
+    expect(card("Referências de preço").getByText(/Sem ações nem FIIs da B3 na carteira/)).toBeInTheDocument();
+    expect(card("Referências de preço").queryByRole("table")).toBeNull();
   });
 
   it("diz de onde vêm os dados, quando foram buscados e o que ficou de fora", async () => {

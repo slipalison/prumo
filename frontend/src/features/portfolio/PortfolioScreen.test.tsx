@@ -60,9 +60,9 @@ describe("Carteira", () => {
     const { user } = await openPortfolio();
     await user.click(screen.getByRole("button", { name: /TRXF11/ }));
     const dialog = await screen.findByRole("dialog", { name: "TRXF11" });
-    expect(within(dialog).queryByText(/Seu critério: acima deste preço/)).toBeNull();
-    await user.click(within(dialog).getByRole("button", { name: "Sobre teto de preço" }));
-    expect(within(dialog).getByText(/Seu critério: acima deste preço/)).toBeInTheDocument();
+    expect(within(dialog).queryByText(/Seu critério: acima do teto/)).toBeNull();
+    await user.click(within(dialog).getByRole("button", { name: "Sobre o teto de preço" }));
+    expect(within(dialog).getByText(/Seu critério: acima do teto/)).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Sobre a quantidade" }));
     expect(within(dialog).getByText(/Mudar aqui grava um ajuste em Lançamentos/)).toBeInTheDocument();
   });

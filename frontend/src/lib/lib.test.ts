@@ -290,7 +290,14 @@ describe("planText", () => {
 
   it("as referências do ativo sem teto: o preço de cada método e se ele aprova o preço de hoje", () => {
     const checks = (price: number, bazin: number | null, graham: number | null, money = shown) =>
-      referenceChecks({ unit_price: price }, { bazin, graham }, money).map((c) => ({
+      referenceChecks(
+        { unit_price: price },
+        [
+          ...(bazin === null ? [] : [{ method: "bazin" as const, value: bazin }]),
+          ...(graham === null ? [] : [{ method: "graham" as const, value: graham }]),
+        ],
+        money,
+      ).map((c) => ({
         ...c,
         label: nbsp(c.label),
         tip: nbsp(c.tip),
@@ -309,6 +316,19 @@ describe("planText", () => {
     // Só os métodos que existem, na ordem Bazin, Graham.
     expect(checks(55.15, null, 20.12).map((c) => c.name)).toEqual(["Graham"]);
     expect(checks(55.15, null, null)).toEqual([]);
+    // FII: VP e Rendimento, com a explicação de cada um.
+    const [nav, found] = referenceChecks(
+      { unit_price: 100 },
+      [
+        { method: "nav", value: 98.4 },
+        { method: "fund_yield", value: 137.21 },
+      ],
+      shown,
+    );
+    expect(nav).toMatchObject({ name: "VP", approves: false });
+    expect(nav?.tip).toContain("valor patrimonial por cota do informe mensal da CVM");
+    expect(found).toMatchObject({ name: "Rendimento", approves: true });
+    expect(found?.tip).toContain("proventos de 12 meses pagariam o rendimento-alvo do tipo do fundo");
     // Olho fechado: nenhum valor em reais, nem no nome acessível; o veredito continua.
     for (const check of checks(55.15, 18.69, 77.77, createMoney(true))) {
       expect(check.label).not.toMatch(/R\$\s*\d/);

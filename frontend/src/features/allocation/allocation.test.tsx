@@ -5,7 +5,7 @@ import type { PlanNotice } from "../../api/types";
 import { createMoney, MASK_BRL } from "../../lib/money";
 import { noticeText } from "../../lib/planText";
 import { HIDE_VALUES_KEY } from "../../lib/privacy";
-import { isAboveCeiling } from "../../lib/rating";
+import { isAboveCeiling, isCeilingUnavailable } from "../../lib/rating";
 import { samplePlan } from "../../test/fixtures";
 import { renderApp } from "../../test/render";
 import { getDb, server } from "../../test/server";
@@ -20,14 +20,51 @@ const hidden = createMoney(true);
 const lastRequest = (method: string, path: string) =>
   getDb().requests.filter((r) => r.method === method && r.path === path).at(-1);
 
+/** O teto de valor próprio, como o servidor devolve. */
+const manual = (value: number) => ({ method: "manual" as const, value, unavailable_reason: null });
+
+/** Abre a escolha do teto na folha do ativo (ela fica recolhida numa linha). */
+async function openCeiling(user: { click: (element: Element) => Promise<void> }, dialog: HTMLElement) {
+  await user.click(within(dialog).getByRole("button", { name: /Mudar o teto de preço/ }));
+}
+
+function setCeiling(id: string, ceiling: ReturnType<typeof manual> | null) {
+  const stored = getDb().assets.find((a) => a.id === id);
+  if (stored) stored.ceiling = ceiling;
+}
+
 describe("textos do teto e do limite", () => {
   it("o ativo acima do teto diz o preço, o teto e que fica fora", () => {
     const text = noticeText(
-      { code: "asset_above_ceiling", asset_id: "a-itsa", symbol: "ITSA4", unit_price: 11.2, max_price: 10 },
+      { code: "asset_above_ceiling", asset_id: "a-itsa", symbol: "ITSA4", unit_price: 11.2, max_price: 10, method: "manual" },
       [],
       shown,
     );
     expect(nbsp(text)).toBe("ITSA4 está a R$ 11,20, acima do seu teto de R$ 10,00. Fica fora deste aporte.");
+    // Pelo método, o aviso diz qual.
+    const byMethod = noticeText(
+      { code: "asset_above_ceiling", asset_id: "a-itsa", symbol: "ITSA4", unit_price: 11.2, max_price: 9.5, method: "graham" },
+      [],
+      shown,
+    );
+    expect(nbsp(byMethod)).toBe("ITSA4 está a R$ 11,20, acima do seu teto pelo Graham de R$ 9,50. Fica fora deste aporte.");
+  });
+
+  it("o teto pelo método sem valor diz o método, o motivo e o que fazer", () => {
+    const text = noticeText(
+      { code: "asset_ceiling_unavailable", asset_id: "a-itsa", symbol: "ITSA4", method: "graham", reason: "loss" },
+      [],
+      shown,
+    );
+    expect(text).toBe(
+      "ITSA4 fica fora deste aporte: o teto pelo Graham está sem valor hoje (prejuízo: lucro por ação zero ou negativo). Troque o teto ou escolha Sem teto.",
+    );
+    const fund = noticeText(
+      { code: "asset_ceiling_unavailable", asset_id: "a-trxf", symbol: "TRXF11", method: "combined", reason: "no_reference" },
+      [],
+      shown,
+    );
+    expect(fund).toContain("o teto pelas duas referências está sem valor hoje");
   });
 
   it("o limite diz quem parou nele e, se for o caso, quanto ficou sem destino", () => {
@@ -51,7 +88,7 @@ describe("textos do teto e do limite", () => {
 
   it("com o olho fechado, preço, teto e sobra do limite saem mascarados", () => {
     const above = noticeText(
-      { code: "asset_above_ceiling", asset_id: "a-itsa", symbol: "ITSA4", unit_price: 11.2, max_price: 10 },
+      { code: "asset_above_ceiling", asset_id: "a-itsa", symbol: "ITSA4", unit_price: 11.2, max_price: 10, method: "manual" },
       [],
       hidden,
     );
@@ -64,19 +101,26 @@ describe("textos do teto e do limite", () => {
   });
 
   it("a classe bloqueada pelo teto ou pelo limite diz o que fazer", () => {
-    const blocked = (reason: "above_ceiling" | "concentration_limit") =>
+    const blocked = (reason: "above_ceiling" | "ceiling_unavailable" | "concentration_limit") =>
       noticeText({ code: "class_blocked", asset_class: "br_stocks", amount: 5000, reason }, [], shown);
     expect(blocked("above_ceiling")).toContain("acima do teto de preço que você definiu");
+    expect(blocked("ceiling_unavailable")).toContain("o método de teto escolhido está sem valor hoje");
     expect(blocked("concentration_limit")).toContain("Cadastre outro ativo na classe ou suba o limite");
   });
 
   it("acima do teto só com preço de verdade e teto definido", () => {
-    const asset = { unit_price: 11.2, max_price: 10, price_source: "quote" as const };
+    const asset = { unit_price: 11.2, ceiling: manual(10), price_source: "quote" as const };
     expect(isAboveCeiling(asset)).toBe(true);
-    expect(isAboveCeiling({ ...asset, max_price: 11.2 })).toBe(false);
-    expect(isAboveCeiling({ ...asset, max_price: null })).toBe(false);
+    expect(isAboveCeiling({ ...asset, ceiling: manual(11.2) })).toBe(false);
+    expect(isAboveCeiling({ ...asset, ceiling: null })).toBe(false);
     expect(isAboveCeiling({ ...asset, price_source: "missing" })).toBe(false);
     expect(isAboveCeiling({ ...asset, unit_price: null })).toBe(false);
+    // Método sem valor: não está "acima", está sem teto válido.
+    const off = { method: "graham" as const, value: null, unavailable_reason: "loss" as const };
+    expect(isAboveCeiling({ ...asset, ceiling: off })).toBe(false);
+    expect(isCeilingUnavailable({ ceiling: off })).toBe(true);
+    expect(isCeilingUnavailable({ ceiling: manual(10) })).toBe(false);
+    expect(isCeilingUnavailable({ ceiling: null })).toBe(false);
   });
 });
 
@@ -92,26 +136,46 @@ describe("avisos do teto e do limite no plano", () => {
   }
 
   it("ativo acima do teto: o aviso abre o ativo, e o teto está lá para revisar", async () => {
-    const itsa = getDb().assets.find((a) => a.id === "a-itsa");
-    if (itsa) itsa.max_price = 10;
+    setCeiling("a-itsa", manual(10));
     const { user, result } = await calculate([
-      { code: "asset_above_ceiling", asset_id: "a-itsa", symbol: "ITSA4", unit_price: 11.2, max_price: 10 },
+      { code: "asset_above_ceiling", asset_id: "a-itsa", symbol: "ITSA4", unit_price: 11.2, max_price: 10, method: "manual" },
     ]);
     expect(within(result).getByText(/ITSA4 está a .* acima do seu teto/)).toBeInTheDocument();
     await user.click(within(result).getByRole("button", { name: /Abrir ITSA4/ }));
     const dialog = await screen.findByRole("dialog", { name: "ITSA4" });
-    expect(within(dialog).getByRole("switch", { name: /Teto de preço/ })).toBeChecked();
+    // Fechada, a linha do teto já diz qual é; aberta, a escolha vem marcada.
+    expect(within(dialog).getByRole("button", { name: /agora: Valor próprio · R\$\s10,00/ })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(within(dialog).queryByRole("radio")).toBeNull();
+    await openCeiling(user, dialog);
+    expect(within(dialog).getByRole("radio", { name: /Valor próprio/ })).toBeChecked();
     expect(within(dialog).getByText(/Hoje está a R\$\s11,20, acima do teto/)).toBeInTheDocument();
   });
 
   it("classe bloqueada pelo teto, um ativo só: abre ele", async () => {
-    const itsa = getDb().assets.find((a) => a.id === "a-itsa");
-    if (itsa) itsa.max_price = 10;
+    setCeiling("a-itsa", manual(10));
     const { user, result } = await calculate([
       { code: "class_blocked", asset_class: "br_stocks", amount: 5000, reason: "above_ceiling" },
     ]);
     await user.click(within(result).getByRole("button", { name: /Abrir ITSA4/ }));
     expect(await screen.findByRole("dialog", { name: "ITSA4" })).toBeInTheDocument();
+  });
+
+  it("teto pelo método sem valor: o aviso diz o motivo e abre o ativo; a classe bloqueada também", async () => {
+    const stored = getDb().assets.find((a) => a.id === "a-itsa");
+    if (stored) stored.ceiling = { method: "graham", value: null, unavailable_reason: "loss" };
+    const { user, result } = await calculate([
+      { code: "asset_ceiling_unavailable", asset_id: "a-itsa", symbol: "ITSA4", method: "graham", reason: "loss" },
+      { code: "class_blocked", asset_class: "br_stocks", amount: 5000, reason: "ceiling_unavailable" },
+    ]);
+    expect(within(result).getByText(/o teto pelo Graham está sem valor hoje \(prejuízo/)).toBeInTheDocument();
+    expect(within(result).getAllByRole("button", { name: /Abrir ITSA4/ })).toHaveLength(2);
+    await user.click(within(result).getAllByRole("button", { name: /Abrir ITSA4/ })[0] as HTMLElement);
+    const dialog = await screen.findByRole("dialog", { name: "ITSA4" });
+    await openCeiling(user, dialog);
+    expect(within(dialog).getByRole("radio", { name: /^Graham/ })).toBeChecked();
   });
 
   it("limite e classe bloqueada pelo limite levam ao controle do limite", async () => {
@@ -135,34 +199,89 @@ describe("teto de preço na folha do ativo", () => {
     return { ...rendered, dialog };
   }
 
-  it("liga o teto, avisa que hoje está acima e grava", async () => {
+  it("nasce sem teto; o valor próprio avisa que hoje está acima e grava", async () => {
     const { user, dialog } = await openItsa();
+    expect(within(dialog).getByRole("button", { name: "Mudar o teto de preço (agora: Sem teto)" })).toBeInTheDocument();
+    await openCeiling(user, dialog);
+    expect(within(dialog).getByRole("radio", { name: /Sem teto/ })).toBeChecked();
     expect(within(dialog).queryByLabelText("Pagar no máximo, por unidade")).toBeNull();
-    await user.click(within(dialog).getByRole("switch", { name: /Teto de preço/ }));
+    await user.click(within(dialog).getByRole("radio", { name: /Valor próprio/ }));
     const field = within(dialog).getByLabelText("Pagar no máximo, por unidade");
     await user.clear(field);
     await user.type(field, "1000");
     expect(within(dialog).getByText(/Hoje está a R\$\s11,20, acima do teto: fica fora do aporte/)).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Salvar" }));
-    await waitFor(() => expect(lastRequest("PATCH", "/api/v1/assets/a-itsa")?.body).toEqual({ max_price: 10 }));
-    expect(getDb().assets.find((a) => a.id === "a-itsa")?.max_price).toBe(10);
+    await waitFor(() =>
+      expect(lastRequest("PATCH", "/api/v1/assets/a-itsa")?.body).toEqual({ ceiling: { method: "manual", value: 10 } }),
+    );
+    expect(getDb().assets.find((a) => a.id === "a-itsa")?.ceiling).toEqual(manual(10));
   });
 
-  it("desligar o teto limpa o campo no servidor; renda fixa por valor não tem teto", async () => {
-    const itsa = getDb().assets.find((a) => a.id === "a-itsa");
-    if (itsa) itsa.max_price = 15;
+  it("escolhe um método: mostra o valor de hoje e o veredito, e grava só o método", async () => {
     const { user, dialog } = await openItsa();
-    const toggle = within(dialog).getByRole("switch", { name: /Teto de preço/ });
-    expect(toggle).toBeChecked();
-    expect(within(dialog).queryByText(/acima do teto/)).toBeNull();
-    await user.click(toggle);
+    await openCeiling(user, dialog);
+    // As referências de hoje, uma por método, com o chip contra o preço de hoje (R$ 11,20).
+    const bazin = await within(dialog).findByRole("radio", { name: /^Bazin R\$\s12,50 aprova/ });
+    const graham = within(dialog).getByRole("radio", { name: /^Graham R\$\s9,50 não aprova/ });
+    expect(within(dialog).getByRole("radio", { name: /^Pelas duas R\$\s9,50 não aprova/ })).toBeInTheDocument();
+    expect(bazin).not.toBeChecked();
+    // A conta no ⓘ.
+    await user.click(within(dialog).getByRole("button", { name: "Como sai o Bazin de ITSA4" }));
+    expect(within(dialog).getByText(/Média de 4 anos de dividendos: R\$\s0,75 por cota ao ano, dividida por 6% ao ano/)).toBeInTheDocument();
+    await user.click(graham);
+    expect(within(dialog).getByText(/Hoje está a R\$\s11,20, acima do teto/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /agora: Graham · R\$\s9,50/ })).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Salvar" }));
-    await waitFor(() => expect(lastRequest("PATCH", "/api/v1/assets/a-itsa")?.body).toEqual({ max_price: null }));
+    await waitFor(() =>
+      expect(lastRequest("PATCH", "/api/v1/assets/a-itsa")?.body).toEqual({ ceiling: { method: "graham" } }),
+    );
+    // O servidor devolve o teto de hoje pelo método; a Carteira marca "acima do teto".
+    expect(getDb().assets.find((a) => a.id === "a-itsa")?.ceiling).toEqual({
+      method: "graham",
+      value: 9.5,
+      unavailable_reason: null,
+    });
+  });
+
+  it("tirar o teto manda null; renda fixa por valor não tem teto", async () => {
+    setCeiling("a-itsa", manual(15));
+    const { user, dialog } = await openItsa();
+    await openCeiling(user, dialog);
+    expect(within(dialog).getByRole("radio", { name: /Valor próprio/ })).toBeChecked();
+    expect(within(dialog).queryByText(/acima do teto/)).toBeNull();
+    await user.click(within(dialog).getByRole("radio", { name: /Sem teto/ }));
+    await user.click(within(dialog).getByRole("button", { name: "Salvar" }));
+    await waitFor(() => expect(lastRequest("PATCH", "/api/v1/assets/a-itsa")?.body).toEqual({ ceiling: null }));
 
     const rf = screen.getByRole("region", { name: "Renda Fixa" });
     await user.click(within(rf).getByRole("button", { name: /Tesouro IPCA\+ 2035/ }));
     const fixed = await screen.findByRole("dialog", { name: "Tesouro IPCA+ 2035" });
-    expect(within(fixed).queryByRole("switch", { name: /Teto de preço/ })).toBeNull();
+    expect(within(fixed).queryByRole("button", { name: /Mudar o teto de preço/ })).toBeNull();
+  });
+
+  it("FII: VP e Rendimento no lugar de Bazin e Graham; método sem valor avisa que tira o ativo do aporte", async () => {
+    const rendered = renderApp("carteira");
+    await screen.findByRole("heading", { name: "Tudo o que você tem, no eixo certo" });
+    const fiis = screen.getByRole("region", { name: "Fundos Imobiliários" });
+    await rendered.user.click(within(fiis).getByRole("button", { name: /TRXF11/ }));
+    const dialog = await screen.findByRole("dialog", { name: "TRXF11" });
+    await openCeiling(rendered.user, dialog);
+    await within(dialog).findByRole("radio", { name: /^VP R\$\s110,20 aprova/ });
+    expect(within(dialog).queryByRole("radio", { name: /Bazin|Graham/ })).toBeNull();
+    const rendimento = within(dialog).getByRole("radio", { name: /^Rendimento sem valor hoje: tipo do FII ainda desconhecido/ });
+    await rendered.user.click(rendimento);
+    expect(within(dialog).getByRole("note")).toHaveTextContent(
+      "O teto pelo Rendimento está sem valor hoje (tipo do FII ainda desconhecido): com ele, TRXF11 fica fora do aporte",
+    );
+    await rendered.user.click(within(dialog).getByRole("button", { name: "Salvar" }));
+    await waitFor(() =>
+      expect(lastRequest("PATCH", "/api/v1/assets/a-trxf")?.body).toEqual({ ceiling: { method: "fund_yield" } }),
+    );
+    expect(getDb().assets.find((a) => a.id === "a-trxf")?.ceiling).toEqual({
+      method: "fund_yield",
+      value: null,
+      unavailable_reason: "unknown_fund_type",
+    });
   });
 });
 
@@ -230,8 +349,7 @@ describe("limite por ativo, na tela de Metas", () => {
 
 describe("selo acima do teto na Carteira", () => {
   it("o ativo acima do teto mostra o selo, e o ideal dele não muda", async () => {
-    const itsa = getDb().assets.find((a) => a.id === "a-itsa");
-    if (itsa) itsa.max_price = 10;
+    setCeiling("a-itsa", manual(10));
     renderApp("carteira");
     await screen.findByRole("heading", { name: "Tudo o que você tem, no eixo certo" });
     const stocks = screen.getByRole("region", { name: "Ações Nacionais" });
@@ -240,6 +358,16 @@ describe("selo acima do teto na Carteira", () => {
     expect(within(row).getByText(/ideal 100,0%/)).toBeInTheDocument();
     const fiis = screen.getByRole("region", { name: "Fundos Imobiliários" });
     expect(within(fiis).queryByText("acima do teto")).toBeNull();
+  });
+
+  it("o ativo com o teto pelo método sem valor mostra o selo", async () => {
+    const stored = getDb().assets.find((a) => a.id === "a-knri");
+    if (stored) stored.ceiling = { method: "nav", value: null, unavailable_reason: "no_fundamentals" };
+    renderApp("carteira");
+    await screen.findByRole("heading", { name: "Tudo o que você tem, no eixo certo" });
+    const fiis = screen.getByRole("region", { name: "Fundos Imobiliários" });
+    const row = within(fiis).getByRole("button", { name: /KNRI11/ });
+    expect(within(row).getByText("teto sem valor")).toBeInTheDocument();
   });
 });
 
@@ -253,7 +381,7 @@ describe("teto e limite com o olho fechado", () => {
         HttpResponse.json({
           ...samplePlan(),
           notices: [
-            { code: "asset_above_ceiling", asset_id: "a-itsa", symbol: "ITSA4", unit_price: 11.2, max_price: 10 },
+            { code: "asset_above_ceiling", asset_id: "a-itsa", symbol: "ITSA4", unit_price: 11.2, max_price: 10, method: "manual" },
             { code: "concentration_limit", max_percent: 20, asset_ids: ["a-btc"], symbols: ["BTC"], amount: 1200 },
           ],
         }),
@@ -276,15 +404,22 @@ describe("teto e limite com o olho fechado", () => {
 
   it("o campo do teto fora do foco e o aviso da folha saem mascarados", async () => {
     window.localStorage.setItem(HIDE_VALUES_KEY, "1");
-    const itsa = getDb().assets.find((a) => a.id === "a-itsa");
-    if (itsa) itsa.max_price = 10;
+    setCeiling("a-itsa", manual(10));
     const { user } = renderApp("carteira");
     await screen.findByRole("heading", { name: "Tudo o que você tem, no eixo certo" });
     const stocks = screen.getByRole("region", { name: "Ações Nacionais" });
     await user.click(within(stocks).getByRole("button", { name: /ITSA4/ }));
     const dialog = await screen.findByRole("dialog", { name: "ITSA4" });
+    // A linha do teto, fechada, também mascara.
+    const toggle = within(dialog).getByRole("button", { name: /Mudar o teto de preço/ });
+    expect(toggle.textContent ?? "").not.toMatch(MONEY);
+    expect(toggle.getAttribute("aria-label") ?? "").not.toMatch(MONEY);
+    await openCeiling(user, dialog);
     const field = within(dialog).getByLabelText("Pagar no máximo, por unidade");
     expect(field).toHaveValue(MASK_BRL);
+    // As referências da escolha também saem mascaradas.
+    const bazin = await within(dialog).findByRole("radio", { name: /^Bazin/ });
+    expect(bazin.closest(".ceiling-option")?.textContent ?? "").not.toMatch(MONEY);
     const warning = within(dialog).getByText(/acima do teto: fica fora do aporte/);
     expect(warning.textContent).not.toMatch(MONEY);
     expect(warning).toHaveTextContent(`Hoje está a ${MASK_BRL}, acima do teto`);

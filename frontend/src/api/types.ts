@@ -1,6 +1,7 @@
 // Espelho exato do JSON de docs/api.md. Campo novo no contrato entra aqui
 // primeiro; o compilador aponta o resto.
 
+import type { Ceiling, CeilingChoice, CeilingMethod, PriceReference, ReferenceGap } from "./ceilingTypes";
 import type { TaxInstrument } from "./taxTypes";
 
 export const ASSET_CLASSES = [
@@ -50,10 +51,11 @@ export type Asset = {
   /** O preço manual gravado, se houver — vence a cotação. */
   manual_price: number | null;
   /**
-   * Teto de preço da pessoa, em reais por unidade: acima dele o ativo fica fora
-   * do aporte. `null` = sem teto.
+   * O teto de preço que a pessoa escolheu (um método ou um valor próprio), com o
+   * valor de hoje: acima dele, ou com o método sem valor, o ativo fica fora do
+   * aporte. `null` = sem teto.
    */
-  max_price: number | null;
+  ceiling: Ceiling | null;
   currency: string;
   price_source: PriceSource;
   quote_updated_at: string | null;
@@ -170,7 +172,8 @@ export type CreateAssetRequest = {
   listed_on_b3?: boolean;
   /** Título do Tesouro Direto: `symbol` é a chave que `GET /symbols` devolve. */
   treasury?: boolean;
-  max_price?: number | null;
+  /** Ausente ou `null` = sem teto: ativo novo nasce sem teto. */
+  ceiling?: CeilingChoice | null;
   /** Preço médio de entrada, em reais (por unidade). Sem ele, custo desconhecido. */
   average_price?: number;
   /** Renda fixa por valor: quanto foi aplicado. */
@@ -185,7 +188,8 @@ export type UpdateAssetRequest = {
   score_override?: number | null;
   answers?: Record<string, boolean | null>;
   listed_on_b3?: boolean;
-  max_price?: number | null;
+  /** Ausente fica como está; `null` tira o teto. */
+  ceiling?: CeilingChoice | null;
   /** `null` volta ao padrão. */
   tax_instrument?: TaxInstrument | null;
 };
@@ -205,16 +209,11 @@ export type PlanItem = {
   /** Renda mensal que este item soma, estimada pelo que a cota pagou em 12 meses, líquida do IR retido na fonte; `null` sem histórico. */
   estimated_monthly_income: number | null;
   /**
-   * Referências públicas de preço (Bazin e Graham), só informativas: presente
-   * quando o ativo não tem teto e há ao menos uma. `null` nos demais.
+   * Referências públicas de preço (Bazin e Graham nas ações, VP e Rendimento nos
+   * FIIs), só as que têm valor e só informativas: presente quando o ativo não
+   * tem teto e há ao menos uma. `null` nos demais.
    */
-  price_references: PriceReferences | null;
-};
-
-/** Cada referência é `null` quando falta dado (sem dividendo, sem lucro ou patrimônio por ação). */
-export type PriceReferences = {
-  bazin: number | null;
-  graham: number | null;
+  price_references: PriceReference[] | null;
 };
 
 export type PlanClassStatus =
@@ -236,16 +235,32 @@ export type PlanClass = {
 
 /**
  * Por que a classe abaixo da meta não recebe: sem ativo, sem nota, sem preço,
- * acima do teto de preço ou com os ativos todos no limite de concentração.
+ * acima do teto de preço, com o teto pelo método sem valor ou com os ativos
+ * todos no limite de concentração.
  */
-export type BlockReason = "no_assets" | "unrated" | "unpriced" | "above_ceiling" | "concentration_limit";
+export type BlockReason =
+  | "no_assets"
+  | "unrated"
+  | "unpriced"
+  | "above_ceiling"
+  | "ceiling_unavailable"
+  | "concentration_limit";
 
 export type PlanNotice =
   | { code: "class_blocked"; asset_class: AssetClass; amount: number; reason: BlockReason }
   | { code: "assets_without_price"; symbols: string[] }
   | { code: "assets_without_score"; symbols: string[] }
   | { code: "no_targets" }
-  | { code: "asset_above_ceiling"; asset_id: string; symbol: string; unit_price: number; max_price: number }
+  | {
+      code: "asset_above_ceiling";
+      asset_id: string;
+      symbol: string;
+      unit_price: number;
+      max_price: number;
+      /** `manual` (valor próprio) ou o método que deu o teto. */
+      method: CeilingMethod | "manual";
+    }
+  | { code: "asset_ceiling_unavailable"; asset_id: string; symbol: string; method: CeilingMethod; reason: ReferenceGap }
   | { code: "concentration_limit"; max_percent: number; asset_ids: string[]; symbols: string[]; amount: number };
 
 /** A renda mensal estimada da carteira antes e depois do aporte (estimativa, não extrato). */

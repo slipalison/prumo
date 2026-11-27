@@ -1,10 +1,11 @@
 import { useId, useState, type ReactNode } from "react";
+import { useAssetReferences } from "../../api/ceiling";
 import { errorMessage } from "../../api/client";
 import { useDeleteAsset, useUpdateAsset } from "../../api/queries";
 import type { Asset, Portfolio, UpdateAssetRequest } from "../../api/types";
 import { TAX_INSTRUMENTS, type TaxInstrument } from "../../api/taxTypes";
 import { AnswerToggle } from "../../components/AnswerToggle";
-import { IconAlert, IconSparkle, IconTrash } from "../../components/icons";
+import { IconAlert, IconChevronDown, IconSparkle, IconTrash } from "../../components/icons";
 import { InfoTip } from "../../components/InfoTip";
 import { Grid } from "../../components/Layout";
 import { MagneticButton } from "../../components/MagneticButton";
@@ -14,10 +15,20 @@ import { ScoreBadge } from "../../components/ScoreBadge";
 import { ScoreSlider } from "../../components/ScoreSlider";
 import { Sheet } from "../../components/Sheet";
 import { useToast } from "../../components/toastContext";
+import { CeilingPicker } from "../ceiling/CeilingPicker";
 import { FundamentalsSection } from "../fundamentals/FundamentalsSection";
 import { TransactionsSection } from "../ledger/TransactionsSection";
 import { INSTRUMENT_HINT, INSTRUMENT_LABEL } from "../tax/taxText";
 import { acceptsB3Listing, CLASS_META, unitOf } from "../../lib/assetClasses";
+import {
+  choiceOf,
+  draftChanges,
+  draftOf,
+  METHOD_LABEL,
+  methodValue,
+  referenceFamily,
+  type CeilingDraft,
+} from "../../lib/ceilingText";
 import { formatDay, formatRelative } from "../../lib/format";
 import { useMoney } from "../../lib/privacy";
 import { assetName } from "../../lib/rating";
@@ -50,6 +61,11 @@ export function EditAssetSheet({ asset, portfolio, onClose, intro, onSaved }: Ed
       )}
     </Sheet>
   );
+}
+
+/** Renda fixa por valor: sem preço por unidade, sem teto. */
+function valueBasedClass(asset: Asset): boolean {
+  return unitOf(asset.asset_class, asset.listed_on_b3, asset.treasury) === "value";
 }
 
 function sheetDescription(asset: Asset): string {
@@ -131,7 +147,7 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
     priceToggle: useId(),
     b3Toggle: useId(),
     ceiling: useId(),
-    ceilingToggle: useId(),
+    ceilingPicker: useId(),
     tax: useId(),
   };
   const money = useMoney();
@@ -158,8 +174,13 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
   const [manualPrice, setManualPrice] = useState(asset.manual_price ?? asset.unit_price ?? 0);
   const [useManualScore, setUseManualScore] = useState(asset.score_override !== null);
   const [scoreOverride, setScoreOverride] = useState(asset.score_override ?? 5);
-  const [useCeiling, setUseCeiling] = useState(asset.max_price !== null);
-  const [maxPrice, setMaxPrice] = useState(asset.max_price ?? asset.unit_price ?? 0);
+  const [ceiling, setCeiling] = useState<CeilingDraft>(() => draftOf(asset.ceiling, asset.unit_price ?? 0));
+  // A escolha do teto fica recolhida numa linha (o teto de hoje à vista) e abre no toque.
+  const [ceilingOpen, setCeilingOpen] = useState(false);
+  // As referências de hoje do ativo (ações e FIIs da B3), para a escolha do teto.
+  const family = referenceFamily(asset);
+  const references = useAssetReferences(asset.id, family !== null && !valueBasedClass(asset));
+  const referenceItem = references.data ? (references.data.stocks[0] ?? references.data.funds[0] ?? null) : null;
   const [answers, setAnswers] = useState<Record<string, Answer>>({ ...asset.answers });
   const [taxInstrument, setTaxInstrument] = useState<TaxInstrument>(asset.tax_instrument);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -187,11 +208,7 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
       } else if (!useManualPrice && asset.manual_price !== null) {
         body.manual_price = null;
       }
-      if (useCeiling && maxPrice !== asset.max_price) {
-        body.max_price = maxPrice;
-      } else if (!useCeiling && asset.max_price !== null) {
-        body.max_price = null;
-      }
+      if (draftChanges(ceiling, asset.ceiling)) body.ceiling = choiceOf(ceiling);
     }
     if (manualScoreActive) {
       if (scoreOverride !== asset.score_override) body.score_override = scoreOverride;
@@ -275,12 +292,27 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
   );
 
   // O preço de hoje que o motor vai ver (o manual em edição vence a cotação)
-  // contra o teto que a pessoa está digitando.
+  // contra o teto que a pessoa está escolhendo.
   const priceNow = useManualPrice ? manualPrice : asset.price_source === "missing" ? null : asset.unit_price;
-  const aboveNow = useCeiling && maxPrice > 0 && priceNow !== null && priceNow > maxPrice;
+  const ceilingNow =
+    ceiling.kind === "manual"
+      ? ceiling.value
+      : ceiling.kind === "method" && referenceItem
+        ? methodValue(referenceItem, ceiling.method).value
+        : null;
+  const aboveNow = ceilingNow !== null && ceilingNow > 0 && priceNow !== null && priceNow > ceilingNow;
+  // O teto em edição em poucas palavras: "Sem teto", "Graham · R$ 9,50", "Valor próprio · R$ 10,00".
+  const ceilingSummary =
+    ceiling.kind === "none"
+      ? "Sem teto"
+      : ceiling.kind === "manual"
+        ? `Valor próprio · ${money.brl(ceiling.value)}`
+        : referenceItem
+          ? `${METHOD_LABEL[ceiling.method]} · ${ceilingNow === null ? "sem valor" : money.brl(ceilingNow)}`
+          : METHOD_LABEL[ceiling.method];
 
-  // Preço manual e teto: dois interruptores lado a lado quando a coluna comporta;
-  // o campo de cada um abre embaixo.
+  // Preço manual e teto lado a lado quando a coluna comporta; o campo do preço
+  // e a escolha do teto (a mesma da Análise) abrem embaixo.
   const priceBlock = !valueBased && (
     <>
       <div className="edit-asset__switches">
@@ -291,17 +323,45 @@ function EditAssetForm({ asset, portfolio, intro, onDone, onSaved }: EditAssetFo
           checked={useManualPrice}
           onChange={setUseManualPrice}
         />
-        <SwitchRow
-          id={ids.ceilingToggle}
-          label="Teto de preço"
-          tip="Seu critério: acima deste preço o ativo fica fora do aporte até voltar. Não é preço justo de ninguém."
-          checked={useCeiling}
-          onChange={setUseCeiling}
-        />
+        <div className="edit-asset__ceiling-head">
+          <span className="edit-asset__ceiling-title">
+            <h3 id={ids.ceiling} className="edit-asset__ceiling-label">
+              Teto de preço
+            </h3>
+            <InfoTip label="Sobre o teto de preço" align="end">
+              Seu critério: acima do teto o ativo fica fora do aporte até voltar. Pode seguir um método (o valor muda com o
+              balanço, os proventos e as taxas) ou ser um valor seu. Não é preço justo de ninguém.
+            </InfoTip>
+          </span>
+          <button
+            type="button"
+            className="btn btn--ghost edit-asset__ceiling-toggle"
+            aria-expanded={ceilingOpen}
+            aria-controls={ids.ceilingPicker}
+            aria-label={`Mudar o teto de preço (agora: ${ceilingSummary})`}
+            onClick={() => setCeilingOpen((open) => !open)}
+          >
+            <span>{ceilingSummary}</span>
+            <IconChevronDown width={14} height={14} className={ceilingOpen ? "is-open" : undefined} />
+          </button>
+        </div>
       </div>
       {useManualPrice && <MoneyInput id={ids.price} label="Preço por unidade" value={manualPrice} onChange={setManualPrice} />}
-      {useCeiling && (
-        <MoneyInput id={ids.ceiling} label="Pagar no máximo, por unidade" value={maxPrice} onChange={setMaxPrice} />
+      {ceilingOpen && (
+        <div id={ids.ceilingPicker} className="edit-asset__ceiling" role="group" aria-labelledby={ids.ceiling}>
+          <CeilingPicker
+            name={name}
+            priceNow={priceNow}
+            family={family}
+            item={referenceItem}
+            market={references.data?.market ?? null}
+            bazinYield={references.data?.bazin_yield ?? null}
+            value={ceiling}
+            onChange={setCeiling}
+            manualStart={asset.unit_price ?? 0}
+            loading={references.isPending && family !== null}
+          />
+        </div>
       )}
       {aboveNow && priceNow !== null && (
         <p className="inline-notice">

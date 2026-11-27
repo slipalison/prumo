@@ -1,5 +1,6 @@
 // Espelho do JSON de `GET /analysis` e `GET|PUT /analysis/rules` (docs/api.md § Análise).
 
+import type { MarketRates, References } from "./ceilingTypes";
 import type { HealthWarning, RuleUnit, SectorSourceInfo } from "./healthTypes";
 import type { AssetClass } from "./types";
 
@@ -136,19 +137,6 @@ export type Mover = { asset_id: string; label: string; asset_class: AssetClass; 
 
 export type Ranking = { best: Mover[]; worst: Mover[] };
 
-export type Reference = {
-  asset_id: string;
-  label: string;
-  asset_class: AssetClass;
-  unit_price: number | null;
-  /** O teto de preço que a pessoa pôs no ativo. */
-  max_price: number | null;
-  bazin: { price: number; annual_average: number; years: number } | null;
-  graham: number | null;
-  /** O teto pelas duas: o menor de Bazin e Graham, ou o que existir. */
-  ceiling: number | null;
-};
-
 /** Um ponto de atenção de um ativo: curto e factual, sem recomendação. */
 export type AttentionPoint =
   | { kind: "income_drop"; percent: number }
@@ -179,12 +167,20 @@ export type Analysis = {
   attention: Attention;
   profile: { current: Mix | null; target: Mix | null; conservative_max: number; moderate_max: number };
   highlights: { price_12m: Ranking; since_purchase: Ranking };
-  references: { bazin_yield: number; items: Reference[] };
+  /** Ações (Bazin, Graham, Pelas duas) e FIIs (VP, Rendimento, Pelas duas), com o teto de cada um. */
+  references: References;
   unclassified_count: number;
   sources: SectorSourceInfo[];
 };
 
-export type AnalysisConfig = { rules: RuleConfig[]; bazin_yield: number };
+/** As regras, o rendimento-alvo do Bazin e os prêmios dos FIIs, com as taxas de hoje. */
+export type AnalysisConfig = { rules: RuleConfig[]; bazin_yield: number; market: MarketRates };
 
 export type RuleChange = { enabled?: boolean; threshold?: number };
-export type ConfigRequest = { rules?: Partial<Record<AnalysisRuleId, RuleChange>>; bazin_yield?: number };
+export type ConfigRequest = {
+  rules?: Partial<Record<AnalysisRuleId, RuleChange>>;
+  bazin_yield?: number;
+  /** Prêmios do rendimento-alvo dos FIIs, em pontos percentuais (0 a 20). */
+  brick_premium?: number;
+  paper_premium?: number;
+};

@@ -12,7 +12,7 @@ import { cx } from "../../lib/cx";
 import { plural } from "../../lib/format";
 import { NO_CEILING_TIP, noticeText, purchaseLine, referenceChecks, unitLine } from "../../lib/planText";
 import { useMoney } from "../../lib/privacy";
-import { assetName, findAssetByLabel, isAboveCeiling } from "../../lib/rating";
+import { assetName, findAssetByLabel, isAboveCeiling, isCeilingUnavailable } from "../../lib/rating";
 import { ItemIncome, PlanIncomeLine } from "../income/PlanIncomeLine";
 import { DURATION, EASE_OUT, SPRING, STAGGER } from "../../lib/motion";
 import { BalancePanel } from "./BalancePanel";
@@ -67,7 +67,7 @@ function NoticeAction({ notice, assets, onRateAsset, onEditAsset, onAddAsset }: 
     );
   }
   if (notice.code === "concentration_limit") return adjustLimit;
-  if (notice.code === "asset_above_ceiling") {
+  if (notice.code === "asset_above_ceiling" || notice.code === "asset_ceiling_unavailable") {
     const action = open(assets.find((a) => a.id === notice.asset_id) ?? findAssetByLabel(assets, notice.symbol));
     if (action) return action;
   }
@@ -86,7 +86,9 @@ function NoticeAction({ notice, assets, onRateAsset, onEditAsset, onAddAsset }: 
         ? rate(single(members.filter((a) => a.score <= 0)))
         : notice.reason === "above_ceiling"
           ? open(single(members.filter((a) => a.score > 0 && isAboveCeiling(a))))
-          : open(single(members.filter((a) => a.score > 0 && a.price_source === "missing")));
+          : notice.reason === "ceiling_unavailable"
+            ? open(single(members.filter((a) => a.score > 0 && isCeilingUnavailable(a))))
+            : open(single(members.filter((a) => a.score > 0 && a.price_source === "missing")));
     if (action) return action;
   }
   if (notice.code === "assets_without_score") {
@@ -253,7 +255,7 @@ export function PlanResult({ plan, assets, marks, onMark, onUnmark, onMarkAll, o
                             </span>
                             <ul className="price-refs__list">
                               {referenceChecks(item, item.price_references, money).map((check) => (
-                                <li key={check.name}>
+                                <li key={check.method}>
                                   <Toggletip
                                     label={check.label}
                                     content={check.tip}

@@ -15,7 +15,7 @@ import { ASSET_CLASSES } from "../api/types";
 import type { AllocationSettings } from "../api/allocationTypes";
 import type { CreateTransactionRequest, Transaction, UpdateTransactionRequest } from "../api/ledgerTypes";
 import { agendaHandlers } from "./agendaHandlers";
-import { analysisHandlers } from "./analysisHandlers";
+import { analysisHandlers, ceilingFor, recordCeiling } from "./analysisHandlers";
 import { compareHandlers } from "./compareHandlers";
 import { fundamentalsHandlers } from "./fundamentalsHandlers";
 import { iconsHandlers } from "./iconsHandlers";
@@ -233,8 +233,9 @@ const handlers = [
       answers: {},
       listed_on_b3: listed,
       ...(body.treasury === true ? { treasury: true, quote_at: TREASURY_AT } : {}),
-      max_price: body.max_price ?? null,
+      ceiling: null,
     };
+    stored.ceiling = ceilingFor(stored.id, body.ceiling);
     db.assets.push(stored);
     return HttpResponse.json(assetView(stored), { status: 201 });
   }),
@@ -248,7 +249,10 @@ const handlers = [
     if (body.display_name !== undefined) stored.display_name = body.display_name;
     if (body.manual_price !== undefined) stored.manual_price = body.manual_price;
     if (body.score_override !== undefined) stored.score_override = body.score_override;
-    if (body.max_price !== undefined) stored.max_price = body.max_price;
+    if (body.ceiling !== undefined) {
+      stored.ceiling = ceilingFor(stored.id, body.ceiling);
+      recordCeiling(stored.id, body.ceiling);
+    }
     if (body.tax_instrument === null) delete stored.tax_instrument;
     else if (body.tax_instrument !== undefined) stored.tax_instrument = body.tax_instrument;
     if (body.listed_on_b3 !== undefined) {
