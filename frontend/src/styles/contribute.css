@@ -157,19 +157,11 @@
   min-width: 0;
 }
 
-/* Uma coluna só (celular, iPad em pé): o que a pessoa veio ver, o que comprar,
-   vem logo depois do campo; a carteira antes e depois desce para depois do
-   plano. (A ordem no DOM é a da linha de cima no desktop.) */
-@container page (max-width: 999px) {
-  .plan-region > .plan-balance {
-    order: 2;
-  }
+/* Uma coluna só (celular, iPad em pé): vale a ordem do DOM, a mesma do desktop
+   (campo, carteira, o que comprar, avisos). Não há regra de `order` aqui de
+   propósito: ela separaria a ordem visual da de leitura e de tab. */
 
-  .plan-region > .plan-top {
-    order: 1;
-  }
-
-  .plan-region > .plan-below-wrap {
+.plan-below-wrap {
     order: 3;
   }
 }

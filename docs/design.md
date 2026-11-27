@@ -176,8 +176,8 @@ estão em [layout.md](layout.md).
    decide quanto aportar. **Com o plano** o mesmo painel vira **A carteira
    depois do aporte** (Antes/Depois; o pedaço dourado é o que o aporte soma).
    Sem carteira para mostrar, o campo fica sozinho e centrado. Em uma coluna só
-   (celular, iPad em pé) o painel desce para depois do que comprar: a ordem no
-   DOM é a do desktop, e o `order` do CSS só troca a ordem visual.
+   (celular, iPad em pé) a ordem é a mesma do desktop e a do DOM, sem `order`
+   no CSS: campo, carteira, "Compre N ativos", Avisos e Objetivos.
 6. Resultado, sem trocar de tela. A região "Resultado do aporte" reúne o que
    segue, abaixo do campo e da carteira:
    - Painel **"Compre 5 ativos"**, na largura inteira, com "com **R$ 5.999,97**

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import confetti from "canvas-confetti";
 import { screen, waitFor, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
@@ -41,6 +43,23 @@ describe("Aportar", () => {
     await user.click(within(compare).getByRole("button", { name: "Depois" }));
     expect(within(result).getByRole("heading", { name: "A carteira depois do aporte" })).toBeInTheDocument();
     expect(within(result).getAllByRole("meter").length).toBeGreaterThan(0);
+  });
+
+  it("a ordem no DOM (e na leitura) é campo, carteira, o que comprar; o CSS não a reordena", async () => {
+    const { user, input } = await openCalculator();
+    const before = await screen.findByRole("heading", { name: "A carteira hoje" });
+    expect(input.compareDocumentPosition(before) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    await user.type(input, "600000");
+    await user.click(screen.getByRole("button", { name: /Calcular/ }));
+    const result = await screen.findByRole("region", { name: "Resultado do aporte" });
+    const balance = within(result).getByRole("heading", { name: /A carteira (hoje|depois do aporte)/ });
+    const buy = within(result).getByRole("heading", { name: /Compre 4 ativos/ });
+    expect(input.compareDocumentPosition(balance) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(balance.compareDocumentPosition(buy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    const css = readFileSync(resolve(__dirname, "../../styles/contribute.css"), "utf8");
+    expect(css).not.toMatch(/\.plan-region\s*>[^{]*\{[^}]*\border\s*:/);
   });
 
   it("valor rápido calcula direto, e Enter também", async () => {

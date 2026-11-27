@@ -375,9 +375,9 @@ toggletip.
   `Grid cols="auto" minWidth="200px"` com `auto-fill` (uma linha até onde couber;
   poucos ativos não esticam), depois Avisos e Objetivos lado a lado.
 - **Uma coluna só** (< 1000 px de conteúdo): o DOM segue a ordem do desktop
-  (campo, carteira, plano, avisos), e o CSS (`order`) põe o plano logo depois do
-  campo e a carteira depois do plano, para o celular mostrar o que comprar sem
-  rolar o gráfico antes.
+  (campo, carteira, plano, avisos) e vale também aqui, sem `order` no CSS: a
+  carteira (hoje, ou depois do aporte) fica logo abaixo do campo, depois "Compre
+  N ativos", depois Avisos e Objetivos. Leitura, tab e tela andam juntas.
 - **"Comprei" por ativo:** botão em cada cartão → folha pequena (`BoughtSheet`,
   quantidade + preço) → cartão marcado ("✓ Comprado: …", "Plano: …" se
   diferente) com Editar/Desfazer. "Registrar N comprados" no canto do painel (flutua
