@@ -703,6 +703,92 @@ async fn the_book_changes_and_the_automatic_follows() {
     assert!(automatic(&income_list(&duda).await).is_empty());
 }
 
+#[tokio::test]
+async fn each_installment_is_kept_and_paid() {
+    // Um dividendo da mesma data com e do mesmo valor pago em três vezes, e a
+    // terceira ainda sem data: três linhas guardadas, dois automáticos.
+    let db = database().await;
+    let eva = person(&db, "auto-eva@prumo.test").await;
+    let fict = add_asset(&eva, "br_stocks", "FICT4").await;
+    trade(&eva, &fict, "buy", date!(2026 - 01 - 05), 10).await;
+    let record = date!(2026 - 03 - 02);
+    let installment = |pay: Option<Date>| cash(record, "DIVIDENDO", dec!(0.4), pay);
+    let source = Arc::new(FakeSource::default());
+    source.set(
+        "FICT",
+        vec![
+            installment(Some(date!(2026 - 04 - 20))),
+            installment(Some(date!(2026 - 05 - 20))),
+            installment(None),
+        ],
+        Vec::new(),
+    );
+    let auto = service(&db.store, source.clone());
+    assert_eq!(auto.round(now()).await.inserted, 2);
+    let pool = PgPool::connect(&db.url).await.unwrap();
+    let stored = || async {
+        let rows: Vec<(Option<Date>,)> = sqlx::query_as(
+            "select pay_date from b3_cash_announcements where issuer = 'FICT' order by pay_date",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        rows.into_iter().map(|(d,)| d).collect::<Vec<_>>()
+    };
+    assert_eq!(
+        stored().await,
+        [
+            Some(date!(2026 - 04 - 20)),
+            Some(date!(2026 - 05 - 20)),
+            None
+        ]
+    );
+    let list = income_list(&eva).await;
+    let mut refs: Vec<(&str, &str)> = automatic(&list)
+        .iter()
+        .map(|e| {
+            (
+                e["pay_date"].as_str().unwrap(),
+                e["external_ref"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    refs.sort_unstable();
+    assert_eq!(
+        refs,
+        [
+            ("2026-04-20", "b3a:BRFICTACNPR1:DIVIDENDO:2026-03-02:0.4"),
+            ("2026-05-20", "b3a:BRFICTACNPR1:DIVIDENDO:2026-03-02:0.4:2"),
+        ]
+    );
+
+    // A terceira ganhou data: a linha "a definir" sai, a com data entra, e a
+    // parcela vira o terceiro automático.
+    source.set(
+        "FICT",
+        vec![
+            installment(Some(date!(2026 - 04 - 20))),
+            installment(Some(date!(2026 - 05 - 20))),
+            installment(Some(date!(2026 - 06 - 22))),
+        ],
+        Vec::new(),
+    );
+    let later = now() + time::Duration::days(1);
+    let report = auto.round(later).await;
+    assert_eq!(report.inserted, 1, "{report:?}");
+    assert_eq!(
+        stored().await,
+        [
+            Some(date!(2026 - 04 - 20)),
+            Some(date!(2026 - 05 - 20)),
+            Some(date!(2026 - 06 - 22))
+        ]
+    );
+    let list = income_list(&eva).await;
+    let total: Decimal = automatic(&list).iter().map(|e| num(&e["gross"])).sum();
+    assert_eq!(total, dec!(12));
+}
+
 // ------------------------------------------------------- dono e apagados --
 
 #[tokio::test]

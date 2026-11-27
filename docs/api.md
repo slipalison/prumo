@@ -1598,7 +1598,8 @@ hoje já é recebido). Tudo é filtrado pela pessoa dona; id de outra pessoa é
   `b3_announcement` (o **automático**: anúncio da B3 × livro na data com, ver
   [Proventos automáticos](#proventos-automáticos)) ou `estimate`. Só `manual`
   se edita; `external_ref` é único por pessoa (a importação repetida não
-  duplica; no automático é `b3a:<isin>:<rótulo>:<data com>:<valor>`).
+  duplica; no automático é `b3a:<isin>:<rótulo>:<data com>:<valor>`, com
+  `:2`, `:3`... no fim da segunda parcela em diante).
 - `asset_id` vira `null` se o ativo for apagado da carteira; o evento guarda
   `symbol` e `display_name`, e a renda passada continua de pé.
 

@@ -262,8 +262,11 @@ pub fn parse_supplement(issuer: &str, value: &serde_json::Value) -> Supplement {
     let raw: RawSupplement = single(value)
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_default();
-    let mut cash: BTreeMap<(String, String, time::Date, String), CashAnnouncement> =
-        BTreeMap::new();
+    // A data de pagamento faz parte da chave: um provento pago em parcelas vem
+    // da B3 numa linha por parcela, com o mesmo valor e a mesma data com (o
+    // dividendo de 12/2025 da WEGE3 em três pagamentos anuais).
+    type CashKey = (String, String, time::Date, String, Option<time::Date>);
+    let mut cash: BTreeMap<CashKey, CashAnnouncement> = BTreeMap::new();
     for line in raw.cash_dividends.unwrap_or_default() {
         let parsed = (|| {
             let isin = isin_of(line.isin_code.as_deref(), line.asset_issued.as_deref())?;
@@ -292,6 +295,7 @@ pub fn parse_supplement(issuer: &str, value: &serde_json::Value) -> Supplement {
                 a.label.clone(),
                 a.record_date,
                 a.rate.to_string(),
+                a.pay_date,
             ))
             .or_insert(a);
         }
@@ -565,6 +569,7 @@ mod tests {
     use rust_decimal_macros::dec;
     use serde_json::json;
     use time::macros::date;
+    use time::Date;
 
     #[test]
     fn the_query_has_no_path_breaking_characters() {
@@ -604,11 +609,17 @@ mod tests {
         }]);
         let s = parse_supplement("ABCD", &page);
         assert_eq!(s.code_cvm, None);
-        assert_eq!(s.cash.len(), 2);
-        // A mesma linha duas vezes: vale a primeira (sem data de pagamento).
-        let pn = s.cash.iter().find(|c| c.isin == "BRABCDACNPR1").unwrap();
-        assert_eq!(pn.pay_date, None);
-        assert_eq!(pn.rate, dec!(0.5));
+        assert_eq!(s.cash.len(), 3);
+        // A mesma data com e o mesmo valor com outra data de pagamento é outra
+        // parcela: uma a definir, outra em 20/04.
+        let pn: Vec<Option<Date>> = s
+            .cash
+            .iter()
+            .filter(|c| c.isin == "BRABCDACNPR1")
+            .map(|c| c.pay_date)
+            .collect();
+        assert_eq!(pn, [None, Some(date!(2026 - 04 - 20))]);
+        assert!(s.cash.iter().all(|c| c.rate == dec!(0.5)));
         let on = s.cash.iter().find(|c| c.isin == "BRABCDACNOR3").unwrap();
         assert_eq!(on.pay_date, Some(date!(2026 - 04 - 20)));
         assert_eq!(on.related_to, None);
@@ -620,6 +631,28 @@ mod tests {
             Supplement::default()
         );
         assert_eq!(parse_supplement("ABCD", &json!([])), Supplement::default());
+    }
+
+    #[test]
+    fn installments_are_one_announcement_each() {
+        // Um dividendo em três parcelas anuais e a mesma linha repetida.
+        let line = |pay: &str| {
+            json!({ "isinCode": "BRABCDACNOR3", "label": "DIVIDENDO", "rate": "0,40000000000",
+                    "lastDatePrior": "19/12/2025", "paymentDate": pay })
+        };
+        let page = json!([{
+            "cashDividends": [line("12/08/2026"), line("11/08/2027"), line("16/08/2028"), line("12/08/2026")],
+        }]);
+        let s = parse_supplement("ABCD", &page);
+        let pays: Vec<Option<Date>> = s.cash.iter().map(|c| c.pay_date).collect();
+        assert_eq!(
+            pays,
+            [
+                Some(date!(2026 - 08 - 12)),
+                Some(date!(2027 - 08 - 11)),
+                Some(date!(2028 - 08 - 16)),
+            ]
+        );
     }
 
     #[test]

@@ -141,7 +141,7 @@ async fn cash_announcements(
     let rows: Vec<CashRow> = sqlx::query_as(
         "select issuer, isin, label, record_date, rate, pay_date, approved_on, related_to
            from b3_cash_announcements where issuer = any($1)
-          order by isin, record_date, label, rate",
+          order by isin, record_date, label, rate, pay_date",
     )
     .bind(issuers)
     .fetch_all(&mut *conn)
@@ -451,7 +451,8 @@ impl Store {
             sqlx::query(
                 "delete from b3_cash_announcements
                   where issuer = $1 and record_date >= $2
-                    and (isin || '|' || label || '|' || record_date::text || '|' || rate::text) <> all($3)",
+                    and (isin || '|' || label || '|' || record_date::text || '|' || rate::text
+                         || '|' || coalesce(pay_date::text, '')) <> all($3)",
             )
             .bind(issuer)
             .bind(oldest)
@@ -464,8 +465,8 @@ impl Store {
                  select $1, i, l, r, v, p, a, t
                    from unnest($2::text[], $3::text[], $4::date[], $5::numeric[], $6::date[], $7::date[], $8::text[])
                      as x (i, l, r, v, p, a, t)
-                 on conflict (isin, label, record_date, rate) do update set
-                    issuer = excluded.issuer, pay_date = excluded.pay_date,
+                 on conflict (isin, label, record_date, rate, pay_date) do update set
+                    issuer = excluded.issuer,
                     approved_on = excluded.approved_on, related_to = excluded.related_to",
             )
             .bind(issuer)
@@ -671,13 +672,16 @@ impl Store {
     }
 }
 
+/// A chave de um anúncio em dinheiro, como o `delete` a monta no Postgres. A
+/// data de pagamento entra: cada parcela é um anúncio.
 fn cash_key(c: &CashAnnouncement) -> String {
     format!(
-        "{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}",
         c.isin,
         c.label,
         c.record_date,
-        numeric_text(c.rate)
+        numeric_text(c.rate),
+        c.pay_date.map(|d| d.to_string()).unwrap_or_default()
     )
 }
 

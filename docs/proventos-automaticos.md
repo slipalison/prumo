@@ -130,8 +130,20 @@ com as 11 casas da B3, em centavos; `net = gross − withholding`.
 `b3a:<isin>:<rótulo>:<data com>:<valor>` (ex.:
 `b3a:BRITSAACNPR7:JRS-CAP-PROPRIO:2026-08-31:0.0242425`). O valor faz parte
 da chave porque a mesma empresa anuncia dois JCP com a mesma data com e
-valores diferentes (um por trimestre de referência). Duas linhas idênticas da
-B3 (mesmo ISIN, rótulo, data com e valor) contam como uma.
+valores diferentes (um por trimestre de referência). A data de pagamento não
+entra, para a empresa poder mudá-la sem o automático virar outro.
+
+**Parcelas.** Um provento pago em parcelas vem da B3 numa linha por parcela,
+com o mesmo ISIN, rótulo, data com e valor; só a data de pagamento muda (o
+dividendo de 12/2025 da WEGE3 em três pagamentos anuais, os JCP de 12/2025 da
+B3SA3 em quatro). Cada parcela é um anúncio (`b3_cash_announcements` tem a
+data de pagamento na chave, com "a definir" valendo como um valor) e um
+automático: a primeira, pela data de pagamento, fica com o `external_ref` de
+sempre, e as outras ganham `:2`, `:3`... no fim
+(`b3a:BRWEGEACNOR0:DIVIDENDO:2025-12-19:0.412831673:2`). A parcela ainda sem
+data fica por último, para as de antes não mudarem de número quando ela
+ganhar data. Duas linhas idênticas da B3 (mesmo ISIN, rótulo, data com,
+valor e data de pagamento) contam como uma.
 
 ### Sem data de pagamento
 
@@ -158,7 +170,20 @@ ativo (pelo id, ou pelo código se o ativo foi apagado):
   dão o líquido). Lançado sem valor por cota: compara o líquido ou o bruto, a
   1%.
 
-A comparação é um para um: um provento lançado cobre um anúncio só.
+A comparação é um para um: um provento lançado cobre um anúncio só. Primeiro
+pela data de pagamento, em todos os anúncios do ativo, e só depois pela data
+com: a parcela de 2027 lançada à mão não cobre a de 2026, que tem a mesma data
+com.
+
+**Parcelas lançadas de um anúncio de uma linha.** Há empresa que a B3 mostra
+numa linha só e que paga em parcelas: a AMBEV anunciou em 12/2025 um JCP de
+0,269 com pagamento "até 31/12/2026" e pagou 0,075 + 0,0755 + 0,1185 em
+abril, julho e outubro. Quem lançou as três parcelas não vê o automático de
+0,269 em dobro: o anúncio que sobra sem par é coberto por dois ou mais
+proventos lançados, ainda sem par, do mesmo tipo e da mesma data com, cuja
+soma tem o valor dele (o mesmo 1%, e no JCP também o líquido). Essa busca
+vem por último, para um grupo nunca tomar o provento que outro anúncio
+casaria sozinho.
 
 **Manual e importado sempre vencem.** A rodada nunca escreve neles (os
 `update`/`delete` dela filtram `source = 'b3_announcement'`). Se o automático

@@ -316,12 +316,21 @@ fn external_ref_is_stable_and_readable() {
         Some(date!(2026 - 10 - 01)),
     );
     assert_eq!(
-        external_ref(&a),
+        external_ref(&a, 0),
         "b3a:BRITSAACNPR7:JRS-CAP-PROPRIO:2026-08-31:0.0242425"
     );
     let mut later = a.clone();
     later.pay_date = None;
-    assert_eq!(external_ref(&a), external_ref(&later));
+    assert_eq!(external_ref(&a, 0), external_ref(&later, 0));
+    // A segunda e a terceira parcela do mesmo anúncio.
+    assert_eq!(
+        external_ref(&a, 1),
+        "b3a:BRITSAACNPR7:JRS-CAP-PROPRIO:2026-08-31:0.0242425:2"
+    );
+    assert_eq!(
+        external_ref(&a, 2),
+        "b3a:BRITSAACNPR7:JRS-CAP-PROPRIO:2026-08-31:0.0242425:3"
+    );
 }
 
 // ------------------------------------------------------ mesmo provento --
@@ -665,6 +674,149 @@ fn one_manual_covers_one_announcement_only() {
 }
 
 #[test]
+fn each_installment_is_its_own_automatic() {
+    // Um dividendo da mesma data com e do mesmo valor, pago em três anos.
+    let asset = stock(book());
+    let record = date!(2026 - 06 - 19);
+    let pays = [
+        date!(2028 - 08 - 16),
+        date!(2026 - 08 - 12),
+        date!(2027 - 08 - 11),
+    ];
+    let list: Vec<CashAnnouncement> = pays
+        .iter()
+        .map(|pay| announcement("BRABCDACNPR1", "DIVIDENDO", record, dec!(0.4), Some(*pay)))
+        .collect();
+    let p = plan(std::slice::from_ref(&asset), &list, &[], &HashSet::new());
+    let mut got: Vec<(Date, String)> = p
+        .insert
+        .iter()
+        .map(|a| (a.pay_date, a.external_ref.clone()))
+        .collect();
+    got.sort();
+    let base = "b3a:BRABCDACNPR1:DIVIDENDO:2026-06-19:0.4";
+    assert_eq!(
+        got,
+        [
+            (date!(2026 - 08 - 12), base.to_owned()),
+            (date!(2027 - 08 - 11), format!("{base}:2")),
+            (date!(2028 - 08 - 16), format!("{base}:3")),
+        ]
+    );
+    assert!(p.insert.iter().all(|a| a.amounts.gross == dec!(48.00)));
+
+    // Gravado, a rodada seguinte não muda nada; a pessoa lançou a segunda
+    // parcela à mão: só ela sai.
+    let mut known = Vec::new();
+    let mut next = 100u128;
+    apply(&mut known, &p, &mut next);
+    assert!(plan(std::slice::from_ref(&asset), &list, &known, &HashSet::new()).is_empty());
+    known.push(manual(
+        &asset,
+        IncomeKind::Dividend,
+        Some(record),
+        date!(2027 - 08 - 11),
+        dec!(0.4),
+        dec!(120),
+    ));
+    let p = plan(std::slice::from_ref(&asset), &list, &known, &HashSet::new());
+    assert_eq!(p.covered, 1);
+    assert_eq!(p.delete.len(), 1);
+    let gone = known.iter().find(|k| k.id == p.delete[0]).unwrap();
+    assert_eq!(gone.pay_date, date!(2027 - 08 - 11));
+}
+
+#[test]
+fn installments_typed_by_hand_cover_an_announcement_in_one_line() {
+    // A B3 publica um JCP de 0,269 numa linha só ("pago até 31/12"); a pessoa
+    // lançou as três parcelas que caíram de fato, cada uma com a data com.
+    let asset = stock(book());
+    let record = date!(2026 - 06 - 18);
+    let list = [announcement(
+        "BRABCDACNPR1",
+        "JRS CAP PROPRIO",
+        record,
+        dec!(0.269),
+        Some(date!(2026 - 12 - 31)),
+    )];
+    let part = |id: u128, pay: Date, per_unit: Decimal| {
+        let mut k = manual(
+            &asset,
+            IncomeKind::Jcp,
+            Some(record),
+            pay,
+            per_unit,
+            dec!(120),
+        );
+        k.id = Uuid::from_u128(id);
+        k
+    };
+    let parts = [
+        part(901, date!(2026 - 07 - 06), dec!(0.075)),
+        part(902, date!(2026 - 09 - 06), dec!(0.0755)),
+        part(903, date!(2026 - 11 - 06), dec!(0.1185)),
+    ];
+    let p = plan(std::slice::from_ref(&asset), &list, &parts, &HashSet::new());
+    assert!(p.insert.is_empty(), "{p:?}");
+    assert_eq!(p.covered, 1);
+
+    // Duas parcelas só (0,1505) não fecham o anúncio: o automático fica.
+    let p = plan(
+        std::slice::from_ref(&asset),
+        &list,
+        &parts[..2],
+        &HashSet::new(),
+    );
+    assert_eq!(p.insert.len(), 1);
+    // Parcela de outra data com não entra na soma.
+    let mut other = parts.clone();
+    other[2].ex_date = Some(date!(2026 - 03 - 02));
+    let p = plan(std::slice::from_ref(&asset), &list, &other, &HashSet::new());
+    assert_eq!(p.insert.len(), 1);
+}
+
+#[test]
+fn a_group_never_takes_what_matches_one_to_one() {
+    // Dois anúncios na mesma data com: 0,10 (casa com o lançado de 0,10) e
+    // 0,30 (casa com a soma de 0,10 + 0,20 só se o de 0,10 sobrasse).
+    let asset = stock(book());
+    let record = date!(2026 - 06 - 18);
+    let pay = date!(2026 - 07 - 20);
+    let list = [
+        announcement("BRABCDACNPR1", "DIVIDENDO", record, dec!(0.30), Some(pay)),
+        announcement("BRABCDACNPR1", "DIVIDENDO", record, dec!(0.10), Some(pay)),
+    ];
+    let mut small = manual(
+        &asset,
+        IncomeKind::Dividend,
+        Some(record),
+        pay,
+        dec!(0.10),
+        dec!(120),
+    );
+    small.id = Uuid::from_u128(901);
+    let mut other = manual(
+        &asset,
+        IncomeKind::Dividend,
+        Some(record),
+        date!(2026 - 08 - 20),
+        dec!(0.20),
+        dec!(120),
+    );
+    other.id = Uuid::from_u128(902);
+    let p = plan(
+        std::slice::from_ref(&asset),
+        &list,
+        &[small, other],
+        &HashSet::new(),
+    );
+    // O de 0,10 casa um para um; o de 0,30 fica sem parcelas que fechem.
+    assert_eq!(p.covered, 1);
+    assert_eq!(p.insert.len(), 1);
+    assert_eq!(p.insert[0].amount_per_unit, dec!(0.30));
+}
+
+#[test]
 fn an_import_arriving_later_removes_the_automatic() {
     let asset = stock(book());
     let a = announcement(
@@ -798,7 +950,7 @@ fn a_dismissed_automatic_does_not_come_back() {
         dec!(1),
         Some(date!(2026 - 04 - 20)),
     );
-    let dismissed: HashSet<String> = [external_ref(&a)].into_iter().collect();
+    let dismissed: HashSet<String> = [external_ref(&a, 0)].into_iter().collect();
     assert!(plan(&[asset], &[a], &[], &dismissed).is_empty());
 }
 
@@ -991,7 +1143,10 @@ proptest! {
         apply(&mut known, &first, &mut next);
         // Toda linha gravada tem a quantidade do livro na data com, positiva.
         for auto in &first.insert {
-            let a = list.iter().find(|a| external_ref(a) == auto.external_ref).unwrap();
+            let a = list
+                .iter()
+                .find(|a| (0..list.len()).any(|i| external_ref(a, i) == auto.external_ref))
+                .unwrap();
             prop_assert_eq!(auto.quantity, quantity_on(&entries, a.record_date).unwrap());
             prop_assert!(auto.quantity > Decimal::ZERO);
             prop_assert!(a.pay_date.is_some());

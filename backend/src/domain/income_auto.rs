@@ -284,8 +284,16 @@ pub fn ex_date_after(record_date: Date) -> Date {
 }
 
 /// O identificador estável do automático: o mesmo anúncio dá sempre o mesmo,
-/// e a rodada repetida não duplica.
-pub fn external_ref(announcement: &CashAnnouncement) -> String {
+/// e a rodada repetida não duplica. A data de pagamento não entra, para a
+/// empresa poder mudá-la sem o automático virar outro.
+///
+/// `installment` é a ordem da parcela entre os anúncios com o mesmo ISIN,
+/// rótulo, data com e valor (um provento pago em parcelas vem da B3 numa linha
+/// por parcela, como o dividendo de 12/2025 da WEGE3 em três pagamentos
+/// anuais), da data de pagamento mais cedo à mais tarde: a primeira (`0`) fica
+/// com o identificador de sempre, a segunda ganha `:2` no fim, e assim por
+/// diante.
+pub fn external_ref(announcement: &CashAnnouncement, installment: usize) -> String {
     let label: String = announcement
         .label
         .trim()
@@ -293,12 +301,16 @@ pub fn external_ref(announcement: &CashAnnouncement) -> String {
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect();
-    format!(
+    let base = format!(
         "{REF_PREFIX}{}:{label}:{}:{}",
         announcement.isin,
         announcement.record_date,
         announcement.rate.normalize()
-    )
+    );
+    match installment {
+        0 => base,
+        n => format!("{base}:{}", n + 1),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -446,18 +458,34 @@ fn same_asset(known: &KnownIncome, asset: &AutoAsset) -> bool {
     }
 }
 
+/// Como o gravado e o automático caem no mesmo dia.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SameDay {
+    /// A mesma data de pagamento.
+    Payment,
+    /// A data com (o gravado pode guardar a data com ou a data ex no campo
+    /// `ex_date`: qualquer dia entre as duas conta).
+    Record,
+}
+
 /// Se o gravado é o mesmo provento do automático: mesmo ativo, mesmo valor
-/// ([`same_value`]) e a mesma data — a data com (o gravado pode guardar a data
-/// com ou a data ex no campo `ex_date`: qualquer dia entre as duas conta) ou a
-/// mesma data de pagamento.
-fn same_income(known: &KnownIncome, asset: &AutoAsset, auto: &AutoIncome, record: Date) -> bool {
+/// ([`same_value`]) e o mesmo dia, pelo critério `day`.
+fn same_income(
+    known: &KnownIncome,
+    asset: &AutoAsset,
+    auto: &AutoIncome,
+    record: Date,
+    day: SameDay,
+) -> bool {
     if !same_asset(known, asset) {
         return false;
     }
-    let same_day = known.pay_date == auto.pay_date
-        || known
+    let same_day = match day {
+        SameDay::Payment => known.pay_date == auto.pay_date,
+        SameDay::Record => known
             .ex_date
-            .is_some_and(|d| d >= record && d <= auto.ex_date.unwrap_or(record));
+            .is_some_and(|d| d >= record && d <= auto.ex_date.unwrap_or(record)),
+    };
     same_day
         && same_value(
             &Payment {
@@ -477,12 +505,71 @@ fn same_income(known: &KnownIncome, asset: &AutoAsset, auto: &AutoIncome, record
         )
 }
 
+/// As parcelas que a pessoa lançou de um anúncio que a B3 publica numa linha só:
+/// dois ou mais proventos do ativo, ainda sem par, da mesma família e da mesma
+/// data com do anúncio, cuja soma tem o valor dele ([`same_value`]). A AMBEV
+/// anunciou em 12/2025 um JCP de 0,269 com pagamento "até 31/12/2026" e pagou
+/// em três vezes (0,075 + 0,0755 + 0,1185); quem lançou as três não pode ver o
+/// automático de 0,269 em dobro.
+fn installments_of(
+    winners: &[&KnownIncome],
+    used: &HashSet<Uuid>,
+    asset: &AutoAsset,
+    auto: &AutoIncome,
+    record: Date,
+) -> Option<Vec<Uuid>> {
+    let parts: Vec<&KnownIncome> = winners
+        .iter()
+        .copied()
+        .filter(|k| {
+            !used.contains(&k.id)
+                && same_asset(k, asset)
+                && family(k.kind) == family(auto.kind)
+                && k.ex_date
+                    .is_some_and(|d| d >= record && d <= auto.ex_date.unwrap_or(record))
+        })
+        .collect();
+    if parts.len() < 2 {
+        return None;
+    }
+    let sum = |field: fn(&KnownIncome) -> Decimal| parts.iter().map(|k| field(k)).sum::<Decimal>();
+    // Sem valor por cota em alguma parcela, a soma por cota não vale: compara
+    // o líquido e o bruto.
+    let per_unit = if parts.iter().all(|k| k.amount_per_unit > Decimal::ZERO) {
+        sum(|k| k.amount_per_unit)
+    } else {
+        Decimal::ZERO
+    };
+    let together = Payment {
+        kind: parts[0].kind,
+        pay_date: auto.pay_date,
+        per_unit,
+        gross: sum(|k| k.gross),
+        net: sum(|k| k.net),
+    };
+    let announced = Payment {
+        kind: auto.kind,
+        pay_date: auto.pay_date,
+        per_unit: auto.amount_per_unit,
+        gross: auto.amounts.gross,
+        net: auto.amounts.net,
+    };
+    same_value(&together, &announced).then(|| parts.iter().map(|k| k.id).collect())
+}
+
+/// Se dois anúncios são parcelas do mesmo provento: mesmo ISIN, rótulo, data
+/// com e valor.
+fn same_announcement(a: &CashAnnouncement, b: &CashAnnouncement) -> bool {
+    a.isin == b.isin && a.label == b.label && a.record_date == b.record_date && a.rate == b.rate
+}
+
 /// O automático de um anúncio, ou `None` quando não há o que gravar: sem data
 /// de pagamento (a rodada espera a empresa definir; inventar a data poria o
 /// dinheiro no mês errado), ou sem cota na data com.
 fn derive(
     asset: &AutoAsset,
     announcement: &CashAnnouncement,
+    installment: usize,
 ) -> Result<Option<AutoIncome>, super::ledger::LedgerError> {
     let Some(pay_date) = announcement.pay_date else {
         return Ok(None);
@@ -509,7 +596,7 @@ fn derive(
         amount_per_unit: announcement.rate.round_dp(8).normalize(),
         quantity: quantity.normalize(),
         amounts: values,
-        external_ref: external_ref(announcement),
+        external_ref: external_ref(announcement, installment),
     }))
 }
 
@@ -552,8 +639,17 @@ pub fn plan(
             .push(announcement);
     }
     for list in by_isin.values_mut() {
-        list.sort_by(|a, b| {
-            (a.record_date, &a.label, a.rate).cmp(&(b.record_date, &b.label, b.rate))
+        // As parcelas de um anúncio ficam juntas, da data de pagamento mais
+        // cedo à mais tarde, e a que ainda não tem data por último: quando ela
+        // ganhar data, as de antes não mudam de ordem.
+        list.sort_by_key(|a| {
+            (
+                a.record_date,
+                a.label.clone(),
+                a.rate,
+                a.pay_date.is_none(),
+                a.pay_date,
+            )
         });
     }
 
@@ -565,8 +661,14 @@ pub fn plan(
         };
         let mut derived = Vec::new();
         let mut broken = false;
-        for announcement in by_isin.get(isin).map_or(&[][..], Vec::as_slice) {
-            match derive(asset, announcement) {
+        let list = by_isin.get(isin).map_or(&[][..], Vec::as_slice);
+        for (index, announcement) in list.iter().enumerate() {
+            let installment = list[..index]
+                .iter()
+                .rev()
+                .take_while(|before| same_announcement(before, announcement))
+                .count();
+            match derive(asset, announcement, installment) {
                 Ok(Some(auto)) => derived.push((announcement.record_date, auto)),
                 Ok(None) => {}
                 Err(_) => {
@@ -588,12 +690,30 @@ pub fn plan(
             }
             continue;
         }
-        for (record, auto) in derived {
-            let winner = winners
-                .iter()
-                .find(|k| !used.contains(&k.id) && same_income(k, asset, &auto, record));
-            if let Some(winner) = winner {
-                used.insert(winner.id);
+        // Primeiro o um para um pela data de pagamento, em todos os anúncios;
+        // depois pela data com; só o que sobrar procura as parcelas da pessoa.
+        // Assim a parcela de 2027 lançada à mão não cobre a de 2026 (as duas têm
+        // a mesma data com), e um grupo nunca toma o provento que outro anúncio
+        // casaria sozinho.
+        let mut unmatched = derived;
+        for day in [SameDay::Payment, SameDay::Record] {
+            let mut left = Vec::new();
+            for (record, auto) in unmatched {
+                let winner = winners
+                    .iter()
+                    .find(|k| !used.contains(&k.id) && same_income(k, asset, &auto, record, day));
+                if let Some(winner) = winner {
+                    used.insert(winner.id);
+                    result.covered += 1;
+                } else {
+                    left.push((record, auto));
+                }
+            }
+            unmatched = left;
+        }
+        for (record, auto) in unmatched {
+            if let Some(parts) = installments_of(&winners, &used, asset, &auto, record) {
+                used.extend(parts);
                 result.covered += 1;
                 continue;
             }
