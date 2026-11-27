@@ -14,7 +14,7 @@ type CriteriaScreenProps = { portfolio: Portfolio };
 
 const KINDS: ChecklistKind[] = ["stocks", "real_estate"];
 
-export function CriteriaScreen({ portfolio }: CriteriaScreenProps) {
+export function CriteriaScreen({ portfolio }: Readonly<CriteriaScreenProps>) {
   return (
     <Page className="criteria">
       <PageHeader
@@ -43,7 +43,7 @@ export function CriteriaScreen({ portfolio }: CriteriaScreenProps) {
 
 type ChecklistCardProps = { kind: ChecklistKind; questions: ChecklistQuestion[]; usage: number };
 
-function ChecklistCard({ kind, questions, usage }: ChecklistCardProps) {
+function ChecklistCard({ kind, questions, usage }: Readonly<ChecklistCardProps>) {
   const inputId = useId();
   const [draft, setDraft] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
@@ -127,7 +127,7 @@ function ChecklistCard({ kind, questions, usage }: ChecklistCardProps) {
 
       <div className="checklist__reset">
         {confirmReset ? (
-          <div className="danger-zone__confirm" role="group" aria-label="Confirmar restauração">
+          <fieldset className="danger-zone__confirm" aria-label="Confirmar restauração">
             <span>Trocar pelas perguntas padrão? As respostas atuais somem.</span>
             <MagneticButton variant="danger" magnetic={false} loading={reset.isPending} onClick={restore}>
               Restaurar
@@ -135,7 +135,7 @@ function ChecklistCard({ kind, questions, usage }: ChecklistCardProps) {
             <MagneticButton variant="ghost" magnetic={false} onClick={() => setConfirmReset(false)}>
               Cancelar
             </MagneticButton>
-          </div>
+          </fieldset>
         ) : (
           <button type="button" className="link-btn" onClick={() => setConfirmReset(true)}>
             Restaurar padrão
@@ -146,7 +146,7 @@ function ChecklistCard({ kind, questions, usage }: ChecklistCardProps) {
   );
 }
 
-function QuestionRow({ question, number }: { question: ChecklistQuestion; number: number }) {
+function QuestionRow({ question, number }: Readonly<{ question: ChecklistQuestion; number: number }>) {
   const inputId = useId();
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(question.prompt);
@@ -217,14 +217,14 @@ function QuestionRow({ question, number }: { question: ChecklistQuestion; number
       <span className="question__number">{number}</span>
       <p className="question__prompt">{question.prompt}</p>
       {confirmDelete ? (
-        <div className="question__confirm" role="group" aria-label="Confirmar remoção">
+        <fieldset className="question__confirm" aria-label="Confirmar remoção">
           <MagneticButton variant="danger" magnetic={false} loading={remove.isPending} onClick={() => remove.mutate(question.id)}>
             Remover
           </MagneticButton>
           <MagneticButton variant="ghost" magnetic={false} onClick={() => setConfirmDelete(false)}>
             Manter
           </MagneticButton>
-        </div>
+        </fieldset>
       ) : (
         <div className="question__actions">
           <button type="button" className="icon-btn" aria-label={`Editar pergunta ${number}`} onClick={() => setEditing(true)}>
