@@ -372,7 +372,7 @@ pub fn b3_trailing_income(
         }
         let kind = cash_kind(&c.label, class);
         let pay_date = c.pay_date.unwrap_or(today);
-        if let Ok(values) = amounts(kind, pay_date, c.rate, quantity, None) {
+        if let Ok(values) = amounts(Market::B3, kind, pay_date, c.rate, quantity, None) {
             total = total.add(GrossNet {
                 gross: values.gross,
                 net: values.net,

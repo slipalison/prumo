@@ -9,7 +9,8 @@ import { useToast } from "../../components/toastContext";
 import { unitOf } from "../../lib/assetClasses";
 import { cx } from "../../lib/cx";
 import { parseDecimal } from "../../lib/format";
-import { formatIsoDate, KIND_LABEL, previewAmounts } from "../../lib/income";
+import { InfoTip } from "../../components/InfoTip";
+import { formatIsoDate, isUsListed, KIND_LABEL, previewAmounts } from "../../lib/income";
 import { useMoney } from "../../lib/privacy";
 
 type AddIncomeSheetProps = {
@@ -35,7 +36,7 @@ function defaultKind(asset: Asset | undefined): IncomeKind {
  * na fonte até 2025 e 17,5% desde 2026); o servidor refaz a conta.
  */
 export function AddIncomeSheet({ open, onClose, assets, today, initialAssetId }: AddIncomeSheetProps) {
-  const ids = { asset: useId(), pay: useId(), ex: useId(), unit: useId(), quantity: useId() };
+  const ids = { withholding: useId(), asset: useId(), pay: useId(), ex: useId(), unit: useId(), quantity: useId() };
   const [assetId, setAssetId] = useState(initialAssetId ?? assets[0]?.id ?? "");
   const asset = assets.find((a) => a.id === assetId);
   const byValue = asset ? unitOf(asset.asset_class, asset.listed_on_b3) === "value" : false;
@@ -44,6 +45,8 @@ export function AddIncomeSheet({ open, onClose, assets, today, initialAssetId }:
   const [exDate, setExDate] = useState("");
   const [perUnit, setPerUnit] = useState("");
   const [quantity, setQuantity] = useState("");
+  // `null` = a pessoa não mexeu: vale o padrão do tipo e do mercado.
+  const [withholdingText, setWithholdingText] = useState<string | null>(null);
   const create = useCreateIncome();
   // As cotas que o livro tinha na data com: é o que vale com a quantidade em
   // branco, e o servidor usa a mesma regra.
@@ -61,6 +64,7 @@ export function AddIncomeSheet({ open, onClose, assets, today, initialAssetId }:
     setExDate("");
     setPerUnit("");
     setQuantity("");
+    setWithholdingText(null);
     create.reset();
     // `create` muda de identidade a cada render; só a abertura recomeça o formulário.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -79,19 +83,29 @@ export function AddIncomeSheet({ open, onClose, assets, today, initialAssetId }:
   const bookQuantity = byValue ? 1 : (entitlement.data?.quantity ?? null);
   const effectiveQuantity = typedQuantity ?? bookQuantity;
   const noSharesOnRecordDate = typedQuantity === null && bookQuantity !== null && bookQuantity <= 0;
+  const typedWithholding = withholdingText === null ? null : parseDecimal(withholdingText);
+  const withholdingInvalid = typedWithholding !== null && typedWithholding < 0;
   const valid =
     asset !== undefined &&
     unitValue !== null &&
     unitValue > 0 &&
     !noSharesOnRecordDate &&
     (typedQuantity === null || typedQuantity > 0) &&
+    !withholdingInvalid &&
     payDate !== "" &&
     (exDate === "" || exDate <= payDate);
-  const preview = valid && effectiveQuantity !== null ? previewAmounts(kind, unitValue, effectiveQuantity, payDate) : null;
+  const usListed = asset ? isUsListed(asset) : false;
+  const defaultPreview =
+    valid && effectiveQuantity !== null ? previewAmounts(kind, unitValue, effectiveQuantity, payDate, undefined, usListed) : null;
+  const preview =
+    valid && effectiveQuantity !== null
+      ? previewAmounts(kind, unitValue, effectiveQuantity, payDate, typedWithholding ?? undefined, usListed)
+      : null;
+  const withholdingAboveGross = preview !== null && preview.withholding > preview.gross;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (!valid || !asset || create.isPending) return;
+    if (!valid || withholdingAboveGross || !asset || create.isPending) return;
     create.mutate(
       {
         asset_id: asset.id,
@@ -100,6 +114,7 @@ export function AddIncomeSheet({ open, onClose, assets, today, initialAssetId }:
         amount_per_unit: unitValue,
         ...(typedQuantity !== null ? { quantity: typedQuantity } : {}),
         ...(exDate ? { ex_date: exDate } : {}),
+        ...(typedWithholding !== null ? { withholding: typedWithholding } : {}),
       },
       {
         onSuccess: () => {
@@ -211,6 +226,31 @@ export function AddIncomeSheet({ open, onClose, assets, today, initialAssetId }:
             {exDate !== "" && exDate > payDate && <span className="form-error">A data ex não pode ser depois do pagamento.</span>}
           </div>
 
+          <div className="field">
+            <div className="field__label-row">
+              <label htmlFor={ids.withholding} className="field__label">
+                Imposto retido (R$)
+              </label>
+              {usListed && (
+                <InfoTip label="Por que 30% de IR retido">
+                  Dividendo de ação ou REIT dos EUA chega com 30% retidos lá. Se o seu extrato mostrar outro valor, digite-o aqui.
+                </InfoTip>
+              )}
+            </div>
+            <input
+              id={ids.withholding}
+              className="text-input"
+              type="text"
+              inputMode="decimal"
+              autoComplete="off"
+              placeholder={defaultPreview ? money.brl(defaultPreview.withholding) : "0,00"}
+              value={withholdingText ?? (defaultPreview ? defaultPreview.withholding.toFixed(2).replace(".", ",") : "")}
+              onChange={(event) => setWithholdingText(event.target.value)}
+            />
+            <span className="field__hint">Em branco vale o padrão do tipo; digite 0 se não houve retenção.</span>
+            {withholdingAboveGross && <span className="form-error">O imposto retido não pode passar do bruto.</span>}
+          </div>
+
           <div className="income-preview" aria-live="polite">
             {preview ? (
               <>
@@ -236,7 +276,7 @@ export function AddIncomeSheet({ open, onClose, assets, today, initialAssetId }:
             </p>
           )}
 
-          <MagneticButton type="submit" disabled={!valid} loading={create.isPending}>
+          <MagneticButton type="submit" disabled={!valid || withholdingAboveGross} loading={create.isPending}>
             Lançar provento
           </MagneticButton>
         </form>

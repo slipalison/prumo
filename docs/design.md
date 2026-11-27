@@ -725,8 +725,11 @@ e o botão **Lançar provento** à direita.
    muda quando a data ex muda. Sem cotas naquela data, a folha avisa e só deixa
    lançar com a quantidade informada. A
    prévia mostra bruto, IR retido e líquido (JCP perde 15% até 2025 e 17,5%
-   desde 2026, pela data de pagamento) e fala com
-   `aria-live`. Renda fixa por valor pede só o valor recebido. A folha não
+   desde 2026, pela data de pagamento; dividendo e rendimento de ação ou REIT
+   dos EUA, 30%, com um ⓘ que explica) e fala com `aria-live`. O campo
+   "Imposto retido" já vem com esse padrão e é editável (`0` vale); em
+   branco, o servidor aplica o mesmo padrão. Só vale para o lançamento novo:
+   o que já está gravado não muda. Renda fixa por valor pede só o valor recebido. A folha não
    mudou no redesenho (cabe em uma tela).
 
 Na tela **Aportar**:

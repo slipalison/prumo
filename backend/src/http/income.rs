@@ -13,7 +13,7 @@ use uuid::Uuid;
 use super::dto::{decimal, decimal_out, optional_decimal, PlanDto};
 use super::yoc::{PortfolioYieldDto, YieldDto, YieldReport};
 use super::{ApiJson, ApiPath, ApiQuery, AppState, CurrentUser};
-use crate::domain::asset_class::UnitKind;
+use crate::domain::asset_class::{Market, UnitKind};
 use crate::domain::entitlement::{quantity_on, record_date};
 use crate::domain::income::estimate::{EstimateSource, UsualEstimate};
 use crate::domain::income::{
@@ -422,6 +422,7 @@ fn pay_date_in_range(date: Date) -> ApiResult<Date> {
 
 /// Valida e calcula os campos de um provento (criação ou edição).
 fn build_fields(
+    market: Market,
     kind: IncomeKind,
     ex_date: Option<Date>,
     pay_date: Date,
@@ -437,13 +438,19 @@ fn build_fields(
     }
     let amount_per_unit = positive("O valor por cota", amount_per_unit)?;
     let quantity = positive("A quantidade", quantity)?;
-    let amounts = amounts(kind, pay_date, amount_per_unit, quantity, withholding).map_err(
-        |error| match error {
-            AmountsError::WithholdingAboveGross => {
-                ApiError::validation("O imposto retido precisa ficar entre 0 e o valor bruto.")
-            }
-        },
-    )?;
+    let amounts = amounts(
+        market,
+        kind,
+        pay_date,
+        amount_per_unit,
+        quantity,
+        withholding,
+    )
+    .map_err(|error| match error {
+        AmountsError::WithholdingAboveGross => {
+            ApiError::validation("O imposto retido precisa ficar entre 0 e o valor bruto.")
+        }
+    })?;
     if amounts.gross <= Decimal::ZERO {
         return Err(ApiError::validation(
             "O valor bruto do provento precisa ser de ao menos um centavo.",
@@ -610,7 +617,11 @@ pub async fn create(
             entitled.quantity
         }
     };
+    let market = asset
+        .asset_class
+        .market_of(asset.listed_on_b3, asset.treasury);
     let fields = build_fields(
+        market,
         body.kind,
         body.ex_date,
         body.pay_date,
@@ -655,7 +666,21 @@ pub async fn update(
             "So se edita provento lancado a mao. O que veio de extrato fica como o extrato diz.",
         ));
     }
+    // Evento sem ativo (o ativo foi apagado) não tem mercado: vale o da B3.
+    let market = match current.asset_id {
+        Some(asset_id) => state
+            .store
+            .asset(user.id, asset_id)
+            .await?
+            .map_or(Market::B3, |asset| {
+                asset
+                    .asset_class
+                    .market_of(asset.listed_on_b3, asset.treasury)
+            }),
+        None => Market::B3,
+    };
     let fields = build_fields(
+        market,
         body.kind.unwrap_or(current.kind),
         body.ex_date.unwrap_or(current.ex_date),
         body.pay_date.unwrap_or(current.pay_date),

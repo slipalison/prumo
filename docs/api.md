@@ -1594,8 +1594,11 @@ hoje já é recebido). Tudo é filtrado pela pessoa dona; id de outra pessoa é
 - `kind`: `dividend`, `jcp`, `reit_income`, `amortization` ou `other`.
 - `gross = amount_per_unit × quantity` (centavos). `withholding` é o IR retido
   na fonte: **no JCP, 15% do bruto até 2025 e 17,5% desde 2026** (pela
-  `pay_date`; LC 224/2025), zero nos demais (dividendo e rendimento de
-  FII são isentos para pessoa física); `net = gross − withholding`.
+  `pay_date`; LC 224/2025); **no dividendo e no rendimento de ativo dos EUA
+  (`Market::Us`: ação e REIT em dólar), 30% do bruto** retidos lá; zero nos
+  demais (dividendo e rendimento de FII brasileiros são isentos para pessoa
+  física, e o BDR já paga o valor líquido da depositária);
+  `net = gross − withholding`.
 - `status`: `received` ou `upcoming`, pela `pay_date`.
 - `source`: `manual` (lançado pela pessoa), `b3_import` (extrato da B3),
   `b3_announcement` (o **automático**: anúncio da B3 × livro na data com, ver
@@ -1623,7 +1626,9 @@ Lança um provento à mão.
 
 - Obrigatórios: `asset_id` (da pessoa), `kind`, `pay_date`, `amount_per_unit`.
 - Opcionais: `quantity`, `ex_date` (não pode passar da `pay_date`) e
-  `withholding` (substitui a regra do tipo; entre 0 e o bruto).
+  `withholding` (substitui o padrão do tipo e do mercado, e `0` vale; entre 0 e
+  o bruto). Sem ele, o padrão acima é gravado na hora; os lançamentos já
+  gravados não mudam.
 - **Sem `quantity`, vale a posição do livro na data com** — não a de hoje. A
   data com é o dia anterior à `ex_date` (o último em que comprar dava direito); sem
   `ex_date`, o dia da `pay_date` (no máximo hoje). A posição é o replay do livro
@@ -1659,7 +1664,7 @@ As cotas que o servidor usaria, para a tela mostrar antes de lançar. `asset`
 
 Qualquer subconjunto de `kind`, `ex_date` (`null` limpa), `pay_date`,
 `amount_per_unit`, `quantity` e `withholding`. Os valores são recalculados; sem
-`withholding` no corpo, o IR volta à regra do tipo. Sem `quantity` no corpo, a
+`withholding` no corpo, o IR volta ao padrão do tipo e do mercado do ativo. Sem `quantity` no corpo, a
 quantidade **continua a do evento** — o `PATCH` não a recalcula pelo livro, nem
 quando muda a data. Só evento `manual`:
 os de extrato respondem `422`. `200` com o evento.

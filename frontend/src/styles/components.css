@@ -686,6 +686,12 @@
   font-weight: 600;
 }
 
+.field__label-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
 .field__hint {
   color: var(--text-subtle);
   font-size: 0.85rem;

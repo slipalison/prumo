@@ -1,3 +1,4 @@
+import type { Asset } from "../api/types";
 import type { IncomeKind, IncomeMonth, IncomePayer, IncomeStatus, YieldOnCost } from "../api/incomeTypes";
 
 /** IR retido na fonte sobre o JCP pago até 31/12/2025 — a mesma regra do servidor. */
@@ -8,6 +9,17 @@ export const JCP_WITHHOLDING_RATE_2026 = 0.175;
 /** A alíquota do JCP pela data de pagamento (`2026-03-02`). */
 export function jcpWithholdingRate(payDate: string): number {
   return payDate >= "2026-01-01" ? JCP_WITHHOLDING_RATE_2026 : JCP_WITHHOLDING_RATE;
+}
+
+/** IR retido nos EUA sobre o dividendo pago a residente no Brasil — a mesma regra do servidor. */
+export const US_DIVIDEND_WITHHOLDING_RATE = 0.3;
+
+/**
+ * Ação ou REIT cotado nos EUA (em dólar): o BDR e o ativo da B3 ficam de fora,
+ * porque o valor que a B3 informa já é o líquido da depositária.
+ */
+export function isUsListed(asset: Pick<Asset, "asset_class" | "listed_on_b3" | "treasury">): boolean {
+  return !asset.listed_on_b3 && !asset.treasury && (asset.asset_class === "intl_stocks" || asset.asset_class === "us_reits");
 }
 
 export const KIND_LABEL: Record<IncomeKind, string> = {
@@ -60,6 +72,13 @@ export const MONTH_HEADERS = MONTHS;
 
 const cents = (value: number) => Math.round(value * 100) / 100;
 
+/** O IR retido que a regra manda: JCP pela data, dividendo e rendimento de ativo dos EUA a 30%, o resto zero. */
+export function defaultWithholding(kind: IncomeKind, gross: number, payDate: string, usListed: boolean): number {
+  if (kind === "jcp") return cents(gross * jcpWithholdingRate(payDate));
+  if (usListed && (kind === "dividend" || kind === "reit_income")) return cents(gross * US_DIVIDEND_WITHHOLDING_RATE);
+  return 0;
+}
+
 export type Amounts = { gross: number; withholding: number; net: number };
 
 /**
@@ -72,9 +91,10 @@ export function previewAmounts(
   quantity: number,
   payDate: string,
   withholding?: number,
+  usListed = false,
 ): Amounts {
   const gross = cents(perUnit * quantity);
-  const retained = withholding ?? (kind === "jcp" ? cents(gross * jcpWithholdingRate(payDate)) : 0);
+  const retained = withholding ?? defaultWithholding(kind, gross, payDate, usListed);
   return { gross, withholding: retained, net: cents(gross - retained) };
 }
 

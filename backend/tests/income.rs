@@ -16,6 +16,7 @@ use axum::http::StatusCode;
 use common::*;
 use prumo::auth::DevAuthenticator;
 use prumo::dividends::{DividendError, DividendEvent, DividendHistory, DividendProvider};
+use prumo::domain::asset_class::Market;
 use prumo::domain::income::{today_in_brazil, IncomeKind, IncomeSource};
 use prumo::http::{AppState, BuildInfo};
 use prumo::income::IncomeService;
@@ -236,6 +237,7 @@ async fn income_contract() {
     estimate_comes_from_the_cache_the_background_fills(&env, &dir).await;
     refresher_fills_the_cache_without_any_request(&env, &dir).await;
     estimate_in_other_currency_and_unavailable_provider(&env, &dir).await;
+    us_dividends_are_withheld_thirty_percent_by_default(&env, &dir).await;
     income_goal_crud_and_progress(&env, &dir).await;
     plan_shows_the_income_it_adds(&env, &dir).await;
     store_keeps_one_event_per_external_ref(&env).await;
@@ -483,6 +485,7 @@ async fn manual_events_are_calculated_filtered_and_owned(env: &Env, dir: &tempfi
                 amount_per_unit: dec!(0.9),
                 quantity: dec!(10),
                 amounts: prumo::domain::income::amounts(
+                    Market::B3,
                     IncomeKind::ReitIncome,
                     today(),
                     dec!(0.9),
@@ -544,6 +547,73 @@ async fn manual_events_are_calculated_filtered_and_owned(env: &Env, dir: &tempfi
     let orphan = find(&after.body, "symbol", "KNRI11");
     assert_eq!(orphan["asset_id"], Value::Null);
     assert_eq!(orphan["net"], 11.0);
+}
+
+async fn us_dividends_are_withheld_thirty_percent_by_default(env: &Env, dir: &tempfile_dir::Dir) {
+    let me = person(env, "renda-eua@prumo.test", dir);
+    let us = add_asset(
+        &me,
+        json!({ "asset_class": "intl_stocks", "symbol": "AAPL", "quantity": 10 }),
+    )
+    .await;
+    let bdr = add_asset(
+        &me,
+        json!({ "asset_class": "intl_stocks", "symbol": "AAPL34", "quantity": 10, "listed_on_b3": true }),
+    )
+    .await;
+
+    // Ativo dos EUA sem retencao informada: 30% do bruto, tambem no rendimento de REIT.
+    let dividend = post(
+        &me.router,
+        "/api/v1/income",
+        json!({ "asset_id": us, "kind": "dividend", "pay_date": days_from_today(-5), "amount_per_unit": 2 }),
+    )
+    .await;
+    assert_eq!(dividend.status, StatusCode::CREATED, "{}", dividend.text);
+    assert_eq!(dividend.body["gross"], 20.0);
+    assert_eq!(dividend.body["withholding"], 6.0);
+    assert_eq!(dividend.body["net"], 14.0);
+    let dividend_id = dividend.body["id"].as_str().unwrap().to_owned();
+
+    // A que a pessoa digitou vale, inclusive zero.
+    for (withholding, net) in [(4.0, 16.0), (0.0, 20.0)] {
+        let typed = post(
+            &me.router,
+            "/api/v1/income",
+            json!({ "asset_id": us, "kind": "dividend", "pay_date": days_from_today(-5), "amount_per_unit": 2, "withholding": withholding }),
+        )
+        .await;
+        assert_eq!(typed.status, StatusCode::CREATED, "{}", typed.text);
+        assert_eq!(typed.body["withholding"], withholding);
+        assert_eq!(typed.body["net"], net);
+    }
+
+    // BDR: o valor ja e o liquido da depositaria.
+    let bdr_dividend = post(
+        &me.router,
+        "/api/v1/income",
+        json!({ "asset_id": bdr, "kind": "dividend", "pay_date": days_from_today(-5), "amount_per_unit": 2 }),
+    )
+    .await;
+    assert_eq!(
+        bdr_dividend.status,
+        StatusCode::CREATED,
+        "{}",
+        bdr_dividend.text
+    );
+    assert_eq!(bdr_dividend.body["withholding"], 0.0);
+    assert_eq!(bdr_dividend.body["net"], 20.0);
+
+    // Editar sem informar retencao volta ao padrao do mercado do ativo.
+    let patched = patch(
+        &me.router,
+        &format!("/api/v1/income/{dividend_id}"),
+        json!({ "amount_per_unit": 3 }),
+    )
+    .await;
+    assert_eq!(patched.status, StatusCode::OK, "{}", patched.text);
+    assert_eq!(patched.body["withholding"], 9.0);
+    assert_eq!(patched.body["net"], 21.0);
 }
 
 async fn summary_sums_the_ledger(env: &Env, dir: &tempfile_dir::Dir) {
@@ -1052,6 +1122,7 @@ async fn store_keeps_one_event_per_external_ref(env: &Env) {
         amount_per_unit: dec!(1),
         quantity: dec!(10),
         amounts: prumo::domain::income::amounts(
+            Market::B3,
             IncomeKind::ReitIncome,
             today(),
             dec!(1),

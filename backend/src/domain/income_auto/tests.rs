@@ -122,7 +122,7 @@ fn manual(
     per_unit: Decimal,
     quantity: Decimal,
 ) -> KnownIncome {
-    let values = amounts(kind, pay, per_unit, quantity, None).unwrap();
+    let values = amounts(Market::B3, kind, pay, per_unit, quantity, None).unwrap();
     KnownIncome {
         id: Uuid::from_u128(900),
         asset_id: Some(asset.id),

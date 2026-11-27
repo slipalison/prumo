@@ -4,6 +4,7 @@ import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import type { IncomeEvent, IncomeSummary } from "../../api/incomeTypes";
 import { emptySummary, estimateOf, knownYield, sampleEvent, sampleSummary } from "../../test/incomeHandlers";
+import { defaultChecklists, defaultGoals, toPortfolio, type StoredAsset } from "../../test/fixtures";
 import { renderApp } from "../../test/render";
 import { getDb, server } from "../../test/server";
 
@@ -323,6 +324,82 @@ describe("Renda: lançar provento", () => {
     await waitFor(() =>
       expect(body).toEqual({ asset_id: "a-knri", kind: "reit_income", pay_date: "2026-11-25", ex_date: "2026-11-10", amount_per_unit: 1.1 }),
     );
+  });
+
+  describe("imposto retido de ativo dos EUA", () => {
+    const usAsset = (id: string, symbol: string, listedOnB3: boolean): StoredAsset => ({
+      id,
+      asset_class: "intl_stocks",
+      symbol,
+      display_name: symbol,
+      quantity: 10,
+      quote_price: 100,
+      manual_price: null,
+      currency: listedOnB3 ? "BRL" : "USD",
+      score_override: null,
+      answers: {},
+      listed_on_b3: listedOnB3,
+    });
+
+    function usePortfolio() {
+      const stored = [usAsset("a-us", "ABCD", false), usAsset("a-bdr", "WXYZ34", true)];
+      server.use(http.get("/api/v1/portfolio", () => HttpResponse.json(toPortfolio(stored, defaultGoals(), defaultChecklists()))));
+    }
+
+    it("preenche 30% para ação dos EUA, editável, com o ⓘ", async () => {
+      usePortfolio();
+      let body: unknown;
+      server.use(
+        http.post("/api/v1/income", async ({ request }) => {
+          body = await request.json();
+          return HttpResponse.json(sampleEvent(), { status: 201 });
+        }),
+      );
+      const { user, dialog } = await openSheet();
+      expect(within(dialog).getByRole("combobox", { name: "Ativo" })).toHaveValue("a-us");
+      await user.type(within(dialog).getByLabelText("Valor por cota (R$)"), "2");
+      await user.type(within(dialog).getByLabelText("Quantidade"), "10");
+      const withholding = within(dialog).getByLabelText("Imposto retido (R$)");
+      await waitFor(() => expect(withholding).toHaveValue("6,00"));
+      expect(within(dialog).getByText(/^Líquido/).parentElement).toHaveTextContent(/R\$\s14,00/);
+      expect(within(dialog).getByRole("button", { name: "Por que 30% de IR retido" })).toBeInTheDocument();
+
+      // Sem mexer, o corpo não leva a retenção: o servidor aplica o padrão.
+      await user.click(within(dialog).getByRole("button", { name: "Lançar provento" }));
+      await waitFor(() => expect(body).toEqual({ asset_id: "a-us", kind: "dividend", pay_date: "2026-11-25", amount_per_unit: 2, quantity: 10 }));
+    });
+
+    it("o valor digitado vale, inclusive 0", async () => {
+      usePortfolio();
+      let body: unknown;
+      server.use(
+        http.post("/api/v1/income", async ({ request }) => {
+          body = await request.json();
+          return HttpResponse.json(sampleEvent(), { status: 201 });
+        }),
+      );
+      const { user, dialog } = await openSheet();
+      await user.type(within(dialog).getByLabelText("Valor por cota (R$)"), "2");
+      await user.type(within(dialog).getByLabelText("Quantidade"), "10");
+      const withholding = within(dialog).getByLabelText("Imposto retido (R$)");
+      await user.clear(withholding);
+      await user.type(withholding, "0");
+      expect(within(dialog).getByText(/^Líquido/).parentElement).toHaveTextContent(/R\$\s20,00/);
+      await user.click(within(dialog).getByRole("button", { name: "Lançar provento" }));
+      await waitFor(() =>
+        expect(body).toEqual({ asset_id: "a-us", kind: "dividend", pay_date: "2026-11-25", amount_per_unit: 2, quantity: 10, withholding: 0 }),
+      );
+    });
+
+    it("BDR e ação brasileira vêm sem retenção e sem ⓘ", async () => {
+      usePortfolio();
+      const { user, dialog } = await openSheet();
+      await user.selectOptions(within(dialog).getByRole("combobox", { name: "Ativo" }), "a-bdr");
+      await user.type(within(dialog).getByLabelText("Valor por cota (R$)"), "2");
+      await user.type(within(dialog).getByLabelText("Quantidade"), "10");
+      await waitFor(() => expect(within(dialog).getByLabelText("Imposto retido (R$)")).toHaveValue("0,00"));
+      expect(within(dialog).queryByRole("button", { name: "Por que 30% de IR retido" })).not.toBeInTheDocument();
+    });
   });
 
   it("renda fixa por valor não pede quantidade", async () => {

@@ -20,7 +20,7 @@ use rust_decimal::Decimal;
 use time::{Date, Duration, Month, Weekday};
 use uuid::Uuid;
 
-use super::asset_class::AssetClass;
+use super::asset_class::{AssetClass, Market};
 use super::entitlement::quantity_on;
 use super::income::{amounts, jcp_withholding_rate, IncomeAmounts, IncomeKind, IncomeSource};
 use super::ledger::{Entry, Kind};
@@ -591,7 +591,14 @@ fn derive(
         return Ok(None);
     }
     let kind = cash_kind(&announcement.label, asset.class);
-    let Ok(values) = amounts(kind, pay_date, announcement.rate, quantity, None) else {
+    let Ok(values) = amounts(
+        Market::B3,
+        kind,
+        pay_date,
+        announcement.rate,
+        quantity,
+        None,
+    ) else {
         return Ok(None);
     };
     if values.gross <= Decimal::ZERO {

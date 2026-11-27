@@ -288,6 +288,10 @@ meta de renda: as três falam do dinheiro que cai na conta.
 - BDR: nada a mais. O valor que a B3 e o Yahoo dão para o BDR já é o repassado
   pela depositária, depois do imposto lá fora.
 - Dividendo, rendimento de FII, amortização e o resto da B3: sem retenção.
+- O mesmo padrão vale para o provento lançado à mão (`domain::income::amounts`
+  recebe o mercado do ativo): 30% no dividendo e no rendimento de ativo dos
+  EUA, editável; a retenção digitada, inclusive 0, prevalece. Os automáticos e
+  a estimativa da B3 só falam de ativo da B3, então não retêm nada a mais.
 - A bruta vem ao lado (menor): no total, em cada ativo e na folha "Estimativa
   por ativo".
 

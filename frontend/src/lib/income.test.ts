@@ -117,3 +117,13 @@ describe("gráfico de barras", () => {
     expect(barsSummary([], money)).toMatch(/nenhum provento/);
   });
 });
+
+describe("previewAmounts: ativo dos EUA", () => {
+  it("dividendo e rendimento retêm 30%; BDR, JCP e amortização seguem a regra deles", () => {
+    expect(previewAmounts("dividend", 2, 10, "2026-03-02", undefined, true)).toEqual({ gross: 20, withholding: 6, net: 14 });
+    expect(previewAmounts("reit_income", 1, 7, "2026-03-02", undefined, true)).toEqual({ gross: 7, withholding: 2.1, net: 4.9 });
+    expect(previewAmounts("dividend", 2, 10, "2026-03-02")).toEqual({ gross: 20, withholding: 0, net: 20 });
+    expect(previewAmounts("amortization", 2, 10, "2026-03-02", undefined, true).withholding).toBe(0);
+    expect(previewAmounts("dividend", 2, 10, "2026-03-02", 0, true).withholding).toBe(0);
+  });
+});
