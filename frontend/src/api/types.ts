@@ -202,7 +202,7 @@ export type PlanItem = {
   value: number;
   divisible: boolean;
   class_percent_after: number;
-  /** Renda mensal que este item soma, estimada pelo que a cota pagou em 12 meses, líquida do IR do JCP; `null` sem histórico. */
+  /** Renda mensal que este item soma, estimada pelo que a cota pagou em 12 meses, líquida do IR retido na fonte; `null` sem histórico. */
   estimated_monthly_income: number | null;
   /**
    * Referências públicas de preço (Bazin e Graham), só informativas: presente

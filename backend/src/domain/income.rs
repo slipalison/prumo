@@ -727,7 +727,7 @@ mod tests {
                 amount: dec!(7.00),
             },
         ];
-        let payments = estimate::yahoo_unit_payments(&points, Decimal::ONE);
+        let payments = estimate::yahoo_unit_payments(&points, Decimal::ONE, Decimal::ZERO);
         assert_eq!(estimate::trailing(&payments, today).gross, dec!(1.75));
         assert_eq!(estimate::trailing(&[], today).gross, dec!(0));
     }

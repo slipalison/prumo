@@ -682,8 +682,9 @@ e o botão **Lançar provento** à direita.
    - No celular a rosca sai (a tabela já diz tudo, em duas linhas por pagador).
 5. **Estimativa da carteira de hoje** (linha de baixo, 1/3): "~R$ 410 por mês,
    líquido" em destaque com a etiqueta "estimativa" e, menor embaixo, "bruto
-   ~R$ 440 por mês" (só quando há JCP e os dois diferem). O líquido desconta o
-   IR do JCP, como o "Recebido em 12 meses" ao lado. Quando algum ativo está
+   ~R$ 440 por mês" (só quando os dois diferem). O líquido desconta o IR
+   retido na fonte (o do JCP e os 30% das ações e REITs dos EUA), como o
+   "Recebido em 12 meses" ao lado. Quando algum ativo está
    **acima do habitual**, uma linha com ícone de alerta diz "~R$ X/mês de N
    ativos acima do habitual", com um ⓘ ("pagamentos acima do habitual, como
    antecipações; a estimativa pode cair quando saírem da janela"). A tabela
@@ -692,8 +693,7 @@ e o botão **Lançar provento** à direita.
    pagou" ao lado) tem Ativo, Por mês e Média 5 anos, cada célula em até duas
    linhas dentro da altura de linha de sempre:
    - **Ativo**: ícone, código e um rótulo pequeno da fonte ("B3" ou "Yahoo"; o
-     leitor de tela ouve "fonte: anúncios da B3" ou "fonte: Yahoo, valor
-     bruto"). No celular o ícone sai para a tabela caber sem rolar de lado.
+     leitor de tela ouve "fonte: anúncios da B3" ou "fonte: Yahoo"). No celular o ícone sai para a tabela caber sem rolar de lado.
    - **Por mês**: o líquido em destaque e, menor embaixo, "bruto R$ Y" quando
      difere.
    - **Média 5 anos**: a média por mês do que o ativo costuma pagar e, embaixo,
@@ -737,7 +737,7 @@ Na tela **Aportar**:
   mexe no valor de entrada.
 - No resultado, abaixo da manchete, uma frase com o selo "estimativa": "Este aporte soma ~R$ 35/mês
   de renda: sua renda vai de R$ 410 para R$ 445 por mês". Os dois números são
-  líquidos do IR do JCP, a mesma estimativa da Renda. Cada cartão mostra a
+  líquidos do IR retido na fonte, a mesma estimativa da Renda. Cada cartão mostra a
   renda mensal que ele soma. O plano não espera o provedor de dividendos: sem
   histórico em cache ainda, a frase vira "Estimativa de renda indisponível por
   enquanto".

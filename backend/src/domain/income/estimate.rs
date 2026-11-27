@@ -1,6 +1,6 @@
 //! A estimativa de renda da carteira de hoje: o que cada cota pagou nos
-//! últimos 12 meses, **líquido** do IR na fonte do JCP, vezes a quantidade de
-//! hoje. Regra pura; quem lê o banco é `crate::income`. O porquê de cada
+//! últimos 12 meses, **líquido** do IR retido na fonte (o do JCP aqui, os 30%
+//! dos EUA lá), vezes a quantidade de hoje. Regra pura; quem lê o banco é `crate::income`. O porquê de cada
 //! decisão está em `docs/proventos-automaticos.md` ("Estimativa da carteira de
 //! hoje").
 //!
@@ -8,7 +8,8 @@
 //!   (`b3_cash_announcements`): o rótulo diz o que é JCP, então dá o líquido, e
 //!   o valor é o oficial. O Yahoo fica de reserva (a B3 sem o ativo ou fora do
 //!   ar) e é a fonte de EUA, BDR e ETF. O Yahoo não separa JCP de dividendo:
-//!   o que vem dele é bruto e líquido ao mesmo tempo.
+//!   numa ação da B3 o que vem dele é bruto e líquido ao mesmo tempo. Nos EUA
+//!   o líquido perde os 30% retidos lá ([`US_DIVIDEND_WITHHOLDING_RATE`]).
 //! - **Base de cotas de hoje.** O valor da B3 é por cota *da época*. Cada
 //!   bonificação, desdobramento ou grupamento com data com no mesmo dia ou
 //!   depois divide o valor (o Yahoo já vem assim: trata bonificação como
@@ -24,7 +25,7 @@ use rust_decimal::Decimal;
 use time::{Date, Duration, OffsetDateTime};
 
 use super::{amounts, jcp_withholding_rate, monthly_estimate, IncomeKind, TRAILING_DAYS};
-use crate::domain::asset_class::AssetClass;
+use crate::domain::asset_class::{AssetClass, Market};
 use crate::domain::entitlement::quantity_on;
 use crate::domain::income_auto::{
     cash_kind, ex_date_after, CashAnnouncement, StockAnnouncement, StockEventKind,
@@ -51,6 +52,22 @@ pub const ABOVE_USUAL_RATIO: Decimal = Decimal::from_parts(15, 0, 0, false, 1);
 /// dias são várias rodadas falhando seguidas.
 pub const B3_FRESH_FOR: Duration = Duration::days(3);
 
+/// IR retido na fonte nos EUA sobre o dividendo pago a residente no Brasil:
+/// 30%, porque não há tratado contra a bitributação entre os dois países
+/// (Internal Revenue Code, §§ 871(a) e 1441). Vale para ação e REIT cotados lá
+/// (`Market::Us`). O BDR não: o valor que a B3 e o Yahoo dão para ele já é o
+/// repassado pela depositária, depois do imposto lá fora.
+pub const US_DIVIDEND_WITHHOLDING_RATE: Decimal = Decimal::from_parts(30, 0, 0, false, 2);
+
+/// O imposto retido lá fora sobre o provento de um ativo do mercado `market`:
+/// 30% nos EUA, nada no resto (o IR brasileiro do JCP vem do rótulo da B3).
+pub fn foreign_withholding_rate(market: Market) -> Decimal {
+    match market {
+        Market::Us => US_DIVIDEND_WITHHOLDING_RATE,
+        _ => Decimal::ZERO,
+    }
+}
+
 /// De onde veio o valor por cota de um ativo.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -61,8 +78,8 @@ pub enum EstimateSource {
     Yahoo,
 }
 
-/// Um valor bruto e o líquido do IR na fonte do JCP. Fora do JCP os dois são
-/// iguais.
+/// Um valor bruto e o líquido do IR retido na fonte (o do JCP, os 30% dos EUA).
+/// Sem retenção, os dois são iguais.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct GrossNet {
     pub gross: Decimal,
@@ -159,16 +176,22 @@ pub fn b3_unit_payments(
 }
 
 /// O histórico do Yahoo como pagamentos por cota de hoje, em reais (`rate` é o
-/// câmbio da moeda do histórico). Sem JCP separado: líquido = bruto.
-pub fn yahoo_unit_payments(points: &[super::DividendPoint], rate: Decimal) -> Vec<UnitPayment> {
+/// câmbio da moeda do histórico). `withholding` é o imposto retido lá fora
+/// ([`foreign_withholding_rate`]): 30% nos EUA. O Yahoo não separa o JCP, então
+/// numa ação da B3 que caiu na reserva o líquido é o bruto.
+pub fn yahoo_unit_payments(
+    points: &[super::DividendPoint],
+    rate: Decimal,
+    withholding: Decimal,
+) -> Vec<UnitPayment> {
     points
         .iter()
         .map(|p| {
-            let value = p.amount * rate;
+            let gross = p.amount * rate;
             UnitPayment {
                 ex_date: p.ex_date,
-                gross: value,
-                net: value,
+                gross,
+                net: gross * (Decimal::ONE - withholding),
             }
         })
         .collect()
@@ -302,7 +325,9 @@ pub fn asset_estimate(
         per_unit_12m,
         monthly,
         usual: usual_estimate,
-        above_usual: above_usual(per_unit_12m.gross, found.as_ref()),
+        // Sem cotas hoje, a marca não diz nada sobre a carteira: não marca, e o
+        // ativo não entra na contagem nem na soma de "acima do habitual".
+        above_usual: quantity > Decimal::ZERO && above_usual(per_unit_12m.gross, found.as_ref()),
     }
 }
 

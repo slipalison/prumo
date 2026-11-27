@@ -497,7 +497,7 @@ Calcula, não grava.
 
 - `items[].estimated_monthly_income`: a renda mensal que o item soma,
   **estimada** (o que a cota pagou em 12 meses × a quantidade comprada ÷ 12,
-  em reais, **líquido** do IR do JCP: o mesmo `per_unit_12m` da estimativa da
+  em reais, **líquido** do IR retido na fonte: o mesmo `per_unit_12m` da estimativa da
   Renda, para "+~R$ X/mês" e "sua renda vai de A para B" falarem da mesma renda
   que a Renda e a meta). `null` quando o ativo não tem nenhuma fonte (renda
   fixa, cripto, histórico ainda não buscado ou provedor fora do ar).
@@ -512,7 +512,7 @@ Calcula, não grava.
   Referência pública, não é recomendação.
 - `income`: o que o aporte soma por mês (`added_monthly`, a soma dos itens) e a
   renda mensal estimada da carteira antes e depois (`before_monthly` é o
-  `estimate.monthly` da Renda), tudo líquido do IR do JCP. É estimativa, nunca
+  `estimate.monthly` da Renda), tudo líquido do IR retido na fonte. É estimativa, nunca
   extrato; o motor não olha para ela.
   - `null` quando nenhum ativo da carteira paga provento (só renda fixa e
     cripto): não há o que estimar.
@@ -1736,8 +1736,9 @@ O que a tela Renda precisa, numa chamada.
 
 **É estimativa, não extrato.** Para cada ativo cotado na B3 ou nos EUA,
 `per_unit_12m` é o que a cota pagou nos últimos 365 dias **pela data ex**,
-**líquido do IR na fonte do JCP** (15% pago até 2025, 17,5% desde 2026, pela
-data de pagamento; "a definir" usa a de hoje), em reais e na base de cotas de
+**líquido do IR retido na fonte**: o do JCP (15% pago até 2025, 17,5% desde
+2026, pela data de pagamento; "a definir" usa a de hoje) e, em ação e REIT dos
+EUA, os 30% retidos lá; em reais e na base de cotas de
 hoje, e `monthly = per_unit_12m × quantity ÷ 12`, com a quantidade **de hoje**:
 é o ritmo da carteira atual, e o plano soma o que o aporte compra por cima dele.
 Os `_gross` são os mesmos números brutos. `monthly` (o total) e
@@ -1757,8 +1758,10 @@ de FII mensal, bonificação, limiar) está em
     bonificação). É a fonte de EUA, BDR e ETF e a **reserva** das ações e FIIs
     quando a B3 não tem o ativo (ISIN não resolvido, emissor nunca buscado) ou
     está fora do ar (última busca do emissor há mais de 3 dias e há Yahoo em
-    cache). O Yahoo não separa o JCP: ali líquido = bruto. Valores em dólar
-    usam o câmbio da carteira.
+    cache). O Yahoo não separa o JCP: numa ação da B3, ali líquido = bruto.
+    Valores em dólar usam o câmbio da carteira, e ação e REIT dos EUA perdem
+    no líquido os **30%** retidos lá na fonte (não há tratado Brasil × EUA); o
+    BDR não, porque o valor dele já é o repassado pela depositária.
 - `usual`: a média anual do que o ativo costuma pagar, por cota de hoje, em até
   5 janelas de 365 dias; a de agora são os 12 meses da própria fonte, as
   anteriores vêm do Yahoo, e uma janela velha só entra inteira (com pagamento
@@ -1767,7 +1770,7 @@ de FII mensal, bonificação, limiar) está em
   aproximados (a parte de JCP dos 12 meses do ativo, porque o Yahoo não
   separa); os `_gross`, brutos.
 - `above_usual`: `true` quando os 12 meses passam de **1,5 ×** `usual`
-  (bruto). É só uma marca: nada é cortado. `above_usual_monthly` é a parte do
+  (bruto) e há cotas hoje (ativo com quantidade zero nunca é marcado). É só uma marca: nada é cortado. `above_usual_monthly` é a parte do
   `monthly` total que vem de ativos marcados.
 
 `trailing_12m` é a outra conta, a que olha para trás: o que a posição teria
@@ -1821,7 +1824,8 @@ conta é `backend/src/domain/yoc.rs`. Aparece em três lugares: em cada pagador 
 
 - `basis: "received"`: a renda é o **líquido recebido** nos 12 meses
   (`by_payer`). Só quando nada foi recebido nesse período a renda vem de
-  `trailing_12m` (estimada: líquida pela B3, bruta pelo Yahoo) e `basis` é
+  `trailing_12m` (estimada: líquida pela B3 e nos EUA, bruta numa ação da B3
+  pelo Yahoo) e `basis` é
   `"estimate"` — o dado do livro sempre vence a estimativa, a mesma regra da
   meta de renda.
 - **Custo desconhecido** (saldo inicial sem preço médio) não vira zero nem

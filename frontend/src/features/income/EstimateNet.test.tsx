@@ -79,7 +79,7 @@ describe("Estimativa líquida", () => {
   it("cada ativo diz a fonte num rótulo pequeno, com o significado para o leitor de tela", async () => {
     const { panel } = await openEstimate(netSummary());
     expect(rowOf(panel, "ABCD4")).toHaveTextContent(/B3, fonte: anúncios da B3/);
-    expect(rowOf(panel, "WXYZ3")).toHaveTextContent(/Yahoo, fonte: Yahoo, valor bruto/);
+    expect(rowOf(panel, "WXYZ3")).toHaveTextContent(/Yahoo, fonte: Yahoo~R\$/);
   });
 
   it("a média de até 5 anos e a marca acima do habitual, com texto, ícone e o total marcado", async () => {

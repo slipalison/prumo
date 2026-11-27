@@ -42,7 +42,7 @@ export function IncomeGoalCard({ goal, monthlyAverage, estimatedMonthly }: Incom
       info={
         basis === "received"
           ? "Média do que você recebeu nos últimos 12 meses."
-          : "Estimativa pelo que cada cota pagou nos últimos 12 meses, líquida do IR do JCP como o recebido. Ainda não há proventos recebidos lançados."
+          : "Estimativa pelo que cada cota pagou nos últimos 12 meses, líquida do IR retido na fonte como o recebido. Ainda não há proventos recebidos lançados."
       }
       infoLabel="Como a renda da meta é medida"
       actions={

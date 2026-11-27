@@ -48,7 +48,8 @@ comprar para a carteira ficar o mais perto possível das suas metas.
 - **Renda** — dividendos, JCP e rendimentos de FII que você recebeu ou vai
   receber, mês a mês, contra uma meta de renda mensal. O aporte mostra quanto de
   renda estimada ele soma. A renda "da carteira de hoje" é **estimativa**: o
-  que cada cota pagou em 12 meses, **líquido do IR do JCP** (o bruto ao lado),
+  que cada cota pagou em 12 meses, **líquido do IR retido na fonte** (o do
+  JCP e os 30% dos dividendos americanos; o bruto ao lado),
   pelos anúncios da B3 para ações e FIIs e pelo Yahoo para o resto (buscados
   em segundo plano: nenhuma tela espera por eles). Cada ativo mostra a fonte, a
   média de até 5 anos e a marca "acima do habitual" quando os 12 meses passam
@@ -71,7 +72,7 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   número marcado como parcial, sem estimativa.
   renda estimada ele soma e oferece incluir os proventos recebidos desde o
   último aporte. A renda "da carteira de hoje" é **estimativa** (líquida do IR
-  do JCP, a mesma da Renda; buscada em segundo plano: nenhuma tela espera por
+  retido na fonte, a mesma da Renda; buscada em segundo plano: nenhuma tela espera por
   ela): o que você lança, e depois o que importa da B3, vale mais.
 - **Objetivos** — metas com prazo, em Ajustes: um patrimônio total ou um valor
   numa classe ("R$ 1 milhão", "R$ 100 mil em FIIs"). Cada uma mostra o

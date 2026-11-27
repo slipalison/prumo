@@ -1,6 +1,7 @@
 //! Carteira e anúncios FICTÍCIOS: emissor `ABCD`, fundo `FICT`.
 
 use super::*;
+use crate::domain::asset_class::Market;
 use crate::domain::income::DividendPoint;
 use crate::domain::ledger::Kind;
 use proptest::prelude::*;
@@ -245,14 +246,55 @@ fn yahoo_is_the_reserve_when_the_b3_is_missing_or_down() {
 }
 
 #[test]
-fn yahoo_points_are_converted_and_have_no_separate_jcp() {
+fn yahoo_points_are_converted_and_lose_the_us_withholding() {
     let points = [DividendPoint {
         ex_date: days_ago(10),
         amount: dec!(0.25),
     }];
-    let payments = yahoo_unit_payments(&points, dec!(5.5));
-    assert_eq!(payments[0].gross, dec!(1.375));
-    assert_eq!(payments[0].net, dec!(1.375));
+    // Ação americana: US$ 0,25 a R$ 5,50 = R$ 1,375 bruto; 30% ficam lá.
+    let us = yahoo_unit_payments(&points, dec!(5.5), foreign_withholding_rate(Market::Us));
+    assert_eq!(us[0].gross, dec!(1.375));
+    assert_eq!(us[0].net, dec!(0.9625));
+    // Ação da B3 na reserva do Yahoo (e BDR, que já vem líquido): sem retenção
+    // lá fora, e o Yahoo não separa o JCP.
+    let br = yahoo_unit_payments(&points, Decimal::ONE, foreign_withholding_rate(Market::B3));
+    assert_eq!((br[0].gross, br[0].net), (dec!(0.25), dec!(0.25)));
+    assert_eq!(foreign_withholding_rate(Market::Us), dec!(0.30));
+
+    // Na estimativa: 4 trimestres de US$ 0,25 × 12 cotas ÷ 12 = R$ 5,50 bruto
+    // por mês, R$ 3,85 líquido; a média do habitual também fica líquida.
+    let quarters: Vec<DividendPoint> = (0..24)
+        .map(|q| DividendPoint {
+            ex_date: days_ago(20 + 91 * q),
+            amount: dec!(0.25),
+        })
+        .collect();
+    let payments = yahoo_unit_payments(&quarters, dec!(5.5), US_DIVIDEND_WITHHOLDING_RATE);
+    let estimate = asset_estimate(EstimateSource::Yahoo, &payments, &payments, dec!(12), TODAY);
+    assert_eq!(
+        estimate.monthly,
+        GrossNet {
+            gross: dec!(5.50),
+            net: dec!(3.85)
+        }
+    );
+    let usual = estimate.usual.unwrap();
+    assert_eq!(usual.monthly.net, dec!(3.85));
+    assert!(!estimate.above_usual);
+}
+
+#[test]
+fn an_asset_with_no_shares_is_never_above_usual() {
+    // Mesmos 12 meses e mesma média que marcam com cotas.
+    let payments = [point(days_ago(30), dec!(3))];
+    let history = yearly(dec!(1), 6);
+    let held = asset_estimate(EstimateSource::Yahoo, &payments, &history, dec!(10), TODAY);
+    assert!(held.above_usual);
+    let none = asset_estimate(EstimateSource::Yahoo, &payments, &history, dec!(0), TODAY);
+    assert!(!none.above_usual);
+    assert_eq!(none.monthly, GrossNet::default());
+    // A média continua informada; só a marca some.
+    assert_eq!(none.usual.unwrap().years, 5);
 }
 
 /// Um pagamento de `amount` por ano, há 100 dias, há 465, ... `years` vezes.

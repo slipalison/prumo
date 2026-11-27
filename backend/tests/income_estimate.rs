@@ -297,6 +297,17 @@ async fn estimate_uses_the_b3_net_of_jcp_and_falls_back_to_yahoo() {
             .collect(),
     );
 
+    // Sem cotas hoje, com 12 meses bem acima da média: a API não marca.
+    me.dividends.set(
+        "QZRO3.SA",
+        std::iter::once(DividendEvent {
+            ex_date: days_ago(30),
+            amount: dec!(5),
+        })
+        .chain(yearly(dec!(1), 7).into_iter().skip(1))
+        .collect(),
+    );
+
     put(
         &me.router,
         "/api/v1/goals",
@@ -316,6 +327,11 @@ async fn estimate_uses_the_b3_net_of_jcp_and_falls_back_to_yahoo() {
     let wxyz = add_asset(
         &me,
         json!({ "asset_class": "br_stocks", "symbol": "WXYZ3", "quantity": 100 }),
+    )
+    .await;
+    let empty = add_asset(
+        &me,
+        json!({ "asset_class": "br_stocks", "symbol": "QZRO3", "quantity": 0 }),
     )
     .await;
     me.income.settle().await;
@@ -357,6 +373,10 @@ async fn estimate_uses_the_b3_net_of_jcp_and_falls_back_to_yahoo() {
     assert_eq!(money(&estimate["monthly"]), dec!(48.25));
     assert_eq!(money(&estimate["monthly_gross"]), dec!(50.00));
     assert_eq!(money(&estimate["above_usual_monthly"]), dec!(18.25));
+    let zero = find(&estimate["assets"], "asset_id", &empty);
+    assert_eq!(zero["above_usual"], false, "{zero}");
+    assert_eq!(money(&zero["monthly"]), dec!(0.00));
+    assert_eq!(zero["usual"]["years"], 5);
     assert_eq!(estimate["missing"], json!([]));
 
     // O yield on cost estimado usa o mesmo líquido da B3.

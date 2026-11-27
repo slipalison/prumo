@@ -641,7 +641,7 @@ e abaixo da rosca e da tabela quando o painel é mais alto que ela (o conteúdo 
 centrado).
 
 **Renda, estimativa líquida (frente estimativa-liquida).** A estimativa passou
-a mostrar o líquido do IR do JCP em destaque e o bruto ao lado, a fonte de cada
+a mostrar o líquido do IR retido na fonte em destaque e o bruto ao lado, a fonte de cada
 ativo, a média de até 5 anos e a marca "acima do habitual" (regra em
 `docs/proventos-automaticos.md`, seção 9; desenho em `docs/design.md`, Renda,
 item 5). O painel ficou assim:

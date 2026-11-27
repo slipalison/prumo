@@ -24,7 +24,7 @@ const nameOf = (asset: IncomeEstimateAsset) => asset.symbol ?? asset.display_nam
 /** O rótulo pequeno da fonte e o que ele quer dizer, para o leitor de tela. */
 const SOURCE = {
   b3: { label: "B3", spoken: "fonte: anúncios da B3" },
-  yahoo: { label: "Yahoo", spoken: "fonte: Yahoo, valor bruto" },
+  yahoo: { label: "Yahoo", spoken: "fonte: Yahoo" },
 } as const;
 
 /** O que o ⓘ da marca explica: o mesmo texto no painel e na folha. */
@@ -151,7 +151,8 @@ function AboveUsualTotal({ estimate, count }: { estimate: IncomeEstimate; count:
 
 /**
  * A renda mensal que a carteira de hoje renderia se pagasse o que cada cota
- * pagou nos últimos 12 meses, **líquida** do IR do JCP em destaque e a bruta
+ * pagou nos últimos 12 meses, **líquida** do IR retido na fonte (o do JCP e os
+ * 30% dos EUA) em destaque e a bruta
  * ao lado. Ações e FIIs vêm dos anúncios da B3 (que separam o JCP); EUA, ETF,
  * BDR e o que a B3 não tem, do Yahoo (bruto). Cada ativo diz a fonte num
  * rótulo pequeno, a média de até 5 anos e a marca "acima do habitual" quando
@@ -184,9 +185,10 @@ export function EstimateCard({ estimate }: { estimate: IncomeEstimate }) {
       title="Estimativa da carteira de hoje"
       info={
         <>
-          Pelo que cada cota pagou nos últimos 12 meses (pela data ex), com a quantidade de hoje, líquido do IR do JCP. Ações e
-          FIIs vêm dos anúncios da B3; EUA, ETF, BDR e o que a B3 não tiver, do Yahoo, que não separa o JCP (o valor dele é o
-          bruto). O rótulo ao lado de cada ativo diz a fonte. Não é extrato:
+          Pelo que cada cota pagou nos últimos 12 meses (pela data ex), com a quantidade de hoje, líquido do IR retido na fonte:
+          o do JCP e, nas ações e REITs dos EUA, os 30% retidos lá. Ações e FIIs vêm dos anúncios da B3; EUA, ETF, BDR e o que a
+          B3 não tiver, do Yahoo, que não separa o JCP (numa ação da B3, o valor dele é o bruto). O rótulo ao lado de cada ativo
+          diz a fonte. Não é extrato:
           {estimate.updated_at ? ` dados de ${formatRelative(estimate.updated_at)}.` : " ainda sem histórico."}
         </>
       }
@@ -229,7 +231,7 @@ export function EstimateCard({ estimate }: { estimate: IncomeEstimate }) {
         open={all}
         onClose={() => setAll(false)}
         title="Estimativa por ativo"
-        description="Do que mais rende ao que menos rende, líquido do IR do JCP com o bruto embaixo. Por cota é o que ela pagou nos últimos 12 meses; por mês é a posição de hoje dividida em 12; a média é a de até 5 anos, por mês."
+        description="Do que mais rende ao que menos rende, líquido do IR retido na fonte com o bruto embaixo. Por cota é o que ela pagou nos últimos 12 meses; por mês é a posição de hoje dividida em 12; a média é a de até 5 anos, por mês."
         footer={
           <div className="estimate__total">
             <p>

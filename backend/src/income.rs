@@ -32,8 +32,8 @@ use crate::domain::allocation::round_cents;
 use crate::domain::asset_class::{AssetClass, Market};
 use crate::domain::entitlement::trailing_income;
 use crate::domain::income::estimate::{
-    asset_estimate, b3_trailing_income, b3_unit_payments, b3_window_start, pick_source,
-    yahoo_unit_payments, AssetEstimate, EstimateSource,
+    asset_estimate, b3_trailing_income, b3_unit_payments, b3_window_start,
+    foreign_withholding_rate, pick_source, yahoo_unit_payments, AssetEstimate, EstimateSource,
 };
 use crate::domain::income::DividendPoint;
 use crate::quotes::fx_symbol;
@@ -64,8 +64,9 @@ pub struct AssetIncome {
     pub estimate: AssetEstimate,
     /// O que a posição teria rendido nos últimos 12 meses, em reais, com as
     /// cotas que o livro tinha na data com de cada provento (e não as de hoje):
-    /// líquido pela B3; pelo Yahoo, bruto (ele não separa o JCP). `None` quando
-    /// a estimativa foi pedida sem o livro, ou o livro não fecha.
+    /// líquido pela B3; pelo Yahoo, líquido dos 30% retidos nos EUA e, numa
+    /// ação da B3, bruto (ele não separa o JCP). `None` quando a estimativa foi
+    /// pedida sem o livro, ou o livro não fecha.
     pub trailing_12m: Option<Decimal>,
 }
 
@@ -99,6 +100,7 @@ impl PortfolioIncome {
 struct Payer {
     asset_id: Uuid,
     class: AssetClass,
+    market: Market,
     quantity: Decimal,
     /// O símbolo no Yahoo (`KNRI11.SA`).
     provider_symbol: String,
@@ -188,6 +190,7 @@ impl IncomeService {
                 Some(Payer {
                     asset_id: a.asset.id,
                     class: a.asset.asset_class,
+                    market: a.asset.market(),
                     quantity: a.asset.quantity,
                     provider_symbol,
                 })
@@ -256,9 +259,11 @@ impl IncomeService {
             });
             let announced = b3.get(&payer.asset_id);
             let source = pick_source(announced.map(|a| a.fetched_at), yahoo.is_some(), now);
+            // O imposto retido lá fora (30% nos EUA) sai do líquido do Yahoo.
+            let foreign = foreign_withholding_rate(payer.market);
             let history = yahoo
                 .as_ref()
-                .map(|(points, rate, _)| yahoo_unit_payments(points, *rate))
+                .map(|(points, rate, _)| yahoo_unit_payments(points, *rate, foreign))
                 .unwrap_or_default();
             let entries = ledgers.get(&payer.asset_id).map_or(&[][..], Vec::as_slice);
             let (source, payments, fetched_at, trailing) = match (source, announced, &yahoo) {
@@ -277,7 +282,7 @@ impl IncomeService {
                     *fetched_at,
                     user.map(|_| {
                         trailing_income(points, today, entries)
-                            .map(|gross| round_cents(gross * rate))
+                            .map(|gross| round_cents(gross * rate * (Decimal::ONE - foreign)))
                     }),
                 ),
                 // Nem a B3 nem o Yahoo têm o ativo (ou falta o câmbio).

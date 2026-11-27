@@ -248,9 +248,10 @@ pub struct EstimateAssetDto {
     #[serde(with = "decimal_out")]
     pub quantity: Decimal,
     /// De onde veio o valor por cota: `b3` (anúncios da B3, JCP separado) ou
-    /// `yahoo` (bruto, JCP junto).
+    /// `yahoo` (JCP junto; nos EUA, menos os 30% retidos lá).
     pub source: EstimateSource,
-    /// O que uma cota pagou em 12 meses, em reais, líquido do IR do JCP.
+    /// O que uma cota pagou em 12 meses, em reais, líquido do IR retido na
+    /// fonte (o do JCP aqui, os 30% dos EUA lá).
     #[serde(with = "decimal_out")]
     pub per_unit_12m: Decimal,
     #[serde(with = "decimal_out")]
@@ -266,8 +267,8 @@ pub struct EstimateAssetDto {
     /// Os 12 meses passam de 1,5 × a média do habitual.
     pub above_usual: bool,
     /// O que a posição teria rendido em 12 meses, com as cotas que o livro
-    /// tinha na data com de cada provento — não as de hoje. Líquido pela B3;
-    /// bruto pelo Yahoo.
+    /// tinha na data com de cada provento — não as de hoje. Líquido pela B3 e
+    /// nos EUA; bruto numa ação da B3 pelo Yahoo (ele não separa o JCP).
     #[serde(with = "decimal_out::option")]
     pub trailing_12m: Option<Decimal>,
 }
@@ -275,7 +276,7 @@ pub struct EstimateAssetDto {
 /// A estimativa de renda mensal da carteira, a partir do que cada cota pagou.
 #[derive(Debug, Serialize)]
 pub struct EstimateDto {
-    /// Líquido do IR do JCP.
+    /// Líquido do IR retido na fonte (JCP no Brasil, 30% nos EUA).
     #[serde(with = "decimal_out")]
     pub monthly: Decimal,
     #[serde(with = "decimal_out")]

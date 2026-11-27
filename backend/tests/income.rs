@@ -742,9 +742,17 @@ async fn estimate_in_other_currency_and_unavailable_provider(env: &Env, dir: &te
     let summary = get(&me.router, "/api/v1/income/summary").await;
     let estimate = &summary.body["estimate"];
     let apple_row = find(&estimate["assets"], "asset_id", &apple);
-    assert_eq!(apple_row["per_unit_12m"], 5.5);
-    // 5,50 × 12 cotas / 12 meses.
-    assert_eq!(apple_row["monthly"], 5.5);
+    assert_eq!(apple_row["source"], "yahoo");
+    assert_eq!(apple_row["per_unit_12m_gross"], 5.5);
+    // 5,50 × 12 cotas / 12 meses, bruto; os EUA retêm 30% na fonte (sem
+    // tratado com o Brasil): 3,85 líquido.
+    assert_eq!(apple_row["monthly_gross"], 5.5);
+    assert_eq!(apple_row["per_unit_12m"], 3.85);
+    assert_eq!(apple_row["monthly"], 3.85);
+    assert_eq!(estimate["monthly"], 3.85);
+    assert_eq!(estimate["monthly_gross"], 5.5);
+    // O yield on cost estimado (com o livro: 12 cotas desde sempre) também é líquido.
+    assert_eq!(apple_row["trailing_12m"], 46.2);
     assert_eq!(estimate["missing"], json!(["WEGE3"]));
     assert_eq!(estimate["assets"].as_array().unwrap().len(), 1);
 
