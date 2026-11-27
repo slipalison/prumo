@@ -677,7 +677,7 @@
   white-space: nowrap;
 }
 
-/* Estreito: cada pagador vira duas linhas (nome e valor; parte e yield on cost). */
+/* No contêiner estreito, cada pagador vira duas linhas: nome e valor em cima, parte e yield on cost embaixo. */
 @container (max-width: 560px) {
   .payers__table thead {
     position: absolute;

@@ -30,21 +30,18 @@
   top: -22vmax;
   left: -18vmax;
   background: radial-gradient(circle at 40% 40%, var(--aurora-1), transparent 65%);
-  animation: aurora-drift-a 52s ease-in-out infinite alternate;
 }
 
 .aurora__blob--teal {
   right: -24vmax;
   top: 8vmax;
   background: radial-gradient(circle at 50% 50%, var(--aurora-2), transparent 62%);
-  animation: aurora-drift-b 60s ease-in-out infinite alternate;
 }
 
 .aurora__blob--violet {
   bottom: -30vmax;
   left: 10vmax;
   background: radial-gradient(circle at 50% 50%, var(--aurora-3), transparent 60%);
-  animation: aurora-drift-c 46s ease-in-out infinite alternate;
 }
 
 .aurora__blob--amber {
@@ -54,7 +51,25 @@
   right: 4vmax;
   opacity: calc(var(--aurora-opacity) * 0.55);
   background: radial-gradient(circle at 50% 50%, var(--aurora-4), transparent 62%);
-  animation: aurora-drift-d 40s ease-in-out infinite alternate;
+}
+
+/* As manchas só derivam para quem não pediu menos movimento. */
+@media (prefers-reduced-motion: no-preference) {
+  .aurora__blob--indigo {
+    animation: aurora-drift-a 52s ease-in-out infinite alternate;
+  }
+
+  .aurora__blob--teal {
+    animation: aurora-drift-b 60s ease-in-out infinite alternate;
+  }
+
+  .aurora__blob--violet {
+    animation: aurora-drift-c 46s ease-in-out infinite alternate;
+  }
+
+  .aurora__blob--amber {
+    animation: aurora-drift-d 40s ease-in-out infinite alternate;
+  }
 }
 
 .aurora__grain {
@@ -533,9 +548,11 @@
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold) 35%, transparent);
 }
 
+/* Tinta da cor do fundo sobre o vermelho do tema: 4,5:1 ou mais em todo o
+   degradê, nos dois temas (escuro: 8,0 a 5,5; claro: 5,0 a 6,8). */
 .btn--danger {
-  color: #fff;
-  background: linear-gradient(135deg, #ff8d98, #e2435a);
+  color: var(--bg);
+  background: linear-gradient(135deg, var(--danger), color-mix(in srgb, var(--danger) 82%, #000));
   box-shadow: 0 12px 30px -14px rgba(226, 67, 90, 0.7);
 }
 
@@ -1693,7 +1710,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .aurora__blob,
   .aurora__grain,
   .class-bar__added,
   .skeleton {

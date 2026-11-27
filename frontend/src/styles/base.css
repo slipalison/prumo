@@ -70,6 +70,16 @@ figure {
   margin: 0;
 }
 
+/* `fieldset` faz o papel de grupo (no lugar de `role="group"`) e se porta como
+   um `div`: sem a moldura, o recuo e a largura mínima que o navegador põe.
+   `:where` não pesa nada: a classe de cada grupo manda no resto. */
+:where(fieldset) {
+  min-width: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
 ::selection {
   background: var(--gold);
   color: var(--gold-ink);

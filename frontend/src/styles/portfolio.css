@@ -762,8 +762,14 @@
   inset: 0;
   border-radius: inherit;
   background: var(--success);
-  animation: live-pulse 1.8s ease-out infinite;
   content: "";
+}
+
+/* O pulso cresce o ponto: só para quem não pediu menos movimento. */
+@media (prefers-reduced-motion: no-preference) {
+  .live-badge__dot::after {
+    animation: live-pulse 1.8s ease-out infinite;
+  }
 }
 
 .live-badge__label {

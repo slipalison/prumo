@@ -751,6 +751,7 @@
   .references__table.data-table--stack tbody tr > * {
     padding-left: 0;
     padding-right: 0;
+    text-align: left;
   }
 
   .references__table.data-table--stack tbody tr {
@@ -759,10 +760,6 @@
     align-items: baseline;
     gap: var(--space-1) var(--space-4);
     padding-inline: var(--pad-panel);
-  }
-
-  .references__table.data-table--stack tbody tr > * {
-    text-align: left;
   }
 
   .references__table.data-table--stack tbody th {
