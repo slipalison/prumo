@@ -218,19 +218,28 @@ describe("Desempenho", () => {
     expect(plot.querySelector(".chart__tooltip")).toBeNull();
   });
 
-  it("troca o período pelo chip", async () => {
+  it("troca o período pelo chip, e o período vale para todos os painéis", async () => {
     serve(worthFixture(), perfFixture());
     const { user } = await open();
     await stat("Últimos 12 meses");
-    await user.click(screen.getByRole("button", { name: "Tudo" }));
-    expect(screen.getByRole("button", { name: "Tudo" })).toHaveAttribute("aria-pressed", "true");
     expect(asked).toContain("/api/v1/performance?period=12m&benchmarks=cdi,ipca,ibov,ifix");
-    await waitFor(() => expect(asked).toContain("/api/v1/performance?period=all&benchmarks=cdi,ipca,ibov,ifix"));
-    expect(asked).toContain("/api/v1/history/net-worth?period=all");
-    await waitFor(() => expect(asked).toContain("/api/v1/performance/classes?period=all"));
+    for (const [label, period] of [
+      ["Mês", "month"],
+      ["Ano atual", "ytd"],
+      ["12 meses", "12m"],
+      ["2 anos", "2y"],
+      ["5 anos", "5y"],
+      ["Tudo", "all"],
+    ] as const) {
+      await user.click(screen.getByRole("button", { name: label }));
+      await waitFor(() => expect(asked).toContain(`/api/v1/performance?period=${period}&benchmarks=cdi,ipca,ibov,ifix`));
+      expect(asked).toContain(`/api/v1/history/net-worth?period=${period}`);
+      await waitFor(() => expect(asked).toContain(`/api/v1/performance/classes?period=${period}`));
+      expect(screen.getByRole("button", { name: label })).toHaveAttribute("aria-pressed", "true");
+    }
   });
 
-  it("série longa vinda do livro: datas com ano, filtros e uma linha por ano na tabela", async () => {
+  it("série longa vinda do livro: datas com ano e uma linha por ano na tabela", async () => {
     const dates = daysBetween("2023-03-01", "2026-11-25");
     const worth = worthFixture({
       period: "all",
@@ -264,7 +273,7 @@ describe("Desempenho", () => {
       years,
     });
     serve(worth, perf);
-    const { user } = await open();
+    await open();
     const worthCard = await screen.findByRole("region", { name: "Patrimônio × aportado" });
     expect(within(worthCard).getByRole("img", { name: /Patrimônio de 01\/03\/2023 a 25\/11\/2026/ })).toBeInTheDocument();
     // As pontas do eixo levam o ano.
@@ -279,21 +288,6 @@ describe("Desempenho", () => {
     expect(within(rows[1] as HTMLElement).getByRole("rowheader")).toHaveTextContent("2026");
     expect(within(rows[7] as HTMLElement).getByRole("rowheader")).toHaveTextContent("2023");
     expect(within(rows[7] as HTMLElement).getAllByText("sem dado")).toHaveLength(2);
-
-    for (const [label, period] of [
-      ["Mês", "month"],
-      ["Ano atual", "ytd"],
-      ["12 meses", "12m"],
-      ["2 anos", "2y"],
-      ["5 anos", "5y"],
-      ["Tudo", "all"],
-    ] as const) {
-      await user.click(screen.getByRole("button", { name: label }));
-      await waitFor(() => expect(asked).toContain(`/api/v1/performance?period=${period}&benchmarks=cdi,ipca,ibov,ifix`));
-      expect(asked).toContain(`/api/v1/history/net-worth?period=${period}`);
-      await waitFor(() => expect(asked).toContain(`/api/v1/performance/classes?period=${period}`));
-      expect(screen.getByRole("button", { name: label })).toHaveAttribute("aria-pressed", "true");
-    }
   });
 
   it("série sendo refeita: avisa desde quando e pergunta de novo até acabar", async () => {
