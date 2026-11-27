@@ -62,7 +62,11 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   mão ou importou sempre vence, e bonificação, desdobramento e grupamento
   aparecem como pendência para lançar. Liga e desliga em Ajustes. Cada pagador, o ativo e a carteira mostram o **yield on cost**
   (renda de 12 meses ÷ o que você pagou; sem preço médio, a tela pede o preço
-  médio em vez de inventar).
+  médio em vez de inventar). O **histórico** soma o que entrou por mês,
+  trimestre, semestre ou ano, pela data de pagamento ou pela data com, por
+  classe, segmento ou ativo, líquido ou bruto; o **mapa de calor** mostra cada
+  mês de cada ano em reais, em DY (sobre o patrimônio médio do mês) ou em yield
+  on cost (sobre o custo médio do mês).
 - **Agenda** — a linha do tempo e o calendário do mês, só dos seus ativos:
   data com e pagamento dos proventos (o líquido, como na Renda; o anunciado
   ainda sem data de pagamento, estimado pelas cotas da data com), o provento

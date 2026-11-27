@@ -2040,6 +2040,92 @@ conta é `backend/src/domain/yoc.rs`. Aparece em três lugares: em cada pagador 
 Um item por ativo da carteira, na ordem dela (inclusive os que não renderam:
 `income_12m` é `0`, e a tela só mostra a linha de quem rendeu).
 
+### Histórico e mapa de calor
+
+O livro de proventos somado do jeito que a pessoa escolhe. Método, fórmulas e
+limites em [renda.md](renda.md); a regra em `backend/src/domain/income_history.rs`.
+
+#### `GET /api/v1/income/history?interval=…&basis=…&group=…&value=…`
+
+Todos opcionais; o padrão é `interval=month&basis=payment&group=total&value=net`.
+Valor fora da lista (ou parâmetro desconhecido) é `422`.
+
+- `interval`: `month`, `quarter`, `half_year` ou `year` (civis).
+- `basis`: `payment` (data de pagamento) ou `record` (**data com**: o último
+  pregão antes da data ex; sem data ex, o pagamento).
+- `group`: `total`, `class`, `segment` ou `asset`.
+- `value`: `net` (o líquido gravado em cada provento) ou `gross`.
+
+```json
+{
+  "today": "2026-11-25",
+  "interval": "month", "basis": "payment", "group": "class", "value": "net",
+  "groups": [
+    { "key": "class:br_reits", "kind": "class", "asset_class": "br_reits", "segment": null,
+      "asset_id": null, "label": null, "total": 605.0 },
+    { "key": "removed", "kind": "removed", "asset_class": null, "segment": null,
+      "asset_id": null, "label": null, "total": 45.0 }
+  ],
+  "buckets": [
+    { "start": "2026-10", "received": 0.0, "upcoming": 0.0, "groups": [] },
+    { "start": "2026-11", "received": 150.0, "upcoming": 90.0,
+      "groups": [{ "key": "class:br_reits", "received": 150.0, "upcoming": 90.0 }] }
+  ]
+}
+```
+
+- `groups`: do maior para o menor no **histórico inteiro** (recebido e a
+  receber), para a ordem e a cor da legenda não mudarem com o período à vista.
+  `key`: `total`, `class:<classe>`, `segment:<classe>:<segmento>` (vazio depois
+  dos dois-pontos = sem segmento), `asset:<pagador>` (o id do ativo, ou o
+  símbolo do ativo apagado) ou `removed` (ativo apagado da carteira, sem classe,
+  no agrupamento por classe ou segmento). O segmento é o da B3 nas ações (o
+  subsetor ou o setor quando falta) e o **tipo** (tijolo, papel, fundo de
+  fundos, híbrido) nos FIIs; as outras classes não têm. `label` e `asset_id` só
+  no agrupamento por ativo.
+- `buckets`: do mais velho ao mais novo, **sem buraco**, do intervalo do
+  primeiro provento ao de hoje (ou ao do último a receber, se for depois).
+  `start` é o primeiro mês do intervalo (`2026-10` é o 4º trimestre). `received`
+  e `upcoming` separam pela data de **pagamento** contra hoje, qualquer que seja
+  a `basis`; `groups` traz só quem tem valor, na ordem de `groups` de cima.
+- Livro vazio: `groups` e `buckets` vazios.
+
+#### `GET /api/v1/income/heatmap?basis=…&value=…`
+
+Mês × ano, com as mesmas `basis` e `value` (padrão `payment` e `net`).
+
+```json
+{
+  "today": "2026-11-25", "basis": "payment", "value": "net",
+  "years": [{
+    "year": 2026,
+    "months": [
+      { "amount": 61.25, "upcoming": 0.0, "market_value": 5000.0, "dy": 0.825, "dy_partial": true,
+        "cost": 5000.0, "yield_on_cost": 0.825, "yield_on_cost_partial": true }
+    ],
+    "total": { "amount": 71.25, "upcoming": 0.0, "market_value": 5000.0, "dy": 1.025, "dy_partial": true,
+               "cost": 5000.0, "yield_on_cost": 1.025, "yield_on_cost_partial": true }
+  }]
+}
+```
+
+- `years`: do mais novo ao mais velho, de janeiro do ano do primeiro provento a
+  dezembro do ano de hoje (ou do último a receber); `months` sempre com 12.
+- `amount`: o provento do mês (recebido e a receber); `upcoming`, a parte que
+  ainda vai cair.
+- `dy` (em %, 4 casas) = provento do mês ÷ `market_value` × 100, onde
+  `market_value` é o **patrimônio médio do mês** (média das fotos diárias de
+  `portfolio_snapshots`, a carteira inteira). `null` no mês sem foto.
+- `yield_on_cost` = provento do mês ÷ `cost` × 100, onde `cost` é o **custo
+  médio do mês** (o `cost_basis` do livro nos dias com posição, até hoje; o
+  saldo inicial vale para trás). `null` no mês sem posição.
+- Fora da conta, com `*_partial: true`: provento de ativo apagado da carteira
+  (nos dois) e de ativo com custo desconhecido naquele mês (no yield on cost).
+- `total`: a soma do ano em `amount`; em `dy` e `yield_on_cost`, o provento dos
+  meses com base (até o mês de hoje) ÷ a média da base desses meses — o DY do
+  ano, não anualizado. Mês com provento e sem base deixa o total parcial.
+- Livro vazio: `years` vazio.
+
 ### Meta de renda: `/api/v1/income/goal`
 
 A meta de renda mensal (`kind = monthly_income` na tabela `objectives`). Uma por
