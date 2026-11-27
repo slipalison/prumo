@@ -297,61 +297,70 @@ fn check_attribute(key: &str, value: &str) -> Result<(), SvgError> {
     if key.len() > 40 || value.len() > MAX_SVG_BYTES {
         return Err(forbidden());
     }
-    if value.contains(['<', '>', '"', '\'', '\\', '&', '\0'])
-        || value.chars().any(|c| c.is_control() && !c.is_whitespace())
-    {
-        return Err(bad_value());
+    if is_plain(value) && !reaches_outside(value) && fits_alphabet(key, value) {
+        Ok(())
+    } else {
+        Err(bad_value())
     }
+}
+
+/// Esquemas e construções de CSS que rodam código ou buscam algo de fora.
+const FORBIDDEN_SCHEMES: &[&str] = &[
+    "javascript:",
+    "vbscript:",
+    "data:",
+    "file:",
+    "http:",
+    "https:",
+    "//",
+    "expression(",
+    "@import",
+    "-moz-binding",
+];
+
+/// Sem caractere de marcação nem de controle (espaço em branco passa).
+fn is_plain(value: &str) -> bool {
+    !value.contains(['<', '>', '"', '\'', '\\', '&', '\0'])
+        && !value.chars().any(|c| c.is_control() && !c.is_whitespace())
+}
+
+/// Se o valor roda código ou aponta para fora do arquivo.
+fn reaches_outside(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
-    for scheme in [
-        "javascript:",
-        "vbscript:",
-        "data:",
-        "file:",
-        "http:",
-        "https:",
-        "//",
-        "expression(",
-        "@import",
-        "-moz-binding",
-    ] {
-        if lower.contains(scheme) {
-            return Err(bad_value());
-        }
+    if FORBIDDEN_SCHEMES
+        .iter()
+        .any(|scheme| lower.contains(scheme))
+    {
+        return true;
     }
     // `url(...)` só aponta para dentro do arquivo (`url(#gradiente)`).
     let mut rest = lower.as_str();
     while let Some(at) = rest.find("url(") {
         rest = rest[at + 4..].trim_start();
         if !rest.starts_with('#') {
-            return Err(bad_value());
+            return true;
         }
     }
-    // `href` (herança de gradiente) só para âncora do próprio arquivo.
-    if (key == "href" || key == "xlink:href") && !value.starts_with('#') {
-        return Err(bad_value());
-    }
-    // Dados de caminho e de transformação têm alfabeto próprio.
-    let charset = match key {
-        "d" | "points" => Some("MmLlHhVvCcSsQqTtAaZzEe0123456789 \t\r\n,.+-"),
-        "transform" | "gradientTransform" => {
-            Some("matrixtranslatescalerotateskewXY0123456789 \t\r\n,.+-()eE")
-        }
-        _ => None,
-    };
-    if let Some(allowed) = charset {
-        if !value.chars().all(|c| allowed.contains(c)) {
-            return Err(bad_value());
-        }
-    }
-    if key == "id"
-        && !value
+    false
+}
+
+/// Alfabeto de caminho (`d`, `points`) e de transformação.
+const PATH_CHARS: &str = "MmLlHhVvCcSsQqTtAaZzEe0123456789 \t\r\n,.+-";
+const TRANSFORM_CHARS: &str = "matrixtranslatescalerotateskewXY0123456789 \t\r\n,.+-()eE";
+
+/// Os atributos com valor de forma própria: `href` (herança de gradiente) só
+/// para âncora do próprio arquivo; dados de caminho e de transformação no
+/// alfabeto deles; `id` só com letra, dígito e `_.:-`.
+fn fits_alphabet(key: &str, value: &str) -> bool {
+    match key {
+        "href" | "xlink:href" => value.starts_with('#'),
+        "d" | "points" => value.chars().all(|c| PATH_CHARS.contains(c)),
+        "transform" | "gradientTransform" => value.chars().all(|c| TRANSFORM_CHARS.contains(c)),
+        "id" => value
             .chars()
-            .all(|c| c.is_ascii_alphanumeric() || "_.:-".contains(c))
-    {
-        return Err(bad_value());
+            .all(|c| c.is_ascii_alphanumeric() || "_.:-".contains(c)),
+        _ => true,
     }
-    Ok(())
 }
 
 fn escape(value: &str) -> String {
