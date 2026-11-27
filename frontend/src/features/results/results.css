@@ -261,6 +261,14 @@
   flex-wrap: wrap;
 }
 
+/* A escolha da comparação é um <fieldset> (o grupo nativo): sem a moldura, a
+   margem e a largura mínima padrão; o recuo é o do próprio .segmented. */
+.results fieldset.segmented {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+}
+
 .results .segmented__option {
   padding: 0 12px;
   white-space: nowrap;

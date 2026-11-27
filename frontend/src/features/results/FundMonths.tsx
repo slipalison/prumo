@@ -108,7 +108,7 @@ function columns(money: Money): DataColumn<FundEntry>[] {
  * patrimonial. O informe não traz o resultado do fundo nem o rendimento em
  * reais: a tela diz isso no ⓘ do painel.
  */
-export function FundMonths({ funds }: { funds: FundEntry[] }) {
+export function FundMonths({ funds }: Readonly<{ funds: FundEntry[] }>) {
   const money = useMoney();
   return (
     <DataTable

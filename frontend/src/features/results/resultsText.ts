@@ -70,6 +70,13 @@ const TOP_LABEL = {
   larger_loss: "negativo maior",
 } as const;
 
+/** O tom de um percentual: subiu, caiu ou ficou igual. */
+function percentTone(value: number): Tone {
+  if (value > 0) return "up";
+  if (value < 0) return "down";
+  return "neutral";
+}
+
 /**
  * A variação em palavras. Com a base positiva, o percentual; com prejuízo numa
  * das pontas, o rótulo ("saiu do prejuízo", "prejuízo menor"...), nunca um
@@ -79,7 +86,7 @@ export function changeView(change: Change, line: "profit" | "top"): ChangeView {
   switch (change.kind) {
     case "percent": {
       const value = change.value ?? 0;
-      return { text: signedPercent(value), tone: value > 0 ? "up" : value < 0 ? "down" : "neutral", hint: null };
+      return { text: signedPercent(value), tone: percentTone(value), hint: null };
     }
     case "left_loss":
     case "smaller_loss":
@@ -116,8 +123,11 @@ export function comparisonOf(company: CompanyResults, mode: BubbleMode): Compari
   return mode === "year_ago" ? company.year_ago : company.previous_quarter;
 }
 
-const percentOf = (change: Change): number | null =>
-  change.kind === "percent" ? change.value : change.kind === "unchanged" ? 0 : null;
+/** A variação em fração quando há percentual (igual é zero); com rótulo, nenhuma. */
+function percentOf(change: Change): number | null {
+  if (change.kind === "percent") return change.value;
+  return change.kind === "unchanged" ? 0 : null;
+}
 
 /** As duas variações em fração, quando as duas têm percentual; senão, por que a empresa fica fora do gráfico. */
 export function bubblePoint(

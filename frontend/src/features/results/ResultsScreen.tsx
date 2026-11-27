@@ -30,10 +30,10 @@ const amount = (money: Money, value: number | null, gap: FundamentalsGap | null)
   value === null ? <Missing gap={gap} /> : money.compact(value);
 
 /** A linha de cima de banco e seguradora não é receita: a linha diz o que é. */
-function TopLineValue({ entry, money }: { entry: CompanyEntry; money: Money }) {
+function TopLineValue({ entry, money }: Readonly<{ entry: CompanyEntry; money: Money }>) {
   const latest = latestOf(entry);
   const value = latest ? amount(money, latest.top_line.value, latest.top_line.gap) : <Missing gap="no_filing" />;
-  if (entry.company.top_line === "revenue") return <>{value}</>;
+  if (entry.company.top_line === "revenue") return value;
   return (
     <span className="results__stack">
       <span>{value}</span>
@@ -42,7 +42,7 @@ function TopLineValue({ entry, money }: { entry: CompanyEntry; money: Money }) {
   );
 }
 
-function Margin({ entry, comparison }: { entry: CompanyEntry; comparison: Comparison | null }) {
+function Margin({ entry, comparison }: Readonly<{ entry: CompanyEntry; comparison: Comparison | null }>) {
   const latest = latestOf(entry);
   const reason = notApplicableReason(entry.company.template, entry.company.holding);
   if (reason) {
@@ -151,7 +151,7 @@ function quarterColumns(money: Money): DataColumn<CompanyEntry>[] {
 }
 
 /** Os oito trimestres de uma empresa: o lucro de cada um, em barras. */
-function SeriesCard({ entry, money }: { entry: CompanyEntry; money: Money }) {
+function SeriesCard({ entry, money }: Readonly<{ entry: CompanyEntry; money: Money }>) {
   const quarters = entry.company.quarters;
   const text = (q: Quarter) => {
     const profit = q.net_income.value === null ? "sem número" : money.compact(q.net_income.value);
@@ -201,7 +201,7 @@ function split(assets: AssetResults[]): Split {
   return { companies, funds, unsupported };
 }
 
-function Report({ assets }: { assets: AssetResults[] }) {
+function Report({ assets }: Readonly<{ assets: AssetResults[] }>) {
   const money = useMoney();
   const [mode, setMode] = useState<BubbleMode>("year_ago");
   const { companies, funds, unsupported } = split(assets);
@@ -248,7 +248,7 @@ function Report({ assets }: { assets: AssetResults[] }) {
             title="Lucro × receita"
             info="Cada bolha é uma empresa: a variação do lucro no eixo horizontal, a da receita (em banco e seguradora, do resultado bruto) no vertical, e o tamanho é o peso na carteira. Não é ranking: mostra quem teve o quê no trimestre."
             actions={
-              <div className="segmented" role="group" aria-label="Comparar o trimestre">
+              <fieldset className="segmented" aria-label="Comparar o trimestre">
                 {(["year_ago", "previous_quarter"] as const).map((option) => (
                   <button
                     key={option}
@@ -262,7 +262,7 @@ function Report({ assets }: { assets: AssetResults[] }) {
                     <span className="segmented__label">{option === "year_ago" ? "Ano anterior" : "Trimestre anterior"}</span>
                   </button>
                 ))}
-              </div>
+              </fieldset>
             }
           >
             <ResultsBubbles entries={companies} mode={mode} />
@@ -303,7 +303,7 @@ function Report({ assets }: { assets: AssetResults[] }) {
   );
 }
 
-function UnsupportedList({ assets }: { assets: AssetResults[] }) {
+function UnsupportedList({ assets }: Readonly<{ assets: AssetResults[] }>) {
   return (
     <Disclosure summary="Sem resultados" count={String(assets.length)}>
       <ul className="results__unsupported">

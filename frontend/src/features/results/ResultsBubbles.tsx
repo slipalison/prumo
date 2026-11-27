@@ -63,7 +63,7 @@ type BubblesProps = { entries: CompanyEntry[]; mode: BubbleMode };
  * variações em percentual; prejuízo numa ponta não vira percentual e fica na
  * lista ao lado, com o rótulo. Uma tabela escondida traz os mesmos números.
  */
-export function ResultsBubbles({ entries, mode }: BubblesProps) {
+export function ResultsBubbles({ entries, mode }: Readonly<BubblesProps>) {
   const { ref, width } = useWidth();
   const height = width < NARROW ? 260 : 320;
   const placed: Array<CompanyEntry & { x: number; y: number }> = [];
@@ -110,7 +110,12 @@ export function ResultsBubbles({ entries, mode }: BubblesProps) {
   return (
     <figure className="results-bubbles">
       <div ref={ref} className="results-bubbles__plot">
-        <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={summary} className="results-bubbles__svg">
+        <svg // NOSONAR: gráfico em SVG; role="img" com aria-label é o que o nomeia, não há tag nativa equivalente
+          viewBox={`0 0 ${width} ${height}`}
+          role="img"
+          aria-label={summary}
+          className="results-bubbles__svg"
+        >
           {ticks(xDomain).map((t) => (
             <g key={`x${t}`}>
               <line className={t === 0 ? "results-bubbles__zero" : "results-bubbles__grid"} x1={sx(t)} x2={sx(t)} y1={PAD.top} y2={PAD.top + plotH} />

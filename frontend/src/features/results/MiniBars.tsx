@@ -24,7 +24,7 @@ type MiniBarsProps = {
  * (listrada), para a cor não ser a única pista; o número de cada uma está no
  * `title` e no resumo do leitor de tela.
  */
-export function MiniBars({ bars, label, highlightLast = true }: MiniBarsProps) {
+export function MiniBars({ bars, label, highlightLast = true }: Readonly<MiniBarsProps>) {
   const known = bars.map((b) => b.value).filter((v): v is number => v !== null);
   const top = Math.max(0, ...known);
   const bottom = Math.max(0, ...known.map((v) => -v));
@@ -33,7 +33,11 @@ export function MiniBars({ bars, label, highlightLast = true }: MiniBarsProps) {
   const downShare = 100 - upShare;
   return (
     <div className="mini-bars">
-      <div className="mini-bars__plot" role="img" aria-label={label}>
+      <div // NOSONAR: barras desenhadas com elementos; <img> pediria um arquivo, e o role="img" com aria-label é o que as nomeia
+        className="mini-bars__plot"
+        role="img"
+        aria-label={label}
+      >
         {bars.map((bar, index) => {
           const value = bar.value;
           const height = value === null ? 0 : (Math.abs(value) / span) * 100;

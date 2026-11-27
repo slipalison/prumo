@@ -22,7 +22,7 @@ const ARROW = { up: "▲", down: "▼", neutral: "", missing: "" } as const;
  * prejuízo"); a seta e a cor só reforçam. Sem o trimestre comparado, um traço
  * com o motivo.
  */
-export function ChangeTag({ change, line, against }: ChangeTagProps) {
+export function ChangeTag({ change, line, against }: Readonly<ChangeTagProps>) {
   const vs = AGAINST[against];
   const prefix = (
     <>
