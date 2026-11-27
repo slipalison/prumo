@@ -4,9 +4,13 @@ A tela Desempenho responde "estou ganhando do CDI?". Este documento diz como o
 número é calculado, de onde vêm as séries e o que ele ainda não sabe.
 
 A regra pura está em `backend/src/domain/performance.rs` (a cota, os índices,
-os períodos) e `backend/src/domain/retro.rs` (o dia refeito a partir do livro);
-a tarefa diária, a reconstrução e a leitura, em `backend/src/performance.rs`;
-as fontes, em `backend/src/history/` e `backend/src/treasury/history.rs`.
+os períodos, os meses), `backend/src/domain/retro.rs` (o dia refeito a partir
+do livro), `backend/src/domain/net_worth.rs` (patrimônio × aportado),
+`backend/src/domain/class_returns.rs` (por classe) e
+`backend/src/domain/monthly_stats.rs` (melhor e pior mês, contagens); a tarefa
+diária, a reconstrução e a leitura, em `backend/src/performance.rs` e
+`backend/src/performance/classes.rs`; as fontes, em `backend/src/history/` e
+`backend/src/treasury/history.rs`.
 
 ## Método de cotas (TWR)
 
@@ -193,13 +197,15 @@ sem gravar, e marcam o ponto com `partial: true`.
 | Selic | BCB/SGS série 11 | % ao dia | `index_history`, `selic` |
 | IPCA | BCB/SGS série 433 | % no mês, datado no dia 1º | `index_history`, `ipca` |
 | Ibovespa | Yahoo `chart`, `^BVSP` | pontos | `index_history`, `ibov` |
+| IFIX | estatísticas históricas da B3 (`GetPortfolioDay`) | pontos | `index_history`, `ifix` |
 | Ativos e câmbio | Yahoo `chart` diário com `events=split` (`KNRI11.SA`, `AAPL`, `BTC-USD`, `USDBRL=X`) | moeda do símbolo, fechamento real | `price_history` |
 | Título do Tesouro (`TD-IPCA-20350515`) | CSV do Tesouro Transparente, preço de resgate (`PU Venda Manha`) | reais | `price_history` |
 
-Hosts: `api.bcb.gov.br`, `query1.finance.yahoo.com` e
-`www.tesourotransparente.gov.br` (os dois últimos já usados pela cotação).
-Nenhum pede chave nem contato; o cliente HTTP é o do app, que se identifica de
-forma genérica.
+Hosts: `api.bcb.gov.br`, `query1.finance.yahoo.com`,
+`www.tesourotransparente.gov.br` (os dois já usados pela cotação) e
+`sistemaswebb3-listados.b3.com.br` (o do IFIX, já usado pelos setores e
+proventos). Nenhum pede chave nem contato; o cliente HTTP é o do app, que se
+identifica de forma genérica.
 
 **Só o que a carteira usa, só o que falta.** Para cada símbolo com livro, de
 qualquer carteira, o histórico começa no lançamento mais antigo dele **ou** no
@@ -245,6 +251,24 @@ e o cliente trata como lista vazia. Os índices se estendem para trás sozinhos
 quando a série passa a começar mais cedo; o Ibovespa começa, no mínimo, no
 começo da janela longa do risco.
 
+**IFIX, estatísticas da B3** (medido com `curl` em 27/11/2026, com o cliente do
+app): a página pública "Estatísticas históricas" do IFIX no site da B3 lê
+`GET https://sistemaswebb3-listados.b3.com.br/indexStatisticsProxy/IndexCall/GetPortfolioDay/<base64>`,
+com `{"index":"IFIX","language":"pt-br","year":"2025"}` em base64 no caminho —
+sem login, chave, cookie nem CAPTCHA. A resposta (uns 9 KB) é um ano por
+pedido: `results` traz uma linha por dia do mês (`day`, 1 a 31) com
+`rateValue1`…`rateValue12`, o fechamento de cada mês naquele dia em texto
+brasileiro (`"3.117,34"`), `null` sem pregão. Ano antes do índice responde
+`{"min":null,"max":null,"results":null}`; o IFIX começa em 30/12/2010 com
+1.000 pontos, e ano anterior a 2010 nem é pedido. O pregão em andamento não
+aparece (às 14h de 27/11 o último dia era 26/11), e o Ibovespa da mesma
+tabela bate com o fechamento do Yahoo. A sincronia pede um ano de cada vez,
+com meio segundo entre eles: a primeira vez, os anos desde a primeira foto de
+qualquer carteira (uns 8 pedidos para uma carteira de 2019); depois, só o ano
+corrente, uma vez por dia, na tarefa das 19h com os outros índices. Falha da
+B3 só deixa o IFIX de ontem: os outros índices e a série seguem. A B3 é quem
+calcula o índice: é a fonte oficial dele.
+
 **Yahoo `chart`** com `period1`/`period2`, `interval=1d` e `events=split`: a
 data do pregão vem do `timestamp` no fuso da bolsa (`meta.gmtoffset`). O pregão
 em andamento (antes do fim do horário regular,
@@ -260,8 +284,8 @@ o preço do momento.
   entra pela fração de dias corridos, de forma composta
   (`(1 + taxa)^(dias/dias_do_mês)`). Mês ainda não publicado fica de fora, e
   `as_of` diz o último dia coberto.
-- **Ibovespa** (nível): último fechamento em ou antes do fim sobre o último em
-  ou antes da base.
+- **Ibovespa e IFIX** (nível): último fechamento em ou antes do fim sobre o
+  último em ou antes da base.
 - Índice sem dado na janela vem `null` (a linha some do gráfico), nunca zero.
 
 **"x% acima do CDI"** é a diferença composta, `(1 + carteira) / (1 + CDI) − 1`:
@@ -272,13 +296,104 @@ quando o CDI subiu.
 ## Períodos
 
 `month` (desde o fechamento do último dia do mês passado), `ytd` (desde 31/12),
-`12m` (desde a mesma data, 12 meses atrás) e `all` (desde a primeira foto).
+`12m` (desde a mesma data, 12 meses atrás), `2y` e `5y` (a mesma data, 24 e 60
+meses atrás) e `all` (desde a primeira foto).
 Quando a série é mais nova que o período, a janela começa na primeira foto, e
 o cartão de 12 meses diz "a série ainda não tem 12 meses".
 
 A tabela mês × ano mede cada mês do último fechamento do mês anterior (ou da
 primeira foto, no mês em que a série começa) ao último fechamento do mês; o
 ano é a composição dos meses, e ao lado vai o CDI da mesma janela.
+
+## Patrimônio × aportado
+
+A curva do patrimônio contra o **aportado acumulado** (a soma dos fluxos do
+livro desde o primeiro dia: compras com taxas menos vendas, resgates e
+amortizações), e a ponte do período (`domain/net_worth.rs`):
+
+`patrimônio no fim = patrimônio na base + aportes líquidos + mercado`
+
+- **Base**: o fechamento de base do período (o mesmo da rentabilidade). Quando
+  a janela começa na primeira foto (o período "Tudo", ou uma série mais nova
+  que o período), a base é o **zero** de antes do primeiro lançamento: o
+  aportado é o aplicado inteiro e o mercado, o ganho de preço inteiro.
+- **Aportes**: os fluxos depois da base até o fim (negativo = retirou mais do
+  que pôs).
+- **Mercado**: o resto, `fim − base − aportes`: o que o preço fez com o
+  dinheiro, incluindo a diferença entre o preço pago e o fechamento do dia.
+- **Proventos**: o recebido no período. O provento sai da carteira para a
+  pessoa, então **não** está no patrimônio; o que ela reinvestiu entrou como
+  aporte. O resultado do período é mercado + proventos.
+
+A ponte fecha por construção, e duas janelas seguidas somam a janela inteira
+(aportes, mercado e proventos) — conferido com proptest. No caso fictício
+abaixo: desde o começo, aportado R$ 2.281,50, mercado R$ 123,50, proventos
+R$ 10,00; da base de D2 (R$ 2.840,00), aportes −R$ 519,50 (a venda), mercado
++R$ 84,50 e o rendimento de R$ 10,00.
+
+Os atalhos de período são os da tela (Mês, Ano atual, 12 meses, 2 anos, 5 anos,
+Tudo) e valem para todos os painéis.
+
+## Por classe
+
+O peso de cada classe e a rentabilidade dela no período, ao lado do índice da
+classe (`domain/class_returns.rs`, `performance/classes.rs`).
+
+**Método: cada classe é uma carteira só dela.** Os ativos da classe (a classe
+de hoje de cada ativo), com o mesmo livro, os mesmos preços (`price_history`,
+o que as fotos guardaram e, hoje, o preço do momento) e os proventos dos ativos
+dela, são refeitos dia a dia pela mesma regra da carteira (`retro::rebuild`),
+começando do fechamento de base do período com a cota em 1. Por isso:
+
+- **sem viés de aporte**: o aporte na classe compra cotas pelo valor do dia e
+  não mexe na cota; aportar muito num mês bom não infla o retorno;
+- provento é retorno da classe, na data de pagamento, como na carteira;
+- classe que **entrou** no meio do período mede do primeiro dia em que teve
+  dinheiro ("desde 26/07/2025" na tela); a que **zerou** mede até o dia da
+  venda ("até 10/03/2026"), e a cota para ali;
+- classe que não teve dinheiro em nenhum dia do período não aparece.
+
+**Peso**: o patrimônio da classe no fim do período sobre o da carteira (a
+soma das classes). **Índice da classe**, na mesma janela da classe: IFIX para
+FIIs, Ibovespa para Ações Nacionais, CDI para Renda Fixa; as outras classes
+não têm um índice no Prumo e ficam sem (Ações e REITs dos EUA, cripto, renda
+fixa internacional).
+
+Conferido com proptest: com uma classe só, a rentabilidade da classe medida
+do zero na base é a da carteira na mesma janela (a série desde o primeiro
+lançamento); sem aporte nem provento na janela, a rentabilidade da carteira é
+a média das classes pesada pelo patrimônio de cada uma na base. De ponta a
+ponta (`tests/performance.rs`, fictício): 10 KNRI11 a R$ 142 e um CDB de
+R$ 1.000 no dia 1; no dia 2, 5 KNRI11 compradas a R$ 148 com o fechamento a
+R$ 150 e o CDB a R$ 1.010. FIIs: `(2.250 − 740) / 1.420 − 1` = **+6,338%**,
+peso 2.250 / 3.260 = 69,02%; Renda Fixa: **+1%**, peso 30,98%; a carteira,
+**+4,1322%** (2.520 / 2.420); o IFIX falso subiu 1% no mesmo dia.
+
+A série das classes é refeita **na hora da leitura**, sem gravar nada (para
+"Tudo", desde o primeiro lançamento): é a mesma conta da reconstrução, uma vez
+por pedido.
+
+## Ano a ano
+
+A tabela mês × ano (`monthly_cells`): cada mês mede do último fechamento do mês
+anterior ao último do mês (o mês corrente, até hoje); o ano é a composição dos
+meses.
+
+- **Modo Ano**: a rentabilidade de cada mês e a do ano.
+- **Modo Acumulado**: desde a primeira foto até o fim de cada mês (e do
+  ano), `cota no fim do mês / primeira cota − 1`. Mostrado com uma casa (os
+  números são maiores; duas casas não cabem no iPad em pé).
+- **Índices nas mesmas janelas**: para cada mês da carteira, o CDI, o IPCA, o
+  Ibovespa e o IFIX acumulados na janela daquele mês (e desde a primeira foto,
+  no acumulado). Índice sem dado na janela (o IPCA do mês corrente) fica
+  `null`, nunca zero; a tela diz até quando ele saiu.
+- **Melhor e pior mês**: a maior e a menor rentabilidade mensal da série (no
+  empate, o mês mais antigo), contando o mês corrente.
+- **Meses positivos, negativos e no zero**: todo mês cai em uma das três.
+- **Acima do índice**: em quantos meses a carteira rendeu mais que o índice na
+  mesma janela, entre os meses em que o índice tinha dado (empate não conta).
+
+É informação, não nota: nenhum mês é "bom" ou "ruim" fora do número.
 
 ## Conferência passo a passo
 
@@ -348,5 +463,11 @@ de ontem vezes `(P − F + R) / P de ontem`):
 - **Câmbio e cripto** usam o fechamento do dia do Yahoo quando ele já existe;
   às 19h o pregão do câmbio (até 23:59 GMT) ainda não fechou, e hoje vale a
   cotação do momento (o fechamento chega no dia seguinte e refaz o dia).
-- O Yahoo não é fonte oficial (já é a fonte da cotação). IFIX e IVVB11 como
-  índice ficam de fora por ora.
+- O Yahoo não é fonte oficial (já é a fonte da cotação). IVVB11 (S&P 500 em
+  reais) como índice fica de fora por ora; o IFIX vem da B3.
+- **Por classe** usa a classe de hoje de cada ativo: ativo que mudou de classe
+  leva o histórico inteiro para a classe nova. A série das classes é refeita a
+  cada leitura (não fica gravada); numa carteira de muitos anos, "Tudo" é a
+  leitura mais pesada da tela.
+- **IFIX**: se a B3 mudar o formato da página de estatísticas, o índice para de
+  andar (o que já está guardado fica) e o log diz `indice nao baixado`.

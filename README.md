@@ -141,9 +141,12 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   terceiros. Para ligar: crie uma conta gratuita na brapi e guarde a chave em
   `BRAPI_TOKEN`; sem ela, tudo segue com as iniciais. Detalhes, segurança e a
   nota sobre a licença em [`docs/icones.md`](docs/icones.md).
-- **Desempenho** — patrimônio no tempo (aplicado × ganho, e os proventos) e
-  rentabilidade pelo método de cotas, com os proventos como retorno, contra
-  CDI, IPCA e Ibovespa, com a tabela mês a mês. A série começa no primeiro
+- **Desempenho** — patrimônio × aportado (quanto da variação veio de aporte,
+  quanto do mercado, e os proventos) e rentabilidade pelo método de cotas, com
+  os proventos como retorno, contra CDI, IPCA, Ibovespa e IFIX (da B3); o peso
+  e a rentabilidade de cada classe, ao lado do índice dela; e o ano a ano
+  (mês a mês ou acumulado, melhor e pior mês, meses acima do índice), de um mês
+  a cinco anos ou tudo. A série começa no primeiro
   lançamento do livro: importou a B3, o histórico aparece desde a primeira
   negociação, com desdobramentos e o Tesouro Direto. Lançamento antigo editado
   ou apagado refaz a série dali em diante, em segundo plano. Detalhes em

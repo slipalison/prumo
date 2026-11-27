@@ -541,6 +541,16 @@ O que mudou:
   altura; "Mês a mês" embaixo, inteiro. As notas (o ganho é o do preço, hoje é
   parcial, até quando cada índice saiu) viram ⓘ no título de cada gráfico.
 - Meta ≤ 1,0 (antes 1,84).
+- **Onda 3 (frente desempenho):** "Patrimônio × aportado" no lugar de
+  "Patrimônio no tempo" (a ponte do período em `StatStrip inset`), e uma
+  segunda linha `Grid cols="aside-main"` com **Por classe** e **Ano a ano** (o
+  antigo "Mês a mês"). Medido no modo de demonstração (12 meses; Tudo +
+  Acumulado + IFIX; 5 anos + IPCA), temas claro e escuro: 1440×900 1,33–1,47
+  tela, iPad 1024×1366 1,24, celular 390×844 3,28–3,35 (antes 1,02 / 1,01 /
+  1,86: são dois painéis novos). Nenhuma rolagem lateral de página; no desktop
+  e no iPad nenhum bloco rola de lado (o acumulado tem uma casa decimal para a
+  tabela caber em 1024); no celular só a tabela do ano a ano rola por dentro,
+  como a de antes. Nenhum texto passa da borda do painel.
 
 **Ajustes › Proventos automáticos**: os três cartões em `Grid cols={3}`;
 "Como funciona" (seis linhas) recolhido ou no ⓘ. Meta ≤ 1,0, celular −40%.

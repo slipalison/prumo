@@ -541,8 +541,10 @@ Responde "estou ganhando do CDI?". Método e limites em
 [`desempenho.md`](desempenho.md).
 
 - **Layout denso** (`<Page>`, `docs/layout.md` § 7.4): o título é uma linha com
-  o ⓘ da explicação do método, e os chips de período (Mês · No ano · 12 meses ·
-  Desde o início) ficam à direita dele, nas ações do cabeçalho.
+  o ⓘ da explicação do método, e os chips de período (Mês · Ano atual · 12
+  meses · 2 anos · 5 anos · Tudo) ficam à direita dele, nas ações do cabeçalho;
+  no celular, duas linhas de três. O período vale para todos os painéis (menos
+  o ano a ano, que é a série inteira).
 - **Faixa de seis números** (`StatStrip`, uma linha no desktop, duas colunas no
   celular): **Últimos 12 meses** e **Desde o início**, com a rentabilidade
   assinada (`+1,23%`) e, por baixo, "**1,13% acima do CDI** (118% do CDI)"; as
@@ -550,11 +552,31 @@ Responde "estou ganhando do CDI?". Método e limites em
   12 meses" fica escrito no detalhe. Depois **Patrimônio**, **Aplicado**,
   **Ganho** (o ganho é o do preço: no ⓘ) e **Proventos**.
 - **Os dois gráficos lado a lado** (`Grid cols={2}`, uma coluna abaixo de 640
-  px de conteúdo; 196 px de altura, 270 px em monitor largo): **Patrimônio no
-  tempo**, com a área dourada do patrimônio e a linha tracejada neutra do
-  aplicado, e **Rentabilidade contra os índices**. O selo "Hoje é parcial"
-  continua escrito no título do primeiro, e o texto "o ponto de hoje usa o
-  preço do momento" vai no ⓘ do painel.
+  px de conteúdo; 196 px de altura, 270 px em monitor largo): **Patrimônio ×
+  aportado**, com a área dourada do patrimônio e a linha tracejada neutra do
+  aportado acumulado, e **Rentabilidade contra os índices**. O selo "Hoje é
+  parcial" continua escrito no título do primeiro, e o texto "o ponto de hoje
+  usa o preço do momento" vai no ⓘ do painel.
+- **A ponte do período**, em `StatStrip inset` acima do gráfico de patrimônio:
+  **Na base** (o patrimônio no fechamento de base, com a data; some quando o
+  período começa do zero), **Aportes** (ou **Aportado**, desde o começo),
+  **Mercado** (com sinal, alta/baixa) e **Proventos** (o ⓘ diz que saíram da
+  carteira e que o reinvestido está nos aportes). Com o olho fechado, valor e
+  sinal somem.
+- **Por classe e ano a ano** (`Grid cols="aside-main"`, alinhados no topo; uma
+  coluna abaixo de 1000 px, com Por classe primeiro): **Por classe** é uma
+  `DataTable` (classe, peso com barra fina de um tom só, rentabilidade com sinal,
+  índice da classe, patrimônio só na tabela larga); a classe que entrou ou
+  zerou no período diz "desde DD/MM" ou "até DD/MM" sob o nome. Empilhada (painel
+  estreito), cada classe é uma linha de três números com o rótulo em cima.
+  **Ano a ano** substitui o "Mês a mês": segmentado **Ano | Acumulado** e o
+  seletor **Comparar com** (Nenhum, CDI, IPCA, Ibovespa, IFIX; padrão CDI) no
+  cabeçalho, que quebra para baixo do título no celular; uma faixa com **Melhor
+  mês**, **Pior mês**, **Meses positivos** ("20 de 25", os negativos no detalhe)
+  e **Acima do <índice>** ("11 de 25", meses com dado do índice); a tabela com
+  uma linha do índice, menor e mais apagada, sob cada ano. No acumulado, uma
+  casa decimal. Índice publicado só até antes do fim (o IPCA) ganha a nota
+  "IPCA publicado até DD/MM/AAAA" sob a tabela.
 - **Série longa:** a série começa no primeiro lançamento do livro (anos, depois
   de importar a B3). As datas das pontas do eixo e o resumo do leitor de tela
   levam o ano quando a série passa de um ano.
@@ -568,16 +590,18 @@ Responde "estou ganhando do CDI?". Método e limites em
   dia e uma caixa lista o valor de cada linha. Índice sem dado no período
   aparece como "sem dado", nunca como zero; o ⓘ do painel diz até quando cada
   índice foi publicado e quem ainda está sem dado.
-- **Mês a mês:** painel de largura inteira, abaixo dos gráficos, com os anos
-  (o mais novo em cima), os doze meses, o ano e o CDI do ano; no celular rola de
-  lado dentro do painel. É também a alternativa ao gráfico para leitor de tela (o
-  gráfico é `role="img"` com um resumo em texto).
+- **Ano a ano:** os anos (o mais novo em cima), os doze meses e o ano (ou o
+  acumulado); no celular rola de lado dentro do painel, e no iPad em pé e no
+  desktop cabe sem rolar. É também a alternativa ao gráfico para leitor de tela
+  (o gráfico é `role="img"` com um resumo em texto); a linha do índice tem o
+  ano no nome lido ("2026, CDI").
 - **Gráficos:** SVG próprio, linha de 2px que se desenha ao entrar
   (`pathLength` com mola), grade discreta, zero marcado na rentabilidade. Cores
   das linhas, validadas para daltonismo e contraste ≥ 3:1 nos dois temas:
   carteira âmbar (o dourado do dinheiro), CDI azul, IPCA laranja, Ibovespa
-  violeta — e cada índice com o próprio tracejado, para a cor não ser a única
-  pista. Texto nunca usa a cor da série. Alta e baixa levam sinal (+/−) além
+  violeta, IFIX verde-água (`#00a888` escuro, `#008a70` claro; não o verde, que
+  é o da alta) — e cada índice com o próprio tracejado (o IFIX, traço-ponto-ponto),
+  para a cor não ser a única pista. Texto nunca usa a cor da série. Alta e baixa levam sinal (+/−) além
   do verde/vermelho.
 - **Olho fechado:** todo valor em R$ (os números da faixa, o eixo e a
   régua do gráfico de patrimônio e o resumo para o leitor de tela) sai por

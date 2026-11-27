@@ -1079,8 +1079,8 @@ depois do fechamento e, antes dela, o ponto de hoje é calculado na hora e vem
 com `partial: true`. Método em [`desempenho.md`](desempenho.md).
 
 `period`: `month` (desde o fim do mês passado), `ytd` (desde 31/12), `12m`
-(padrão) ou `all`. Outro valor é `422`. Os pontos começam no fechamento de
-base do período (o último em ou antes do começo dele).
+(padrão), `2y`, `5y` ou `all`. Outro valor é `422`. Os pontos começam no
+fechamento de base do período (o último em ou antes do começo dele).
 
 ```json
 {
@@ -1090,7 +1090,12 @@ base do período (o último em ou antes do começo dele).
   "points": [
     { "date": "2026-11-23", "market_value": 1000.0, "invested": 1000.0, "gain": 0.0, "income": 0.0, "partial": false },
     { "date": "2026-11-25", "market_value": 1490.0, "invested": 1500.0, "gain": -10.0, "income": 12.5, "partial": true }
-  ]
+  ],
+  "summary": {
+    "from": null, "to": "2026-11-25",
+    "start_value": 0.0, "contributions": 1500.0, "market": -10.0, "income": 12.5, "end_value": 1490.0,
+    "invested": 1500.0, "gain": -10.0, "income_total": 12.5
+  }
 }
 ```
 
@@ -1105,15 +1110,23 @@ base do período (o último em ou antes do começo dele).
   `gain = market_value - invested`, o ganho de preço.
 - `income`: proventos líquidos recebidos (pela data de pagamento) desde
   `starts_on`. Não estão em `gain`; estão na rentabilidade.
+- `summary` (patrimônio × aportado; `null` sem série): de onde veio a variação
+  do patrimônio no período, `end_value = start_value + contributions + market`.
+  `from` é o fechamento de base; `null` quando a janela começa do zero (o
+  período `all`, ou uma série mais nova que o período), e aí `start_value` é 0.
+  `contributions`: aportes menos retiradas depois da base; `market`: o que o
+  preço fez; `income`: proventos recebidos no período (fora do patrimônio).
+  `invested`, `gain` e `income_total` são desde `starts_on`. Método em
+  [desempenho.md](desempenho.md#patrimônio--aportado).
 
-### `GET /api/v1/performance?period=12m&benchmarks=cdi,ipca,ibov`
+### `GET /api/v1/performance?period=12m&benchmarks=cdi,ipca,ibov,ifix`
 
 Rentabilidade pelo método de cotas (TWR) contra os índices, os cartões de 12
-meses e desde o início, e a tabela mês × ano. Percentuais de 0 a 100, com 4
-casas.
+meses e desde o início, a tabela mês × ano (ano a ano) e o resumo dos meses.
+Percentuais de 0 a 100, com 4 casas.
 
-`period` como acima. `benchmarks`: lista de `cdi`, `selic`, `ipca`, `ibov`
-(padrão `cdi,ipca,ibov`; índice desconhecido é `422`).
+`period` como acima. `benchmarks`: lista de `cdi`, `selic`, `ipca`, `ibov`,
+`ifix` (padrão `cdi,ipca,ibov,ifix`; índice desconhecido é `422`).
 
 ```json
 {
@@ -1140,8 +1153,24 @@ casas.
   },
   "years": [
     { "year": 2026, "months": [null, null, null, null, null, null, null, null, null, null, 1.2345, null],
-      "return_percent": 1.2345, "cdi_percent": 0.1016 }
-  ]
+      "return_percent": 1.2345, "cdi_percent": 0.1016,
+      "accumulated": [null, null, null, null, null, null, null, null, null, null, 1.2345, null],
+      "accumulated_percent": 1.2345,
+      "benchmarks": {
+        "cdi": { "months": ["…12 valores…"], "accumulated": ["…12 valores…"],
+                 "return_percent": 0.1016, "accumulated_percent": 0.1016, "as_of": "2026-11-25" },
+        "ipca": { "months": ["…"], "accumulated": ["…"], "return_percent": null, "accumulated_percent": null, "as_of": null }
+      } }
+  ],
+  "months_summary": {
+    "best": { "year": 2026, "month": 11, "return_percent": 1.2345 },
+    "worst": { "year": 2026, "month": 11, "return_percent": 1.2345 },
+    "positive": 1, "negative": 0, "flat": 0,
+    "versus": [
+      { "code": "cdi", "label": "CDI", "above": 1, "compared": 1 },
+      { "code": "ipca", "label": "IPCA", "above": 0, "compared": 0 }
+    ]
+  }
 }
 ```
 
@@ -1158,7 +1187,56 @@ casas.
 - `excess_over_cdi`: quanto a carteira rendeu acima (+) ou abaixo (−) do CDI,
   de forma composta, `(1 + r) / (1 + cdi) - 1`. `percent_of_cdi`: `r / cdi`
   em % (só com CDI positivo). `full_window`: a série cobre o período inteiro.
-- `years[].months`: janeiro a dezembro; `null` onde não há série.
+- `years[].months`: janeiro a dezembro; `null` onde não há série. Cada mês
+  mede do último fechamento do mês anterior ao último do mês (o corrente, até
+  hoje).
+- `years[].accumulated` e `accumulated_percent`: desde a primeira foto até o
+  fim de cada mês e do ano (modo "Acumulado" da tela).
+- `years[].benchmarks`: cada índice pedido nas **mesmas janelas** da carteira:
+  `months` (cada mês), `accumulated` (desde a primeira foto até o fim de cada
+  mês), `return_percent` (o ano), `accumulated_percent` (até o fim do ano) e
+  `as_of` (último dia coberto no ano). `null` onde o índice não tem dado.
+- `months_summary`: melhor e pior mês da série (`month` de 1 a 12; no empate,
+  o mais antigo; `null` sem mês medido), quantos meses ficaram positivos,
+  negativos e no zero, e, para cada índice pedido, em quantos meses a carteira
+  rendeu mais que ele (`above`) entre os que tinham dado do índice
+  (`compared`). Método em [desempenho.md](desempenho.md#ano-a-ano).
+
+### `GET /api/v1/performance/classes?period=12m`
+
+Desempenho por classe: o peso de cada classe no patrimônio do fim do período e
+a rentabilidade dela pelo método de cotas (cada classe como uma carteira só
+dela, sem viés de aporte), ao lado do índice da classe na mesma janela. A
+janela é a da rentabilidade da carteira no mesmo `period` (os mesmos valores
+de `GET /performance`); a série das classes é refeita na leitura, sem gravar.
+
+```json
+{
+  "period": "12m",
+  "rebuilding_since": null,
+  "window": { "from": "2025-11-27", "to": "2026-11-27" },
+  "classes": [
+    { "asset_class": "br_reits", "market_value": 2250.0, "weight_percent": 69.0184,
+      "return_percent": 6.338, "from": "2025-11-27", "to": "2026-11-27", "full_window": true,
+      "benchmark": { "code": "ifix", "label": "IFIX", "return_percent": 1.0, "as_of": "2026-11-26" } },
+    { "asset_class": "crypto", "market_value": 0.0, "weight_percent": 0.0,
+      "return_percent": -3.1, "from": "2025-11-27", "to": "2026-03-10", "full_window": false,
+      "benchmark": null }
+  ]
+}
+```
+
+- Só as classes que tiveram patrimônio em algum dia do período, na ordem das
+  classes (`asset_class` como em [Classes de ativo](#classes-de-ativo)).
+  `window: null` e `classes: []` sem série.
+- `from`/`to`: a janela da classe — a base do período, ou o dia em que a classe
+  recebeu o primeiro dinheiro; o fim do período, ou o dia em que a classe zerou
+  (`market_value` 0). `full_window`: a classe mede o período inteiro.
+- `weight_percent`: patrimônio da classe no fim ÷ patrimônio da carteira.
+- `benchmark`: IFIX para `br_reits`, Ibovespa para `br_stocks`, CDI para
+  `fixed_income`; `null` nas outras classes. `return_percent: null` quando o
+  índice não tem dado na janela.
+- `period` inválido é `422`. Método em [desempenho.md](desempenho.md#por-classe).
 
 ### `GET /api/v1/risk?window=12m`
 
