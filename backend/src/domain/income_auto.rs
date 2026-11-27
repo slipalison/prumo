@@ -274,10 +274,17 @@ fn year_end_closed(day: Date) -> bool {
     )
 }
 
+/// Se a B3 tem pregão no dia ([`is_trading_day`]: sem pregão em feriado
+/// nacional, Carnaval, Corpus Christi, 24/12 e 31/12). Fora do calendário
+/// conhecido, pulam o sábado, o domingo e os feriados fixos do fim de ano.
+fn trading_session(day: Date) -> bool {
+    is_trading_day(day).unwrap_or_else(|_| {
+        !matches!(day.weekday(), Weekday::Saturday | Weekday::Sunday) && !year_end_closed(day)
+    })
+}
+
 /// A data ex: o primeiro **pregão** da B3 depois da data com
-/// ([`is_trading_day`]: sem pregão em feriado nacional, Carnaval, Corpus
-/// Christi, 24/12 e 31/12). Fora do calendário conhecido, pulam o sábado, o
-/// domingo e os feriados fixos do fim de ano.
+/// ([`trading_session`]).
 pub fn ex_date_after(record_date: Date) -> Date {
     let mut day = record_date;
     for _ in 0..10 {
@@ -285,10 +292,25 @@ pub fn ex_date_after(record_date: Date) -> Date {
             return day;
         };
         day = next;
-        let open = is_trading_day(day).unwrap_or_else(|_| {
-            !matches!(day.weekday(), Weekday::Saturday | Weekday::Sunday) && !year_end_closed(day)
-        });
-        if open {
+        if trading_session(day) {
+            return day;
+        }
+    }
+    day
+}
+
+/// A data com de uma data ex: o último **pregão** antes dela, o inverso de
+/// [`ex_date_after`] (a data com é sempre um pregão: é o último dia de comprar
+/// com direito). O dia anterior de calendário erraria o mês da data com de
+/// sexta 30/01 com data ex na segunda 02/02.
+pub fn record_date_before(ex_date: Date) -> Date {
+    let mut day = ex_date;
+    for _ in 0..10 {
+        let Some(previous) = day.previous_day() else {
+            return day;
+        };
+        day = previous;
+        if trading_session(day) {
             return day;
         }
     }

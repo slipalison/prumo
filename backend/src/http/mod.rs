@@ -14,6 +14,7 @@ pub(crate) mod health;
 mod icons;
 mod income;
 mod income_auto;
+mod income_history;
 mod ledger;
 mod live;
 mod objectives;
@@ -328,6 +329,8 @@ pub fn public_router(state: AppState, static_dir: &str) -> Router {
         .route("/income/entitlement", get(income::entitlement))
         .route("/income/yield-on-cost", get(yoc::show))
         .route("/income/projection", get(projection::income_projection))
+        .route("/income/history", get(income_history::show_history))
+        .route("/income/heatmap", get(income_history::show_heatmap))
         .route("/income/auto", get(income_auto::get).put(income_auto::save))
         .route("/cash", get(cash::show))
         .route("/fundamentals", get(fundamentals::list))

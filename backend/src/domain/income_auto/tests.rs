@@ -320,6 +320,47 @@ fn ex_date_is_the_next_trading_session() {
 }
 
 #[test]
+fn record_date_is_the_previous_trading_session() {
+    // Segunda → sexta: a data com de 30/01/2026 fica em janeiro.
+    assert_eq!(
+        record_date_before(date!(2026 - 02 - 02)),
+        date!(2026 - 01 - 30)
+    );
+    // Depois do Carnaval de 2026 (16 e 17/02) → sexta 13/02.
+    assert_eq!(
+        record_date_before(date!(2026 - 02 - 18)),
+        date!(2026 - 02 - 13)
+    );
+    // Primeiro pregão de 2026 → 30/12/2025 (31/12 sem pregão).
+    assert_eq!(
+        record_date_before(date!(2026 - 01 - 02)),
+        date!(2025 - 12 - 30)
+    );
+    // Fora do calendário: só o fim de semana e o fim de ano.
+    assert_eq!(
+        record_date_before(date!(2031 - 01 - 06)),
+        date!(2031 - 01 - 03)
+    );
+}
+
+proptest! {
+    /// Toda data com (um pregão) volta dela mesma: a data ex dela, e a data
+    /// com dessa data ex.
+    #[test]
+    fn record_date_undoes_the_ex_date(offset in 0i64..3650) {
+        let day = date!(2024 - 01 - 01).saturating_add(Duration::days(offset));
+        let record = record_date_before(ex_date_after(day));
+        prop_assert!(record >= day.saturating_sub(Duration::days(10)));
+        if trading_session(day) {
+            prop_assert_eq!(record, day);
+        } else {
+            // Dia sem pregão: a data com é o pregão anterior a ele.
+            prop_assert_eq!(record, record_date_before(day));
+        }
+    }
+}
+
+#[test]
 fn external_ref_is_stable_and_readable() {
     let a = announcement(
         "BRITSAACNPR7",

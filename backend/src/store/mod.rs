@@ -46,6 +46,7 @@ pub use cash::{CashReport, RECENT_SHOWN};
 
 mod income;
 mod income_auto;
+mod income_history;
 mod objectives;
 mod projection;
 

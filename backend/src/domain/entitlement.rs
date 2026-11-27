@@ -43,8 +43,10 @@ pub fn record_date(ex_date: Option<Date>, pay_date: Date, today: Date) -> Date {
     }
 }
 
-/// O livro com o saldo inicial no começo dos tempos.
-fn normalized(entries: &[Entry]) -> Vec<Entry> {
+/// O livro com o saldo inicial no começo dos tempos: a posição que a pessoa
+/// já tinha no cadastro vale para trás (a quantidade na data com, o custo do
+/// mapa de calor da Renda).
+pub fn normalized(entries: &[Entry]) -> Vec<Entry> {
     entries
         .iter()
         .map(|e| {
