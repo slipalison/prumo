@@ -20,7 +20,7 @@ type AssetPickerProps = {
  * a busca de ticker (a mesma do cadastro) e os da carteira ao alcance de um
  * toque. Até cinco; a lista fica no endereço.
  */
-export function AssetPicker({ keys, portfolio, names, onChange }: AssetPickerProps) {
+export function AssetPicker({ keys, portfolio, names, onChange }: Readonly<AssetPickerProps>) {
   const [text, setText] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const full = keys.length >= MAX_ASSETS;
@@ -71,10 +71,10 @@ export function AssetPicker({ keys, portfolio, names, onChange }: AssetPickerPro
         })}
         {keys.length === 0 && <li className="field__hint">Nenhum ativo ainda.</li>}
       </ul>
-      <p className="field__hint" role="status">
+      <output className="field__hint compare-picker__count">
         {keys.length} de {MAX_ASSETS} {plural(keys.length, ["ativo", "ativos"])}
         {notice && <span className="compare-picker__notice"> · {notice}</span>}
-      </p>
+      </output>
       <div className="compare-picker__search">
         <SymbolCombobox
           id="compare-search"

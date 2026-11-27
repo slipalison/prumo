@@ -47,7 +47,7 @@ function lineOf(curve: CompareCurve, assetIndex: number): { color: string; dash?
   return OTHER_LINES[curve.key] ?? { color: "var(--text-muted)" };
 }
 
-function Swatch({ color, dash }: { color: string; dash?: string | undefined }) {
+function Swatch({ color, dash }: Readonly<{ color: string; dash?: string }>) {
   return (
     <svg className="legend__swatch" width="26" height="10" viewBox="0 0 26 10" aria-hidden="true">
       <line x1="1" x2="25" y1="5" y2="5" stroke={color} strokeWidth="2.5" strokeDasharray={dash} strokeLinecap="round" />
@@ -64,7 +64,7 @@ type ReturnsPanelProps = { keys: readonly string[] };
  * Ativos, a própria carteira e os índices; com ou sem proventos; com o início
  * igualado (desde a data em que todos existem) ou cada um do seu começo.
  */
-export function ReturnsPanel({ keys }: ReturnsPanelProps) {
+export function ReturnsPanel({ keys }: Readonly<ReturnsPanelProps>) {
   const [chosen, setChosen] = useState<Chosen>({
     period: "12m",
     totalReturn: false,
@@ -95,7 +95,7 @@ export function ReturnsPanel({ keys }: ReturnsPanelProps) {
       infoLabel="Como ler a rentabilidade comparada"
     >
       <div className="compare-controls">
-        <div className="chips" role="group" aria-label="Período">
+        <fieldset className="chips" aria-label="Período">
           {PERIODS.map((p) => (
             <button
               key={p.id}
@@ -107,7 +107,7 @@ export function ReturnsPanel({ keys }: ReturnsPanelProps) {
               {p.label}
             </button>
           ))}
-        </div>
+        </fieldset>
         <div className="compare-controls__row">
           <label className="switch-row compare-switch">
             <span className="switch-row__label">Com proventos</span>
@@ -129,7 +129,7 @@ export function ReturnsPanel({ keys }: ReturnsPanelProps) {
               onChange={(event) => set({ alignStart: event.target.checked })}
             />
           </label>
-          <div className="chips" role="group" aria-label="Comparar também com">
+          <fieldset className="chips" aria-label="Comparar também com">
             <button
               type="button"
               className={cx("chip", chosen.portfolio && "is-active")}
@@ -149,7 +149,7 @@ export function ReturnsPanel({ keys }: ReturnsPanelProps) {
                 {index.label}
               </button>
             ))}
-          </div>
+          </fieldset>
         </div>
       </div>
 
@@ -167,7 +167,7 @@ export function ReturnsPanel({ keys }: ReturnsPanelProps) {
   );
 }
 
-function Curves({ data, refreshing }: { data: CompareReturns; refreshing: boolean }) {
+function Curves({ data, refreshing }: Readonly<{ data: CompareReturns; refreshing: boolean }>) {
   const withYear = spansYears(data.from, data.to);
   let assetIndex = -1;
   const lines = data.series.map((curve) => {

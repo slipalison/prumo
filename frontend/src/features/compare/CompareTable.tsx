@@ -55,7 +55,7 @@ const NOT_APPLICABLE: ReadonlySet<CompareReason> = new Set(["not_applicable", "f
  * se aplica diz "não se aplica" escrito (a mesma regra da folha do ativo e dos
  * resultados), e fica fora do destaque, que só olha número.
  */
-function Missing({ reason }: { reason: CompareReason | null }) {
+function Missing({ reason }: Readonly<{ reason: CompareReason | null }>) {
   const text = reason ? REASON_TEXT[reason] : "Sem número.";
   if (reason && NOT_APPLICABLE.has(reason)) {
     return (
@@ -77,7 +77,7 @@ function Missing({ reason }: { reason: CompareReason | null }) {
   );
 }
 
-function Cell({ row, cell, asset, money }: { row: CompareRow; cell: CompareCell; asset: CompareAsset; money: Money }) {
+function Cell({ row, cell, asset, money }: Readonly<{ row: CompareRow; cell: CompareCell; asset: CompareAsset; money: Money }>) {
   if (cell.text !== null) return <span>{cell.text}</span>;
   if (cell.value === null) return <Missing reason={cell.reason} />;
   const text = formatValue(row, cell.value, asset, money);
@@ -153,7 +153,7 @@ type CompareTableProps = {
   onRetry: () => void;
 };
 
-function NotApplicableNotes({ notes }: { notes: Array<{ symbol: string; text: string }> }) {
+function NotApplicableNotes({ notes }: Readonly<{ notes: Array<{ symbol: string; text: string }> }>) {
   if (notes.length === 0) return null;
   return (
     <ul className="compare-table__notes">
@@ -171,7 +171,7 @@ function NotApplicableNotes({ notes }: { notes: Array<{ symbol: string; text: st
  * blocos (em comum, empresas, fundos) que só aparecem se algum ativo os tem.
  * O destaque é o maior ou o menor valor da linha, entre ativos do mesmo tipo.
  */
-export function CompareTable({ table, pending, error, onRetry }: CompareTableProps) {
+export function CompareTable({ table, pending, error, onRetry }: Readonly<CompareTableProps>) {
   const money = useMoney();
   if (error && !table) {
     return (
