@@ -938,6 +938,13 @@ percentual e fica.
 Dentro de Carteira (ou do Aportar): lista dos aportes registrados com data,
 valor e itens.
 
+## Painel da Carteira
+
+Faixa do mês, composição e "Hoje na carteira" (`docs/painel.md`). Seta, sinal e
+palavra ("acima"/"abaixo"/"alta"/"baixa") andam juntos; a cor só reforça. Os
+rótulos do Sankey mostram só percentual; reais ficam na tabela e na faixa, todos
+por `useMoney`. No celular o diagrama dá lugar às barras empilhadas.
+
 ## Ocultar valores
 
 O **olho** (botão de alternância com `aria-pressed`, na barra de navegação,

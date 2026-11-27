@@ -16,6 +16,7 @@ mod ledger;
 mod live;
 mod objectives;
 mod ops;
+mod panel;
 mod performance;
 mod price_references;
 mod profit;
@@ -270,6 +271,8 @@ pub fn public_router(state: AppState, static_dir: &str) -> Router {
         .route("/me", get(handlers::me))
         .route("/portfolio", get(handlers::portfolio))
         .route("/portfolio/stream", get(live::portfolio_stream))
+        .route("/portfolio/month", get(panel::month))
+        .route("/portfolio/day-reference", get(panel::day_reference))
         .route("/goals", put(handlers::set_goals))
         .route("/assets", post(handlers::create_asset))
         .route(

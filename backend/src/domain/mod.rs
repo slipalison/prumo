@@ -16,6 +16,7 @@ pub mod income;
 pub mod income_auto;
 pub mod ledger;
 pub mod objectives;
+pub mod panel;
 pub mod performance;
 pub mod profit;
 pub mod retro;

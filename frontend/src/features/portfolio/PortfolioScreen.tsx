@@ -32,6 +32,8 @@ import { AddAssetSheet } from "./AddAssetSheet";
 import { ContributionHistory } from "./ContributionHistory";
 import { useNarrow } from "./useNarrow";
 import { EditAssetSheet } from "./EditAssetSheet";
+import { PanelDetails } from "./PanelDetails";
+import { PanelStrip } from "./PanelStrip";
 import { ProfitSummary } from "./ProfitSummary";
 import { SectorBreakdown } from "./SectorBreakdown";
 
@@ -89,6 +91,8 @@ export function PortfolioScreen({ portfolio }: PortfolioScreenProps) {
           </MagneticButton>
         }
       />
+
+      <PanelStrip portfolio={portfolio} />
 
       <div className="portfolio__strip">
         <GlassCard as="section" className="stat-card stat-card--hero" aria-label="Patrimônio">
@@ -165,6 +169,8 @@ export function PortfolioScreen({ portfolio }: PortfolioScreenProps) {
           <ContributionHistory />
         </div>
       </Grid>
+
+      <PanelDetails portfolio={portfolio} />
 
       <AddAssetSheet
         open={adding.open}

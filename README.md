@@ -67,6 +67,9 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   aportou. O campo do aporte oferece "+ R$ X em caixa — incluir?", com um detalhe
   de onde o saldo veio; registrar o aporte baixa o que foi usado, e o resto é
   dinheiro de fora. O motor não muda, só o valor que você digita.
+- **Painel da Carteira** — faixa do mês (patrimônio, rentabilidade, proventos e
+  aporte contra o mês anterior), composição em diagrama de Sankey (ou barras no
+  celular) e as maiores altas e baixas do dia por classe (`docs/painel.md`).
 - **Lucro total** — na Carteira: ganho de capital (realizado + não realizado)
   mais os proventos recebidos. O que falta saber (preço médio, cotação) deixa o
   número marcado como parcial, sem estimativa.

@@ -20,6 +20,7 @@ import { iconsHandlers } from "./iconsHandlers";
 import { defaultIncomeAutoHandlers } from "./incomeAutoHandlers";
 import { incomeHandlers } from "./incomeHandlers";
 import { objectivesHandlers } from "./objectivesHandlers";
+import { panelHandlers } from "./panelHandlers";
 import { taxHandlers } from "./taxHandlers";
 import {
   defaultAssets,
@@ -433,5 +434,6 @@ export const allHandlers: HttpHandler[] = [
   ...incomeHandlers,
   ...defaultIncomeAutoHandlers,
   ...objectivesHandlers,
+  ...panelHandlers,
   ...taxHandlers,
 ];

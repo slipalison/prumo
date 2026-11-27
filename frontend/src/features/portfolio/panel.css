@@ -1,0 +1,272 @@
+/*
+ * Painel da Carteira: faixa de indicadores do mês, composição (Sankey e
+ * barras) e "Hoje na carteira". Cor nunca é a única pista: seta, sinal e
+ * palavra andam juntos (docs/design.md).
+ */
+
+/* ================= Setas e variações ================= */
+
+.panel-figure {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.delta-arrow {
+  flex: none;
+}
+
+.delta-arrow--above {
+  color: var(--success);
+}
+
+.delta-arrow--below {
+  color: var(--danger);
+}
+
+.delta-arrow--equal {
+  color: var(--text-subtle);
+}
+
+.day-change {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.day-change--above {
+  color: var(--success);
+}
+
+.day-change--below {
+  color: var(--danger);
+}
+
+.day-change--equal {
+  color: var(--text-muted);
+}
+
+/* ================= Composição ================= */
+
+.composition__controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.composition .chip {
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+.sankey {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 440px;
+}
+
+.sankey__link {
+  fill-opacity: 0.26;
+  transition: fill-opacity var(--dur-fast);
+}
+
+.sankey__link:hover {
+  fill-opacity: 0.4;
+}
+
+.sankey__node {
+  fill-opacity: 0.92;
+}
+
+.sankey__heading {
+  fill: var(--text-subtle);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sankey__label {
+  fill: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  /* O halo do fundo mantém o texto legível por cima das faixas. */
+  paint-order: stroke;
+  stroke: var(--surface-strong);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+.sankey__percent {
+  fill: var(--text-muted);
+  font-weight: 500;
+}
+
+.composition-item--2 {
+  padding-left: var(--space-3);
+}
+
+.composition-item--3 {
+  padding-left: var(--space-5);
+}
+
+.stacked-bars {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stacked-bars__class {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.stacked-bars__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+}
+
+.stacked-bars__name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 600;
+}
+
+.stacked-bars__share {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.stacked-bars__bar {
+  display: flex;
+  height: 14px;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: var(--surface-sunken);
+  gap: 2px;
+}
+
+.stacked-bars__slice {
+  min-width: 2px;
+  height: 100%;
+}
+
+/* ================= Hoje na carteira ================= */
+
+.today__classes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.today__class {
+  display: flex;
+  width: 100%;
+  min-height: var(--touch);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+  color: var(--text);
+  text-align: left;
+}
+
+.today__class:hover {
+  border-color: var(--border-strong);
+}
+
+.today__class.is-active {
+  border-color: color-mix(in srgb, var(--class-color) 70%, transparent);
+  background: color-mix(in srgb, var(--class-color) 14%, transparent);
+}
+
+.today__class-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 600;
+}
+
+.today__class-numbers {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.today__class-money {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.today__movers {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.movers__title {
+  margin: 0 0 var(--space-1);
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.movers__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.movers__item {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.movers__item:last-child {
+  border-bottom: 0;
+}
+
+.movers__name {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+/* Faixa do mês: o número nunca quebra no meio (no celular, a fonte encolhe). */
+.panel-strip .stat__value {
+  overflow-wrap: normal;
+  white-space: nowrap;
+  font-size: clamp(1.05rem, 4.6vw, 1.3rem);
+}

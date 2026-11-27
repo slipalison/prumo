@@ -654,6 +654,36 @@ o resultado por lá.
 { "refreshed": 8, "failed": ["XYZW11"] }
 ```
 
+## Painel da Carteira
+
+Método em `docs/painel.md`.
+
+### `GET /api/v1/portfolio/month`
+
+```json
+{
+  "as_of": "2026-11-25",
+  "month_starts_on": "2026-11-01",
+  "previous_month_end": { "date": "2026-10-30", "value": 112000.0 },
+  "current_return": { "from": "2026-10-30", "to": "2026-11-25", "return_percent": 1.84, "full_window": true },
+  "previous_return": { "from": "2026-09-30", "to": "2026-10-30", "return_percent": 2.31, "full_window": true },
+  "current": { "income": 410.25, "contribution": 1500.0 },
+  "previous": { "income": 380.0, "contribution": 1200.0 }
+}
+```
+
+`as_of` é `null` sem série (os demais vêm nulos ou zerados). `previous_month_end`
+e `previous_return` são `null` quando a série começou depois. `income` é líquido;
+`contribution`, aportes menos retiradas.
+
+### `GET /api/v1/portfolio/day-reference`
+
+```json
+{ "assets": [{ "asset_id": "uuid", "previous_close": 140.0, "date": "2026-11-24" }] }
+```
+
+Só ativos cotados com fechamento anterior conhecido (reais por unidade).
+
 ## Saúde da carteira
 
 > A Saúde virou a [Análise da carteira](#análise-da-carteira), com mais regras e

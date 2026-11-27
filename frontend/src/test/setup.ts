@@ -6,6 +6,7 @@ import { resetAnalysis } from "./analysisHandlers";
 import { FakeEventSource } from "./eventSource";
 import { resetFundamentals } from "./fundamentalsHandlers";
 import { resetIcons } from "./iconsHandlers";
+import { resetPanel } from "./panelHandlers";
 import { resetDb, server } from "./server";
 import { resetTaxDb } from "./taxHandlers";
 
@@ -27,6 +28,7 @@ afterEach(() => {
   server.resetHandlers();
   resetDb();
   resetIcons();
+  resetPanel();
   resetAnalysis();
   resetFundamentals();
   resetTaxDb();

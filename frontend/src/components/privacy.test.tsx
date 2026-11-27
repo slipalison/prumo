@@ -269,7 +269,8 @@ describe("Ocultar valores", () => {
 
     // Mostrando de novo, o valor novo aparece (o stream seguiu rodando).
     await user.click(eye());
-    expect(await screen.findByText(/R\$\s1\.500,00/)).toBeInTheDocument();
+    // O valor também está na tabela da Composição: basta aparecer.
+    expect((await screen.findAllByText(/R\$\s1\.500,00/)).length).toBeGreaterThan(0);
   });
 
   it("título do Tesouro: o nome segue visível; quantidade, preço e valor ficam mascarados em toda tela", async () => {
