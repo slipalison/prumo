@@ -321,16 +321,19 @@ mod tests {
         let rows = [
             UnitPayment {
                 ex_date: date!(2026 - 09 - 02),
+                pay_date: None,
                 gross: dec!(0.10),
                 net: dec!(0.0825),
             },
             UnitPayment {
                 ex_date: date!(2026 - 09 - 02),
+                pay_date: None,
                 gross: dec!(0.03),
                 net: dec!(0.03),
             },
             UnitPayment {
                 ex_date: date!(2026 - 06 - 02),
+                pay_date: None,
                 gross: dec!(0.14),
                 net: dec!(0.14),
             },

@@ -104,6 +104,9 @@ egress:
   # dados abertos da CVM
   - host: dados.cvm.gov.br
     port: 443
+  # agenda: comunicados e fatos relevantes dos FIIs (Fundos.NET da B3)
+  - host: fnet.bmfbovespa.com.br
+    port: 443
   # alertas: Bot API do Telegram (polling e envio do resumo diario)
   - host: api.telegram.org
     port: 443
