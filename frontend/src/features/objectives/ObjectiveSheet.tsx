@@ -61,7 +61,7 @@ type ObjectiveSheetProps = {
  * premissa começa no padrão (a folha diz qual e de onde vem) e quem quiser
  * trocar digita a sua. Campo vazio volta ao padrão.
  */
-export function ObjectiveSheet({ open, onClose, objective, defaults, hasIncomeGoal }: ObjectiveSheetProps) {
+export function ObjectiveSheet({ open, onClose, objective, defaults, hasIncomeGoal }: Readonly<ObjectiveSheetProps>) {
   const ids = {
     kind: useId(),
     class: useId(),
@@ -251,7 +251,7 @@ export function ObjectiveSheet({ open, onClose, objective, defaults, hasIncomeGo
           <legend className="field__label">Aporte por mês, em reais de hoje</legend>
           <div className="switch-row">
             <label htmlFor={ids.ownContribution} className="switch-row__label">
-              Informar o meu aporte
+              Informar o meu aporte{" "}
               <span className="field__hint">
                 {ownContribution
                   ? "A conta usa o valor abaixo, corrigido pela inflação a cada mês."
@@ -276,7 +276,7 @@ export function ObjectiveSheet({ open, onClose, objective, defaults, hasIncomeGo
           <legend className="field__label">Proventos</legend>
           <div className="switch-row">
             <label htmlFor={ids.reinvest} className="switch-row__label">
-              Retirar os proventos todo mês
+              Retirar os proventos todo mês{" "}
               <span className="field__hint">
                 {keepIncome
                   ? "Os proventos saem da carteira: o valor anda só pelo preço e a renda só cresce com o aporte."

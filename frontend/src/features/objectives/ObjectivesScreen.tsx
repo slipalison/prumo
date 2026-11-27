@@ -76,7 +76,7 @@ export function ObjectivesScreen() {
   );
 }
 
-function Loaded({ data, onEdit }: { data: ObjectivesResponse; onEdit: (objective: Objective) => void }) {
+function Loaded({ data, onEdit }: Readonly<{ data: ObjectivesResponse; onEdit: (objective: Objective) => void }>) {
   const active = data.objectives.filter((o) => o.status === "active");
   const achieved = data.objectives.filter((o) => o.status === "achieved");
 
@@ -125,7 +125,7 @@ function Loaded({ data, onEdit }: { data: ObjectivesResponse; onEdit: (objective
 
 type CardProps = { objective: Objective; defaults: ObjectivesDefaults; onEdit: (objective: Objective) => void };
 
-function ObjectiveCard({ objective, defaults, onEdit }: CardProps) {
+function ObjectiveCard({ objective, defaults, onEdit }: Readonly<CardProps>) {
   const money = useMoney();
   const toast = useToast();
   const remove = useDeleteObjective();
@@ -176,7 +176,7 @@ function ObjectiveCard({ objective, defaults, onEdit }: CardProps) {
           </div>
         </header>
 
-        <div
+        <div // NOSONAR: o preenchimento é um degradê com brilho que cresce com mola (Motion); <progress> não aceita filho visível nem tem estilo comum entre navegadores.
           className="objective-progress"
           role="progressbar"
           aria-label={`Progresso: ${name}`}
@@ -198,16 +198,16 @@ function ObjectiveCard({ objective, defaults, onEdit }: CardProps) {
         </p>
 
         {achieved ? (
-          <p className="objective-card__done" role="status">
+          <output className="objective-card__done">
             <IconCheck width={18} height={18} /> Concluído
             {objective.achieved_at ? ` em ${formatDay(objective.achieved_at)}` : ""}.
-          </p>
+          </output>
         ) : (
           <Projection objective={objective} defaults={defaults} basis={basis} onBasis={setBasis} />
         )}
 
         {asking && (
-          <div className="income-confirm" role="group" aria-label={`Confirmar remoção: ${name}`}>
+          <fieldset className="income-confirm" aria-label={`Confirmar remoção: ${name}`}>
             <span>Remover este objetivo?</span>
             <MagneticButton variant="danger" magnetic={false} loading={remove.isPending} onClick={confirmRemove}>
               Remover
@@ -215,7 +215,7 @@ function ObjectiveCard({ objective, defaults, onEdit }: CardProps) {
             <MagneticButton variant="ghost" magnetic={false} onClick={() => setAsking(false)}>
               Manter
             </MagneticButton>
-          </div>
+          </fieldset>
         )}
       </GlassCard>
     </li>
@@ -230,7 +230,7 @@ type ProjectionProps = {
 };
 
 /** As datas dos três cenários, a curva e as premissas de um objetivo em andamento. */
-function Projection({ objective, defaults, basis, onBasis }: ProjectionProps) {
+function Projection({ objective, defaults, basis, onBasis }: Readonly<ProjectionProps>) {
   const money = useMoney();
   const { scenarios, curve, assumptions } = objective;
   const name = objectiveName(objective);
@@ -255,14 +255,14 @@ function Projection({ objective, defaults, basis, onBasis }: ProjectionProps) {
       )}
       {curve && curve.points.length > 1 && (
         <>
-          <div className="proj-toggle" role="group" aria-label={`Leitura da curva: ${name}`}>
+          <fieldset className="proj-toggle" aria-label={`Leitura da curva: ${name}`}>
             <button type="button" aria-pressed={basis === "nominal"} onClick={() => onBasis("nominal")}>
               Reais da época
             </button>
             <button type="button" aria-pressed={basis === "today"} onClick={() => onBasis("today")}>
               Reais de hoje
             </button>
-          </div>
+          </fieldset>
           <ProjectionChart curve={curve} target={objective.target} basis={basis} perMonth={income} name={name} />
         </>
       )}

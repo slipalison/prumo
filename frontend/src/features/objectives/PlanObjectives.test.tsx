@@ -39,7 +39,7 @@ describe("Objetivos no Aportar", () => {
     const sent = fake.requests.find((r) => r.path === "/api/v1/objectives/impact")?.body as {
       items: Array<{ asset_class: string; value: number }>;
     };
-    expect(sent.items.length).toBe(4);
+    expect(sent.items).toHaveLength(4);
     expect(sent.items.map((i) => i.asset_class)).toContain("br_reits");
     expect(sent.items.reduce((sum, i) => sum + i.value, 0)).toBeCloseTo(5947.92, 2);
   });

@@ -73,7 +73,7 @@ function yearly(points: CurvePoint[]): number[] {
  * mostra o mês e os três cenários. Quem lê a tela tem o resumo e uma tabela
  * de ano em ano; todo valor passa pelo "ocultar valores".
  */
-export function ProjectionChart({ curve, target, basis, perMonth, name }: ProjectionChartProps) {
+export function ProjectionChart({ curve, target, basis, perMonth, name }: Readonly<ProjectionChartProps>) {
   const money = useMoney();
   const [hover, setHover] = useState<number | null>(null);
   const points = curve.points;
@@ -118,7 +118,12 @@ export function ProjectionChart({ curve, target, basis, perMonth, name }: Projec
           onPointerLeave={() => setHover(null)}
           data-testid="projection-plot"
         >
-          <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={summary}>
+          <svg // NOSONAR: gráfico em SVG não vira <img>; role="img" com o aria-label dá o resumo ao leitor de tela.
+            viewBox={`0 0 ${W} ${H}`}
+            preserveAspectRatio="none"
+            role="img"
+            aria-label={summary}
+          >
             <line className="proj-chart__baseline" x1={0} x2={W} y1={yAt(0, max)} y2={yAt(0, max)} />
             <motion.path
               d={band(values, max)}

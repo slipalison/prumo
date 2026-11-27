@@ -13,7 +13,7 @@ import { useMoney } from "../../lib/privacy";
  * ativo, ou se a consulta falha, o painel não aparece e o plano segue inteiro.
  * As premissas da conta de cada data ficam no ⓘ do objetivo.
  */
-export function PlanObjectives({ plan }: { plan: Plan }) {
+export function PlanObjectives({ plan }: Readonly<{ plan: Plan }>) {
   const items = plan.items.map((item) => ({ asset_class: item.asset_class, value: item.value }));
   const impact = useObjectiveImpact(items);
   const entries = impact.data?.objectives ?? [];
@@ -40,7 +40,7 @@ export function PlanObjectives({ plan }: { plan: Plan }) {
   );
 }
 
-function Entry({ entry }: { entry: ImpactEntry }) {
+function Entry({ entry }: Readonly<{ entry: ImpactEntry }>) {
   const money = useMoney();
   const name = objectiveName(entry);
   const lines = assumptionLines(entry.assumptions, money);
