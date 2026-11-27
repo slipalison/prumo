@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { Risk } from "../../api/riskTypes";
 import { HIDE_VALUES_KEY } from "../../lib/privacy";
 import { renderApp } from "../../test/render";
-import { sampleRisk } from "../../test/riskHandlers";
+import { largeRisk, sampleRisk } from "../../test/riskHandlers";
 import { server } from "../../test/server";
 import {
   describeCoefficient,
@@ -90,7 +90,9 @@ describe("Risco", () => {
     expect(await stat("Retorno em 12 meses")).toHaveTextContent("Ibovespa +9,12%");
     expect(await stat("Com os pesos de hoje")).toHaveTextContent("5,6% ao ano");
     expect(await stat("Com os pesos de hoje")).toHaveTextContent("29,3% da carteira na conta");
-    expect(screen.getByText(/12 meses: de 26\/11\/2025 a 26\/11\/2026, 249 pregões/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/12 meses: do fechamento de 26\/11\/2025 ao último fechamento guardado, 26\/11\/2026 \(249 pregões/),
+    ).toBeInTheDocument();
   });
 
   it("troca a janela e pede de novo", async () => {
@@ -122,10 +124,42 @@ describe("Risco", () => {
     const btc = within(table).getByRole("row", { name: /^BTC/ });
     expect(within(btc).getAllByRole("cell")[4]).toHaveTextContent("−0,04");
     expect(within(btc).getAllByRole("cell")[4]).toHaveClass("is-neg");
-    const list = within(panel).getByRole("list");
-    const pairs = within(list).getAllByRole("listitem");
+    // Os pares, em texto, no painel ao lado do gráfico.
+    const side = await screen.findByRole("region", { name: "Os pares que mais andam juntos" });
+    const pairs = within(within(side).getByRole("list")).getAllByRole("listitem");
     expect(pairs).toHaveLength(5);
     expect(pairs[0]).toHaveTextContent("HGLG11 e BTLG110,71andam juntos fortemente");
+    // A matriz pequena não é densa.
+    expect(table).not.toHaveClass("corr--dense");
+  });
+
+  it("as maiores partes do risco ficam ao lado do gráfico", async () => {
+    serve(sampleRisk());
+    await open();
+    const panel = await screen.findByRole("region", { name: "As maiores partes do risco" });
+    const items = within(within(panel).getByRole("list")).getAllByRole("listitem");
+    expect(items).toHaveLength(5);
+    expect(items[0]).toHaveTextContent("ITSA461,2%peso 23,3%");
+    expect(items[1]).toHaveTextContent("BTC9,2%");
+  });
+
+  it("carteira grande: a matriz fica densa, com o nome das colunas inteiro", async () => {
+    serve((window) => largeRisk(window as Risk["window"]));
+    await open();
+    const table = await screen.findByRole("table", { name: /Correlação dos retornos diários/ });
+    expect(table).toHaveClass("corr--dense");
+    expect(within(table).getAllByRole("columnheader")).toHaveLength(34);
+    expect(within(table).getByRole("columnheader", { name: "Tesouro Prefixado 2031" })).toBeInTheDocument();
+    expect(within(table).getByRole("rowheader", { name: "Tesouro IPCA+ 2045" })).toBeInTheDocument();
+    // Simétrica, com 1 na diagonal.
+    const rows = within(table).getAllByRole("row").slice(1);
+    const cell = (r: number, c: number) => within(rows[r] as HTMLElement).getAllByRole("cell")[c];
+    expect(cell(3, 3)).toHaveTextContent("1");
+    expect(cell(2, 17)?.textContent).toBe(cell(17, 2)?.textContent);
+    // Fora da matriz: o CDB (sem série) e o título com juros semestrais.
+    const assets = within(await screen.findByRole("region", { name: "Por ativo" })).getByRole("table");
+    expect(within(assets).getByRole("row", { name: /^CDB Banco Fictício/ })).toHaveTextContent("Sem preço de mercado");
+    expect(within(assets).getByRole("row", { name: /^Tesouro IPCA\+ com Juros/ })).toHaveTextContent("Paga juros");
   });
 
   it("a tabela por ativo traz a carteira, o Ibovespa e por que cada ativo tem ou não número", async () => {
@@ -211,6 +245,12 @@ describe("Risco", () => {
     expect(within(table).getByRole("row", { name: /^Tesouro IPCA\+ com Juros/ })).toHaveTextContent("Paga juros ou renda no caminho");
     const correlation = await screen.findByRole("region", { name: "Correlação entre os ativos" });
     expect(correlation).toHaveTextContent("A correlação precisa de dois ativos com pelo menos 60 pregões");
+    expect(await screen.findByRole("region", { name: "Os pares que mais andam juntos" })).toHaveTextContent(
+      "Aparecem com dois ativos que tenham pelo menos 60 pregões",
+    );
+    expect(await screen.findByRole("region", { name: "As maiores partes do risco" })).toHaveTextContent(
+      "Aparecem com ativos que tenham histórico na janela inteira",
+    );
     expect(correlation).toHaveTextContent("Fora da matriz, com menos de 60 pregões na janela: BTC");
     // A carteira sem número fica fora do gráfico; o BTC continua.
     const chart = within(await screen.findByRole("region", { name: "Risco × retorno" })).getByRole("img");

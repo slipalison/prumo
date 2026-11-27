@@ -24,26 +24,34 @@ function heat(value: number | null): { className?: string; style?: CSSProperties
   };
 }
 
+/** Com mais ativos que isto, a matriz fica densa: letra menor e o nome das colunas na vertical. */
+export const DENSE_FROM = 10;
+
 /**
  * A matriz de correlação é uma tabela de verdade (`<th scope>` nas duas
  * pontas): o leitor de tela anda por linha e coluna e ouve o número; quem vê
  * tem a cor por trás de cada número (laranja quando andam juntos, azul quando
  * andam em sentidos opostos, mais forte quanto mais perto de 1 ou de −1). O
  * número está sempre escrito, então a cor nunca é a única pista. Os pares de
- * destaque levam um contorno e estão listados ao lado, em texto.
+ * destaque levam um contorno e estão listados ao lado, em texto. Com muitos
+ * ativos, a matriz rola por dentro numa altura limitada, com o nome das linhas
+ * e das colunas fixo nas bordas.
  */
 export function CorrelationMatrix({ labels, ids, values, pairs, caption }: CorrelationMatrixProps) {
   const highlighted = new Set(pairs.flatMap((p) => [`${p.a}|${p.b}`, `${p.b}|${p.a}`]));
+  const dense = labels.length > DENSE_FROM;
   return (
+    // Com muitos ativos o bloco rola por dentro; contêiner rolável já recebe
+    // foco pelo teclado no Chrome e no Firefox atuais (como a tabela mês a mês).
     <div className="corr__scroll">
-      <table className="corr">
+      <table className={cx("corr", dense && "corr--dense")}>
         <caption className="sr-only">{caption}</caption>
         <thead>
           <tr>
             <td className="corr__corner" />
             {labels.map((label, j) => (
               <th key={ids[j]} scope="col" className="corr__col">
-                {label}
+                <span className="corr__col-text">{label}</span>
               </th>
             ))}
           </tr>

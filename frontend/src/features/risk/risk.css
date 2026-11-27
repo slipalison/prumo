@@ -303,11 +303,34 @@ a.risk-link {
   font-size: var(--text-xs);
 }
 
-/* Posicionado: o texto só para leitor de tela fica preso aqui e não alarga a página. */
+/* Posicionado: o texto só para leitor de tela fica preso aqui e não alarga a
+   página. Com muitos ativos a matriz rola por dentro, numa altura limitada, com
+   o nome das colunas e das linhas fixo nas bordas. */
 .corr__scroll {
   position: relative;
-  overflow-x: auto;
+  max-height: min(34rem, 70vh);
+  overflow: auto;
   border-radius: var(--r-sm);
+}
+
+.corr thead th,
+.corr__corner {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface-popover);
+}
+
+.corr tbody th {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface-popover);
+}
+
+.corr__corner {
+  left: 0;
+  z-index: 3;
 }
 
 .corr {
@@ -335,8 +358,40 @@ a.risk-link {
 }
 
 .corr__row {
+  max-width: 11em;
   padding-right: var(--space-2);
   text-align: left;
+  white-space: normal;
+}
+
+/* Muitos ativos: letra menor, células estreitas e o nome das colunas na
+   vertical (lido de baixo para cima), sem cortar nome nenhum. */
+.corr--dense {
+  border-spacing: 1px;
+  font-size: var(--text-2xs);
+}
+
+.corr--dense .corr__cell {
+  min-width: 2.6em;
+  height: 24px;
+  padding: 0 1px;
+}
+
+.corr--dense .corr__row {
+  max-width: 9em;
+}
+
+.corr--dense .corr__col {
+  padding: var(--space-1) 0;
+  vertical-align: bottom;
+}
+
+.corr--dense .corr__col-text {
+  display: inline-block;
+  max-height: 7em;
+  white-space: normal;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
 }
 
 .corr__cell {
@@ -392,36 +447,43 @@ a.risk-link {
   font-weight: 700;
 }
 
-.corr-pairs {
-  margin-top: var(--space-3);
+/* ---------------- Destaques ao lado do gráfico ---------------- */
+
+/* Os dois painéis dividem a altura do gráfico ao lado: sem vão embaixo. */
+.risk__aside {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-grid);
+  min-width: 0;
 }
 
-.corr-pairs__title {
-  margin: 0 0 var(--space-1);
-  font-size: var(--text-sm);
-  font-weight: 650;
+.risk__aside > .panel {
+  flex: 1;
 }
 
-.corr-pairs__list {
+.risk-list {
   display: grid;
-  gap: 2px;
+  gap: var(--space-1);
   margin: 0;
-  padding-left: 1.2em;
-  color: var(--text-muted);
+  padding-left: 1.4em;
   font-size: var(--text-sm);
 }
 
-.corr-pairs__list li span:first-child {
+.risk-list__item {
+  color: var(--text-muted);
+}
+
+.risk-list__name {
   color: var(--text);
 }
 
-.corr-pairs__list strong {
+.risk-list__value {
   margin-left: var(--space-2);
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
 
-.corr-pairs__words {
+.risk-list__note {
   margin-left: var(--space-2);
   color: var(--text-subtle);
   font-size: var(--text-xs);

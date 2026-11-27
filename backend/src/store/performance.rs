@@ -178,13 +178,16 @@ impl Store {
 
     /// Grava fechamentos. Data que já existe não muda: o cache guarda o preço
     /// como era no dia (o Yahoo reescreve o passado num desdobramento).
-    /// Devolve, em ordem, as datas que entraram de fato: pedir de novo um
-    /// trecho já guardado não suja a série de ninguém.
+    /// Fechamento ruim da fonte (um salto curto que volta, sem desdobramento;
+    /// `domain::price_check`) não entra, e o guardado que a chegada revela
+    /// ruim sai (`screen_closes`). Devolve, em ordem, as datas que entraram de
+    /// fato: pedir de novo um trecho já guardado não suja a série de ninguém.
     pub async fn insert_prices(
         &self,
         symbol: &str,
         closes: &Series,
     ) -> Result<Vec<Date>, StoreError> {
+        let closes = self.screen_closes(symbol, closes).await?;
         if closes.is_empty() {
             return Ok(Vec::new());
         }

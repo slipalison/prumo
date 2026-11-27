@@ -123,17 +123,24 @@ function Loaded({ risk }: { risk: Risk }) {
       )}
       {risk.from && risk.to && (
         <p className="risk__window">
-          {windowLabel(risk.window)}: de {formatDay(risk.from, true)} a {formatDay(risk.to, true)}, {risk.trading_days}{" "}
-          pregões.
+          {windowLabel(risk.window)}: do fechamento de {formatDay(risk.from, true)} ao último fechamento guardado,{" "}
+          {formatDay(risk.to, true)} ({risk.trading_days} pregões; o de hoje entra depois do fechamento).
         </p>
       )}
       <section aria-label="Resumo do risco">
         <StatStrip items={summary(risk)} />
       </section>
-      <Grid cols={2}>
+      {/* O gráfico (curto) divide a linha com os destaques, que têm altura
+          parecida; a matriz, que cresce com o número de ativos, vem embaixo, na
+          largura inteira: nada fica com um vão ao lado. */}
+      <Grid cols="main-aside">
         <RiskReturnPanel risk={risk} priced={priced} />
-        <CorrelationPanel risk={risk} />
+        <div className="risk__aside">
+          <PairsPanel risk={risk} />
+          <SharesPanel risk={risk} />
+        </div>
       </Grid>
+      <CorrelationPanel risk={risk} />
       <AssetsPanel risk={risk} />
     </>
   );
@@ -252,6 +259,70 @@ function RiskReturnPanel({ risk, priced }: { risk: Risk; priced: AssetRisk[] }) 
   );
 }
 
+/** Os pares que mais andam juntos, em texto (na matriz, com contorno). */
+function PairsPanel({ risk }: { risk: Risk }) {
+  const byId = new Map(risk.assets.map((a) => [a.asset_id, a.label]));
+  const pairs = risk.correlation.top_pairs;
+  return (
+    <Panel
+      compact
+      title="Os pares que mais andam juntos"
+      info="Os maiores valores da matriz de correlação, fora a diagonal: os ativos que mais subiram e caíram nos mesmos pregões da janela."
+      infoLabel="De onde saem os pares"
+    >
+      {pairs.length === 0 ? (
+        <p className="field__hint">
+          Aparecem com dois ativos que tenham pelo menos {risk.limits.min_common} pregões em comum na janela.
+        </p>
+      ) : (
+        <ol className="risk-list">
+          {pairs.map((pair) => (
+            <li key={`${pair.a}-${pair.b}`} className="risk-list__item">
+              <span className="risk-list__name">
+                {byId.get(pair.a)} e {byId.get(pair.b)}
+              </span>
+              <strong className="risk-list__value">{formatCoefficient(pair.value)}</strong>
+              <span className="risk-list__note">{describeCoefficient(pair.value)}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </Panel>
+  );
+}
+
+/** As maiores partes do risco da carteira de hoje (a lista inteira está na tabela). */
+function SharesPanel({ risk }: { risk: Risk }) {
+  const top = risk.assets
+    .filter((a) => a.risk_share_percent !== null)
+    .sort((a, b) => (b.risk_share_percent ?? 0) - (a.risk_share_percent ?? 0))
+    .slice(0, 5);
+  return (
+    <Panel
+      compact
+      title="As maiores partes do risco"
+      info="De onde vem a oscilação da carteira de hoje: peso × o quanto o ativo anda com a carteira, dividido pela oscilação dela. As partes de todos somam 100%; a lista inteira está na tabela por ativo."
+      infoLabel="Como se calcula a parte do risco"
+    >
+      {top.length === 0 ? (
+        <p className="field__hint">
+          Aparecem com ativos que tenham histórico na janela inteira (pelo menos {risk.limits.min_common} pregões).
+        </p>
+      ) : (
+        <ol className="risk-list">
+          {top.map((asset) => (
+            <li key={asset.asset_id} className="risk-list__item">
+              <span className="risk-list__name">{asset.label}</span>
+              <strong className="risk-list__value">{formatPercent(asset.risk_share_percent ?? 0, 1)}</strong>
+              <span className="risk-list__note">peso {formatPercent(asset.weight_percent, 1)}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </Panel>
+  );
+}
+
 function CorrelationPanel({ risk }: { risk: Risk }) {
   const byId = new Map(risk.assets.map((a) => [a.asset_id, a.label]));
   const ids = risk.correlation.asset_ids;
@@ -277,22 +348,6 @@ function CorrelationPanel({ risk }: { risk: Risk }) {
             pairs={risk.correlation.top_pairs}
             caption={`Correlação dos retornos diários entre os ativos, em ${windowLabel(risk.window)}`}
           />
-          {risk.correlation.top_pairs.length > 0 && (
-            <div className="corr-pairs">
-              <h3 className="corr-pairs__title">Os pares que mais andam juntos</h3>
-              <ol className="corr-pairs__list">
-                {risk.correlation.top_pairs.map((pair) => (
-                  <li key={`${pair.a}-${pair.b}`}>
-                    <span>
-                      {byId.get(pair.a)} e {byId.get(pair.b)}
-                    </span>
-                    <strong>{formatCoefficient(pair.value)}</strong>
-                    <span className="corr-pairs__words">{describeCoefficient(pair.value)}</span>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          )}
         </>
       )}
       {left.length > 0 && (

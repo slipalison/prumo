@@ -221,9 +221,11 @@ async fn try_ensure_prices(
     let today = local_date(now);
     match sources.history.closes_and_splits(symbol, from, today).await {
         Ok((closes, splits)) => {
+            // Os eventos antes dos preços: o filtro de fechamento ruim de
+            // `insert_prices` não confunde um desdobramento com erro da fonte.
+            store.save_price_splits(symbol, from, &splits, now).await?;
             store.insert_prices(symbol, &closes).await?;
             store.set_price_coverage(symbol, from).await?;
-            store.save_price_splits(symbol, from, &splits, now).await?;
         }
         Err(HistoryError::NotFound) => {
             // A fonte não conhece o símbolo: não adianta pedir de novo hoje.

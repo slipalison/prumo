@@ -228,6 +228,13 @@ conferência desde o começo do histórico é pedido uma vez de ponta a ponta. S
 a data que **entrou** de fato em `price_history` suja a série de quem tem o
 ativo (pedir de novo um trecho já guardado não refaz nada).
 
+**Fechamento ruim da fonte** (um trecho de 1 a 5 pregões a 2× ou à metade do
+preço de antes, que volta a até 20% dele, sem desdobramento): não entra em
+`price_history`, e o que já estava guardado sai (na entrada, quando a volta
+chega, e numa conferência do cache inteiro ao subir e na tarefa diária), com a
+série de quem tinha o ativo refeita. Regra e exemplos em
+[`risco.md`](risco.md#fechamento-ruim-da-fonte).
+
 Ativo de preço manual não é pedido (o manual vence a cotação).
 
 **Tesouro Direto:** o histórico do título sai do mesmo CSV da cotação do dia

@@ -620,3 +620,206 @@ async fn migration_marks_existing_series_for_the_price_sync() {
     );
     assert!(store.dirty_since(none).await.unwrap().is_none());
 }
+
+/// Fechamento ruim da fonte (fictício: um FII genérico com a escala errada em
+/// 100× por dois pregões): não entra quando a volta já está guardada; entra se
+/// chega antes da volta e sai quando ela chega, com a série de quem tem o ativo
+/// marcada desde o primeiro dia ruim. Desdobramento de verdade (5 para 1, que
+/// não volta) e queda forte de verdade (−36%, que não volta) passam. A limpeza
+/// do que já estava gravado acha o mesmo trecho e é idempotente.
+#[tokio::test]
+async fn bad_closes_from_the_source_are_dropped_and_cleaned() {
+    let db = database().await;
+    let dir = tempfile_dir::Dir::new();
+    let email = "fechamento-ruim@exemplo.com";
+    let quotes = FakeQuotes::with_market();
+    quotes
+        .prices
+        .lock()
+        .unwrap()
+        .insert("FICT11.SA".to_owned(), (dec!(80), "BRL", "Fundo ficticio"));
+    let app = app(&db.store, email, quotes, &dir.path());
+    let created = post(
+        &app.router,
+        "/api/v1/assets",
+        json!({ "asset_class": "br_reits", "symbol": "FICT11", "quantity": 10 }),
+    )
+    .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.text);
+    let user = db.store.ensure_user(email).await.unwrap();
+    if let Some(dirty) = db.store.dirty_since(user).await.unwrap() {
+        db.store.clear_dirty(&dirty).await.unwrap();
+    }
+    let d = |day: u8| Date::from_calendar_date(2026, time::Month::January, day).unwrap();
+    let symbol = "FICT11.SA";
+
+    // O trecho ruim chega antes da volta: ainda não dá para saber, entra.
+    let first = db
+        .store
+        .insert_prices(
+            symbol,
+            &vec![
+                (d(14), dec!(80.00)),
+                (d(15), dec!(0.79)),
+                (d(16), dec!(0.81)),
+            ],
+        )
+        .await
+        .unwrap();
+    assert_eq!(first, vec![d(14), d(15), d(16)]);
+    assert!(db.store.dirty_since(user).await.unwrap().is_none());
+    // A volta chega: os dois dias ruins saem e a série é refeita desde o 15.
+    let back = db
+        .store
+        .insert_prices(symbol, &vec![(d(19), dec!(80.50))])
+        .await
+        .unwrap();
+    assert_eq!(back, vec![d(19)]);
+    let symbols = [symbol.to_owned()];
+    assert!(db
+        .store
+        .closes_on(&symbols, d(15))
+        .await
+        .unwrap()
+        .is_empty());
+    assert!(db
+        .store
+        .closes_on(&symbols, d(16))
+        .await
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        db.store.dirty_since(user).await.unwrap().unwrap().since,
+        d(15)
+    );
+    // Pedir de novo o trecho inteiro (como a conferência dos desdobramentos
+    // faz) não traz o erro de volta.
+    let again = db
+        .store
+        .insert_prices(
+            symbol,
+            &vec![
+                (d(14), dec!(80.00)),
+                (d(15), dec!(0.79)),
+                (d(16), dec!(0.81)),
+                (d(19), dec!(80.50)),
+            ],
+        )
+        .await
+        .unwrap();
+    assert!(again.is_empty(), "{again:?}");
+
+    // Desdobro de 5 para 1 sem evento guardado e queda de 36%: não voltam,
+    // entram inteiros.
+    let split: Series = vec![
+        (d(5), dec!(100)),
+        (d(6), dec!(20)),
+        (d(7), dec!(20.4)),
+        (d(8), dec!(19.9)),
+    ];
+    assert_eq!(
+        db.store
+            .insert_prices("DESD3.SA", &split)
+            .await
+            .unwrap()
+            .len(),
+        4
+    );
+    let crash: Series = vec![(d(5), dec!(100)), (d(6), dec!(64)), (d(7), dec!(63))];
+    assert_eq!(
+        db.store
+            .insert_prices("QUED3.SA", &crash)
+            .await
+            .unwrap()
+            .len(),
+        3
+    );
+
+    // O que foi gravado antes do filtro: a limpeza acha e apaga, uma vez.
+    let pool = PgPoolOptions::new().connect(&db.url).await.unwrap();
+    for (date, close) in [(d(5), dec!(50)), (d(6), dec!(0.5)), (d(7), dec!(50.2))] {
+        sqlx::query("insert into price_history (symbol, date, close) values ('VELH11.SA', $1, $2)")
+            .bind(date)
+            .bind(close)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    assert_eq!(db.store.clean_bad_closes().await.unwrap(), 1);
+    let old = ["VELH11.SA".to_owned()];
+    assert!(db.store.closes_on(&old, d(6)).await.unwrap().is_empty());
+    assert_eq!(db.store.clean_bad_closes().await.unwrap(), 0);
+}
+
+/// O fim da janela nunca passa de hoje no fuso de Brasília, nem perto da
+/// meia-noite UTC (quando o UTC já é o dia seguinte), e pregão é dia útil: um
+/// fechamento datado num sábado (fonte que date pelo UTC) não vira pregão.
+#[tokio::test]
+async fn the_window_ends_today_in_brasilia() {
+    let db = database().await;
+    let dir = tempfile_dir::Dir::new();
+    let email = "fim-da-janela@exemplo.com";
+    let quotes = FakeQuotes::with_market();
+    quotes
+        .prices
+        .lock()
+        .unwrap()
+        .insert("FICT11.SA".to_owned(), (dec!(80), "BRL", "Fundo ficticio"));
+    let app = app(&db.store, email, quotes, &dir.path());
+    let created = post(
+        &app.router,
+        "/api/v1/assets",
+        json!({ "asset_class": "br_reits", "symbol": "FICT11", "quantity": 10 }),
+    )
+    .await;
+    assert_eq!(created.status, StatusCode::CREATED, "{}", created.text);
+    let user = db.store.ensure_user(email).await.unwrap();
+    // Sexta, 27/11/2026: Ibovespa até ela; o ativo com um ponto no sábado 28.
+    let friday = Date::from_calendar_date(2026, time::Month::November, 27).unwrap();
+    let days = weekdays(friday - Duration::days(400), friday);
+    let ibov: Series = days
+        .iter()
+        .enumerate()
+        .map(|(i, d)| (*d, Decimal::from(100_000 + i as i64 * 10)))
+        .collect();
+    db.store.upsert_index(IndexCode::Ibov, &ibov).await.unwrap();
+    let mut closes: Series = days
+        .iter()
+        .enumerate()
+        .map(|(i, d)| (*d, Decimal::from(80 + (i % 3) as i64)))
+        .collect();
+    closes.push((friday + Duration::days(1), dec!(81)));
+    db.store.insert_prices("FICT11.SA", &closes).await.unwrap();
+
+    // 22h30 de sexta em Brasília = 01h30 de sábado em UTC.
+    let late = OffsetDateTime::new_utc(
+        friday + Duration::days(1),
+        time::Time::from_hms(1, 30, 0).unwrap(),
+    );
+    let report = prumo::risk::report(&db.store, user, RiskWindow::TwelveMonths, late)
+        .await
+        .unwrap();
+    assert_eq!(report.to, Some(friday));
+    // Domingo: o sábado com fechamento não é pregão; o fim é a sexta.
+    let sunday = OffsetDateTime::new_utc(
+        friday + Duration::days(2),
+        time::Time::from_hms(15, 0, 0).unwrap(),
+    );
+    let report = prumo::risk::report(&db.store, user, RiskWindow::TwelveMonths, sunday)
+        .await
+        .unwrap();
+    assert_eq!(report.to, Some(friday));
+    // 23h30 de quinta em Brasília = 02h30 de sexta em UTC: termina na quinta.
+    let thursday_night = OffsetDateTime::new_utc(friday, time::Time::from_hms(2, 30, 0).unwrap());
+    let report = prumo::risk::report(&db.store, user, RiskWindow::TwelveMonths, thursday_night)
+        .await
+        .unwrap();
+    assert_eq!(report.to, Some(friday - Duration::days(1)));
+    assert_eq!(
+        report.from,
+        days.iter()
+            .rev()
+            .find(|d| **d <= Date::from_calendar_date(2025, time::Month::November, 26).unwrap())
+            .copied()
+    );
+}

@@ -622,8 +622,9 @@ transforma os links das subrotas numa subnavegação.
 - **Cabeçalho**: "Risco da carteira", sobrancelha "Desempenho", o ⓘ diz que é
   retrato do passado, com proventos e em reais, não previsão nem
   recomendação; à direita, os chips da janela (6 meses · **12 meses** · 2 anos ·
-  3 anos · 5 anos). Embaixo, uma linha: "12 meses: de 26/11/2025 a 26/11/2026,
-  249 pregões".
+  3 anos · 5 anos). Embaixo, uma linha: "12 meses: do fechamento de
+  26/11/2025 ao último fechamento guardado, 26/11/2026 (249 pregões; o de hoje
+  entra depois do fechamento)" — o fim é sempre um pregão até hoje, em Brasília.
 - **Faixa de quatro números** (`StatStrip`): **Volatilidade da carteira** ("8,4%
   ao ano", com "Ibovespa 17,9% ao ano" embaixo), **Queda máxima** (assinada, com
   "de 04/03/2026 a 08/04/2026; recuperou em 21/05/2026" ou "ainda não
@@ -631,8 +632,10 @@ transforma os links das subrotas numa subnavegação.
   hoje** (a volatilidade da carteira de hoje na janela e quanto dela está na
   conta). Série curta ou mais nova que a janela: "histórico curto: N pregões"
   e "a série começa em DD/MM/AAAA" escritos no detalhe, nunca número inventado.
-- **Dois painéis lado a lado** (`Grid cols={2}`):
-  - **Risco × retorno**: bolhas (x = volatilidade ao ano, y = retorno na
+- **Gráfico e destaques lado a lado** (`Grid cols="main-aside"`): o gráfico,
+  que tem altura fixa, divide a linha com dois painéis compactos que repartem a
+  altura dele (sem vão embaixo de nenhum lado, com 7 ou com 36 ativos):
+  - **Risco × retorno** (2/3): bolhas (x = volatilidade ao ano, y = retorno na
     janela, área = peso). Ativos em azul (o do CDI no Desempenho), a carteira
     num losango âmbar e o Ibovespa num quadrado violeta — a forma é a segunda
     pista, além da cor, e a legenda diz as três. Os nomes vão ao lado das
@@ -640,15 +643,23 @@ transforma os links das subrotas numa subnavegação.
     Ibovespa sempre; o ativo que não cabe mostra o nome e os números no
     ponteiro). O desenho é `role="img"` com um resumo; a tabela por ativo tem
     todos os números.
-  - **Correlação entre os ativos**: a matriz é uma `<table>` de verdade, com o
-    número escrito em cada célula (duas casas, sinal escrito) e a cor por trás:
-    laranja-avermelhado quando andam juntos, azul quando andam em sentidos
-    opostos, mais forte quanto mais perto de ±1 (no máximo 45% de tinta, para o
-    número manter contraste de texto nos dois temas). Uma régua (−1 sentidos
-    opostos · 0 sem relação · 1 juntos) explica a cor. Os 5 pares que mais andam
-    juntos levam contorno na matriz e estão listados embaixo, em texto ("HGLG11
-    e BTLG11 0,71 andam juntos fortemente"). Painel estreito: a matriz encolhe a
-    letra antes de rolar de lado; com muitos ativos, rola dentro do painel.
+  - **Os pares que mais andam juntos** e **As maiores partes do risco** (1/3,
+    um embaixo do outro): os 5 maiores valores da matriz ("HGLG11 e BTLG11
+    0,71 andam juntos fortemente") e os 5 ativos com a maior parte do risco
+    ("ITSA4 61,2% · peso 23,3%"), em texto. Destaque neutro: o maior valor, sem
+    juízo.
+- **Correlação entre os ativos** (largura inteira, embaixo): a matriz é uma
+  `<table>` de verdade, com o número escrito em cada célula (duas casas, sinal
+  escrito) e a cor por trás: laranja-avermelhado quando andam juntos, azul
+  quando andam em sentidos opostos, mais forte quanto mais perto de ±1 (no
+  máximo 45% de tinta, para o número manter contraste de texto nos dois
+  temas). Uma régua (−1 sentidos opostos · 0 sem relação · 1 juntos) explica a
+  cor; os 5 pares do painel ao lado levam contorno. Com mais de 10 ativos a
+  matriz fica densa (letra menor, nome das colunas na vertical, quebrando em
+  linhas para não cortar nome longo de título); rola por dentro numa altura
+  limitada (até 34 rem ou 70% da janela), com o nome das linhas e das colunas
+  fixo nas bordas. Painel estreito (iPad em pé, celular) e matriz grande: rola
+  também de lado, dentro do painel.
 - **Por ativo** (`DataTable`, largura inteira): a carteira e o Ibovespa de
   referência no topo (fundo afundado), depois cada ativo do maior peso para o
   menor: peso, volatilidade, retorno, queda máxima (com "04/03/26 a 08/04/26 ·
@@ -660,11 +671,12 @@ transforma os links das subrotas numa subnavegação.
 - **Olho fechado**: a tela não tem valor em reais (pesos, volatilidades e
   correlações são percentuais e números puros e ficam à vista, como na
   Carteira); o teste confere que nada que se vê ou se ouve traz "R$".
-- **Medido** (demonstração, 7 ativos com série): 1440×900 1,68 tela,
-  1920×1080 1,40, iPad 1024×1366 1,12, celular 390×844 4,25 (o Desempenho segue
-  em 1,02 com o link); sem rolagem
-  lateral da página em nenhuma largura nem tema; só a matriz rola de lado por
-  dentro no celular (+72 px), como a tabela mês a mês.
+- **Medido** (demonstração com uma carteira fictícia de 36 ativos, 34 na
+  matriz; tickers curtos e nomes longos de título): 1440×900 4,18 telas,
+  1920×1080 3,54, iPad 1024×1366 3,15, celular 390×844 10,6 (a tabela por ativo
+  é quem cresce). Sem rolagem lateral da página em nenhuma largura nem tema; em
+  1440 e 1920 a matriz cabe na largura; no iPad em pé e no celular ela rola de
+  lado por dentro (+397 e +993 px), com as bordas fixas.
 
 ### 7. Ajustes › Importar da B3
 

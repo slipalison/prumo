@@ -51,12 +51,50 @@ pagamento entra como provento, se estiver lançado.
 **Sem série de preço** (renda fixa por valor, preço manual): aparece na tabela
 com o peso e o motivo, sem número.
 
+## Fechamento ruim da fonte
+
+A fonte às vezes erra um fechamento: o caso que apareceu foi um FII com o
+preço dividido por 100 em dois pregões (de ~110 para ~1,07 e de volta a ~110),
+sem desdobramento nenhum. Uma volatilidade de 10.000% ao ano não é retrato de
+nada. A regra (`domain::price_check`), que vale para **todo** preço que entra em
+`price_history` (desempenho, risco, comparador):
+
+- um trecho de **1 a 5 pregões** cujo fechamento fica a **2× ou mais** (ou à
+  **metade ou menos**) do último fechamento bom de antes dele;
+- e cujo pregão seguinte **volta a até 20%** desse fechamento de antes;
+- **sem** desdobramento, bonificação ou grupamento (`price_splits`) entre o
+  fechamento bom de antes e o da volta
+
+é erro da fonte e não fica. Desdobramento de verdade não volta (passa, com ou
+sem evento guardado); queda forte de verdade também não volta e, além disso,
+quedas de 20% a 40% num pregão nem chegam ao salto de 2×. Seis pregões ou mais
+longe do nível de antes deixam de ser "trecho curto": é o preço.
+
+Onde age:
+
+- **Na entrada** (`Store::insert_prices`, o ponto comum de gravação): cada lote
+  é conferido junto com o que já está guardado em volta (20 dias corridos de
+  cada lado). O fechamento ruim que chega não entra; o guardado que a chegada
+  revela ruim (a volta chegou agora) sai, e a série de quem tem o ativo é
+  marcada para refazer desde ele. Trecho no fim da série, que ainda não voltou,
+  entra: só a volta prova o erro, e ele sai quando ela chegar.
+- **No cache inteiro** (`Store::clean_bad_closes`): ao subir o processo (com o
+  advisory lock) e na tarefa diária, cada símbolo de `price_history` é
+  conferido de ponta a ponta. É idempotente; o que saiu é logado
+  (`fechamentos ruins guardados apagados`) e a série de quem tinha o ativo
+  nesses dias é refeita. `price_history` é cache da fonte: apagar é seguro.
+- Os desdobramentos do pedido são gravados **antes** dos preços (na sincronia e
+  no comparador), para o filtro não confundir um evento com erro.
+
 ## Pregões e alinhamento
 
 As datas de pregão são as datas do Ibovespa mais as de qualquer fechamento de
 ativo da B3 guardado (as duas fontes só têm dia de pregão; juntas, a falha de
-uma não abre buraco). Sem nenhuma das duas (carteira só de exterior e cripto, e
-o índice fora do ar), valem os dias úteis de segunda a sexta.
+uma não abre buraco), só de segunda a sexta e **nunca depois de hoje no fuso de
+Brasília** (perto da meia-noite UTC o UTC já é o dia seguinte; não é a régua).
+Sem nenhuma das duas (carteira só de exterior e cripto, e o índice fora do ar),
+valem os dias úteis de segunda a sexta. A janela termina no **último fechamento
+guardado**: antes da tarefa do fim do dia, é o de ontem.
 
 Cada série é posta nessas datas pelo **último valor em ou antes** de cada uma,
 desde que de no máximo **10 dias corridos** antes (`MAX_STALE_DAYS`): o feriado

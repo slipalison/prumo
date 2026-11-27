@@ -34,6 +34,7 @@ use crate::live::Tick;
 use crate::quotes::Quote;
 
 mod performance;
+mod price_check;
 mod retro;
 mod treasury;
 

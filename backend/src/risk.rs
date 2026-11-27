@@ -159,6 +159,10 @@ fn candidate(view: &AssetView, total: Decimal) -> Candidate<'_> {
     }
 }
 
+fn weekend(date: Date) -> bool {
+    matches!(date.weekday(), Weekday::Saturday | Weekday::Sunday)
+}
+
 /// Os dias úteis (segunda a sexta) de `from` a `to`: o calendário quando não
 /// há Ibovespa nem ativo da B3 guardado (carteira só de exterior e cripto com a
 /// fonte do índice fora do ar).
@@ -166,7 +170,7 @@ fn weekdays(from: Date, to: Date) -> Vec<Date> {
     let mut out = Vec::new();
     let mut date = from;
     while date <= to {
-        if !matches!(date.weekday(), Weekday::Saturday | Weekday::Sunday) {
+        if !weekend(date) {
             out.push(date);
         }
         match date.next_day() {
@@ -260,7 +264,9 @@ pub async fn report(
         .index_series(IndexCode::Ibov, load_from, today)
         .await?;
 
-    // Os pregões: as datas do Ibovespa e de todo fechamento da B3 guardado.
+    // Os pregões: as datas do Ibovespa e de todo fechamento da B3 guardado, de
+    // segunda a sexta (fonte que date um ponto pelo UTC não cria pregão no
+    // sábado) e nunca depois de hoje em Brasília.
     let b3_dates: Vec<Date> = candidates
         .iter()
         .filter(|c| c.view.asset.market() == Market::B3)
@@ -271,7 +277,7 @@ pub async fn report(
     let ibov_dates: Vec<Date> = ibov.iter().map(|(d, _)| *d).collect();
     let mut calendar: Vec<Date> = rules::trading_calendar(&[&ibov_dates, &b3_dates])
         .into_iter()
-        .filter(|d| *d >= load_from && *d <= today)
+        .filter(|d| *d >= load_from && *d <= today && !weekend(*d))
         .collect();
     if calendar.is_empty() {
         calendar = weekdays(load_from, today);

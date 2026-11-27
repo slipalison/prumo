@@ -115,3 +115,108 @@ export const riskHandlers = [
     return HttpResponse.json(sampleRisk(window));
   }),
 ];
+
+type Group = "stock" | "fii" | "bond" | "crypto" | "us";
+
+/** Os 36 ativos fictícios da carteira grande: tickers curtos e nomes longos de título. */
+const LARGE: Array<[string, AssetClass, Group]> = [
+  ["ITSA4", "br_stocks", "stock"],
+  ["WEGE3", "br_stocks", "stock"],
+  ["BBAS3", "br_stocks", "stock"],
+  ["EGIE3", "br_stocks", "stock"],
+  ["TAEE11", "br_stocks", "stock"],
+  ["VALE3", "br_stocks", "stock"],
+  ["PETR4", "br_stocks", "stock"],
+  ["BBSE3", "br_stocks", "stock"],
+  ["CPLE6", "br_stocks", "stock"],
+  ["KLBN11", "br_stocks", "stock"],
+  ["SAPR11", "br_stocks", "stock"],
+  ["ABCB4", "br_stocks", "stock"],
+  ["KNRI11", "br_reits", "fii"],
+  ["HGLG11", "br_reits", "fii"],
+  ["BTLG11", "br_reits", "fii"],
+  ["TRXF11", "br_reits", "fii"],
+  ["MXRF11", "br_reits", "fii"],
+  ["XPLG11", "br_reits", "fii"],
+  ["VISC11", "br_reits", "fii"],
+  ["HGRU11", "br_reits", "fii"],
+  ["KNCR11", "br_reits", "fii"],
+  ["RBRR11", "br_reits", "fii"],
+  ["ALZR11", "br_reits", "fii"],
+  ["PVBI11", "br_reits", "fii"],
+  ["IVVB11", "intl_stocks", "us"],
+  ["AAPL", "intl_stocks", "us"],
+  ["MSFT", "intl_stocks", "us"],
+  ["O", "us_reits", "us"],
+  ["VNQ", "us_reits", "us"],
+  ["BTC", "crypto", "crypto"],
+  ["ETH", "crypto", "crypto"],
+  ["Tesouro Prefixado 2031", "fixed_income", "bond"],
+  ["Tesouro IPCA+ 2045", "fixed_income", "bond"],
+  ["Tesouro Selic 2029", "fixed_income", "bond"],
+  ["CDB Banco Fictício 120% do CDI", "fixed_income", "bond"],
+  ["Tesouro IPCA+ com Juros Semestrais 2035", "fixed_income", "bond"],
+];
+
+const BASE: Record<Group, Record<Group, number>> = {
+  stock: { stock: 0.55, fii: 0.3, bond: 0.15, crypto: 0.12, us: 0.2 },
+  fii: { stock: 0.3, fii: 0.6, bond: 0.25, crypto: 0.05, us: 0.08 },
+  bond: { stock: 0.15, fii: 0.25, bond: 0.7, crypto: 0, us: -0.05 },
+  crypto: { stock: 0.12, fii: 0.05, bond: 0, crypto: 0.8, us: 0.25 },
+  us: { stock: 0.2, fii: 0.08, bond: -0.05, crypto: 0.25, us: 0.65 },
+};
+
+/** Um número fixo em [−1, 1] por par: a mesma matriz em toda rodada. */
+const wiggle = (i: number, j: number) => Math.sin(i * 12.9898 + j * 78.233) * 0.15;
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Uma carteira FICTÍCIA grande (36 ativos) para medir o desenho com muitos
+ * ativos: a demonstração usa esta. O CDB não tem série; o título com juros
+ * semestrais paga no caminho; o resto entra na correlação.
+ */
+export function largeRisk(window: RiskWindow = "12m"): Risk {
+  const base = sampleRisk(window);
+  const weightOf = (i: number) => (i === 34 ? 12 : i === 35 ? 6 : 1 + ((i * 7) % 5) * 0.6);
+  const total = LARGE.reduce((sum, _, i) => sum + weightOf(i), 0);
+  const shares = LARGE.map(([, , group], i) => (i < 34 ? weightOf(i) * (group === "bond" ? 0.2 : group === "crypto" ? 3 : 1) : 0));
+  const shareTotal = shares.reduce((a, b) => a + b, 0);
+  const assets: AssetRisk[] = LARGE.map(([label, assetClass, group], i) => {
+    const id = `l-${i}`;
+    const weight = round2((weightOf(i) / total) * 100);
+    if (i === 34) return asset(id, label, assetClass, weight, { status: "no_series", metrics: null, risk_share_percent: null });
+    if (i === 35) return asset(id, label, assetClass, weight, { status: "pays_along_the_way", metrics: null, risk_share_percent: null });
+    const volatility = group === "crypto" ? 52 + i : group === "bond" ? 4 + i / 10 : group === "fii" ? 10 + (i % 6) : 18 + (i % 9);
+    const ret = round2(((i * 37) % 41) - 12 + (group === "crypto" ? 15 : 0));
+    return {
+      ...asset(id, label, assetClass, weight, {
+        status: "ok",
+        metrics: metrics(window, volatility, ret, -round2(volatility * 0.6), i % 3 === 0 ? null : "2026-05-21"),
+        risk_share_percent: round2(((shares[i] ?? 0) / shareTotal) * 100),
+      }),
+      in_correlation: true,
+    };
+  });
+  const inMatrix = assets.filter((a) => a.in_correlation);
+  const index = inMatrix.map((a) => LARGE.findIndex((_, i) => `l-${i}` === a.asset_id));
+  const values = index.map((i, r) =>
+    index.map((j, c) => {
+      if (r === c) return 1;
+      const [a, b] = r < c ? [i, j] : [j, i];
+      const gi = LARGE[a]?.[2] ?? "stock";
+      const gj = LARGE[b]?.[2] ?? "stock";
+      return round2(Math.max(-1, Math.min(1, BASE[gi][gj] + wiggle(a, b))));
+    }),
+  );
+  const pairs = values
+    .flatMap((row, r) => row.map((value, c) => ({ r, c, value })).filter((cell) => cell.c > cell.r))
+    .sort((x, y) => y.value - x.value || x.r - y.r || x.c - y.c)
+    .slice(0, 5)
+    .map(({ r, c, value }) => ({ a: inMatrix[r]?.asset_id ?? "", b: inMatrix[c]?.asset_id ?? "", value, days: DAYS[window] }));
+  return {
+    ...base,
+    assets: [...assets].sort((a, b) => b.weight_percent - a.weight_percent),
+    model: { volatility_percent: 9.84, days: DAYS[window], covered_weight_percent: round2(100 - (assets[34]?.weight_percent ?? 0) - (assets[35]?.weight_percent ?? 0)) },
+    correlation: { asset_ids: inMatrix.map((a) => a.asset_id), values, top_pairs: pairs },
+  };
+}

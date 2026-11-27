@@ -85,6 +85,8 @@ pub struct JobReport {
     pub indexes: usize,
     /// Objetivos que passaram a atingidos nesta rodada.
     pub objectives: usize,
+    /// Fechamentos ruins da fonte apagados do cache (`domain::price_check`).
+    pub bad_closes: usize,
 }
 
 /// O que uma rodada da reconstrução fez.
@@ -163,6 +165,9 @@ impl Performance {
             prices: self.sync_prices(now).await?,
             ..JobReport::default()
         };
+        // O cache inteiro conferido: fechamento ruim que entrou antes de a volta
+        // chegar sai agora, e a série de quem o tinha é refeita logo abaixo.
+        report.bad_closes = self.store.clean_bad_closes().await?;
         for user in self.store.snapshot_users().await? {
             match self.daily_series(user, today, now).await {
                 Ok(true) => report.snapshots += 1,
@@ -212,6 +217,18 @@ impl Performance {
             self.store.clear_dirty(&dirty).await?;
         }
         Ok(written)
+    }
+
+    /// Apaga do cache de preços os fechamentos ruins da fonte e marca a série
+    /// de quem tinha o ativo. Só roda com o lock (`None`: outra réplica está
+    /// com ele, e a tarefa diária confere de novo).
+    pub async fn clean_prices(&self) -> Result<Option<usize>, StoreError> {
+        let Some(lock) = self.store.try_job_lock(JOB_LOCK_KEY).await? else {
+            return Ok(None);
+        };
+        let removed = self.store.clean_bad_closes().await;
+        lock.release().await;
+        removed.map(Some)
     }
 
     /// Refaz as séries marcadas como sujas há pelo menos [`REBUILD_SETTLE`],
@@ -548,6 +565,15 @@ impl Performance {
         every: std::time::Duration,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
+            // Ao subir, uma conferência do cache de preços (o que foi gravado
+            // antes do filtro de fechamento ruim); a tarefa diária repete.
+            match self.clean_prices().await {
+                Ok(Some(removed)) if removed > 0 => {
+                    tracing::warn!(removed, "fechamentos ruins apagados do cache");
+                }
+                Ok(_) => {}
+                Err(error) => tracing::error!(error = %error, "conferencia dos precos falhou"),
+            }
             let mut ticker = tokio::time::interval(every);
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             loop {

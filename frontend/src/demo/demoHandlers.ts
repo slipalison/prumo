@@ -23,6 +23,8 @@ import {
   sampleObjective,
 } from "../test/objectivesHandlers";
 import { sampleProjectionHandler } from "../test/projectionHandlers";
+import { largeRisk } from "../test/riskHandlers";
+import type { RiskWindow } from "../api/riskTypes";
 
 /*
  * O que o modo de demonstração serve por cima do banco falso dos testes
@@ -323,6 +325,10 @@ export const demoHandlers: HttpHandler[] = [
   http.get("/api/v1/history/net-worth", ({ request }) => HttpResponse.json(demoNetWorth(asPeriod(request)))),
   http.get("/api/v1/performance", ({ request }) => HttpResponse.json(demoPerformance(asPeriod(request)))),
   http.get("/api/v1/performance/classes", ({ request }) => HttpResponse.json(demoClasses(asPeriod(request)))),
+  // O risco de uma carteira grande (36 ativos): o desenho medido com a matriz cheia.
+  http.get("/api/v1/risk", ({ request }) =>
+    HttpResponse.json(largeRisk((new URL(request.url).searchParams.get("window") as RiskWindow | null) ?? "12m")),
+  ),
   http.get("/api/v1/income/summary", () => HttpResponse.json(demoIncomeSummary())),
   http.get("/api/v1/income", () => HttpResponse.json(demoIncomeEvents())),
   ...demoIncomeHistoryHandlers(),
