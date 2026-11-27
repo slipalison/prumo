@@ -92,6 +92,10 @@ egress:
   # diario e o Ibovespa vem do `chart` do Yahoo, ja liberado acima)
   - host: api.bcb.gov.br
     port: 443
+  # projecao: expectativas do Focus (Selic e IPCA) na API Olinda do Banco
+  # Central, uma vez por dia
+  - host: olinda.bcb.gov.br
+    port: 443
   # setor das acoes, proventos automaticos e, nos fundamentos, o codigo CVM e
   # o numero de acoes de cada emissor: paginas publicas da B3
   - host: sistemaswebb3-listados.b3.com.br
