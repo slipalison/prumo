@@ -1,4 +1,5 @@
-//! Dias úteis para o vencimento do DARF, com tabela versionada por ano.
+//! Dias úteis para o vencimento do DARF, com tabela versionada por ano, e os
+//! dias de pregão da B3 ([`is_trading_day`]) para a data ex dos proventos.
 //!
 //! O imposto do mês vence no último dia útil do mês seguinte (IN RFB
 //! 1.585/2015, art. 56, par. 5; P&R 730). Dia útil aqui é dia com expediente
@@ -123,6 +124,20 @@ pub fn is_business_day(date: Date) -> Result<bool, TaxError> {
         .any(|&(m, d, _)| m == month && d == day))
 }
 
+/// A véspera de Natal: banco abre (meio expediente), a B3 não tem pregão.
+const CHRISTMAS_EVE: (u8, u8) = (12, 24);
+
+/// Se a B3 tem pregão na data. O calendário de pregões que a B3 publica é o
+/// dos dias sem expediente bancário desta tabela (feriados nacionais, Carnaval,
+/// Corpus Christi e 31/12) mais a véspera de Natal (24/12), em que o banco abre
+/// e a bolsa não. A data ex de um provento é o pregão seguinte à data com
+/// (`income_auto::ex_date_after`), e é esta a conta que ela usa. Ano fora da
+/// tabela é [`TaxError::NoCalendarForYear`].
+pub fn is_trading_day(date: Date) -> Result<bool, TaxError> {
+    let eve = (u8::from(date.month()), date.day()) == CHRISTMAS_EVE;
+    Ok(is_business_day(date)? && !eve)
+}
+
 /// O último dia útil do mês.
 pub fn last_business_day(period: YearMonth) -> Result<Date, TaxError> {
     year_calendar(period.year)?;
@@ -161,6 +176,29 @@ mod tests {
         assert!(!is_business_day(date!(2026 - 2 - 17)).unwrap()); // Carnaval
         assert!(!is_business_day(date!(2025 - 12 - 31)).unwrap());
         assert!(is_business_day(date!(2026 - 11 - 25)).unwrap());
+    }
+
+    #[test]
+    fn the_b3_has_no_session_on_christmas_eve_nor_on_the_last_day() {
+        // O banco abre em 24/12; a B3, não. Em 31/12 nenhum dos dois.
+        for year in covered_years() {
+            let eve = Date::from_calendar_date(year, time::Month::December, 24).unwrap();
+            let last = Date::from_calendar_date(year, time::Month::December, 31).unwrap();
+            assert!(!is_trading_day(eve).unwrap(), "{eve}");
+            assert!(!is_trading_day(last).unwrap(), "{last}");
+            if !matches!(eve.weekday(), Weekday::Saturday | Weekday::Sunday) {
+                assert!(is_business_day(eve).unwrap(), "{eve}");
+            }
+        }
+        // Carnaval, Corpus Christi e feriado nacional: sem pregão.
+        assert!(!is_trading_day(date!(2026 - 2 - 16)).unwrap());
+        assert!(!is_trading_day(date!(2026 - 6 - 4)).unwrap());
+        assert!(!is_trading_day(date!(2026 - 11 - 20)).unwrap());
+        assert!(is_trading_day(date!(2026 - 12 - 23)).unwrap());
+        assert_eq!(
+            is_trading_day(date!(2028 - 12 - 22)),
+            Err(TaxError::NoCalendarForYear(2028))
+        );
     }
 
     #[test]

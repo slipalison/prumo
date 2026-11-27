@@ -296,14 +296,27 @@ fn label_decides_the_kind() {
 }
 
 #[test]
-fn ex_date_is_the_next_business_day() {
+fn ex_date_is_the_next_trading_session() {
     // Quinta → sexta; sexta → segunda.
     assert_eq!(ex_date_after(date!(2026 - 08 - 27)), date!(2026 - 08 - 28));
     assert_eq!(ex_date_after(date!(2026 - 05 - 29)), date!(2026 - 06 - 01));
     // Quinta antes da Sexta-feira Santa de 2026 → segunda.
     assert_eq!(ex_date_after(date!(2026 - 04 - 02)), date!(2026 - 04 - 06));
-    // Ano fora do calendário: só o fim de semana pula.
+    // Antes do Carnaval e do Corpus Christi.
+    assert_eq!(ex_date_after(date!(2026 - 02 - 13)), date!(2026 - 02 - 18));
+    assert_eq!(ex_date_after(date!(2026 - 06 - 03)), date!(2026 - 06 - 05));
+    // Data com em 23/12: em 24/12 o banco abre, mas a B3 não tem pregão, e 25/12
+    // é Natal. Terça 23/12/2025 → sexta 26/12; quarta 23/12/2026 → segunda 28/12.
+    assert_eq!(ex_date_after(date!(2025 - 12 - 23)), date!(2025 - 12 - 26));
+    assert_eq!(ex_date_after(date!(2026 - 12 - 23)), date!(2026 - 12 - 28));
+    // Data com em 30/12: 31/12 sem pregão e 1/1 feriado.
+    assert_eq!(ex_date_after(date!(2025 - 12 - 30)), date!(2026 - 01 - 02));
+    assert_eq!(ex_date_after(date!(2026 - 12 - 30)), date!(2027 - 01 - 04));
+    // Ano fora do calendário: pulam o fim de semana e os feriados fixos do fim
+    // de ano.
     assert_eq!(ex_date_after(date!(2031 - 01 - 03)), date!(2031 - 01 - 06));
+    assert_eq!(ex_date_after(date!(2031 - 12 - 23)), date!(2031 - 12 - 26));
+    assert_eq!(ex_date_after(date!(2031 - 12 - 30)), date!(2032 - 01 - 02));
 }
 
 #[test]

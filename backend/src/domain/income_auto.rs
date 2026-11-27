@@ -24,7 +24,7 @@ use super::asset_class::AssetClass;
 use super::entitlement::quantity_on;
 use super::income::{amounts, jcp_withholding_rate, IncomeAmounts, IncomeKind, IncomeSource};
 use super::ledger::{Entry, Kind};
-use super::tax::calendar::is_business_day;
+use super::tax::calendar::is_trading_day;
 
 /// O começo do `external_ref` de um provento automático.
 pub const REF_PREFIX: &str = "b3a:";
@@ -265,8 +265,19 @@ impl StockEventKind {
     }
 }
 
-/// A data ex: o primeiro dia útil depois da data com. Fora do calendário
-/// conhecido, só sábado e domingo pulam.
+/// Os feriados de data fixa do fim de ano em que a B3 nunca abre: 24/12,
+/// 25/12, 31/12 e 1/1. É a reserva para ano fora do calendário.
+fn year_end_closed(day: Date) -> bool {
+    matches!(
+        (u8::from(day.month()), day.day()),
+        (12, 24) | (12, 25) | (12, 31) | (1, 1)
+    )
+}
+
+/// A data ex: o primeiro **pregão** da B3 depois da data com
+/// ([`is_trading_day`]: sem pregão em feriado nacional, Carnaval, Corpus
+/// Christi, 24/12 e 31/12). Fora do calendário conhecido, pulam o sábado, o
+/// domingo e os feriados fixos do fim de ano.
 pub fn ex_date_after(record_date: Date) -> Date {
     let mut day = record_date;
     for _ in 0..10 {
@@ -274,8 +285,9 @@ pub fn ex_date_after(record_date: Date) -> Date {
             return day;
         };
         day = next;
-        let open = is_business_day(day)
-            .unwrap_or_else(|_| !matches!(day.weekday(), Weekday::Saturday | Weekday::Sunday));
+        let open = is_trading_day(day).unwrap_or_else(|_| {
+            !matches!(day.weekday(), Weekday::Saturday | Weekday::Sunday) && !year_end_closed(day)
+        });
         if open {
             return day;
         }

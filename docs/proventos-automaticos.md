@@ -108,9 +108,12 @@ pela mesma função do provento lançado à mão (`entitlement::quantity_on`):
 compra datada na data ex não dá direito; o saldo inicial (`opening`) conta
 desde sempre (é a quantidade do dia do cadastro). Quantidade zero: nada.
 
-A data ex gravada é o primeiro dia útil depois da data com (calendário de
-`domain/tax/calendar.rs`; fora dele, só o fim de semana pula). Ela é
-informativa: a quantidade sai da data com.
+A data ex gravada é o primeiro **pregão** da B3 depois da data com
+(`is_trading_day` em `domain/tax/calendar.rs`: os dias sem expediente bancário
+da tabela — feriados nacionais, Carnaval, Corpus Christi e 31/12 — mais a
+véspera de Natal, 24/12, em que o banco abre e a B3 não; fora da tabela, pulam
+o fim de semana e os feriados fixos do fim de ano). Ela é informativa: a
+quantidade sai da data com.
 
 ### Tipo e valores
 
@@ -271,18 +274,22 @@ renda enquanto nada foi recebido. Regra em
 ### Líquida, com a bruta ao lado
 
 A estimativa é o que cada cota pagou nos últimos 12 meses, **líquido do IR
-na fonte do JCP**, vezes a quantidade de hoje, ÷ 12. É a mesma base do
+retido na fonte** (o do JCP aqui, os 30% dos EUA lá), vezes a quantidade de
+hoje, ÷ 12. É a mesma base do
 "Recebido em 12 meses" e da "Média por mês" (o livro guarda o líquido) e da
 meta de renda: as três falam do dinheiro que cai na conta.
 
 - JCP: 15% pago até 31/12/2025, 17,5% desde 1/1/2026, **pela data de
   pagamento** (`jcp_withholding_rate`); "a definir" usa a alíquota de hoje (o
   pagamento ainda vai cair).
-- Dividendo, rendimento de FII, amortização e o resto: sem retenção.
+- Ação e REIT dos EUA (`Market::Us`): **30%** retidos lá na fonte, porque
+  não há tratado contra a bitributação entre Brasil e EUA
+  (`US_DIVIDEND_WITHHOLDING_RATE`). O que entra na conta é o que chega.
+- BDR: nada a mais. O valor que a B3 e o Yahoo dão para o BDR já é o repassado
+  pela depositária, depois do imposto lá fora.
+- Dividendo, rendimento de FII, amortização e o resto da B3: sem retenção.
 - A bruta vem ao lado (menor): no total, em cada ativo e na folha "Estimativa
-  por ativo". O imposto lá fora do dividendo americano não é descontado (o
-  Prumo não sabe se a pessoa compensa); o que ela receber de fato vai para o
-  livro com a retenção que ela informar.
+  por ativo".
 
 ### Fonte: B3 para ações e FIIs, Yahoo de reserva
 
@@ -313,7 +320,7 @@ cotas bonificadas, a conta fecha.
 ### A janela: 365 dias por data ex
 
 `(hoje − 365 dias, hoje]`, **pela data ex**, nas duas fontes. A data ex da B3 é
-o primeiro dia útil depois da data com (`ex_date_after`); o Yahoo informa a
+o primeiro pregão depois da data com (`ex_date_after`, seção 3); o Yahoo informa a
 própria data ex, e numa carteira real todas as datas ex do Yahoo na janela
 eram exatamente o pregão seguinte à data com da B3. Assim trocar de fonte não
 mexe na borda.
@@ -328,11 +335,10 @@ mexe na borda.
   de meados do mês ficaria com 11 durante metade do mês). O teste
   `a_monthly_reit_can_have_eleven_or_thirteen_payments_in_the_window` mostra
   os dois casos.
-- **Fim de ano.** 31/12 não tem expediente e 1/1 é feriado: a data com de
-  30/12 tem data ex no primeiro dia útil de janeiro. O calendário é o de
-  `domain::tax::calendar` (expediente bancário), que trata 24/12 como dia útil;
-  a B3 não negocia em 24/12, então uma data com de 23/12 tem data ex 24/12 no
-  Prumo e 26/12 no Yahoo. Só muda a borda em 24 e 25/12.
+- **Fim de ano.** A B3 não tem pregão em 24/12, 25/12, 31/12 e 1/1: a data
+  com de 23/12 tem data ex no pregão seguinte ao Natal (26/12/2025, uma sexta;
+  28/12/2026, uma segunda) e a de 30/12, no primeiro pregão de janeiro
+  (02/01/2026; 04/01/2027). É a mesma data do Yahoo.
 - **Parcelas.** Cada parcela é um anúncio (seção 1) e conta pelo próprio valor,
   inclusive as que serão pagas nos anos seguintes: o que a cota "pagou" nos 12
   meses é o que foi declarado com data com neles.
@@ -359,7 +365,8 @@ JCP recorrente de banco.
   o primeiro pagamento é sempre depois do começo do quinto ano, e a média (e o
   Bazin) nunca passava de 4 anos.
 - **A marca**: 12 meses > **1,5 ×** a média anual, no bruto (o IR não muda o
-  que é "acima"). Como a média inclui o ano de agora, com 5 anos isso equivale
+  que é "acima"). Ativo sem cotas hoje nunca é marcado e não entra na
+  contagem nem na soma (a média dele continua na API). Como a média inclui o ano de agora, com 5 anos isso equivale
   a 12 meses > ~1,71 × a média dos 4 anos anteriores. O limiar foi medido
   numa carteira real em 27/11/2026: pega as antecipações de dezembro de 2025
   (de 1,5 a pouco mais de 2 vezes a média) e deixa de fora quem só cresceu
@@ -376,5 +383,6 @@ JCP recorrente de banco.
 `trailing_12m` (o que a posição teria rendido nos 12 meses com as cotas que o
 livro tinha em cada data com) segue a mesma fonte: pela B3 é o valor da época
 vezes as cotas da data com, **líquido**, arredondado como o provento
-automático; pelo Yahoo, a conta de antes (bruta, na base do provedor). É o que
-o yield on cost usa quando nada foi recebido.
+automático; pelo Yahoo, a conta de antes (na base do provedor), líquida dos
+30% nos EUA e bruta numa ação da B3 (o Yahoo não separa o JCP). É o que o yield
+on cost usa quando nada foi recebido.
