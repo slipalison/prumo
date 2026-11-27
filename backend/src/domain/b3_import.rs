@@ -251,7 +251,7 @@ pub(crate) mod iso_date {
     }
 
     pub mod option {
-        use super::*;
+        use super::{Date, Serializer};
 
         pub fn serialize<S: Serializer>(
             date: &Option<Date>,
@@ -1563,45 +1563,8 @@ pub fn build_preview(names: Vec<String>, outcomes: Vec<FileOutcome>) -> Preview 
     let mut reports: Vec<FileReport> = Vec::with_capacity(outcomes.len());
     let mut readings: Vec<(usize, FileReading)> = Vec::new();
     for (index, (name, outcome)) in names.into_iter().zip(outcomes).enumerate() {
-        let (status, problem, message, missing_columns, reading) = match outcome {
-            FileOutcome::Read(reading) => (FileStatus::Read, None, None, Vec::new(), Some(reading)),
-            FileOutcome::UnknownFormat(problem) => {
-                let missing = match &problem {
-                    FormatProblem::MissingColumns(_, columns) => columns.clone(),
-                    _ => Vec::new(),
-                };
-                (
-                    FileStatus::UnknownFormat,
-                    Some(problem.code()),
-                    Some(problem.message()),
-                    missing,
-                    None,
-                )
-            }
-            FileOutcome::Unreadable(code, message) => (
-                FileStatus::Unreadable,
-                Some(code),
-                Some(message),
-                Vec::new(),
-                None,
-            ),
-        };
-        reports.push(FileReport {
-            index,
-            name,
-            status,
-            kinds: reading
-                .as_ref()
-                .map(|r| r.kinds.clone())
-                .unwrap_or_default(),
-            problem,
-            message,
-            missing_columns,
-            rows: reading.as_ref().map_or(0, |r| r.rows),
-            accepted: 0,
-            unrecognized: 0,
-            ignored: 0,
-        });
+        let (report, reading) = file_report(index, name, outcome);
+        reports.push(report);
         if let Some(reading) = reading {
             readings.push((index, reading));
         }
@@ -1609,81 +1572,22 @@ pub fn build_preview(names: Vec<String>, outcomes: Vec<FileOutcome>) -> Preview 
     // Quem vem antes na prioridade fica com a linha repetida.
     readings.sort_by_key(|(index, reading)| (kind_priority(&reading.kinds), *index));
 
-    let mut seen: HashSet<String> = HashSet::new();
-    let mut ignored: BTreeMap<Reason, usize> = BTreeMap::new();
-    let mut unrecognized: Vec<UnrecognizedRow> = Vec::new();
-    let mut unrecognized_seen: HashMap<(&'static str, String), usize> = HashMap::new();
-    let mut trades: Vec<TradeLine> = Vec::new();
-    let mut events: Vec<EventLine> = Vec::new();
-    let mut income: Vec<IncomeLine> = Vec::new();
+    let mut merged = Merged::default();
     for (index, reading) in readings {
-        let report = &mut reports[index];
-        for reason in &reading.ignored {
-            *ignored.entry(*reason).or_default() += 1;
-            report.ignored += 1;
-        }
-        let mut keep = |external_ref: &str, report: &mut FileReport| {
-            if seen.insert(external_ref.to_owned()) {
-                report.accepted += 1;
-                true
-            } else {
-                *ignored.entry(Reason::DuplicateInRequest).or_default() += 1;
-                report.ignored += 1;
-                false
-            }
-        };
-        for line in reading.trades {
-            if keep(&line.external_ref, report) {
-                trades.push(line);
-            }
-        }
-        for line in reading.events {
-            if keep(&line.external_ref, report) {
-                events.push(line);
-            }
-        }
-        for line in reading.income {
-            if keep(&line.external_ref, report) {
-                income.push(line);
-            }
-        }
-        report.unrecognized = reading.unrecognized.len();
-        for mut row in reading.unrecognized {
-            // A mesma linha em outro arquivo (períodos que se sobrepõem) é
-            // listada uma vez só.
-            let key = (row.reason_code, row.text.clone());
-            if *unrecognized_seen.entry(key).or_insert(index) != index {
-                continue;
-            }
-            row.file = index;
-            unrecognized.push(row);
-        }
+        merged.absorb(index, reading, &mut reports[index]);
     }
+    let Merged {
+        ignored,
+        mut unrecognized,
+        trades,
+        events,
+        income,
+        ..
+    } = merged;
     unrecognized.sort_by(|a, b| (a.file, &a.sheet, a.line).cmp(&(b.file, &b.sheet, b.line)));
 
     let assets = group_assets(trades, events, income);
-    let dates: Vec<Date> = assets
-        .iter()
-        .flat_map(|asset| {
-            asset
-                .trades
-                .iter()
-                .map(|t| Some(t.date))
-                .chain(asset.events.iter().map(|e| Some(e.date)))
-                .chain(asset.income.iter().map(|i| i.date))
-        })
-        .flatten()
-        .collect();
-    let summary = PreviewSummary {
-        assets: assets.len(),
-        trades: assets.iter().map(|a| a.trades.len()).sum(),
-        events: assets.iter().map(|a| a.events.len()).sum(),
-        income: assets.iter().map(|a| a.income.len()).sum(),
-        unrecognized: unrecognized.len(),
-        ignored: ignored.values().sum(),
-        first_date: dates.iter().min().copied(),
-        last_date: dates.iter().max().copied(),
-    };
+    let summary = summary_of(&assets, unrecognized.len(), ignored.values().sum());
     Preview {
         files: reports,
         assets,
@@ -1697,6 +1601,145 @@ pub fn build_preview(names: Vec<String>, outcomes: Vec<FileOutcome>) -> Preview 
             })
             .collect(),
         summary,
+    }
+}
+
+/// O relatório de um arquivo do envio (ainda sem as contagens de linhas) e a
+/// leitura dele, quando ele foi lido.
+fn file_report(
+    index: usize,
+    name: String,
+    outcome: FileOutcome,
+) -> (FileReport, Option<FileReading>) {
+    let (status, problem, message, missing_columns, reading) = match outcome {
+        FileOutcome::Read(reading) => (FileStatus::Read, None, None, Vec::new(), Some(reading)),
+        FileOutcome::UnknownFormat(problem) => {
+            let missing = match &problem {
+                FormatProblem::MissingColumns(_, columns) => columns.clone(),
+                _ => Vec::new(),
+            };
+            (
+                FileStatus::UnknownFormat,
+                Some(problem.code()),
+                Some(problem.message()),
+                missing,
+                None,
+            )
+        }
+        FileOutcome::Unreadable(code, message) => (
+            FileStatus::Unreadable,
+            Some(code),
+            Some(message),
+            Vec::new(),
+            None,
+        ),
+    };
+    let report = FileReport {
+        index,
+        name,
+        status,
+        kinds: reading
+            .as_ref()
+            .map(|r| r.kinds.clone())
+            .unwrap_or_default(),
+        problem,
+        message,
+        missing_columns,
+        rows: reading.as_ref().map_or(0, |r| r.rows),
+        accepted: 0,
+        unrecognized: 0,
+        ignored: 0,
+    };
+    (report, reading)
+}
+
+/// As linhas dos arquivos lidos, já sem a repetida entre planilhas.
+#[derive(Default)]
+struct Merged {
+    /// `external_ref` de todas as linhas que já entraram, de qualquer arquivo.
+    seen: HashSet<String>,
+    ignored: BTreeMap<Reason, usize>,
+    unrecognized: Vec<UnrecognizedRow>,
+    /// A linha não entendida e o primeiro arquivo em que ela apareceu.
+    unrecognized_seen: HashMap<(&'static str, String), usize>,
+    trades: Vec<TradeLine>,
+    events: Vec<EventLine>,
+    income: Vec<IncomeLine>,
+}
+
+impl Merged {
+    /// Junta a leitura do arquivo `index`, contando no relatório dele o que
+    /// entrou e o que ficou de fora.
+    fn absorb(&mut self, index: usize, reading: FileReading, report: &mut FileReport) {
+        for reason in &reading.ignored {
+            *self.ignored.entry(*reason).or_default() += 1;
+            report.ignored += 1;
+        }
+        for line in reading.trades {
+            if self.keep(&line.external_ref, report) {
+                self.trades.push(line);
+            }
+        }
+        for line in reading.events {
+            if self.keep(&line.external_ref, report) {
+                self.events.push(line);
+            }
+        }
+        for line in reading.income {
+            if self.keep(&line.external_ref, report) {
+                self.income.push(line);
+            }
+        }
+        report.unrecognized = reading.unrecognized.len();
+        for mut row in reading.unrecognized {
+            // A mesma linha em outro arquivo (períodos que se sobrepõem) é
+            // listada uma vez só.
+            let key = (row.reason_code, row.text.clone());
+            if *self.unrecognized_seen.entry(key).or_insert(index) != index {
+                continue;
+            }
+            row.file = index;
+            self.unrecognized.push(row);
+        }
+    }
+
+    /// Se a linha entra: a primeira vez que o `external_ref` aparece no envio.
+    /// A repetida conta como ignorada.
+    fn keep(&mut self, external_ref: &str, report: &mut FileReport) -> bool {
+        if self.seen.insert(external_ref.to_owned()) {
+            report.accepted += 1;
+            true
+        } else {
+            *self.ignored.entry(Reason::DuplicateInRequest).or_default() += 1;
+            report.ignored += 1;
+            false
+        }
+    }
+}
+
+/// Os totais da prévia e o período que as linhas cobrem.
+fn summary_of(assets: &[AssetGroup], unrecognized: usize, ignored: usize) -> PreviewSummary {
+    let dates: Vec<Date> = assets
+        .iter()
+        .flat_map(|asset| {
+            asset
+                .trades
+                .iter()
+                .map(|t| Some(t.date))
+                .chain(asset.events.iter().map(|e| Some(e.date)))
+                .chain(asset.income.iter().map(|i| i.date))
+        })
+        .flatten()
+        .collect();
+    PreviewSummary {
+        assets: assets.len(),
+        trades: assets.iter().map(|a| a.trades.len()).sum(),
+        events: assets.iter().map(|a| a.events.len()).sum(),
+        income: assets.iter().map(|a| a.income.len()).sum(),
+        unrecognized,
+        ignored,
+        first_date: dates.iter().min().copied(),
+        last_date: dates.iter().max().copied(),
     }
 }
 

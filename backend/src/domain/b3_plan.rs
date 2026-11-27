@@ -985,38 +985,7 @@ fn plan_ledger(
     current.sort_by(|a, b| ledger::ledger_order(&a.entry, &b.entry));
     let unchanged: Vec<Entry> = current.iter().map(|e| e.entry.clone()).collect();
 
-    // Já existe? Pelo `external_ref` ou pelo lançamento digitado igual.
-    let mut fresh: Vec<Candidate> = Vec::new();
-    for candidate in all {
-        let status = if book.transaction_refs.contains(&candidate.store_ref) {
-            Some("same_ref")
-        } else if candidate.conversion == Conversion::Fixed {
-            let found = current.iter().find(|e| {
-                e.external_ref.is_none()
-                    && !used.entries.contains(&e.id)
-                    && e.entry.kind == candidate.kind
-                    && e.entry.trade_date == candidate.date
-                    && e.entry.quantity == candidate.quantity
-                    && prices_close(e.entry.unit_price, candidate.unit_price)
-            });
-            found.map(|e| {
-                used.entries.insert(e.id);
-                plan.writes.adopt.push((e.id, candidate.store_ref.clone()));
-                "same_entry"
-            })
-        } else {
-            None
-        };
-        match status {
-            Some(reason) => {
-                plan.counts.existing_transactions += 1;
-                for r in &candidate.members {
-                    lines.insert(r.clone(), LineStatus::of(LineState::Existing, reason));
-                }
-            }
-            None => fresh.push(candidate),
-        }
-    }
+    let fresh = fresh_candidates(all, book, &current, used, lines, plan);
     if fresh.is_empty() {
         return unchanged;
     }
@@ -1027,63 +996,12 @@ fn plan_ledger(
     }
 
     // Saldos iniciais e ajustes digitados dão lugar a um saldo inicial só.
-    let replay_now = ledger::replay(&unchanged);
-    let mut checkpoint: Option<(Date, Decimal)> = None;
-    if let Ok(steps) = &replay_now {
-        for step in steps {
-            if matches!(step.entry.kind, Kind::Opening | Kind::Adjustment) {
-                checkpoint = Some((step.entry.trade_date, step.position.quantity));
-            }
-        }
-    }
-    let mut replaced_openings: Vec<(Decimal, Option<Decimal>)> = Vec::new();
-    let kept: Vec<&BookEntry> = current
-        .iter()
-        .copied()
-        .filter(|e| {
-            let typed = matches!(e.entry.kind, Kind::Opening | Kind::Adjustment);
-            if typed {
-                plan.writes.delete_entries.push(e.id);
-                plan.replaced.push(ReplacedEntry {
-                    kind: e.entry.kind,
-                    date: e.entry.trade_date,
-                    quantity: e.entry.quantity,
-                    unit_price: e.entry.unit_price,
-                });
-                if e.entry.kind == Kind::Opening {
-                    replaced_openings.push((e.entry.quantity, e.entry.unit_price));
-                }
-            }
-            !typed
-        })
-        .collect();
+    let checkpoint = typed_checkpoint(&unchanged);
+    let (kept, replaced_openings) = drop_typed(&current, plan);
 
     // O livro simulado sem saldo inicial: o que já fica e o que entra.
     let base_seq = current.iter().map(|e| e.entry.seq).max().unwrap_or(0) + 1;
-    let mut simulated: Vec<Simulated> = kept
-        .iter()
-        .map(|e| Simulated {
-            entry: e.entry.clone(),
-            conversion: Conversion::Fixed,
-            candidate: None,
-        })
-        .collect();
-    for (i, candidate) in fresh.iter().enumerate() {
-        simulated.push(Simulated {
-            entry: Entry {
-                kind: candidate.kind,
-                trade_date: candidate.date,
-                seq: base_seq + 1 + i64::try_from(i).unwrap_or(0),
-                quantity: candidate.quantity,
-                unit_price: candidate.unit_price,
-                fees: Decimal::ZERO,
-                fx_rate: Decimal::ONE,
-            },
-            conversion: candidate.conversion,
-            candidate: Some(i),
-        });
-    }
-    simulated.sort_by(|a, b| ledger::ledger_order(&a.entry, &b.entry));
+    let mut simulated = simulate(&kept, &fresh, base_seq);
 
     let suggestion = suggest_opening(&simulated, checkpoint, unit);
     let suggested_price = average_of(&replaced_openings);
@@ -1141,51 +1059,190 @@ fn plan_ledger(
     }
 
     // O livro de verdade, com as quantidades que dependem da posição.
-    let mut position = Position::EMPTY;
-    let mut applied: Vec<Entry> = Vec::with_capacity(simulated.len());
-    let mut resolved: Vec<Option<PlannedEntry>> = vec![None; fresh.len()];
-    for step in &simulated {
-        let mut entry = step.entry.clone();
-        match step.conversion {
-            Conversion::Fixed => {}
-            Conversion::ReverseToTotal(total) => entry.quantity = position.quantity - total,
-            Conversion::AmortizeHeld(value) => {
-                entry.quantity = position.quantity;
-                entry.unit_price = per_unit(Some(value), position.quantity);
-            }
+    match apply_simulated(&simulated, &fresh, unit) {
+        Ok(applied) => {
+            // Ordem de gravação = a ordem do `seq` simulado.
+            plan.writes
+                .entries
+                .extend(applied.resolved.into_iter().flatten());
+            plan.counts.new_transactions += fresh.len();
+            plan.final_quantity = Some(applied.position.quantity);
+            applied.entries
         }
-        let refused = |plan: &mut AssetPlan,
-                       lines: &mut BTreeMap<String, LineStatus>,
-                       code: &'static str,
-                       detail: String| {
-            if let Some(i) = step.candidate {
-                for r in &fresh[i].members {
-                    lines.insert(r.clone(), LineStatus::of(LineState::Conflict, code));
+        Err(refusal) => {
+            refuse(refusal, &fresh, lines, plan);
+            unchanged
+        }
+    }
+}
+
+/// Já existe? Pelo `external_ref` ou pelo lançamento digitado igual. Marca as
+/// linhas que já estão no livro e devolve as que entram.
+fn fresh_candidates(
+    all: Vec<Candidate>,
+    book: &Book,
+    current: &[&BookEntry],
+    used: &mut Used,
+    lines: &mut BTreeMap<String, LineStatus>,
+    plan: &mut AssetPlan,
+) -> Vec<Candidate> {
+    let mut fresh: Vec<Candidate> = Vec::new();
+    for candidate in all {
+        match existing_reason(&candidate, book, current, used, plan) {
+            Some(reason) => {
+                plan.counts.existing_transactions += 1;
+                for r in &candidate.members {
+                    lines.insert(r.clone(), LineStatus::of(LineState::Existing, reason));
                 }
             }
-            plan.conflict = Some(AssetConflict {
-                reason_code: code,
-                detail,
-            });
+            None => fresh.push(candidate),
+        }
+    }
+    fresh
+}
+
+/// Por que a linha já está no livro, ou `None` quando ela entra. O lançamento
+/// digitado igual (ainda sem `external_ref` e sem outra linha) é adotado: passa
+/// a levar o `external_ref` dela.
+fn existing_reason(
+    candidate: &Candidate,
+    book: &Book,
+    current: &[&BookEntry],
+    used: &mut Used,
+    plan: &mut AssetPlan,
+) -> Option<&'static str> {
+    if book.transaction_refs.contains(&candidate.store_ref) {
+        return Some("same_ref");
+    }
+    if candidate.conversion != Conversion::Fixed {
+        return None;
+    }
+    let found = current.iter().find(|e| {
+        e.external_ref.is_none()
+            && !used.entries.contains(&e.id)
+            && e.entry.kind == candidate.kind
+            && e.entry.trade_date == candidate.date
+            && e.entry.quantity == candidate.quantity
+            && prices_close(e.entry.unit_price, candidate.unit_price)
+    })?;
+    used.entries.insert(found.id);
+    plan.writes
+        .adopt
+        .push((found.id, candidate.store_ref.clone()));
+    Some("same_entry")
+}
+
+/// A data e a posição do último saldo inicial ou ajuste digitado, quando o
+/// livro de hoje fecha.
+fn typed_checkpoint(unchanged: &[Entry]) -> Option<(Date, Decimal)> {
+    let steps = ledger::replay(unchanged).ok()?;
+    steps
+        .iter()
+        .rev()
+        .find(|step| matches!(step.entry.kind, Kind::Opening | Kind::Adjustment))
+        .map(|step| (step.entry.trade_date, step.position.quantity))
+}
+
+/// Os lançamentos que ficam: os saldos iniciais e ajustes digitados saem (o
+/// plano os apaga e os mostra como substituídos). Devolve também a quantidade
+/// e o preço de cada saldo inicial que saiu.
+fn drop_typed<'b>(
+    current: &[&'b BookEntry],
+    plan: &mut AssetPlan,
+) -> (Vec<&'b BookEntry>, Vec<(Decimal, Option<Decimal>)>) {
+    let mut kept: Vec<&BookEntry> = Vec::new();
+    let mut replaced_openings: Vec<(Decimal, Option<Decimal>)> = Vec::new();
+    for &e in current {
+        if !matches!(e.entry.kind, Kind::Opening | Kind::Adjustment) {
+            kept.push(e);
+            continue;
+        }
+        plan.writes.delete_entries.push(e.id);
+        plan.replaced.push(ReplacedEntry {
+            kind: e.entry.kind,
+            date: e.entry.trade_date,
+            quantity: e.entry.quantity,
+            unit_price: e.entry.unit_price,
+        });
+        if e.entry.kind == Kind::Opening {
+            replaced_openings.push((e.entry.quantity, e.entry.unit_price));
+        }
+    }
+    (kept, replaced_openings)
+}
+
+/// O livro simulado sem saldo inicial, na ordem do livro: o que já fica e o
+/// que entra, este com o `seq` que o banco vai dar (depois de `base_seq`, que
+/// é do saldo inicial).
+fn simulate(kept: &[&BookEntry], fresh: &[Candidate], base_seq: i64) -> Vec<Simulated> {
+    let mut simulated: Vec<Simulated> = kept
+        .iter()
+        .map(|e| Simulated {
+            entry: e.entry.clone(),
+            conversion: Conversion::Fixed,
+            candidate: None,
+        })
+        .collect();
+    for (i, candidate) in fresh.iter().enumerate() {
+        simulated.push(Simulated {
+            entry: Entry {
+                kind: candidate.kind,
+                trade_date: candidate.date,
+                seq: base_seq + 1 + i64::try_from(i).unwrap_or(0),
+                quantity: candidate.quantity,
+                unit_price: candidate.unit_price,
+                fees: Decimal::ZERO,
+                fx_rate: Decimal::ONE,
+            },
+            conversion: candidate.conversion,
+            candidate: Some(i),
+        });
+    }
+    simulated.sort_by(|a, b| ledger::ledger_order(&a.entry, &b.entry));
+    simulated
+}
+
+/// O livro simulado aplicado de verdade.
+struct Applied {
+    position: Position,
+    entries: Vec<Entry>,
+    /// O lançamento que cada linha nova grava, na ordem de `fresh`.
+    resolved: Vec<Option<PlannedEntry>>,
+}
+
+/// Por que o livro simulado não fecha, e a linha nova que causou isso.
+struct Refusal {
+    candidate: Option<usize>,
+    code: &'static str,
+    detail: String,
+}
+
+/// Aplica o livro simulado com as quantidades que dependem da posição.
+fn apply_simulated(
+    simulated: &[Simulated],
+    fresh: &[Candidate],
+    unit: UnitKind,
+) -> Result<Applied, Refusal> {
+    let mut position = Position::EMPTY;
+    let mut entries: Vec<Entry> = Vec::with_capacity(simulated.len());
+    let mut resolved: Vec<Option<PlannedEntry>> = vec![None; fresh.len()];
+    for step in simulated {
+        let entry = resolve_quantity(step, position);
+        let refused = |code, detail| Refusal {
+            candidate: step.candidate,
+            code,
+            detail,
         };
         if step.candidate.is_some() {
             if let Err(message) = check_for_unit(entry.kind, entry.quantity, entry.unit_price, unit)
             {
-                refused(plan, lines, "unit", message.to_owned());
-                return unchanged;
+                return Err(refused("unit", message.to_owned()));
             }
         }
-        match ledger::apply(position, &entry) {
-            Ok((next, _)) => position = next,
-            Err(error) => {
-                let code = match error {
-                    LedgerError::ExceedsPosition { .. } => "exceeds_position",
-                    LedgerError::Invalid { .. } | LedgerError::Overflow { .. } => "invalid",
-                };
-                refused(plan, lines, code, error.to_string());
-                return unchanged;
-            }
-        }
+        position = match ledger::apply(position, &entry) {
+            Ok((next, _)) => next,
+            Err(error) => return Err(refused(conflict_code(&error), error.to_string())),
+        };
         if let Some(i) = step.candidate {
             resolved[i] = Some(PlannedEntry {
                 kind: entry.kind,
@@ -1195,13 +1252,53 @@ fn plan_ledger(
                 external_ref: Some(fresh[i].store_ref.clone()),
             });
         }
-        applied.push(entry);
+        entries.push(entry);
     }
-    // Ordem de gravação = a ordem do `seq` simulado.
-    plan.writes.entries.extend(resolved.into_iter().flatten());
-    plan.counts.new_transactions += fresh.len();
-    plan.final_quantity = Some(position.quantity);
-    applied
+    Ok(Applied {
+        position,
+        entries,
+        resolved,
+    })
+}
+
+/// O lançamento simulado com a quantidade de verdade na `position` de antes
+/// dele.
+fn resolve_quantity(step: &Simulated, position: Position) -> Entry {
+    let mut entry = step.entry.clone();
+    match step.conversion {
+        Conversion::Fixed => {}
+        Conversion::ReverseToTotal(total) => entry.quantity = position.quantity - total,
+        Conversion::AmortizeHeld(value) => {
+            entry.quantity = position.quantity;
+            entry.unit_price = per_unit(Some(value), position.quantity);
+        }
+    }
+    entry
+}
+
+/// O conflito no plano do ativo, e na linha nova que o causou.
+fn refuse(
+    refusal: Refusal,
+    fresh: &[Candidate],
+    lines: &mut BTreeMap<String, LineStatus>,
+    plan: &mut AssetPlan,
+) {
+    if let Some(i) = refusal.candidate {
+        for r in &fresh[i].members {
+            lines.insert(r.clone(), LineStatus::of(LineState::Conflict, refusal.code));
+        }
+    }
+    plan.conflict = Some(AssetConflict {
+        reason_code: refusal.code,
+        detail: refusal.detail,
+    });
+}
+
+fn conflict_code(error: &LedgerError) -> &'static str {
+    match error {
+        LedgerError::ExceedsPosition { .. } => "exceeds_position",
+        LedgerError::Invalid { .. } | LedgerError::Overflow { .. } => "invalid",
+    }
 }
 
 fn group_first_date(fresh: &[Candidate]) -> Date {
