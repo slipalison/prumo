@@ -19,7 +19,7 @@ type SettingsScreenProps = { portfolio: Portfolio };
  * largura larga vale para Ajustes inteiro, e cada seção enxerga só a sua
  * largura (a seção é o contêiner das grades dela).
  */
-export function SettingsScreen({ portfolio }: SettingsScreenProps) {
+export function SettingsScreen({ portfolio }: Readonly<SettingsScreenProps>) {
   const requested = parseSection(useHash());
   const section = SETTINGS_SECTIONS.find((s) => s.id === requested) ?? SETTINGS_SECTIONS[0];
   const list = useRef<HTMLUListElement>(null);

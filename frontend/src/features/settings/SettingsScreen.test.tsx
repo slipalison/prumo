@@ -87,7 +87,7 @@ describe("Navegação e Ajustes", () => {
     const before = window.history.length;
     renderApp("metas");
     await waitFor(() => expect(window.location.hash).toBe("#/ajustes/metas"));
-    expect(window.history.length).toBe(before);
+    expect(window.history).toHaveLength(before);
   });
 
   it("nas pílulas que rolam de lado (celular), a seção aberta fica à vista", async () => {
