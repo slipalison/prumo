@@ -15,7 +15,7 @@ function scoreTier(score: number): "zero" | "low" | "mid" | "high" {
 }
 
 /** A nota do ativo. Muda virando, como placar. */
-export function ScoreBadge({ score, size = "sm" }: ScoreBadgeProps) {
+export function ScoreBadge({ score, size = "sm" }: Readonly<ScoreBadgeProps>) {
   return (
     <span className={cx("score", `score--${scoreTier(score)}`, `score--${size}`)}>
       <span className="sr-only">Nota </span>

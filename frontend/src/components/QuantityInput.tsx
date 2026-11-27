@@ -34,7 +34,7 @@ export function QuantityInput({
   min = 0,
   focusOnMount,
   hint,
-}: QuantityInputProps) {
+}: Readonly<QuantityInputProps>) {
   const hintId = `${id}-hint`;
   const inputRef = useFocusOnMount<HTMLInputElement>(focusOnMount);
   const [text, setText] = useState(() => formatQuantity(value, fractional));
@@ -84,7 +84,7 @@ export function QuantityInput({
           onFocus={() => setFocused(true)}
           onChange={(event) => {
             setText(event.target.value);
-            const parsed = parseDecimal(event.target.value.replace(/\./g, fractional ? "." : ""));
+            const parsed = parseDecimal(event.target.value.replaceAll(".", fractional ? "." : ""));
             if (parsed !== null && parsed >= min) onChange(fractional ? parsed : Math.round(parsed));
           }}
           onBlur={() => {

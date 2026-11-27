@@ -11,7 +11,7 @@ const DURATION_MS = 4500;
 
 const ICON = { success: IconCheck, error: IconAlert, info: IconSparkle } as const;
 
-export function ToastProvider({ children }: { children: ReactNode }) {
+export function ToastProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextId = useRef(1);
   const timers = useRef(new Map<number, number>());
@@ -43,12 +43,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={push}>
       {children}
-      <div className="toasts" role="status" aria-live="polite">
+      <output className="toasts" aria-live="polite">
         <AnimatePresence initial={false}>
           {toasts.map((toast) => {
             const Icon = ICON[toast.tone];
             return (
-              <motion.div
+              <motion.span
                 key={toast.id}
                 className={cx("toast glass", `toast--${toast.tone}`)}
                 initial={{ opacity: 0, y: 24, scale: 0.94 }}
@@ -61,11 +61,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 <button type="button" className="icon-btn icon-btn--sm" aria-label="Dispensar aviso" onClick={() => dismiss(toast.id)}>
                   <IconClose />
                 </button>
-              </motion.div>
+              </motion.span>
             );
           })}
         </AnimatePresence>
-      </div>
+      </output>
     </ToastContext.Provider>
   );
 }

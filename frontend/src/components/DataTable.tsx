@@ -71,7 +71,7 @@ export function DataTable<T>({
   detail,
   detailId,
   className,
-}: DataTableProps<T>) {
+}: Readonly<DataTableProps<T>>) {
   const isEmpty = rows.length === 0 && empty !== undefined;
   const wrap = useRef<HTMLDivElement>(null);
   const [scrolls, setScrolls] = useState(false);
@@ -172,7 +172,7 @@ type StatusPillProps = {
 };
 
 /** O selo de estado de uma linha: ícone + texto, borda tracejada no que não conta. */
-export function StatusPill({ status, children }: StatusPillProps) {
+export function StatusPill({ status, children }: Readonly<StatusPillProps>) {
   return (
     <span className={cx("status-pill", `status-pill--${status}`)}>
       {STATUS_ICON[status]}

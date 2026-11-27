@@ -40,7 +40,7 @@ type PageHeaderProps = {
 };
 
 /** O topo da tela: título em uma linha, o resto sob demanda ou à direita. */
-export function PageHeader({ title, eyebrow, summary, info, infoLabel = "Sobre esta tela", actions, titleId }: PageHeaderProps) {
+export function PageHeader({ title, eyebrow, summary, info, infoLabel = "Sobre esta tela", actions, titleId }: Readonly<PageHeaderProps>) {
   return (
     <header className="page-header">
       <div className="page-header__titles">
@@ -178,7 +178,7 @@ type StatStripProps = {
  * juntos), e cada número quebra para a linha de baixo quando não cabe (mínimo
  * de 150 px por número). Quem nomeia a faixa é o painel ou a seção em volta.
  */
-export function StatStrip({ items, inset = false, className }: StatStripProps) {
+export function StatStrip({ items, inset = false, className }: Readonly<StatStripProps>) {
   return (
     <dl className={cx("stat-strip", inset && "stat-strip--inset", className)}>
       {items.map((item) => (

@@ -1,7 +1,7 @@
 import type { SVGProps } from "react";
 import { Svg } from "./icons";
 
-type GlyphProps = SVGProps<SVGSVGElement>;
+type GlyphProps = Readonly<SVGProps<SVGSVGElement>>;
 
 /*
  * Desenhos próprios do Prumo para o que não tem logo de empresa. Nenhum copia

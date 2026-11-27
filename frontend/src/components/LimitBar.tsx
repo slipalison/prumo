@@ -15,13 +15,13 @@ type LimitBarProps = {
  * escala acompanha a maior das duas medidas, como a barra de classe; passar do
  * limite é dito em texto no cartão, a cor só reforça.
  */
-export function LimitBar({ current, limit, label }: LimitBarProps) {
+export function LimitBar({ current, limit, label }: Readonly<LimitBarProps>) {
   const scale = Math.min(Math.max(current, limit, 1) * 1.15, 100);
   const toWidth = (value: number) => `${Math.min((value / scale) * 100, 100)}%`;
   const over = current > limit;
 
   return (
-    <div
+    <div // NOSONAR: o <meter> nativo desenha a própria barra e não mostra filhos; aqui a barra tem preenchimento e o fio do limite
       className="class-bar limit-bar"
       role="meter"
       aria-label={label}

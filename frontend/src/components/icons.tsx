@@ -1,6 +1,6 @@
 import type { SVGProps } from "react";
 
-type IconProps = SVGProps<SVGSVGElement>;
+type IconProps = Readonly<SVGProps<SVGSVGElement>>;
 
 export function Svg({ children, ...props }: IconProps) {
   return (

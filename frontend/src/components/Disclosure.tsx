@@ -18,7 +18,7 @@ type DisclosureProps = {
  * linhas (as regras que estão ok, o detalhe de uma conta); explicação curta
  * vai num ⓘ, formulário vai numa folha (docs/layout.md).
  */
-export function Disclosure({ summary, count, children, defaultOpen = false, className }: DisclosureProps) {
+export function Disclosure({ summary, count, children, defaultOpen = false, className }: Readonly<DisclosureProps>) {
   return (
     <details className={cx("disclosure", className)} open={defaultOpen || undefined}>
       <summary className="disclosure__summary">

@@ -3,7 +3,7 @@ import { cx } from "../lib/cx";
 import { useMoney } from "../lib/privacy";
 import { usePriceTrend, type Trend } from "../lib/usePriceTrend";
 
-function Arrow({ trend }: { trend: Trend }) {
+function Arrow({ trend }: Readonly<{ trend: Trend }>) {
   // Cor nunca sozinha: a seta diz o sentido para quem não distingue verde de
   // vermelho. Fora do leitor de tela — o preço muda o tempo todo.
   return (
@@ -17,7 +17,7 @@ function Arrow({ trend }: { trend: Trend }) {
  * Seta que aparece por um instante quando `value` sobe ou desce. Com os
  * valores ocultos ela some: o sentido em que o patrimônio andou também é dado.
  */
-export function TrendMark({ value }: { value: number }) {
+export function TrendMark({ value }: Readonly<{ value: number }>) {
   const { trend, version } = usePriceTrend(value);
   const { hidden } = useMoney();
   if (!trend || hidden) return null;
@@ -25,7 +25,7 @@ export function TrendMark({ value }: { value: number }) {
 }
 
 /** O número pisca na cor do sentido em que andou, com a seta ao lado. */
-export function PriceFlash({ value, children }: { value: number; children: ReactNode }) {
+export function PriceFlash({ value, children }: Readonly<{ value: number; children: ReactNode }>) {
   const { trend: moved, version } = usePriceTrend(value);
   const { hidden } = useMoney();
   // Oculto, não pisca nem mostra seta: a cor e a seta entregariam o sentido.

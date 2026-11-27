@@ -24,7 +24,7 @@ const GAP = 3;
  * Rosca em SVG. Os arcos se desenham ao entrar e, quando os valores mudam
  * (antes → depois do aporte), cada arco escorrega para a posição nova.
  */
-export function Donut({ segments, label, size = 220, thickness = 18, children }: DonutProps) {
+export function Donut({ segments, label, size = 220, thickness = 18, children }: Readonly<DonutProps>) {
   const radius = (size - thickness) / 2;
   const circumference = 2 * Math.PI * radius;
   const visible = segments.filter((s) => s.value > 0);
@@ -41,7 +41,13 @@ export function Donut({ segments, label, size = 220, thickness = 18, children }:
 
   return (
     <figure className="donut" style={{ width: size, height: size }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={label}>
+      <svg // NOSONAR: SVG em linha e animado, com nome; não vira <img>
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        role="img"
+        aria-label={label}
+      >
         <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
           <circle
             className="donut__track"

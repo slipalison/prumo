@@ -5,7 +5,7 @@ import { Plumb } from "./Plumb";
 
 type ErrorStateProps = { error: unknown; onRetry: () => void };
 
-export function ErrorState({ error, onRetry }: ErrorStateProps) {
+export function ErrorState({ error, onRetry }: Readonly<ErrorStateProps>) {
   return (
     <GlassCard as="section" className="state-card" role="alert">
       <Plumb state="idle" size={64} label="Prumo fora do eixo" />

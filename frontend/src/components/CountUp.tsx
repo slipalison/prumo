@@ -16,7 +16,7 @@ type CountUpProps = {
  * Com os valores ocultos, o formato padrão devolve a máscara: não há número
  * para contar nem para o leitor de tela ler.
  */
-export function CountUp({ value, format, className }: CountUpProps) {
+export function CountUp({ value, format, className }: Readonly<CountUpProps>) {
   const reduce = useReducedMotion();
   const money = useMoney();
   const motionValue = useMotionValue(reduce ? value : 0);

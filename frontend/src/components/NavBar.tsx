@@ -8,8 +8,8 @@ import { SPRING } from "../lib/motion";
 
 type NavBarProps = {
   route: RouteId;
-  email?: string | undefined;
-  version?: string | undefined;
+  email?: string;
+  version?: string;
 };
 
 /**
@@ -17,7 +17,7 @@ type NavBarProps = {
  * partir de 960px (a troca é só CSS). O destaque da aba escorrega. As entradas
  * saem de `APP_ROUTES`. O olho dos valores fica junto do tema, no canto.
  */
-export function NavBar({ route, email, version }: NavBarProps) {
+export function NavBar({ route, email, version }: Readonly<NavBarProps>) {
   return (
     <nav className="nav" aria-label="Principal">
       <div className="nav__brand">

@@ -9,7 +9,7 @@ type ScoreSliderProps = {
 };
 
 /** Nota manual de 0 a 10, para cripto, renda fixa ou quem prefere não usar o checklist. */
-export function ScoreSlider({ id, value, onChange, label = "Nota de confiança (0 a 10)", hint }: ScoreSliderProps) {
+export function ScoreSlider({ id, value, onChange, label = "Nota de confiança (0 a 10)", hint }: Readonly<ScoreSliderProps>) {
   return (
     <div className="score-slider">
       <div className="score-slider__head">

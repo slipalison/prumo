@@ -20,7 +20,7 @@ function scrollToTop(): void {
   window.scrollTo({ top: 0, left: 0, behavior: "instant" });
 }
 
-function Screen({ route, portfolio }: { route: (typeof APP_ROUTES)[number]; portfolio: Portfolio }) {
+function Screen({ route, portfolio }: Readonly<{ route: (typeof APP_ROUTES)[number]; portfolio: Portfolio }>) {
   const { Screen: Current } = route;
   return <Current portfolio={portfolio} />;
 }

@@ -51,7 +51,7 @@ export function MoneyInput({
   screenFocus,
   onEnter,
   disabled,
-}: MoneyInputProps) {
+}: Readonly<MoneyInputProps>) {
   const inputRef = useFocusOnMount<HTMLInputElement>(focusOnMount);
   const money = useMoney();
   const [focused, setFocused] = useState(false);

@@ -19,7 +19,7 @@ type ClassBarProps = {
  * classe de 5% não virar um risco invisível numa régua de 0 a 100. A meta é o
  * fio de prumo: uma linha vertical com o peso no topo.
  */
-export function ClassBar({ assetClass, current, target, after }: ClassBarProps) {
+export function ClassBar({ assetClass, current, target, after }: Readonly<ClassBarProps>) {
   const scale = Math.min(Math.max(target, current, after ?? 0, 1) * 1.25, 100);
   const toWidth = (value: number) => `${Math.min((value / scale) * 100, 100)}%`;
   const added = after !== undefined && after > current + 0.005;
@@ -29,7 +29,7 @@ export function ClassBar({ assetClass, current, target, after }: ClassBarProps) 
     : `${label}: ${formatPercent(current)} de ${formatPercent(target)} da meta`;
 
   return (
-    <div
+    <div // NOSONAR: o <meter> nativo desenha a própria barra e não mostra filhos; aqui a barra tem preenchimento, aporte e o fio da meta
       className="class-bar"
       role="meter"
       aria-label={description}

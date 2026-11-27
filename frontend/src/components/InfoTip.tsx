@@ -16,7 +16,7 @@ type InfoTipProps = {
  * parágrafo na tela, agora sob demanda (toque, foco ou mouse). O ícone tem
  * 16 px, mas a área de toque chega a 44 px sem empurrar o texto ao lado.
  */
-export function InfoTip({ label, children, placement, align }: InfoTipProps) {
+export function InfoTip({ label, children, placement, align }: Readonly<InfoTipProps>) {
   return (
     <Toggletip label={label} content={children} className="info-tip" placement={placement} align={align}>
       <IconInfo width={16} height={16} />

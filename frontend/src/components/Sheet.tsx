@@ -28,7 +28,7 @@ const FOCUSABLE =
 function focusables(root: HTMLElement | null): HTMLElement[] {
   if (!root) return [];
   return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-    (el) => !el.hasAttribute("data-focus-skip"),
+    (el) => el.dataset.focusSkip === undefined,
   );
 }
 
@@ -91,7 +91,7 @@ export function Sheet({ open, onClose, title, description, children, footer, cla
       if (event.key !== "Tab") return;
       const items = focusables(panelRef.current);
       const first = items[0];
-      const last = items[items.length - 1];
+      const last = items.at(-1);
       if (!first || !last) {
         event.preventDefault();
         return;
@@ -131,7 +131,7 @@ export function Sheet({ open, onClose, title, description, children, footer, cla
             exit={{ opacity: 0 }}
             transition={{ duration: DURATION.fast }}
           />
-          <motion.div
+          <motion.div // NOSONAR: <dialog> só é modal com showModal(); a folha já prende o foco, fecha com Esc, empilha e anima a saída
             ref={panelRef}
             role="dialog"
             aria-modal="true"

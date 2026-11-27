@@ -35,7 +35,7 @@ const GLYPHS: Record<Exclude<IconKind, "initials">, ComponentType<{ className?: 
  * sempre por baixo, e o logo só aparece, por cima, depois de carregar. Se a
  * imagem falha, ela sai e as iniciais ficam.
  */
-export function AssetIcon({ symbol, name, assetClass, treasury, size = "md", className }: AssetIconProps) {
+export function AssetIcon({ symbol, name, assetClass, treasury, size = "md", className }: Readonly<AssetIconProps>) {
   const versions = useIconIndex().data;
   const subject = { symbol, assetClass, treasury };
   const kind = iconKind(subject);

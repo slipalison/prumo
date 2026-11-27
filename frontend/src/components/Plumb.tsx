@@ -36,13 +36,13 @@ const MOTION: Record<PlumbState, { animate: TargetAndTransition; transition: Tra
   },
 };
 
-export function Plumb({ state = "idle", size = 96, label = "Prumo", className }: PlumbProps) {
+export function Plumb({ state = "idle", size = 96, label = "Prumo", className }: Readonly<PlumbProps>) {
   const reduce = useReducedMotion();
-  const id = useId().replace(/:/g, "");
+  const id = useId().replaceAll(":", "");
   const motionSpec = MOTION[state];
 
   return (
-    <svg
+    <svg // NOSONAR: SVG em linha e animado, com nome; não vira <img>
       className={cx("plumb", `plumb--${state}`, className)}
       width={size}
       height={size * 1.4}

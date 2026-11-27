@@ -14,20 +14,25 @@ type LiveBadgeProps = {
  * dele, a hora da última cotação. Muda de texto só quando muda o estado, e é
  * isso que o leitor de tela anuncia — preço novo a cada segundo, não.
  */
-export function LiveBadge({ status, updatedAt, delayedB3 }: LiveBadgeProps) {
+export function LiveBadge({ status, updatedAt, delayedB3 }: Readonly<LiveBadgeProps>) {
   return (
-    <span className="live-badge" role="status">
-      {status === "live" ? (
-        <>
-          <span className="live-badge__dot" aria-hidden="true" />
-          <span className="live-badge__label">Ao vivo</span>
-          {delayedB3 && <span className="live-badge__note">B3 com 15 min de atraso</span>}
-        </>
-      ) : status === "connecting" ? (
-        <span className="field__hint">Conectando ao vivo…</span>
-      ) : (
-        <span className="field__hint">Cotações {formatRelative(updatedAt)}</span>
-      )}
-    </span>
+    <output className="live-badge">
+      <LiveBadgeText status={status} updatedAt={updatedAt} delayedB3={delayedB3} />
+    </output>
   );
+}
+
+/** O texto do selo em cada estado: ao vivo, conectando ou a hora da última cotação. */
+function LiveBadgeText({ status, updatedAt, delayedB3 }: Readonly<LiveBadgeProps>) {
+  if (status === "live") {
+    return (
+      <>
+        <span className="live-badge__dot" aria-hidden="true" />
+        <span className="live-badge__label">Ao vivo</span>
+        {delayedB3 && <span className="live-badge__note">B3 com 15 min de atraso</span>}
+      </>
+    );
+  }
+  if (status === "connecting") return <span className="field__hint">Conectando ao vivo…</span>;
+  return <span className="field__hint">Cotações {formatRelative(updatedAt)}</span>;
 }
