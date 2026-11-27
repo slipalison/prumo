@@ -23,6 +23,7 @@ import { incomeHandlers } from "./incomeHandlers";
 import { objectivesHandlers } from "./objectivesHandlers";
 import { panelHandlers } from "./panelHandlers";
 import { riskHandlers } from "./riskHandlers";
+import { projectionHandlers } from "./projectionHandlers";
 import { taxHandlers } from "./taxHandlers";
 import {
   defaultAssets,
@@ -438,6 +439,7 @@ export const allHandlers: HttpHandler[] = [
   ...defaultIncomeAutoHandlers,
   ...objectivesHandlers,
   ...panelHandlers,
+  ...projectionHandlers,
   ...taxHandlers,
   ...riskHandlers,
 ];

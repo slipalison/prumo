@@ -17,6 +17,7 @@ import { PendingEventsCard } from "../incomeAuto/PendingEvents";
 import { EstimateCard } from "./EstimateCard";
 import { FoldPanel } from "./FoldPanel";
 import { IncomeGoalCard } from "./IncomeGoalCard";
+import { IncomeProjectionPanel } from "./IncomeProjectionPanel";
 import { EventList, UpcomingList } from "./IncomeLists";
 import { ScrollRegion } from "./ScrollRegion";
 import { MonthlyBars } from "./MonthlyBars";
@@ -119,6 +120,8 @@ function Loaded({ summary }: { summary: IncomeSummary }) {
           {estimate}
         </Grid>
       )}
+
+      <IncomeProjectionPanel />
 
       {hasLedger && (
         <Panel title="Ano por mês">

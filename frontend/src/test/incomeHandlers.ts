@@ -158,6 +158,7 @@ export function sampleSummary(): IncomeSummary {
     goal: {
       id: "g-1",
       target: 500,
+      mode: "average",
       achieved_at: null,
       current_monthly: total / 12,
       basis: "received",

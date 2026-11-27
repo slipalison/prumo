@@ -116,7 +116,7 @@ export function demoIncomeSummary(): IncomeSummary {
     total_12m: SUM,
     monthly_average: round2(SUM / 12),
     months: base.months.map((m) => ({ ...m, received: round2(m.received * scale) })),
-    goal: base.goal && { ...base.goal, current_monthly: round2(SUM / 12), percent: round2((SUM / 12 / base.goal.target) * 100) },
+    goal: base.goal && { ...base.goal, mode: "floor", current_monthly: round2(SUM / 12), percent: round2((SUM / 12 / base.goal.target) * 100) },
     by_payer: payers(),
     upcoming: list,
     upcoming_total: round2(list.reduce((acc, e) => acc + e.net, 0)),

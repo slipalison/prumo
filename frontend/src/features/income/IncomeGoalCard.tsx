@@ -14,6 +14,7 @@ import { formatPercent } from "../../lib/format";
 import { formatDay } from "../../lib/income";
 import { useMoney } from "../../lib/privacy";
 import { SPRING } from "../../lib/motion";
+import { IncomeGoalProjection } from "./IncomeGoalProjection";
 
 type IncomeGoalCardProps = {
   goal: IncomeGoal | null;
@@ -34,15 +35,20 @@ export function IncomeGoalCard({ goal, monthlyAverage, estimatedMonthly }: Incom
   const current = goal?.current_monthly ?? (monthlyAverage > 0 ? monthlyAverage : estimatedMonthly);
   const percent = goal?.percent ?? 0;
   const shown = Math.min(Math.max(percent, 0), 100);
+  const floor = goal?.mode === "floor";
 
   return (
     <Panel
       className="income-goal"
       title="Meta de renda mensal"
       info={
-        basis === "received"
-          ? "Média do que você recebeu nos últimos 12 meses."
-          : "Estimativa pelo que cada cota pagou nos últimos 12 meses, líquida do IR retido na fonte como o recebido. Ainda não há proventos recebidos lançados."
+        floor
+          ? basis === "received"
+            ? "O menor mês recebido nos 12 meses fechados: a meta conta quando todo mês chega lá."
+            : "O pior mês pela estimativa (o que cada cota pagou nos últimos 12 meses, no calendário de cada ativo). Ainda não há proventos recebidos nos 12 meses fechados."
+          : basis === "received"
+            ? "Média do que você recebeu nos últimos 12 meses."
+            : "Estimativa pelo que cada cota pagou nos últimos 12 meses, líquida do IR retido na fonte como o recebido. Ainda não há proventos recebidos lançados."
       }
       infoLabel="Como a renda da meta é medida"
       actions={
@@ -54,7 +60,7 @@ export function IncomeGoalCard({ goal, monthlyAverage, estimatedMonthly }: Incom
     >
       <p className="income-goal__now">
         <CountUp value={current} className="income-goal__value" />
-        <span className="income-goal__per"> por mês</span>
+        <span className="income-goal__per">{floor ? " no menor mês" : " por mês"}</span>
         {basis === "estimate" && <span className="income-tag"> estimativa</span>}
       </p>
 
@@ -79,10 +85,12 @@ export function IncomeGoalCard({ goal, monthlyAverage, estimatedMonthly }: Incom
           <p className="income-goal__legend">
             <strong>{formatPercent(percent, 0)}</strong> de {money.brl(goal.target)} por mês
           </p>
-          {goal.achieved_at && (
+          {goal.achieved_at ? (
             <p className="income-goal__done" role="status">
               Meta atingida em {formatDay(goal.achieved_at)}.
             </p>
+          ) : (
+            <IncomeGoalProjection goalId={goal.id} />
           )}
         </>
       ) : (
@@ -141,7 +149,7 @@ function GoalSheet({ open, goal, onClose }: { open: boolean; goal: IncomeGoal | 
       open={open}
       onClose={onClose}
       title="Meta de renda mensal"
-      description="Quanto você quer receber de proventos, em média, por mês."
+      description="Quanto você quer receber de proventos por mês. Para contar pelo pior mês ou trocar as premissas da projeção, use Ajustes › Objetivos."
     >
       <form
         className="asset-form"

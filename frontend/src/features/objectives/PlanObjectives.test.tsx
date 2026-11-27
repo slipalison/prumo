@@ -1,7 +1,7 @@
 import { screen, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
-import { fakeObjectives, sampleImpact, sampleObjective } from "../../test/objectivesHandlers";
+import { fakeObjectives, sampleAssumptions, sampleImpact, sampleObjective } from "../../test/objectivesHandlers";
 import { renderApp } from "../../test/render";
 import { server } from "../../test/server";
 
@@ -29,7 +29,7 @@ describe("Objetivos no Aportar", () => {
     await user.click(within(card).getByRole("button", { name: "Premissas da conta: Patrimônio total" }));
     const premises = card;
     expect(within(premises).getByText(/Aporte de R\$\s2\.400,00 por mês/)).toBeInTheDocument();
-    expect(within(premises).getByText(/Rentabilidade de 9,80% ao ano/)).toBeInTheDocument();
+    expect(within(premises).getByText(/Rentabilidade de 5,10% ao ano acima da inflação/)).toBeInTheDocument();
     expect(within(card).getByRole("link", { name: "Trocar premissas" })).toHaveAttribute(
       "href",
       "#/ajustes/objetivos",
@@ -54,7 +54,7 @@ describe("Objetivos no Aportar", () => {
 
   it("com aporte informado, a frase diz o valor em vez de 'assim'", async () => {
     const informed = sampleImpact({
-      assumptions: { monthly_contribution: 1500, contribution_source: "informed", annual_return_percent: 8, return_source: "informed" },
+      assumptions: { ...sampleAssumptions, monthly_contribution: 1500, contribution_source: "informed", real_return_percent: 8, return_source: "informed" },
     });
     server.use(...fakeObjectives([sampleObjective()], [informed]).handlers);
     const { user } = renderApp("aportar");
@@ -62,7 +62,7 @@ describe("Objetivos no Aportar", () => {
     const card = await screen.findByRole("region", { name: "Seus objetivos" });
     expect(within(card).getByText(/Com aportes de R\$\s1\.500,00 por mês, a meta chega em/)).toBeInTheDocument();
     await user.click(within(card).getByRole("button", { name: "Premissas da conta: Patrimônio total" }));
-    expect(within(card).getByText(/Aporte de R\$\s1\.500,00 por mês: informado por você/)).toBeInTheDocument();
+    expect(within(card).getByText(/Aporte de R\$\s1\.500,00 por mês, em reais de hoje: informado por você/)).toBeInTheDocument();
   });
 
   it("um aporte que fecha a meta diz que completa", async () => {
@@ -87,14 +87,14 @@ describe("Objetivos no Aportar", () => {
 
   it("sem aporte e sem rentabilidade, explica em vez de inventar uma data", async () => {
     const stuck = sampleImpact({
-      assumptions: { monthly_contribution: 0, contribution_source: "ledger", annual_return_percent: 0, return_source: "informed" },
+      assumptions: { ...sampleAssumptions, monthly_contribution: 0, contribution_source: "ledger", real_return_percent: 0, return_source: "informed" },
       projection: { state: "unreachable", months: null, month: null },
     });
     server.use(...fakeObjectives([sampleObjective()], [stuck]).handlers);
     const { user } = renderApp("aportar");
     await calculate(user);
     const card = await screen.findByRole("region", { name: "Seus objetivos" });
-    expect(within(card).getByText(/a meta não chega\. Informe um aporte mensal/)).toBeInTheDocument();
+    expect(within(card).getByText(/nada leva a conta até a meta\. Informe um aporte mensal/)).toBeInTheDocument();
   });
 
   it("sem objetivo ativo, o plano segue sem o card", async () => {

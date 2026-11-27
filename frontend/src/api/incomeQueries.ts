@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { cashKeys } from "./cashQueries";
 import { incomeApi } from "./income";
+import { objectivesKeys } from "./objectives";
 import type { CreateIncomeRequest, IncomeFilters } from "./incomeTypes";
 
 export const incomeKeys = {
@@ -45,6 +46,8 @@ function useInvalidateIncome() {
       client.invalidateQueries({ queryKey: incomeKeys.all }),
       // Provento recebido é caixa.
       client.invalidateQueries({ queryKey: cashKeys.all }),
+      // A meta de renda é um objetivo, com projeção.
+      client.invalidateQueries({ queryKey: objectivesKeys.all }),
     ]);
 }
 

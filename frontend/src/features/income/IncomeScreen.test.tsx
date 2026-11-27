@@ -166,7 +166,7 @@ describe("Renda: com proventos", () => {
 
   it("meta atingida mostra a data", async () => {
     const summary = sampleSummary();
-    summary.goal = { id: "g", target: 100, achieved_at: "2026-10-05T15:00:00Z", current_monthly: 130, basis: "received", percent: 130, reached: true };
+    summary.goal = { id: "g", target: 100, mode: "average", achieved_at: "2026-10-05T15:00:00Z", current_monthly: 130, basis: "received", percent: 130, reached: true };
     useSummary(summary);
     await openIncome();
     expect(await screen.findByText(/Meta atingida em/)).toBeInTheDocument();
@@ -178,7 +178,7 @@ describe("Renda: com proventos", () => {
   it("a barra pela estimativa avisa que é estimativa", async () => {
     const summary = sampleSummary();
     summary.monthly_average = 0;
-    summary.goal = { id: "g", target: 500, achieved_at: null, current_monthly: 410.5, basis: "estimate", percent: 82.1, reached: false };
+    summary.goal = { id: "g", target: 500, mode: "average", achieved_at: null, current_monthly: 410.5, basis: "estimate", percent: 82.1, reached: false };
     useSummary(summary);
     const { user } = await openIncome();
     const bar = await screen.findByRole("progressbar");
@@ -208,7 +208,7 @@ describe("Renda: meta", () => {
     server.use(
       http.put("/api/v1/income/goal", async ({ request }) => {
         body = await request.json();
-        return HttpResponse.json({ id: "g", target: 800, achieved_at: null, current_monthly: 0, basis: "estimate", percent: 0, reached: false });
+        return HttpResponse.json({ id: "g", target: 800, mode: "average", achieved_at: null, current_monthly: 0, basis: "estimate", percent: 0, reached: false });
       }),
     );
     const { user } = await openIncome();

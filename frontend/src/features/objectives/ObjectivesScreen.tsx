@@ -2,8 +2,9 @@ import { motion } from "motion/react";
 import { useState } from "react";
 import { errorMessage } from "../../api/client";
 import { useDeleteObjective, useObjectives } from "../../api/objectivesQueries";
-import type { Objective, ObjectivesResponse } from "../../api/objectivesTypes";
+import type { Objective, ObjectivesDefaults, ObjectivesResponse } from "../../api/objectivesTypes";
 import { GlassCard } from "../../components/GlassCard";
+import { InfoTip } from "../../components/InfoTip";
 import { Grid, Page, PageHeader } from "../../components/Layout";
 import { IconCheck, IconEdit, IconPlus, IconTrash } from "../../components/icons";
 import { MagneticButton } from "../../components/MagneticButton";
@@ -11,15 +12,30 @@ import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/toastContext";
 import { cx } from "../../lib/cx";
 import { formatDay, formatPercent } from "../../lib/format";
-import { assumptionLines, objectiveName, projectionText } from "../../lib/objectives";
+import { baseText, objectiveName, premiseRows, rangeText, shortDate, targetText } from "../../lib/objectives";
 import { useMoney } from "../../lib/privacy";
-import { ObjectiveSheet } from "./ObjectiveSheet";
 import { SPRING } from "../../lib/motion";
+import { ObjectiveSheet } from "./ObjectiveSheet";
+import { ProjectionChart, type CurveBasis } from "./ProjectionChart";
 
-/** Ajustes › Objetivos: metas de patrimônio e de valor numa classe, com data estimada. */
+const FALLBACK_DEFAULTS: ObjectivesDefaults = {
+  real_return_percent: 0,
+  return_source: "fallback",
+  inflation_percent: 0,
+  inflation_source: "target",
+  inflation_years: null,
+  reinvest_income: true,
+  income_growth_percent: 0,
+  income_yield_percent: 0,
+  scenario_spread_percent: 2,
+  focus: null,
+};
+
+/** Ajustes › Objetivos: patrimônio, valor numa classe e renda mensal, com a projeção em três cenários. */
 export function ObjectivesScreen() {
   const objectives = useObjectives();
   const [sheet, setSheet] = useState<{ objective: Objective | null } | null>(null);
+  const hasIncomeGoal = objectives.data?.objectives.some((o) => o.kind === "monthly_income") ?? false;
 
   return (
     <Page className="objectives">
@@ -27,11 +43,11 @@ export function ObjectivesScreen() {
         title="Para onde a carteira vai?"
         summary={
           <>
-            A meta de renda mensal fica em <a href="#/renda">Renda</a>.
+            Cenários com premissas à vista, não promessa. A meta de renda também aparece em <a href="#/renda">Renda</a>.
           </>
         }
         infoLabel="Como a data de cada objetivo é estimada"
-        info="Metas com prazo: um patrimônio total ou um valor numa classe. A data estimada vem de uma conta simples, mês a mês, e as duas premissas dela (aporte e rentabilidade) ficam sempre à vista em cada objetivo. É uma estimativa, não uma promessa."
+        info="Uma conta mês a mês, em reais de hoje, com as premissas de cada objetivo sempre à vista: aporte, rentabilidade acima da inflação, inflação (Focus do Banco Central), proventos reinvestidos ou não, crescimento e rendimento dos proventos. O pessimista e o otimista tiram e somam a amplitude por ano. A data sai de duas leituras da meta: o número como você digitou (reais da época) e com o poder de compra de hoje. É um cenário, não uma promessa."
         actions={
           <MagneticButton onClick={() => setSheet({ objective: null })}>
             <IconPlus /> Novo objetivo
@@ -53,7 +69,8 @@ export function ObjectivesScreen() {
         open={sheet !== null}
         onClose={() => setSheet(null)}
         objective={sheet?.objective ?? null}
-        defaults={objectives.data?.defaults ?? { annual_return_percent: 0, return_source: "fallback" }}
+        defaults={objectives.data?.defaults ?? FALLBACK_DEFAULTS}
+        hasIncomeGoal={hasIncomeGoal}
       />
     </Page>
   );
@@ -68,8 +85,9 @@ function Loaded({ data, onEdit }: { data: ObjectivesResponse; onEdit: (objective
       <GlassCard as="section" className="state-card">
         <h2 className="state-card__title">Nenhum objetivo ainda</h2>
         <p className="state-card__text">
-          Defina, por exemplo, quanto você quer ter no total ou em Fundos Imobiliários. O Aportar passa a dizer quanto
-          cada aporte aproxima você da meta.
+          Defina, por exemplo, quanto você quer ter no total, em Fundos Imobiliários ou de renda por mês. Cada objetivo
+          mostra quando chega em três cenários, com a conta à vista, e o Aportar passa a dizer quanto cada aporte aproxima
+          você da meta.
         </p>
       </GlassCard>
     );
@@ -82,9 +100,9 @@ function Loaded({ data, onEdit }: { data: ObjectivesResponse; onEdit: (objective
           <h2 id="objectives-active" className="section-title">
             Em andamento
           </h2>
-          <Grid as="ul" cols="auto" minWidth="320px" alignStart className="objective-list">
+          <Grid as="ul" cols="auto" minWidth="340px" alignStart className="objective-list">
             {active.map((objective) => (
-              <ObjectiveCard key={objective.id} objective={objective} onEdit={onEdit} />
+              <ObjectiveCard key={objective.id} objective={objective} defaults={data.defaults} onEdit={onEdit} />
             ))}
           </Grid>
         </section>
@@ -94,9 +112,9 @@ function Loaded({ data, onEdit }: { data: ObjectivesResponse; onEdit: (objective
           <h2 id="objectives-achieved" className="section-title">
             Concluídos
           </h2>
-          <Grid as="ul" cols="auto" minWidth="320px" alignStart className="objective-list">
+          <Grid as="ul" cols="auto" minWidth="340px" alignStart className="objective-list">
             {achieved.map((objective) => (
-              <ObjectiveCard key={objective.id} objective={objective} onEdit={onEdit} />
+              <ObjectiveCard key={objective.id} objective={objective} defaults={data.defaults} onEdit={onEdit} />
             ))}
           </Grid>
         </section>
@@ -105,21 +123,28 @@ function Loaded({ data, onEdit }: { data: ObjectivesResponse; onEdit: (objective
   );
 }
 
-function ObjectiveCard({ objective, onEdit }: { objective: Objective; onEdit: (objective: Objective) => void }) {
+type CardProps = { objective: Objective; defaults: ObjectivesDefaults; onEdit: (objective: Objective) => void };
+
+function ObjectiveCard({ objective, defaults, onEdit }: CardProps) {
   const money = useMoney();
   const toast = useToast();
   const remove = useDeleteObjective();
   const [asking, setAsking] = useState(false);
+  const [basis, setBasis] = useState<CurveBasis>("nominal");
   const achieved = objective.status === "achieved";
+  const income = objective.kind === "monthly_income";
   const name = objectiveName(objective);
-  const lines = objective.assumptions ? assumptionLines(objective.assumptions, money) : null;
+  const target = targetText(objective, money);
   const shown = Math.min(Math.max(objective.percent, 0), 100);
+  const estimate = objective.basis === "estimate";
 
   const confirmRemove = () =>
     remove.mutate(objective.id, {
       onSuccess: () => toast({ tone: "success", message: "Objetivo removido." }),
       onError: (error) => toast({ tone: "error", message: errorMessage(error) }),
     });
+
+  const current = income ? `${money.brl(objective.current)} por mês` : money.brl(objective.current);
 
   return (
     <li>
@@ -128,7 +153,7 @@ function ObjectiveCard({ objective, onEdit }: { objective: Objective; onEdit: (o
           <div>
             <h3 className="objective-card__name">{name}</h3>
             <p className="objective-card__target">
-              Meta de <strong>{money.brl(objective.target)}</strong>
+              Meta de <strong>{target}</strong>
             </p>
           </div>
           <div className="objective-card__actions">
@@ -158,7 +183,7 @@ function ObjectiveCard({ objective, onEdit }: { objective: Objective; onEdit: (o
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={Math.round(shown)}
-          aria-valuetext={`${money.brl(objective.current)} de ${money.brl(objective.target)}, ${formatPercent(objective.percent, 1)}`}
+          aria-valuetext={`${current} de ${target}, ${formatPercent(objective.percent, 1)}${estimate ? ", pela estimativa" : ""}`}
         >
           <motion.div
             className="objective-progress__fill"
@@ -168,7 +193,8 @@ function ObjectiveCard({ objective, onEdit }: { objective: Objective; onEdit: (o
           />
         </div>
         <p className="objective-card__legend">
-          <strong>{formatPercent(objective.percent, 1)}</strong> · {money.brl(objective.current)} de {money.brl(objective.target)}
+          <strong>{formatPercent(objective.percent, 1)}</strong> · {current} de {target}
+          {income && <span className="income-tag"> {estimate ? "estimativa" : "recebido"}</span>}
         </p>
 
         {achieved ? (
@@ -177,15 +203,7 @@ function ObjectiveCard({ objective, onEdit }: { objective: Objective; onEdit: (o
             {objective.achieved_at ? ` em ${formatDay(objective.achieved_at)}` : ""}.
           </p>
         ) : (
-          <>
-            <p className="objective-card__eta">{projectionText(objective.projection)}</p>
-            {lines && (
-              <ul className="objective-card__premises" aria-label="Premissas da conta">
-                <li>{lines.contribution}</li>
-                <li>{lines.rate}</li>
-              </ul>
-            )}
-          </>
+          <Projection objective={objective} defaults={defaults} basis={basis} onBasis={setBasis} />
         )}
 
         {asking && (
@@ -201,5 +219,78 @@ function ObjectiveCard({ objective, onEdit }: { objective: Objective; onEdit: (o
         )}
       </GlassCard>
     </li>
+  );
+}
+
+type ProjectionProps = {
+  objective: Objective;
+  defaults: ObjectivesDefaults;
+  basis: CurveBasis;
+  onBasis: (basis: CurveBasis) => void;
+};
+
+/** As datas dos três cenários, a curva e as premissas de um objetivo em andamento. */
+function Projection({ objective, defaults, basis, onBasis }: ProjectionProps) {
+  const money = useMoney();
+  const { scenarios, curve, assumptions } = objective;
+  const name = objectiveName(objective);
+  const income = objective.kind === "monthly_income";
+  const reachedByEstimate = income && objective.projection.state === "reached";
+  const rows = assumptions ? premiseRows(objective, assumptions, money, defaults) : [];
+
+  return (
+    <>
+      <p className="objective-card__eta">
+        {reachedByEstimate
+          ? "Pela estimativa, a renda de hoje já cobre a meta; ela é marcada quando o recebido chegar lá."
+          : baseText(objective.projection)}
+      </p>
+      {scenarios && (
+        <div className="objective-card__scenarios">
+          <p>{rangeText(scenarios, "nominal")}</p>
+          <p>
+            Com o poder de compra de hoje (a meta corrigida pela inflação): {shortDate(scenarios.base.today)} no base.
+          </p>
+        </div>
+      )}
+      {curve && curve.points.length > 1 && (
+        <>
+          <div className="proj-toggle" role="group" aria-label={`Leitura da curva: ${name}`}>
+            <button type="button" aria-pressed={basis === "nominal"} onClick={() => onBasis("nominal")}>
+              Reais da época
+            </button>
+            <button type="button" aria-pressed={basis === "today"} onClick={() => onBasis("today")}>
+              Reais de hoje
+            </button>
+          </div>
+          <ProjectionChart curve={curve} target={objective.target} basis={basis} perMonth={income} name={name} />
+        </>
+      )}
+      {rows.length > 0 && (
+        <dl className="objective-premises" aria-label={`Premissas da conta: ${name}`}>
+          <div className="objective-premises__head">
+            Premissas
+            <InfoTip label={`De onde vem cada premissa: ${name}`} align="start">
+              <ul className="objective-premises__sources">
+                {rows.map((row) => (
+                  <li key={row.id}>
+                    <strong>{row.label}:</strong> {row.source}.
+                  </li>
+                ))}
+              </ul>
+            </InfoTip>
+          </div>
+          {rows.map((row) => (
+            <div key={row.id} className="objective-premises__row">
+              <dt>{row.label}</dt>
+              <dd>
+                {row.value}
+                {row.informed && <span className="objective-premises__mine"> · sua</span>}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </>
   );
 }

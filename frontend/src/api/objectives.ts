@@ -8,6 +8,16 @@ import type {
   UpdateObjectiveRequest,
 } from "./objectivesTypes";
 
+/**
+ * As chaves do cache. Moram aqui (e não em `objectivesQueries`) porque a
+ * Renda também invalida os objetivos: a meta de renda é um deles.
+ */
+export const objectivesKeys = {
+  all: ["objectives"] as const,
+  list: ["objectives", "list"] as const,
+  impact: (items: ImpactItem[]) => ["objectives", "impact", items] as const,
+};
+
 export const objectivesApi = {
   list: () => request<ObjectivesResponse>("GET", "/objectives"),
   create: (body: CreateObjectiveRequest) => request<Objective>("POST", "/objectives", body),

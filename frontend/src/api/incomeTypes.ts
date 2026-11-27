@@ -145,6 +145,8 @@ export type IncomeEstimate = {
 export type IncomeGoal = {
   id: string;
   target: number;
+  /** `average` (a média por mês) ou `floor` (o menor mês de 12). */
+  mode: "average" | "floor";
   achieved_at: string | null;
   current_monthly: number;
   /** De onde vem `current_monthly`: o recebido ou, sem nada recebido, a estimativa. */

@@ -1,8 +1,16 @@
-import { screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, screen, within } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { MASK_BRL } from "../../lib/money";
 import { HIDE_VALUES_KEY } from "../../lib/privacy";
-import { achievedObjective, fakeObjectives, sampleImpact, sampleObjective } from "../../test/objectivesHandlers";
+import {
+  achievedObjective,
+  fakeObjectives,
+  noPremises,
+  sampleAssumptions,
+  sampleImpact,
+  sampleIncomeObjective,
+  sampleObjective,
+} from "../../test/objectivesHandlers";
 import { renderApp } from "../../test/render";
 import { server } from "../../test/server";
 
@@ -37,8 +45,14 @@ function expectNoMoney(root?: HTMLElement) {
 describe("Objetivos com o olho fechado", () => {
   it("a tela de Objetivos não mostra nenhum valor em reais, nem para o leitor de tela", async () => {
     window.localStorage.setItem(HIDE_VALUES_KEY, "1");
-    server.use(...fakeObjectives([sampleObjective({ monthly_contribution: 3000 }), achievedObjective()]).handlers);
-    renderApp("ajustes/objetivos");
+    server.use(
+      ...fakeObjectives([
+        sampleObjective({ premises: { ...noPremises, monthly_contribution: 3000 } }),
+        sampleIncomeObjective(),
+        achievedObjective(),
+      ]).handlers,
+    );
+    const { user } = renderApp("ajustes/objetivos");
     const active = await screen.findByRole("article", { name: "Patrimônio total" });
 
     expectNoMoney();
@@ -47,9 +61,20 @@ describe("Objetivos com o olho fechado", () => {
     expect(bar.getAttribute("aria-valuetext")).toContain(MASK_BRL);
     expect(bar.getAttribute("aria-valuetext")).toMatch(/25,0%/);
     expect(within(active).getByText(/a meta chega em mar\/2031/)).toBeInTheDocument();
-    expect(within(active).getByRole("list", { name: "Premissas da conta" })).toHaveTextContent(`Aporte de ${MASK_BRL} por mês`);
-    expect(within(active).getByText(/Rentabilidade de 9,80% ao ano/)).toBeInTheDocument();
+    const premises = within(active).getByLabelText("Premissas da conta: Patrimônio total");
+    expect(premises).toHaveTextContent(`${MASK_BRL} por mês`);
+    expect(premises).toHaveTextContent("5,10% ao ano");
     expect(screen.getByText("Concluído em 15/10/2026.", { exact: false })).toBeInTheDocument();
+    // A curva: o resumo, a tabela e o balão do ponteiro também saem mascarados.
+    expect(within(active).getByRole("img").getAttribute("aria-label")).toContain(MASK_BRL);
+    const plot = within(active).getByTestId("projection-plot");
+    vi.spyOn(plot, "getBoundingClientRect").mockReturnValue({ left: 0, width: 200, top: 0, height: 150, right: 200, bottom: 150, x: 0, y: 0, toJSON: () => ({}) });
+    fireEvent.pointerMove(plot, { clientX: 100 });
+    expectNoMoney();
+    // A origem do rendimento cita a renda e o valor de hoje: mascarados também.
+    await user.click(within(active).getByRole("button", { name: "De onde vem cada premissa: Patrimônio total" }));
+    expect(await screen.findByText(/o da carteira de hoje:/)).toHaveTextContent(`${MASK_BRL} por mês de renda estimada sobre ${MASK_BRL}`);
+    expectNoMoney();
   });
 
   it("a folha de edição não vaza o valor da meta nem do aporte", async () => {
@@ -57,8 +82,8 @@ describe("Objetivos com o olho fechado", () => {
     server.use(
       ...fakeObjectives([
         sampleObjective({
-          monthly_contribution: 3000,
-          assumptions: { monthly_contribution: 3000, contribution_source: "informed", annual_return_percent: 9.8, return_source: "performance" },
+          premises: { ...noPremises, monthly_contribution: 3000 },
+          assumptions: { ...sampleAssumptions, monthly_contribution: 3000, contribution_source: "informed" },
         }),
       ]).handlers,
     );

@@ -24,7 +24,7 @@ export function PlanObjectives({ plan }: { plan: Plan }) {
       title="Seus objetivos"
       className="plan-objectives"
       infoLabel="Sobre as datas dos objetivos"
-      info="A data é uma estimativa, feita com as premissas de aporte e de rentabilidade de cada objetivo (no ⓘ dele). Troque as premissas em Ajustes › Objetivos."
+      info="A data é a do cenário base, uma conta com as premissas de cada objetivo (as principais no ⓘ dele; todas, com o pessimista e o otimista, em Ajustes › Objetivos). É um cenário, não uma promessa."
       actions={
         <a className="link-btn" href="#/ajustes/objetivos">
           Trocar premissas

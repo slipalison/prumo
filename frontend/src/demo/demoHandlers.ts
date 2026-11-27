@@ -5,7 +5,14 @@ import { sampleAlerts } from "../test/alertsHandlers";
 import { samplePlan } from "../test/fixtures";
 import { sampleCash } from "../test/incomeHandlers";
 import { demoIncomeEvents, demoIncomeSummary } from "./demoIncome";
-import { sampleImpact, sampleObjective, defaultObjectivesResponse } from "../test/objectivesHandlers";
+import {
+  achievedObjective,
+  defaultObjectivesResponse,
+  sampleImpact,
+  sampleIncomeObjective,
+  sampleObjective,
+} from "../test/objectivesHandlers";
+import { sampleProjectionHandler } from "../test/projectionHandlers";
 
 /*
  * O que o modo de demonstração serve por cima do banco falso dos testes
@@ -133,7 +140,16 @@ export const demoHandlers: HttpHandler[] = [
   http.get("/api/v1/cash", () => HttpResponse.json(sampleCash())),
   http.get("/api/v1/alerts", () => HttpResponse.json(sampleAlerts())),
   http.get("/api/v1/objectives", () =>
-    HttpResponse.json({ ...defaultObjectivesResponse, objectives: [sampleObjective()] }),
+    HttpResponse.json({
+      ...defaultObjectivesResponse,
+      objectives: [
+        sampleObjective(),
+        sampleObjective({ id: "o-fii", kind: "class_value", asset_class: "br_reits", target: 200_000, current: 82_000, percent: 41 }),
+        sampleIncomeObjective({ id: "g-1", target: 500, income_mode: "floor", current: 410.5, percent: 82.1 }),
+        achievedObjective(),
+      ],
+    }),
   ),
+  sampleProjectionHandler,
   http.post("/api/v1/objectives/impact", () => HttpResponse.json({ objectives: [sampleImpact()] })),
 ];

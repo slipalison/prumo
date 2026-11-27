@@ -1,0 +1,123 @@
+/*
+ * Renda projetada. As barras do base no dourado da projeção (o mesmo par
+ * validado do Desempenho); o traço do pessimista ao otimista na tinta de texto
+ * discreta, que o nome na legenda acompanha.
+ */
+
+.income-projection__body {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* Posicionado pelo mesmo motivo da curva dos objetivos: a tabela `.sr-only`. */
+.proj-bars {
+  position: relative;
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  min-width: 0;
+}
+
+.proj-bars__grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: 150px auto;
+  column-gap: var(--space-2);
+}
+
+.proj-bars__axis {
+  position: relative;
+  min-width: 52px;
+}
+
+.proj-bars__axis span {
+  position: absolute;
+  right: 0;
+  transform: translateY(-50%);
+  color: var(--text-subtle);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.proj-bars__plot {
+  position: relative;
+  min-width: 0;
+  border-bottom: 1px solid var(--border-strong);
+  touch-action: pan-y;
+}
+
+.proj-bars__plot svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.proj-bars__bar {
+  fill: var(--proj-base);
+  opacity: 0.82;
+  transition: opacity 0.15s ease;
+}
+
+.proj-bars__plot g.is-hover .proj-bars__bar {
+  opacity: 1;
+}
+
+.proj-bars__range {
+  stroke: var(--text-muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.proj-bars__dates {
+  grid-column: 2;
+  display: flex;
+  justify-content: space-between;
+  padding-top: 2px;
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
+
+/* Duas classes: vence a regra base da legenda, venha o arquivo dela antes ou depois. */
+.proj-chart__key.proj-bars__key--bar::before {
+  height: 10px;
+  border-radius: 3px;
+  background: var(--proj-base);
+}
+
+.proj-chart__key.proj-bars__key--range::before {
+  width: 0;
+  height: 12px;
+  border-left: 2px solid var(--text-muted);
+}
+
+.income-projection__premises {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0 0 0 var(--space-4);
+  color: var(--text-subtle);
+  font-size: var(--text-sm);
+}
+
+.income-projection__form {
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+}
+
+.income-projection__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* A data estimada da meta, sob a barra do cartão da meta de renda. */
+.income-goal__projection {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}

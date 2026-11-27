@@ -1,12 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { objectivesApi } from "./objectives";
+import { incomeKeys } from "./incomeQueries";
+import { objectivesApi, objectivesKeys } from "./objectives";
 import type { CreateObjectiveRequest, ImpactItem, UpdateObjectiveRequest } from "./objectivesTypes";
 
-export const objectivesKeys = {
-  all: ["objectives"] as const,
-  list: ["objectives", "list"] as const,
-  impact: (items: ImpactItem[]) => ["objectives", "impact", items] as const,
-};
+export { objectivesKeys };
 
 export function useObjectives() {
   return useQuery({ queryKey: objectivesKeys.list, queryFn: objectivesApi.list, retry: false });
@@ -25,10 +22,17 @@ export function useObjectiveImpact(items: ImpactItem[]) {
   });
 }
 
-/** Objetivo, progresso e conta dependem do livro e da carteira: uma invalidação só. */
+/**
+ * Objetivo, progresso e conta dependem do livro e da carteira: uma invalidação
+ * só. A meta de renda também mora na Renda, que é refeita junto.
+ */
 function useInvalidateObjectives() {
   const client = useQueryClient();
-  return () => client.invalidateQueries({ queryKey: objectivesKeys.all });
+  return () =>
+    Promise.all([
+      client.invalidateQueries({ queryKey: objectivesKeys.all }),
+      client.invalidateQueries({ queryKey: incomeKeys.all }),
+    ]);
 }
 
 export function useCreateObjective() {
