@@ -246,8 +246,9 @@ sobre o histórico de dividendos, sem dizer se o ativo está barato ou caro.
   histórico não chega) não vira "zero dividendo". A tela diz quantos anos entraram
   (no ⓘ do Bazin, na tabela de referências).
   Dividendo é o bruto por cota (data ex) do cache do Yahoo (`dividend_history`),
-  que passou a pedir **5 anos** em vez de 2 (`dividends.rs`; o cache se refaz em
-  um dia). Só ações e FIIs da B3 (em reais).
+  que pede **10 anos** (`dividends.rs`; o cache se refaz em um dia): com 5, o
+  primeiro dividendo do histórico era sempre depois do começo da quinta janela,
+  e a média nunca passava de 4 anos. Só ações e FIIs da B3 (em reais).
 - **Graham**: `√(22,5 × LPA × VPA)`, com lucro e patrimônio **por ação**: o LPA é
   o lucro dos controladores dos últimos 12 meses ÷ ações e o VPA, o patrimônio
   deles ÷ ações (balanços da CVM e número de ações da B3, `fundamentos.md`). Só

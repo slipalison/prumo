@@ -640,6 +640,57 @@ fecha com os dois painéis em ~425 px, sem vazio. Resta uma folga de ~35 px acim
 e abaixo da rosca e da tabela quando o painel é mais alto que ela (o conteúdo fica
 centrado).
 
+**Renda, estimativa líquida (frente estimativa-liquida).** A estimativa passou
+a mostrar o líquido do IR do JCP em destaque e o bruto ao lado, a fonte de cada
+ativo, a média de até 5 anos e a marca "acima do habitual" (regra em
+`docs/proventos-automaticos.md`, seção 9; desenho em `docs/design.md`, Renda,
+item 5). O painel ficou assim:
+
+```
+┌ Estimativa da carteira de hoje ⓘ ─────────── estimativa ┐
+│ ~R$ 2.052,40 por mês, líquido                            │
+│ bruto ~R$ 2.133,80 por mês                               │
+│ ⚠ ~R$ 331,20/mês de 3 ativos acima do habitual ⓘ         │
+│ Ativo              Por mês          Média 5 anos         │
+│ AL ALFA3 [B3]      ~R$ 130,00       ~R$ 123,50           │
+│                    bruto R$ 144,44                       │
+│ BR BRAV11 [B3]     ~R$ 125,80       ~R$ 69,89            │
+│                                     (⚠ acima)            │
+│ … (quatro linhas)                                        │
+│ Ver todos os 28 ativos →                                 │
+└──────────────────────────────────────────────────────────┘
+```
+
+- **Quatro linhas, não cinco.** Com o bruto embaixo do líquido e a linha de
+  "acima do habitual", cinco linhas levavam o painel a 552 px em 1440×900, mais
+  alto que o "Quem pagou" ao lado (que ganhava ~65 px vazios em cima e embaixo
+  da rosca: o vazio que a rodada anterior tinha tirado). Com quatro, e a
+  segunda linha de cada célula dentro da altura de linha de sempre (40 px,
+  `padding-block` de 4 px só nas tabelas da estimativa), o painel fica em
+  440 px.
+- **A marca na coluna da média**, e não embaixo do código: assim a coluna do
+  ativo tem uma linha só. No painel o texto visível é "acima" (o leitor de
+  tela ouve "acima do habitual"; a linha do total diz por extenso); na folha,
+  por extenso.
+- **No celular** o ícone do ativo sai da tabela do painel (`@container` até
+  380 px): sem isso as três colunas rolavam de lado dentro do painel.
+- A folha "Estimativa por ativo" ganhou Por cota com o bruto embaixo e a Média
+  5 anos; as colunas ficaram mais juntas (`padding-inline` de 8 px) para as
+  cinco caberem sem rolar de lado.
+
+Medido no modo de demonstração (`demo/demoIncome.ts`: 28 ativos, 3 acima do
+habitual, 2 pelo Yahoo), com Playwright headless, altura da página ÷ altura da
+janela, **antes → depois**:
+
+| Renda | 1440×900 | 1920×1080 | iPad 1366×1024 | iPad 1024×1366 | Celular 390×844 |
+|---|---|---|---|---|---|
+| Página | 1,48 → 1,49 | 1,23 → 1,25 | 1,30 → 1,31 | 1,62 → 1,63 | 3,11 → 3,16 |
+| Painel da estimativa (px) | ~425 → 440 | ~425 → 440 | → 440 | → 440 | → 463 |
+
+Sem rolagem lateral da página, da tabela do painel nem da folha em nenhuma
+largura, com os valores à mostra ou ocultos; com o olho fechado nenhum "R$"
+seguido de número aparece na página nem na folha.
+
 ### 7.5 Análise e Ajustes › Análise, Alertas, casca de Ajustes (grupo 4)
 
 **Análise**

@@ -497,7 +497,9 @@ Calcula, não grava.
 
 - `items[].estimated_monthly_income`: a renda mensal que o item soma,
   **estimada** (o que a cota pagou em 12 meses × a quantidade comprada ÷ 12,
-  em reais, bruto). `null` quando o ativo não tem histórico em cache (renda
+  em reais, **líquido** do IR do JCP: o mesmo `per_unit_12m` da estimativa da
+  Renda, para "+~R$ X/mês" e "sua renda vai de A para B" falarem da mesma renda
+  que a Renda e a meta). `null` quando o ativo não tem nenhuma fonte (renda
   fixa, cripto, histórico ainda não buscado ou provedor fora do ar).
 - `items[].price_references`: o aviso de quem está **sem teto**
   (`max_price` nulo), só informativo: `{ "bazin": 18.69, "graham": 77.77 }`, cada
@@ -509,7 +511,8 @@ Calcula, não grava.
   rede. O plano não muda por causa dele; a tela compara com `unit_price`.
   Referência pública, não é recomendação.
 - `income`: o que o aporte soma por mês (`added_monthly`, a soma dos itens) e a
-  renda mensal estimada da carteira antes e depois. É estimativa, nunca
+  renda mensal estimada da carteira antes e depois (`before_monthly` é o
+  `estimate.monthly` da Renda), tudo líquido do IR do JCP. É estimativa, nunca
   extrato; o motor não olha para ela.
   - `null` quando nenhum ativo da carteira paga provento (só renda fixa e
     cripto): não há o que estimar.
@@ -1686,8 +1689,26 @@ O que a tela Renda precisa, numa chamada.
   "upcoming": [],
   "estimate": {
     "monthly": 410.5,
+    "monthly_gross": 431.2,
+    "above_usual_monthly": 18.25,
     "updated_at": "2026-11-25T11:00:00Z",
-    "assets": [{ "asset_id": "…", "symbol": "KNRI11", "display_name": "Kinea", "quantity": 10, "per_unit_12m": 12.6, "monthly": 10.5, "trailing_12m": 126.0 }],
+    "assets": [
+      {
+        "asset_id": "…", "symbol": "ABCD4", "display_name": "Empresa Ficticia", "quantity": 120,
+        "source": "b3",
+        "per_unit_12m": 1.825, "per_unit_12m_gross": 2.0,
+        "monthly": 18.25, "monthly_gross": 20.0,
+        "usual": { "years": 5, "per_unit_year": 1.095, "per_unit_year_gross": 1.2, "monthly": 10.95, "monthly_gross": 12.0 },
+        "above_usual": true,
+        "trailing_12m": 220.98
+      },
+      {
+        "asset_id": "…", "symbol": "KNRI11", "display_name": "Kinea", "quantity": 10,
+        "source": "b3",
+        "per_unit_12m": 12.6, "per_unit_12m_gross": 12.6, "monthly": 10.5, "monthly_gross": 10.5,
+        "usual": null, "above_usual": false, "trailing_12m": 126.0
+      }
+    ],
     "missing": ["XPTO3"]
   },
   "yield_on_cost": {
@@ -1713,34 +1734,66 @@ O que a tela Renda precisa, numa chamada.
 
 #### `estimate`: a renda estimada da carteira
 
-**É estimativa, não extrato.** Vem do histórico de dividendo por cota do Yahoo
-(`chart` com `events=div`): data ex e valor bruto, sem data de pagamento e com
-JCP misturado ao dividendo nas ações da B3. Para cada ativo cotado na B3 ou nos
-EUA, `per_unit_12m` é o que a cota pagou nos últimos 365 dias (em reais; valores
-em dólar usam o câmbio da carteira) e `monthly = per_unit_12m × quantity ÷ 12`,
-com a quantidade **de hoje**: é o ritmo da carteira atual, e o plano soma o
-que o aporte compra por cima dele (a renda projetada do plano usa a quantidade
-depois do aporte, não a da data com).
+**É estimativa, não extrato.** Para cada ativo cotado na B3 ou nos EUA,
+`per_unit_12m` é o que a cota pagou nos últimos 365 dias **pela data ex**,
+**líquido do IR na fonte do JCP** (15% pago até 2025, 17,5% desde 2026, pela
+data de pagamento; "a definir" usa a de hoje), em reais e na base de cotas de
+hoje, e `monthly = per_unit_12m × quantity ÷ 12`, com a quantidade **de hoje**:
+é o ritmo da carteira atual, e o plano soma o que o aporte compra por cima dele.
+Os `_gross` são os mesmos números brutos. `monthly` (o total) e
+`monthly_gross` somam os centavos de cada ativo. A regra inteira (janela, borda
+de FII mensal, bonificação, limiar) está em
+[proventos-automaticos.md](proventos-automaticos.md#9-estimativa-da-carteira-de-hoje).
+
+- `source`: de onde veio o valor por cota.
+  - `"b3"`: os anúncios da B3 que os proventos automáticos guardam
+    (`b3_cash_announcements`), para **ações e FIIs da B3** (`br_stocks`,
+    `br_reits`). O rótulo da B3 separa o JCP; cada parcela conta pelo próprio
+    valor; o valor da época é levado à cota de hoje dividindo pelas
+    bonificações, desdobramentos e grupamentos com data com no mesmo dia ou
+    depois (`b3_stock_announcements`).
+  - `"yahoo"`: o histórico de dividendo por cota do Yahoo (`chart` com
+    `events=div`, data ex e valor bruto, já ajustado por desdobramento e
+    bonificação). É a fonte de EUA, BDR e ETF e a **reserva** das ações e FIIs
+    quando a B3 não tem o ativo (ISIN não resolvido, emissor nunca buscado) ou
+    está fora do ar (última busca do emissor há mais de 3 dias e há Yahoo em
+    cache). O Yahoo não separa o JCP: ali líquido = bruto. Valores em dólar
+    usam o câmbio da carteira.
+- `usual`: a média anual do que o ativo costuma pagar, por cota de hoje, em até
+  5 janelas de 365 dias; a de agora são os 12 meses da própria fonte, as
+  anteriores vêm do Yahoo, e uma janela velha só entra inteira (com pagamento
+  conhecido de antes do começo dela). `years` diz quantas entraram (2 a 5);
+  com menos de 2, `usual` é `null`. `per_unit_year` e `monthly` são líquidos
+  aproximados (a parte de JCP dos 12 meses do ativo, porque o Yahoo não
+  separa); os `_gross`, brutos.
+- `above_usual`: `true` quando os 12 meses passam de **1,5 ×** `usual`
+  (bruto). É só uma marca: nada é cortado. `above_usual_monthly` é a parte do
+  `monthly` total que vem de ativos marcados.
 
 `trailing_12m` é a outra conta, a que olha para trás: o que a posição teria
-rendido nos últimos 365 dias (bruto, em reais) com as cotas que o **livro tinha
-na data com de cada dividendo** — cada dividendo do histórico vezes a posição
-daquela data, não 12 meses de dividendo vezes a quantidade de hoje. O histórico do
-Yahoo é ajustado por desdobramento (o dividendo antigo de uma ação que dobrou
-aparece pela metade), então a quantidade da data com é levada à **base de hoje**
-multiplicando pelos desdobramentos, grupamentos e bonificações posteriores à
-data ex (o Yahoo trata a bonificação da B3 como desdobramento, `102:100`, e
-divide os dividendos de antes por ela). Dividendo de um dia em que a pessoa não
-tinha cota não conta.
+rendido nos últimos 365 dias (em reais) com as cotas que o **livro tinha na
+data com de cada provento** — não 12 meses de provento vezes a quantidade de
+hoje. Pela B3 é o valor da época vezes as cotas da data com, **líquido**, cada
+pagamento arredondado como o provento automático. Pelo Yahoo é **bruto**: o
+histórico é ajustado por desdobramento (o dividendo antigo de uma ação que
+dobrou aparece pela metade), então a quantidade da data com é levada à **base
+de hoje** multiplicando pelos desdobramentos, grupamentos e bonificações
+posteriores à data ex (o Yahoo trata a bonificação da B3 como desdobramento,
+`102:100`, e divide os dividendos de antes por ela). Provento de um dia em que
+a pessoa não tinha cota não conta.
 `trailing_12m` é `null` quando o livro não fecha. É o que alimenta o yield on
 cost quando ainda não há nada recebido.
 Renda fixa por valor e cripto não entram. `missing` lista os papéis sem
-histórico (provedor fora do ar ou sem câmbio), que ficam fora da conta.
+nenhuma das duas fontes (ou sem câmbio), que ficam fora da conta.
 
-**Nenhuma rota espera pelo provedor.** O resumo e o plano leem só o histórico
-guardado no banco (`dividend_history`, compartilhado entre as carteiras); sem
-ele, o ativo entra em `missing` e a estimativa fica de fora (`monthly` zerado se
-nenhum tiver). Quem enche o cache é o servidor, em segundo plano:
+**Nenhuma rota espera pelo provedor.** O resumo e o plano leem só o que está
+guardado no banco (os anúncios da B3 e o histórico do Yahoo em
+`dividend_history`, os dois compartilhados entre as carteiras); sem nenhum dos
+dois, o ativo entra em `missing` e fica fora da conta (`monthly` zerado se
+nenhum tiver). Os anúncios da B3 vêm da rodada dos
+[proventos automáticos](#proventos-automáticos). Quem enche o cache do Yahoo é o
+servidor, em segundo plano (o histórico pedido é de 10 anos, para a média do
+habitual e o Bazin terem 5 anos inteiros):
 
 - ao criar um ativo (ou trocar o mercado dele), a busca desse símbolo é
   disparada na hora, sem a resposta esperar;
@@ -1768,8 +1821,9 @@ conta é `backend/src/domain/yoc.rs`. Aparece em três lugares: em cada pagador 
 
 - `basis: "received"`: a renda é o **líquido recebido** nos 12 meses
   (`by_payer`). Só quando nada foi recebido nesse período a renda vem de
-  `trailing_12m` (bruta, estimada) e `basis` é `"estimate"` — o dado do livro
-  sempre vence a estimativa, a mesma regra da meta de renda.
+  `trailing_12m` (estimada: líquida pela B3, bruta pelo Yahoo) e `basis` é
+  `"estimate"` — o dado do livro sempre vence a estimativa, a mesma regra da
+  meta de renda.
 - **Custo desconhecido** (saldo inicial sem preço médio) não vira zero nem
   chute: `percent` é `null`, `gap` é `unknown_cost` e `message` é
   `"informe o preco medio"`; `cost` também é `null`. A renda continua
@@ -1824,7 +1878,8 @@ pessoa.
 
 `current_monthly` é a média mensal do **recebido** (`basis: "received"`) ou,
 enquanto não há nada recebido nos 12 meses, a estimativa da carteira
-(`basis: "estimate"`). `percent` pode passar de 100. `reached` só vale com o
+(`basis: "estimate"`, o `estimate.monthly` líquido do resumo: os dois lados
+falam do líquido). `percent` pode passar de 100. `reached` só vale com o
 recebido: a estimativa não conquista meta. Na primeira vez que o recebido
 alcança a meta, `achieved_at` guarda o instante e fica.
 

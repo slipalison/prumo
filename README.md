@@ -47,9 +47,13 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   mesmo no que é cotado em dólar. O "Já comprei" grava as compras sozinho.
 - **Renda** — dividendos, JCP e rendimentos de FII que você recebeu ou vai
   receber, mês a mês, contra uma meta de renda mensal. O aporte mostra quanto de
-  renda estimada ele soma. A renda "da carteira de hoje" é **estimativa**
-  (histórico por cota do Yahoo, bruto, buscado em segundo plano: nenhuma tela
-  espera por ele): o que você lança, e depois o que importa da B3, vale mais. O
+  renda estimada ele soma. A renda "da carteira de hoje" é **estimativa**: o
+  que cada cota pagou em 12 meses, **líquido do IR do JCP** (o bruto ao lado),
+  pelos anúncios da B3 para ações e FIIs e pelo Yahoo para o resto (buscados
+  em segundo plano: nenhuma tela espera por eles). Cada ativo mostra a fonte, a
+  média de até 5 anos e a marca "acima do habitual" quando os 12 meses passam
+  bem dela (antecipações que podem não se repetir). O que você lança, e depois
+  o que importa da B3, vale mais. O
   provento lançado sem quantidade vale as cotas que o livro tinha na **data com**,
   não as de hoje. **Proventos automáticos:** o Prumo lê na B3 os dividendos, JCP
   e rendimentos anunciados para os seus ativos e calcula o que você recebe com
@@ -66,9 +70,9 @@ comprar para a carteira ficar o mais perto possível das suas metas.
   mais os proventos recebidos. O que falta saber (preço médio, cotação) deixa o
   número marcado como parcial, sem estimativa.
   renda estimada ele soma e oferece incluir os proventos recebidos desde o
-  último aporte. A renda "da carteira de hoje" é **estimativa** (histórico por
-  cota do Yahoo, bruto, buscado em segundo plano: nenhuma tela espera por ele): o
-  que você lança, e depois o que importa da B3, vale mais.
+  último aporte. A renda "da carteira de hoje" é **estimativa** (líquida do IR
+  do JCP, a mesma da Renda; buscada em segundo plano: nenhuma tela espera por
+  ela): o que você lança, e depois o que importa da B3, vale mais.
 - **Objetivos** — metas com prazo, em Ajustes: um patrimônio total ou um valor
   numa classe ("R$ 1 milhão", "R$ 100 mil em FIIs"). Cada uma mostra o
   progresso e o mês estimado de conclusão, e **a conta fica sempre à vista**:

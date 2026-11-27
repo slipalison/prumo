@@ -680,14 +680,38 @@ e o botão **Lançar provento** à direita.
      Espaço escolhem). Com o olho fechado, o meio, o nome acessível e a tabela
      saem mascarados.
    - No celular a rosca sai (a tabela já diz tudo, em duas linhas por pagador).
-5. **Estimativa da carteira de hoje** (linha de baixo, 1/3): "~R$ 410/mês" com a
-   etiqueta "estimativa", os **cinco** papéis que mais rendem numa tabela (Ativo,
-   Por cota, Por mês; "por cota" é o que ela pagou em 12 meses) e os papéis sem
-   histórico. Com mais de cinco, **"Ver todos os N ativos"** abre uma folha com
-   a lista inteira, do que mais rende ao que menos, com as cotas. Foi folha, e
-   não expandir no painel, para a lista de 30 linhas não esticar o painel nem
-   deixar um vazio no "Quem pagou" ao lado. O aviso de que é o que a cota pagou,
-   sem separar JCP e sem ser extrato, abre no ⓘ.
+5. **Estimativa da carteira de hoje** (linha de baixo, 1/3): "~R$ 410 por mês,
+   líquido" em destaque com a etiqueta "estimativa" e, menor embaixo, "bruto
+   ~R$ 440 por mês" (só quando há JCP e os dois diferem). O líquido desconta o
+   IR do JCP, como o "Recebido em 12 meses" ao lado. Quando algum ativo está
+   **acima do habitual**, uma linha com ícone de alerta diz "~R$ X/mês de N
+   ativos acima do habitual", com um ⓘ ("pagamentos acima do habitual, como
+   antecipações; a estimativa pode cair quando saírem da janela"). A tabela
+   dos **quatro** papéis que mais rendem (eram cinco: com o bruto e a linha de
+   "acima do habitual", cinco linhas deixavam o painel mais alto que o "Quem
+   pagou" ao lado) tem Ativo, Por mês e Média 5 anos, cada célula em até duas
+   linhas dentro da altura de linha de sempre:
+   - **Ativo**: ícone, código e um rótulo pequeno da fonte ("B3" ou "Yahoo"; o
+     leitor de tela ouve "fonte: anúncios da B3" ou "fonte: Yahoo, valor
+     bruto"). No celular o ícone sai para a tabela caber sem rolar de lado.
+   - **Por mês**: o líquido em destaque e, menor embaixo, "bruto R$ Y" quando
+     difere.
+   - **Média 5 anos**: a média por mês do que o ativo costuma pagar e, embaixo,
+     a marca **"acima do habitual"** com ícone, texto e borda tracejada — nunca
+     só a cor (no painel o texto visível é "acima"; o leitor de tela ouve
+     "acima do habitual", e a linha do total logo acima diz por extenso). Sem a
+     marca e com menos de 5 anos de histórico, embaixo, quantos ("3 anos");
+     com menos de 2, "histórico curto".
+   Os papéis sem nenhuma fonte ficam listados embaixo. Com mais de quatro,
+   **"Ver todos os N ativos"** abre a folha **"Estimativa por ativo"** com a
+   lista inteira, do que mais rende ao que menos: Ativo, Cotas, Por cota (o que
+   ela pagou em 12 meses, líquido com o bruto embaixo), Por mês e Média 5 anos;
+   no rodapé, o total líquido com o bruto entre parênteses e a mesma linha de
+   "acima do habitual" (na folha a marca vem por extenso). Foi folha, e não expandir no painel, para a lista de
+   30 linhas não esticar o painel nem deixar um vazio no "Quem pagou" ao lado.
+   No ⓘ do título: de onde vem cada número (B3 para ações e FIIs, Yahoo para o
+   resto e de reserva, bruto) e que não é extrato. Com o olho fechado, tudo
+   isso sai mascarado: líquido, bruto, média, o total marcado e o ⓘ.
 6. **Ano por mês:** tabela real (`<table>`), uma linha por ano, na largura
    inteira.
 7. **Proventos lançados:** painel recolhido (`FoldPanel`, `<details>`) com a
@@ -712,7 +736,8 @@ Na tela **Aportar**:
   usaram; ver o item 1 de "Aportar"). Incluir soma ao valor; "Tirar" desfaz. Só
   mexe no valor de entrada.
 - No resultado, abaixo da manchete, uma frase com o selo "estimativa": "Este aporte soma ~R$ 35/mês
-  de renda: sua renda vai de R$ 410 para R$ 445 por mês". Cada cartão mostra a
+  de renda: sua renda vai de R$ 410 para R$ 445 por mês". Os dois números são
+  líquidos do IR do JCP, a mesma estimativa da Renda. Cada cartão mostra a
   renda mensal que ele soma. O plano não espera o provedor de dividendos: sem
   histórico em cache ainda, a frase vira "Estimativa de renda indisponível por
   enquanto".

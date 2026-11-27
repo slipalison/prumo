@@ -259,3 +259,122 @@ banco, sem ir à B3. Contrato em [api.md](api.md#proventos-automáticos).
   automático e lance o que recebeu (ou importe o extrato).
 - **Emissor que a B3 não cobre** ou código que a regra do ISIN não resolve:
   fica sem automático, e Ajustes lista o código.
+
+## 9. Estimativa da carteira de hoje
+
+Os mesmos anúncios alimentam a **estimativa** da tela Renda ("Estimativa da
+carteira de hoje"), do plano do Aportar ("+~R$ X/mês de renda") e da meta de
+renda enquanto nada foi recebido. Regra em
+`backend/src/domain/income/estimate.rs`; leitura do banco em
+`backend/src/income.rs` e `Store::b3_income_sources`.
+
+### Líquida, com a bruta ao lado
+
+A estimativa é o que cada cota pagou nos últimos 12 meses, **líquido do IR
+na fonte do JCP**, vezes a quantidade de hoje, ÷ 12. É a mesma base do
+"Recebido em 12 meses" e da "Média por mês" (o livro guarda o líquido) e da
+meta de renda: as três falam do dinheiro que cai na conta.
+
+- JCP: 15% pago até 31/12/2025, 17,5% desde 1/1/2026, **pela data de
+  pagamento** (`jcp_withholding_rate`); "a definir" usa a alíquota de hoje (o
+  pagamento ainda vai cair).
+- Dividendo, rendimento de FII, amortização e o resto: sem retenção.
+- A bruta vem ao lado (menor): no total, em cada ativo e na folha "Estimativa
+  por ativo". O imposto lá fora do dividendo americano não é descontado (o
+  Prumo não sabe se a pessoa compensa); o que ela receber de fato vai para o
+  livro com a retenção que ela informar.
+
+### Fonte: B3 para ações e FIIs, Yahoo de reserva
+
+| Ativo | Fonte | Por quê |
+|---|---|---|
+| Ação e FII da B3 (`br_stocks`, `br_reits`) | anúncios da B3 (`b3_cash_announcements`) | oficial, separa JCP de dividendo, tem as parcelas |
+| B3 sem o ativo (ISIN não resolvido, emissor nunca buscado) | Yahoo | reserva |
+| B3 fora do ar (última busca do emissor há mais de 3 dias) | Yahoo, se houver em cache; senão a B3 velha | reserva |
+| EUA, BDR, ETF | Yahoo | a B3 não traz, ou o rótulo não diz o IR |
+
+O Yahoo não separa o JCP: o que vem dele é bruto e líquido ao mesmo tempo, e a
+tela diz "Yahoo" ao lado do ativo. Medido numa carteira real em 27/11/2026, a
+troca para a B3 tirou os buracos do Yahoo (um mês de FII sem rendimento, um
+JCP de banco faltando, centavos diferentes) e deixou a estimativa bruta a
+centavos da B3 refeita à mão.
+
+### Base de cotas de hoje
+
+O valor da B3 é por cota **da época**. Cada bonificação e desdobramento
+(`1 + fator ÷ 100`) e cada grupamento (`× fator`) com data com **no mesmo
+dia ou depois** da data com do provento, e data ex até hoje, divide o valor
+(`shares_after`). No mesmo dia conta: quem tinha a cota na data com recebe o
+dinheiro pelas cotas velhas e as novas chegam depois (uma emissora deu JCP e
+bonificação com a mesma data com). O Yahoo já vem nessa base (ele trata
+bonificação como desdobramento). Com a quantidade de hoje, que já inclui as
+cotas bonificadas, a conta fecha.
+
+### A janela: 365 dias por data ex
+
+`(hoje − 365 dias, hoje]`, **pela data ex**, nas duas fontes. A data ex da B3 é
+o primeiro dia útil depois da data com (`ex_date_after`); o Yahoo informa a
+própria data ex, e numa carteira real todas as datas ex do Yahoo na janela
+eram exatamente o pregão seguinte à data com da B3. Assim trocar de fonte não
+mexe na borda.
+
+- **FII mensal com 11 ou 13 pagamentos.** A data ex anda com os dias úteis:
+  em alguns dias do ano dois pagamentos do "mesmo mês" cabem nos 365 dias (a
+  data com de fevereiro caiu na sexta 27/02/2026 e na sexta 26/02/2027: em
+  01/03/2027 as duas datas ex estão na janela), e em outros nenhum (maio de
+  2026 com data ex em 29/05, maio de 2027 em 31/05: em 30/05/2027 a janela tem
+  11). Numa carteira real isso acontece de 3 a 6 dias por ano e mexe uns 0,2%
+  no total. É método, e foi mantido: a janela por mês civil erra mais (um FII
+  de meados do mês ficaria com 11 durante metade do mês). O teste
+  `a_monthly_reit_can_have_eleven_or_thirteen_payments_in_the_window` mostra
+  os dois casos.
+- **Fim de ano.** 31/12 não tem expediente e 1/1 é feriado: a data com de
+  30/12 tem data ex no primeiro dia útil de janeiro. O calendário é o de
+  `domain::tax::calendar` (expediente bancário), que trata 24/12 como dia útil;
+  a B3 não negocia em 24/12, então uma data com de 23/12 tem data ex 24/12 no
+  Prumo e 26/12 no Yahoo. Só muda a borda em 24 e 25/12.
+- **Parcelas.** Cada parcela é um anúncio (seção 1) e conta pelo próprio valor,
+  inclusive as que serão pagas nos anos seguintes: o que a cota "pagou" nos 12
+  meses é o que foi declarado com data com neles.
+
+### Acima do habitual
+
+O número principal **continua a soma de 12 meses**: é o que de fato foi pago,
+e explicável. Ao lado, cada ativo mostra a **média anual de até 5 anos**, por
+cota de hoje, vezes a quantidade de hoje ÷ 12, e a marca **"acima do
+habitual"** quando os 12 meses passam bem dela. Nada é cortado por regra: a
+B3 não marca o que é extraordinário (os rótulos de dezembro de 2025 são os de
+sempre, "Anual/2025", "Complementar/2025"), e as regras de corte medidas
+(evento acima de 2 ou 3 vezes a mediana, teto pela mediana anual) cortavam
+JCP recorrente de banco.
+
+- **A média** (`usual`): janelas de 365 dias para trás. A de agora são os 12
+  meses da própria fonte (para a média e o número principal contarem o mesmo
+  ano); as mais velhas vêm do Yahoo (a B3 só cobre uns 12 meses). Uma janela
+  velha só entra **inteira**, isto é, se o Yahoo tem pagamento de antes do
+  começo dela (a regra do Bazin): o ano em que o ativo ainda não existia, ou
+  que o histórico não alcança, não vira zero. Com menos de 2 anos não há
+  média (a tela diz "histórico curto"), e com menos de 5 a tela diz quantos.
+  O histórico do Yahoo passou a ser pedido em 10 anos (`dividends.rs`): com 5,
+  o primeiro pagamento é sempre depois do começo do quinto ano, e a média (e o
+  Bazin) nunca passava de 4 anos.
+- **A marca**: 12 meses > **1,5 ×** a média anual, no bruto (o IR não muda o
+  que é "acima"). Como a média inclui o ano de agora, com 5 anos isso equivale
+  a 12 meses > ~1,71 × a média dos 4 anos anteriores. O limiar foi medido
+  numa carteira real em 27/11/2026: pega as antecipações de dezembro de 2025
+  (de 1,5 a pouco mais de 2 vezes a média) e deixa de fora quem só cresceu
+  devagar.
+- **No total**, a tela diz quanto da estimativa líquida vem de ativos marcados
+  ("~R$ X/mês de N ativos acima do habitual"), com o ⓘ: pagamentos acima do
+  habitual, como antecipações, e a estimativa pode cair quando eles saírem da
+  janela.
+- A média líquida usa a parte de JCP dos 12 meses do ativo (o Yahoo não
+  separa): é aproximada, e a marca não depende dela.
+
+### Com o livro: o yield on cost estimado
+
+`trailing_12m` (o que a posição teria rendido nos 12 meses com as cotas que o
+livro tinha em cada data com) segue a mesma fonte: pela B3 é o valor da época
+vezes as cotas da data com, **líquido**, arredondado como o provento
+automático; pelo Yahoo, a conta de antes (bruta, na base do provedor). É o que
+o yield on cost usa quando nada foi recebido.
