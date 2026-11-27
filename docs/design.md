@@ -639,24 +639,55 @@ e o botão **Lançar provento** à direita.
    "(estimado)", e o ⓘ, "estimada, não é extrato". Ativo sem preço médio sai da
    conta: o rótulo vira "Yield on cost (parcial)" e o ⓘ diz quem ficou de fora.
    Sem nenhum custo conhecido, no lugar do número vem "informe o preço médio".
-3. **Mês a mês** (esquerda, 2/3): barras em SVG próprio com Motion, desenhadas
-   na largura real do painel (a barra não passa de 48 px). O recebido é cheio e
-   embaixo; o a receber é **listrado** e em cima; a meta é uma linha tracejada
-   com o valor; o ponteiro acende o mês. A legenda dá nome a cada um e uma
-   tabela escondida (`sr-only`) traz os 12 meses para o leitor de tela.
-4. **Quem pagou** (esquerda, abaixo das barras): rosca e a lista com nome, valor,
-   parte e **yield on cost** de cada um ("yield on cost 6,2%" ou "informe o
-   preço médio"), em uma ou duas colunas; do sétimo em diante vira "Outros (N)",
-   sem yield. No celular a rosca sai (a lista já diz tudo).
-5. **Coluna da direita:** **Próximos pagamentos** (data, ativo, tipo e líquido;
-   o provento que o Prumo calculou do anúncio da B3 leva o selo **"automático
-   (B3)"**, borda pontilhada e texto), o painel **Eventos anunciados pela B3**
-   (só com os automáticos ligados e alguma pendência: uma frase por
-   bonificação, desdobramento ou grupamento e as cotas da data com) e a
-   **Estimativa da carteira de hoje**: "~R$ 410/mês" com a etiqueta
-   "estimativa", uma linha por papel ("R$ 12,60 por cota em 12 meses") e os
-   papéis sem histórico; o aviso de que é o que a cota pagou, sem separar JCP e
-   sem ser extrato, abre no ⓘ.
+3. **Mês a mês** (linha do meio, 2/3): barras em SVG próprio com Motion,
+   desenhadas na largura real do painel (a barra não passa de 48 px). O recebido
+   é cheio e embaixo; o a receber é **listrado** e em cima; a meta é uma linha
+   tracejada com o valor; o ponteiro acende o mês. A legenda dá nome a cada um e
+   uma tabela escondida (`sr-only`) traz os 12 meses para o leitor de tela. À
+   direita (1/3), **Próximos pagamentos** (data, ativo, tipo e líquido; o
+   provento que o Prumo calculou do anúncio da B3 leva o selo **"automático
+   (B3)"**, borda pontilhada e texto) com a **altura do mês a mês**: a lista
+   rola por dentro, então pagamento demais não alonga a página. O painel
+   **Eventos anunciados pela B3** (só com os automáticos ligados e alguma
+   pendência: uma frase por bonificação, desdobramento ou grupamento e as cotas
+   da data com) fica embaixo dela.
+4. **Quem pagou** (linha de baixo, 2/3, ao lado da estimativa): para **explorar**.
+   A rosca e uma tabela (Pagador, Recebido, % da renda, Yield on cost: "6,2%" ou
+   "informe o preço médio"); os seis maiores um a um e o resto em "Outros (N)",
+   sem yield.
+   - **Entrar em "Outros"** (decisão: a rosca *entra* no grupo, em vez de expandir
+     por baixo ou abrir folha). Clicar em "Outros" na tabela, ou na fatia (ou
+     Enter nela), troca a rosca e a tabela pelas dos N pagadores de dentro, com
+     o mesmo valor, parte e yield on cost de cada um, e um "← Voltar a todos os
+     pagadores" no cabeçalho do painel; o foco vai para o "Voltar" e, ao voltar,
+     para "Outros". Razão: a lista de 19 ganha a mesma área da de 7, sem
+     empurrar a página nem esticar o painel ao lado; folha esconderia a rosca,
+     e expandir por baixo faria a página pular. A tabela tem altura fixa
+     (20 rem, 34 rem no celular) e rola por dentro; uma linha cortada embaixo
+     mostra que há mais.
+   - **Filtrar por pagador.** Clicar numa linha (ou na fatia) a destaca (fundo
+     dourado, filete e "✓" no nome, `aria-pressed`) e filtra **Próximos
+     pagamentos** e **Proventos lançados** só por ele; um selo "Filtro: BBDC4 ✕"
+     no cabeçalho dos painéis filtrados limpa; clicar de novo no pagador também.
+     Sem pagamento dele, a lista diz isso. O filtro de quem está dentro de
+     "Outros" some ao voltar (a linha dele não está mais à vista).
+   - **A rosca responde** ao mouse, ao foco e ao toque: o meio mostra o nome, o
+     valor e a parte de quem está aceso (senão, "12 meses" e o total), o arco
+     engorda e os outros escurecem; a linha da tabela acende junto, e passar
+     numa fatia traz a linha dela para a janela da tabela. Cada arco é um
+     botão com nome ("BBDC4: R$ 529,58, 9,6% da renda"); o teclado entra por
+     uma parada só (as setas, Home e End andam entre as fatias; Enter ou
+     Espaço escolhem). Com o olho fechado, o meio, o nome acessível e a tabela
+     saem mascarados.
+   - No celular a rosca sai (a tabela já diz tudo, em duas linhas por pagador).
+5. **Estimativa da carteira de hoje** (linha de baixo, 1/3): "~R$ 410/mês" com a
+   etiqueta "estimativa", os **cinco** papéis que mais rendem numa tabela (Ativo,
+   Por cota, Por mês; "por cota" é o que ela pagou em 12 meses) e os papéis sem
+   histórico. Com mais de cinco, **"Ver todos os N ativos"** abre uma folha com
+   a lista inteira, do que mais rende ao que menos, com as cotas. Foi folha, e
+   não expandir no painel, para a lista de 30 linhas não esticar o painel nem
+   deixar um vazio no "Quem pagou" ao lado. O aviso de que é o que a cota pagou,
+   sem separar JCP e sem ser extrato, abre no ⓘ.
 6. **Ano por mês:** tabela real (`<table>`), uma linha por ano, na largura
    inteira.
 7. **Proventos lançados:** painel recolhido (`FoldPanel`, `<details>`) com a

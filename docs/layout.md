@@ -590,6 +590,56 @@ O que mudou, e onde o desenho do plano foi outro:
 - Em `components/`: nada foi alterado. Os arquivos novos são de `features/`
   (`income/FoldPanel` e os painéis de `tax/`).
 
+**Renda, explorar (rodada depois da integração).** A pessoa pediu para
+*explorar* "Quem pagou" e a estimativa, e achou um vazio enorme no meio da tela
+(a rosca e a legenda ocupavam só o topo de um painel esticado até o fim da coluna
+da direita). O desenho passou a ser:
+
+```
+┌ Quanto sua carteira paga? ⓘ ─────────────────────────── [Lançar provento] ┐
+│ Meta de renda        │ Recebido 12m │ Média/mês │ A receber │ YoC ⓘ        │
+│┌ Mês a mês ────────────────────────┐┌ Próximos pagamentos ┐ (mesma altura,│
+││ barras                            ││ lista que rola      │  rola por     │
+│└───────────────────────────────────┘└─────────────────────┘  dentro)      │
+│┌ Quem pagou ───────────── [Filtro ✕]┐┌ Estimativa da carteira de hoje ────┐│
+││ rosca   Pagador  Recebido % YoC    ││ ~R$ 2.052/mês   estimativa         ││
+││ (hover) ▸ ALFA3 … ▸ Outros (19) →  ││ 5 maiores · Ver todos os 28 ativos ││
+│└────────────────────────────────────┘└─────────────────────────────────────┘│
+│ Ano por mês                                                                │
+│ ▸ Proventos lançados (20)                                                  │
+```
+
+- **Altura constante entre os estados.** A tabela de "Quem pagou" tem altura
+  fixa (20 rem) e rola por dentro: "Outros (19)" não empurra a página, não estica
+  o painel ao lado e não deixa buraco nele. Os "Próximos pagamentos" tomam a
+  altura do mês a mês (posição absoluta dentro do painel, que não conta na altura
+  da linha) e rolam por dentro; abaixo de 1000 px de conteúdo (uma coluna) a lista
+  tem no máximo 20 rem.
+- **Quem pagou ao lado da estimativa**, na mesma linha (`Grid cols="main-aside"`,
+  os dois painéis esticam à mesma altura). A estimativa mostra os cinco que mais
+  rendem e abre a lista inteira numa folha (uma lista longa no painel o alongaria
+  e abriria vazio no vizinho).
+- **Entrar em Outros, filtrar por pagador e a rosca ao ponteiro**: ver
+  `docs/design.md`, Renda, item 4. A rosca própria (`PayerDonut`) é da Renda; a
+  `Donut` comum não mudou (`components/` congelado).
+- **No celular** a rosca continua fora, e cada pagador é um bloco de duas linhas.
+  O filtro por pagador age em Próximos pagamentos e em Proventos lançados.
+
+Medido no modo de demonstração com 25 pagadores ("Outros (19)"), 14 pagamentos a
+receber e 28 ativos na estimativa (`demo/demoIncome.ts`; o dado de antes só tinha
+3 pagadores e 1 pagamento, por isso o 1,23 de cima). Telas (altura da página ÷
+altura da janela), **antes → depois** com o mesmo dado:
+
+| Renda | 1440×900 | 1920×1080 | iPad 1366×1024 | iPad 1024×1366 | Celular 390×844 |
+|---|---|---|---|---|---|
+| Quem pagou fechado | 1,83 → 1,48 | 1,53 → 1,23 | 1,61 → 1,30 | 1,80 → 1,62 | 3,45 → 3,11 |
+| Dentro de "Outros (19)" | — → 1,48 | — → 1,23 | — → 1,30 | — → 1,63 | — → 3,17 |
+
+Sem rolagem lateral da página em nenhuma largura. Em 1440×900 a linha de baixo
+fecha com os dois painéis em ~425 px, sem vazio. Resta uma folga de ~35 px acima
+e abaixo da rosca e da tabela quando o painel é mais alto que ela (o conteúdo fica
+centrado).
+
 ### 7.5 Análise e Ajustes › Análise, Alertas, casca de Ajustes (grupo 4)
 
 **Análise**
