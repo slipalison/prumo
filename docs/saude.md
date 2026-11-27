@@ -85,7 +85,11 @@ Fontes públicas e gratuitas, guardadas numa tabela de referência
 (`sector_reference`, compartilhada entre as carteiras como `quotes`) e
 atualizadas **a cada 30 dias**. Depois de uma falha, o serviço espera 6 horas
 antes de tentar de novo. Uma busca que volta vazia, ou com menos da metade das
-linhas da última boa, é recusada: a referência anterior continua valendo.
+linhas da última boa, é recusada: a referência anterior continua valendo. A
+fonte da CVM também é lida de novo, mesmo em dia, enquanto algum FII guardado
+estiver sem a composição da carteira (frações de imóveis, recebíveis e cotas de
+FII, que pondera o alvo do híbrido em [`analise.md`](analise.md)): a referência
+gravada por um código de antes dela se completa sozinha.
 
 **Fonte fora do ar não quebra a carteira**: o setor fica como estava (ou
 vazio, se nunca veio) e o painel mostra "A última busca falhou".

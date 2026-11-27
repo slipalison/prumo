@@ -365,9 +365,12 @@ FII esconde a troca de juro que move o preço dele).
 - A **migração 0024** guarda a escolha do teto em `assets.ceiling_method` (o
   valor próprio continua em `max_price`, então quem tinha teto fica com ele como
   valor próprio) e os prêmios dos FIIs em `analysis_settings` (o `bazin_yield`
-  passa a aceitar nulo = 6%). A **0025** cria `treasury_real_rate`, acrescenta a
-  composição a `sector_reference` e apaga o estado da fonte da CVM, para ela ser
-  relida (com a composição) na primeira conferência depois do deploy.
+  passa a aceitar nulo = 6%). A **0025** cria `treasury_real_rate` e acrescenta a
+  composição a `sector_reference`. Nenhuma das duas zera marca para disparar
+  trabalho: o código novo relê a CVM enquanto houver FII sem composição guardada
+  e baixa a tabela do Tesouro enquanto não houver juro real guardado (o dado é a
+  condição, então um pod antigo rodando durante o deploy canário não "consome"
+  a releitura).
 - `GET`/`PUT /analysis/rules` leem e gravam **a mesma configuração** que
   `GET`/`PUT /health/rules`: as sete originais aparecem nos dois, e as novas só
   em `/analysis/rules`. Os endereços antigos continuam respondendo (o motor de
