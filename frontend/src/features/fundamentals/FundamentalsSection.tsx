@@ -18,7 +18,7 @@ import type { Money } from "../../lib/money";
 import { useMoney } from "../../lib/privacy";
 import { FundMarketGrid, PriceToBook } from "./FundIndicators";
 import { Missing } from "./Missing";
-import { NOT_APPLICABLE_TEXT, UNSUPPORTED_TEXT, notApplicableReason } from "./fundamentalsText";
+import { NOT_APPLICABLE_TEXT, UNSUPPORTED_TEXT, growthSign, notApplicableReason } from "./fundamentalsText";
 import "./fundamentals.css";
 
 const percent = (figure: Figure) =>
@@ -40,8 +40,7 @@ const perShare = (money: Money, figure: Figure) =>
 
 const growth = (figure: Figure) => {
   if (figure.value === null) return <Missing gap={figure.gap} />;
-  const sign = figure.value > 0 ? "+" : figure.value < 0 ? "−" : "";
-  return `${sign}${formatPercent(Math.abs(figure.value) * 100)} a.a.`;
+  return `${growthSign(figure.value)}${formatPercent(Math.abs(figure.value) * 100)} a.a.`;
 };
 
 const count = (c: YearCount) => (c.known === 0 ? <Missing gap={c.gap} /> : `${c.positive} de ${c.known}`);
@@ -55,9 +54,10 @@ function periodLabel(period: PeriodFigures): string {
 
 function sourceLine(company: CompanyFundamentals): string {
   const filing = company.latest_filing;
-  const doc = filing ? `${filing.kind === "annual" ? "DFP" : "ITR"} de ${formatIsoDate(filing.reference_date)}` : "";
   const checked = company.synced_at ? ` · conferido em ${formatDay(company.synced_at)}` : "";
-  return `Fonte: CVM${doc ? `, ${doc}` : ""}${checked}`;
+  if (!filing) return `Fonte: CVM${checked}`;
+  const doc = filing.kind === "annual" ? "DFP" : "ITR";
+  return `Fonte: CVM, ${doc} de ${formatIsoDate(filing.reference_date)}${checked}`;
 }
 
 /** De onde vêm os números do fundo: o informe mensal, a vacância e quando foi conferido. */
@@ -67,7 +67,7 @@ function fundSourceLine(fund: FundFundamentals): string {
   return `Fonte: CVM, informe mensal de ${formatIsoDate(fund.reference_date).slice(3)}${vacancyDate}${checked}.`;
 }
 
-function CompanyBody({ company, money }: { company: CompanyFundamentals; money: Money }) {
+function CompanyBody({ company, money }: Readonly<{ company: CompanyFundamentals; money: Money }>) {
   const period = company.trailing;
   const reason = notApplicableReason(company.template, company.holding);
   const situation = company.issuer_status && company.issuer_status !== "FASE OPERACIONAL" ? company.issuer_status : null;
@@ -146,7 +146,7 @@ function CompanyBody({ company, money }: { company: CompanyFundamentals; money: 
   );
 }
 
-function FundBody({ fund, asset, money, rates }: { fund: FundFundamentals; asset: Asset; money: Money; rates: Rates }) {
+function FundBody({ fund, asset, money, rates }: Readonly<{ fund: FundFundamentals; asset: Asset; money: Money; rates: Rates }>) {
   // O P/VP acompanha o preço ao vivo da carteira; o do servidor é o da última leitura.
   const price = asset.price_source === "missing" ? null : asset.unit_price;
   const nav = fund.nav_per_share.value;
@@ -199,7 +199,7 @@ type FundamentalsSectionProps = { asset: Asset };
  * do FII, com a fonte e a data. Só em Ações Nacionais e FIIs; R$ passa pelo
  * olho de ocultar valores.
  */
-export function FundamentalsSection({ asset }: FundamentalsSectionProps) {
+export function FundamentalsSection({ asset }: Readonly<FundamentalsSectionProps>) {
   const headingId = useId();
   const query = useFundamentals();
   const money = useMoney();

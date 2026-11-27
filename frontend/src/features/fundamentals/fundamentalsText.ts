@@ -27,6 +27,12 @@ export function notApplicableReason(template: AccountTemplate, holding: boolean)
   return holding ? "holding" : null;
 }
 
+/** O sinal à frente de um crescimento: mais, menos (o tipográfico) ou nada no zero. */
+export function growthSign(value: number): string {
+  if (value > 0) return "+";
+  return value < 0 ? "−" : "";
+}
+
 /** O motivo diz "não se aplica" (banco, seguradora, holding), e não "número que falta". */
 export function isNotApplicable(gap: FundamentalsGap | null): boolean {
   return gap === "financial_template" || gap === "holding";

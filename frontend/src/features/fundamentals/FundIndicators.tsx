@@ -3,6 +3,7 @@ import { InfoTip } from "../../components/InfoTip";
 import { formatPercent } from "../../lib/format";
 import type { Money } from "../../lib/money";
 import { priceToBookText, ratesText } from "./fundIndicatorsText";
+import { growthSign } from "./fundamentalsText";
 import { Missing } from "./Missing";
 import "./fundIndicators.css";
 
@@ -18,7 +19,7 @@ const decimals = (value: number) =>
  * e o ponto no valor (fora da régua, o ponto para na ponta e o número diz o
  * resto). Só posição, sem cor de bom ou ruim (docs/design.md).
  */
-export function PriceToBook({ figure }: { figure: Figure }) {
+export function PriceToBook({ figure }: Readonly<{ figure: Figure }>) {
   if (figure.value === null) return <Missing gap={figure.gap} />;
   const value = figure.value;
   const clamped = Math.min(GAUGE_MAX, Math.max(GAUGE_MIN, value));
@@ -26,7 +27,11 @@ export function PriceToBook({ figure }: { figure: Figure }) {
   return (
     <span className="pvp">
       <span className="pvp__value">{decimals(value)}</span>
-      <span className="pvp__gauge" role="img" aria-label={`P/VP ${decimals(value)}: ${priceToBookText(value)}`}>
+      <span // NOSONAR: régua desenhada em CSS (traço e ponto), não há imagem para um <img>; o papel dá o nome ao conjunto.
+        className="pvp__gauge"
+        role="img"
+        aria-label={`P/VP ${decimals(value)}: ${priceToBookText(value)}`}
+      >
         <span className="pvp__one" aria-hidden="true" />
         <span className="pvp__dot" aria-hidden="true" style={{ left: `${left}%` }} />
       </span>
@@ -40,8 +45,7 @@ const percentOf = (figure: Figure) =>
 /** Crescimento anual composto, com o sinal (+5,2% a.a.). */
 function growthOf(figure: Figure) {
   if (figure.value === null) return <Missing gap={figure.gap} />;
-  const sign = figure.value > 0 ? "+" : figure.value < 0 ? "−" : "";
-  return `${sign}${formatPercent(Math.abs(figure.value) * 100)} a.a.`;
+  return `${growthSign(figure.value)}${formatPercent(Math.abs(figure.value) * 100)} a.a.`;
 }
 
 type FundMarketGridProps = {
@@ -62,7 +66,7 @@ type FundMarketGridProps = {
  * só contexto), caixa, liquidez média diária e o crescimento dos proventos e
  * da cota em 3 e 5 anos. Sem veredito: o número e o motivo quando falta.
  */
-export function FundMarketGrid({ cashShare, market, rates, money, priceToBook, label }: FundMarketGridProps) {
+export function FundMarketGrid({ cashShare, market, rates, money, priceToBook, label }: Readonly<FundMarketGridProps>) {
   const context = ratesText(rates);
   const reais = (figure: Figure) => (figure.value === null ? <Missing gap={figure.gap} /> : money.compact(figure.value));
   return (

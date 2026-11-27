@@ -6,7 +6,7 @@ import { GAP_TEXT, isNotApplicable } from "./fundamentalsText";
  * seguradora, holding) diz "não se aplica" escrito; o resto é "—". Nos dois, o
  * motivo vai no `title` e para o leitor de tela. Nunca um zero.
  */
-export function Missing({ gap }: { gap: FundamentalsGap | null }) {
+export function Missing({ gap }: Readonly<{ gap: FundamentalsGap | null }>) {
   const text = gap ? GAP_TEXT[gap] : "sem número";
   if (isNotApplicable(gap)) {
     return (
